@@ -78,6 +78,58 @@ export function isSquareAttacked(
   return false;
 }
 
+export function countAttackers(
+  state: BoardState,
+  square: SquareId,
+  byColor: Color,
+  topology: TopologyState,
+): number {
+  let count = 0;
+
+  const straightDirs: readonly (readonly [number, number])[] = [
+    [1, 0], [-1, 0], [0, 1], [0, -1],
+  ];
+  const diagDirs: readonly (readonly [number, number])[] = [
+    [1, 1], [1, -1], [-1, 1], [-1, -1],
+  ];
+
+  for (const [df, dr] of straightDirs) {
+    const ray = rayFrom(square, df, dr, topology);
+    for (const sq of ray) {
+      const p = pieceAt(state, sq);
+      if (!p) continue;
+      if (p.color === byColor && (p.type === 'rook' || p.type === 'queen')) count++;
+      if (p.color === byColor && p.type === 'king' && sq === ray[0]) count++;
+      break;
+    }
+  }
+
+  for (const [df, dr] of diagDirs) {
+    const ray = rayFrom(square, df, dr, topology);
+    for (const sq of ray) {
+      const p = pieceAt(state, sq);
+      if (!p) continue;
+      if (p.color === byColor && (p.type === 'bishop' || p.type === 'queen')) count++;
+      if (p.color === byColor && p.type === 'king' && sq === ray[0]) count++;
+      break;
+    }
+  }
+
+  for (const sq of knightTargets(square, topology)) {
+    const p = pieceAt(state, sq);
+    if (p && p.color === byColor && p.type === 'knight') count++;
+  }
+
+  const pawnLookupColor = byColor === 'white' ? 'black' : 'white';
+  const pawnSquares = pawnCaptureTargets(square, pawnLookupColor as 'white' | 'black', topology);
+  for (const sq of pawnSquares) {
+    const p = pieceAt(state, sq);
+    if (p && p.color === byColor && p.type === 'pawn') count++;
+  }
+
+  return count;
+}
+
 export function isInCheck(state: BoardState): boolean {
   const kingSquare = findKing(state, state.sideToMove);
   if (!kingSquare) return false;

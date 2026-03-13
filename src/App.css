@@ -94,6 +94,10 @@
   box-shadow: inset 0 0 0 4px var(--danger), 0 0 16px rgba(220, 38, 38, 0.6);
 }
 
+.tile.threatened::before {
+  background: rgba(220, 38, 38, calc(0.08 * var(--threat-n, 1)));
+}
+
 /* Pieces */
 
 .piece {
@@ -161,7 +165,7 @@
   width: 40px;
   height: 40px;
   border-radius: 8px;
-  border: 1px solid var(--btn-border);
+  border: 2px solid var(--btn-border);
   background: var(--btn-bg);
   color: var(--text);
   font-size: 18px;
@@ -189,11 +193,21 @@
   transform: none;
 }
 
+.action-btn.preview-btn {
+  border-style: dashed;
+}
+
+.action-btn.active {
+  background: rgba(220, 38, 38, 0.3);
+  border-color: rgba(220, 38, 38, 0.6);
+  color: #ff8888;
+}
+
 .rotate-btn {
   height: 40px;
   padding: 0 18px;
   border-radius: 8px;
-  border: 1px solid var(--btn-border);
+  border: 2px solid var(--btn-border);
   background: var(--btn-bg);
   color: var(--text);
   font-size: 14px;

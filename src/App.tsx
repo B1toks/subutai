@@ -1,6 +1,7 @@
 import './App.css';
-import type { BoardState, Move, SquareId, TopologyState } from './engine';
+import type { BoardState, Color, Move, SquareId, TopologyState } from './engine';
 import { createStartingPosition } from './engine';
+import { allSquares } from './engine/board';
 import {
   applyMove,
   generateLegalMoves,
@@ -8,6 +9,7 @@ import {
   isStalemate,
   isInCheck,
   isSquareAttacked,
+  countAttackers,
   findKing,
   findCheckingPieces,
 } from './engine/moves';
@@ -48,6 +50,7 @@ function App() {
   const [lastMove, setLastMove] = useState<{ from?: SquareId; to?: SquareId } | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showThreats, setShowThreats] = useState(false);
   const aiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [boardSize, setBoardSize] = useState(() =>
@@ -200,6 +203,19 @@ function App() {
     return { king, checkers };
   }, [previewTopology, state]);
 
+  const threatenedSquares = useMemo(() => {
+    if (!showThreats) return new Map<string, number>();
+    const opp: Color = state.sideToMove === 'white' ? 'black' : 'white';
+    const topo = previewTopology ?? state.topologyState;
+    const analyzeState: BoardState = { ...state, topologyState: topo };
+    const counts = new Map<string, number>();
+    for (const sq of allSquares) {
+      const c = countAttackers(analyzeState, sq, opp, topo);
+      if (c > 0) counts.set(sq, c);
+    }
+    return counts;
+  }, [showThreats, state, previewTopology]);
+
   function onSquareClick(square: string) {
     if (gameStatus !== 'playing') return;
     if (currentPlayer !== 'human') return;
@@ -337,6 +353,7 @@ function App() {
           const isLastTo = lastMove?.to === sq;
           const isCheckedKing = checkSquares.king === sq;
           const isCheckingPiece = checkSquares.checkers.has(sq);
+          const threatCount = threatenedSquares.get(sq) ?? 0;
 
           const { cx, cy, angle } = tilePixelCenter(
             sq as SquareId,
@@ -360,6 +377,7 @@ function App() {
                 isLastTo ? 'last-to' : '',
                 isCheckedKing ? (gameStatus === 'checkmate' ? 'mated-king' : 'checked-king') : '',
                 isCheckingPiece ? (gameStatus === 'checkmate' ? 'mating-piece' : 'checking-piece') : '',
+                threatCount > 0 ? 'threatened' : '',
               ]
                 .filter(Boolean)
                 .join(' ')}
@@ -367,6 +385,7 @@ function App() {
                 width: tileBase,
                 height: tileBase,
                 transform: `translate(${tx}px, ${ty}px) rotate(${angle}deg) scale(${scale})`,
+                ...(threatCount > 0 ? { '--threat-n': threatCount } as React.CSSProperties : {}),
               }}
               onClick={() => onSquareClick(sq)}
             >
@@ -405,7 +424,15 @@ function App() {
         <div className="action-group">
           <button
             type="button"
-            className="action-btn"
+            className={`action-btn${showThreats ? ' active' : ''}`}
+            title="Toggle threat map"
+            onClick={() => setShowThreats((v) => !v)}
+          >
+            {'\u26A0'}
+          </button>
+          <button
+            type="button"
+            className="action-btn preview-btn"
             title="Preview rotation"
             disabled={currentPlayer !== 'human'}
             onPointerEnter={() => {
