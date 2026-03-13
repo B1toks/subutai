@@ -48,11 +48,12 @@ export type MoveKind =
   | 'capture'
   | 'castle'
   | 'enPassant'
-  | 'promotion';
+  | 'promotion'
+  | 'topologyToggle';
 
 export interface Move {
-  readonly from: SquareId;
-  readonly to: SquareId;
+  readonly from?: SquareId;
+  readonly to?: SquareId;
   readonly kind: MoveKind;
   readonly promotion?: PieceType;
 }

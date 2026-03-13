@@ -15,7 +15,120 @@ function enemyColor(color: Color): Color {
   return color === 'white' ? 'black' : 'white';
 }
 
-export function generateLegalMoves(state: BoardState): Move[] {
+// --- King / check utilities ---
+
+export function findKing(state: BoardState, color: Color): SquareId | null {
+  for (const [sq, piece] of state.pieces) {
+    if (piece.type === 'king' && piece.color === color) return sq;
+  }
+  return null;
+}
+
+export function isSquareAttacked(
+  state: BoardState,
+  square: SquareId,
+  byColor: Color,
+  topology: TopologyState,
+): boolean {
+  // Sliding attacks (rook/queen along ranks/files, bishop/queen along diagonals)
+  const straightDirs: readonly (readonly [number, number])[] = [
+    [1, 0], [-1, 0], [0, 1], [0, -1],
+  ];
+  const diagDirs: readonly (readonly [number, number])[] = [
+    [1, 1], [1, -1], [-1, 1], [-1, -1],
+  ];
+
+  for (const [df, dr] of straightDirs) {
+    const ray = rayFrom(square, df, dr, topology);
+    for (const sq of ray) {
+      const p = pieceAt(state, sq);
+      if (!p) continue;
+      if (p.color === byColor && (p.type === 'rook' || p.type === 'queen')) return true;
+      if (p.color === byColor && p.type === 'king' && sq === ray[0]) return true;
+      break;
+    }
+  }
+
+  for (const [df, dr] of diagDirs) {
+    const ray = rayFrom(square, df, dr, topology);
+    for (const sq of ray) {
+      const p = pieceAt(state, sq);
+      if (!p) continue;
+      if (p.color === byColor && (p.type === 'bishop' || p.type === 'queen')) return true;
+      if (p.color === byColor && p.type === 'king' && sq === ray[0]) return true;
+      break;
+    }
+  }
+
+  // Knight attacks
+  for (const sq of knightTargets(square, topology)) {
+    const p = pieceAt(state, sq);
+    if (p && p.color === byColor && p.type === 'knight') return true;
+  }
+
+  // Pawn attacks: look in the reverse capture direction to find attacking pawns
+  for (const sq of pawnCaptureTargets(square, byColor === 'white' ? 'black' : 'white', topology)) {
+    const p = pieceAt(state, sq);
+    if (p && p.color === byColor && p.type === 'pawn') return true;
+  }
+
+  return false;
+}
+
+export function isInCheck(state: BoardState): boolean {
+  const kingSquare = findKing(state, state.sideToMove);
+  if (!kingSquare) return false;
+  return isSquareAttacked(state, kingSquare, enemyColor(state.sideToMove), state.topologyState);
+}
+
+export function isCheckmate(state: BoardState): boolean {
+  return isInCheck(state) && generateLegalMoves(state).length === 0;
+}
+
+export function isStalemate(state: BoardState): boolean {
+  return !isInCheck(state) && generateLegalMoves(state).length === 0;
+}
+
+export function findCheckingPieces(state: BoardState): SquareId[] {
+  const kingSquare = findKing(state, state.sideToMove);
+  if (!kingSquare) return [];
+  const attacker = enemyColor(state.sideToMove);
+  const topology = state.topologyState;
+  const checkers: SquareId[] = [];
+
+  const allDirs: readonly (readonly [number, number])[] = [
+    [1, 0], [-1, 0], [0, 1], [0, -1],
+    [1, 1], [1, -1], [-1, 1], [-1, -1],
+  ];
+  for (const [df, dr] of allDirs) {
+    const ray = rayFrom(kingSquare, df, dr, topology);
+    for (const sq of ray) {
+      const p = pieceAt(state, sq);
+      if (!p) continue;
+      if (p.color !== attacker) break;
+      const isStraight = df === 0 || dr === 0;
+      if (isStraight && (p.type === 'rook' || p.type === 'queen')) checkers.push(sq);
+      if (!isStraight && (p.type === 'bishop' || p.type === 'queen')) checkers.push(sq);
+      break;
+    }
+  }
+
+  for (const sq of knightTargets(kingSquare, topology)) {
+    const p = pieceAt(state, sq);
+    if (p && p.color === attacker && p.type === 'knight') checkers.push(sq);
+  }
+
+  for (const sq of pawnCaptureTargets(kingSquare, attacker === 'white' ? 'black' : 'white', topology)) {
+    const p = pieceAt(state, sq);
+    if (p && p.color === attacker && p.type === 'pawn') checkers.push(sq);
+  }
+
+  return checkers;
+}
+
+// --- Move generation ---
+
+function generatePseudoLegalMoves(state: BoardState): Move[] {
   const topology: TopologyState = state.topologyState;
   const moves: Move[] = [];
   for (const square of allSquares) {
@@ -64,6 +177,19 @@ export function generateLegalMoves(state: BoardState): Move[] {
   return moves;
 }
 
+export function generateLegalMoves(state: BoardState): Move[] {
+  const pseudo = generatePseudoLegalMoves(state);
+  const side = state.sideToMove;
+  const opponent = enemyColor(side);
+
+  return pseudo.filter((move) => {
+    const next = applyMove(state, move);
+    const kingSquare = findKing(next, side);
+    if (!kingSquare) return false;
+    return !isSquareAttacked(next, kingSquare, opponent, next.topologyState);
+  });
+}
+
 function generatePawnMoves(
   state: BoardState,
   from: SquareId,
@@ -73,7 +199,7 @@ function generatePawnMoves(
 ) {
   const { one, two } = pawnForwardTargets(from, piece.color, topology);
   if (one && !pieceAt(state, one)) {
-    addPawnAdvanceMove(from, one, moves);
+    moves.push({ from, to: one, kind: 'normal' });
     if (two && !pieceAt(state, two)) {
       moves.push({ from, to: two, kind: 'normal' });
     }
@@ -82,25 +208,9 @@ function generatePawnMoves(
   for (const target of pawnCaptureTargets(from, piece.color, topology)) {
     const targetPiece = pieceAt(state, target);
     if (targetPiece && targetPiece.color !== piece.color) {
-      addPawnCaptureMove(from, target, moves);
+      moves.push({ from, to: target, kind: 'capture' });
     }
   }
-}
-
-function addPawnAdvanceMove(
-  from: SquareId,
-  to: SquareId,
-  moves: Move[],
-) {
-  moves.push({ from, to, kind: 'normal' });
-}
-
-function addPawnCaptureMove(
-  from: SquareId,
-  to: SquareId,
-  moves: Move[],
-) {
-  moves.push({ from, to, kind: 'capture' });
 }
 
 function generateKnightMoves(

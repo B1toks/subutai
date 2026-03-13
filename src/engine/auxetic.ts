@@ -254,5 +254,6 @@ export function toggleTopology(state: BoardState): BoardState {
   return {
     ...state,
     topologyState: state.topologyState === 'A' ? 'B' : 'A',
+    sideToMove: state.sideToMove === 'white' ? 'black' : 'white',
   };
 }

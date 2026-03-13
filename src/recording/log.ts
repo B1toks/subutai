@@ -3,7 +3,6 @@ import type { BoardState, Move, TopologyState } from '../engine';
 export interface LoggedMove {
   readonly san?: string;
   readonly move: Move;
-  readonly topologyAfter?: TopologyState;
 }
 
 export interface GameLog {
@@ -34,26 +33,9 @@ export function appendMove(
   log: GameLog,
   move: Move,
   san?: string,
-  topologyAfter?: TopologyState,
 ): GameLog {
   return {
     ...log,
-    moves: [...log.moves, { san, move, topologyAfter }],
+    moves: [...log.moves, { san, move }],
   };
-}
-
-export function appendTopologyToggle(
-  log: GameLog,
-  newTopology: TopologyState,
-): GameLog {
-  const lastMove = log.moves[log.moves.length - 1];
-  if (lastMove) {
-    const updatedMoves = [...log.moves];
-    updatedMoves[updatedMoves.length - 1] = {
-      ...lastMove,
-      topologyAfter: newTopology,
-    };
-    return { ...log, moves: updatedMoves };
-  }
-  return log;
 }
