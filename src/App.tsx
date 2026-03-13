@@ -398,10 +398,6 @@ function App() {
               <li>Standard chess rules apply: you cannot move into check, checkmate ends the game.</li>
             </ul>
             <p>
-              Named after <strong>Subutai</strong>, the brilliant Mongol general,
-              because mastering this game demands wide strategic vision across a shifting battlefield.
-            </p>
-            <p>
               <a href="https://en.wikipedia.org/wiki/Fischer_random_chess" target="_blank" rel="noopener noreferrer">
                 Learn more about Chess960 on Wikipedia
               </a>

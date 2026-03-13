@@ -190,6 +190,30 @@ export function generateLegalMoves(state: BoardState): Move[] {
   });
 }
 
+function isPromotionRank(square: SquareId, color: Color): boolean {
+  const rank = Number(square[1]);
+  return (color === 'white' && rank === 8) || (color === 'black' && rank === 1);
+}
+
+const PROMOTION_PIECES: readonly ('queen' | 'rook' | 'bishop' | 'knight')[] =
+  ['queen', 'rook', 'bishop', 'knight'];
+
+function addPawnMove(
+  from: SquareId,
+  to: SquareId,
+  color: Color,
+  isCapture: boolean,
+  moves: Move[],
+) {
+  if (isPromotionRank(to, color)) {
+    for (const promo of PROMOTION_PIECES) {
+      moves.push({ from, to, kind: 'promotion', promotion: promo });
+    }
+  } else {
+    moves.push({ from, to, kind: isCapture ? 'capture' : 'normal' });
+  }
+}
+
 function generatePawnMoves(
   state: BoardState,
   from: SquareId,
@@ -199,7 +223,7 @@ function generatePawnMoves(
 ) {
   const { one, two } = pawnForwardTargets(from, piece.color, topology);
   if (one && !pieceAt(state, one)) {
-    moves.push({ from, to: one, kind: 'normal' });
+    addPawnMove(from, one, piece.color, false, moves);
     if (two && !pieceAt(state, two)) {
       moves.push({ from, to: two, kind: 'normal' });
     }
@@ -208,7 +232,7 @@ function generatePawnMoves(
   for (const target of pawnCaptureTargets(from, piece.color, topology)) {
     const targetPiece = pieceAt(state, target);
     if (targetPiece && targetPiece.color !== piece.color) {
-      moves.push({ from, to: target, kind: 'capture' });
+      addPawnMove(from, target, piece.color, true, moves);
     }
   }
 }
