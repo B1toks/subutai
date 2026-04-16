@@ -7,6 +7,7 @@ import type {
   PieceMap,
   PieceType,
   SerializedBoardState,
+  SerializedMove,
   SquareId,
   TopologyState,
 } from './types';
@@ -135,8 +136,19 @@ export function getBlockAngles(topology: TopologyState): number[] {
   return angles;
 }
 
-export function getSerializedState(state: BoardState): SerializedBoardState {
+export function getSerializedState(
+  state: BoardState,
+  gameId?: string,
+  moveHistory?: readonly SerializedMove[],
+): SerializedBoardState {
+  const g = (typeof globalThis !== 'undefined' ? globalThis : {}) as {
+    crypto?: { randomUUID?: () => string };
+  };
+  const id = gameId ?? (g.crypto && typeof g.crypto.randomUUID === 'function'
+    ? g.crypto.randomUUID()
+    : `g-${Date.now().toString(36)}-${(++nextPieceId).toString(36)}`);
   return {
+    gameId: id,
     fen: toFEN(state),
     topologyState: state.topologyState,
     blockAngles: getBlockAngles(state.topologyState),
@@ -147,5 +159,6 @@ export function getSerializedState(state: BoardState): SerializedBoardState {
     enPassantTarget: state.enPassantTarget,
     halfmoveClock: state.halfmoveClock,
     fullmoveNumber: state.fullmoveNumber,
+    moveHistory,
   };
 }

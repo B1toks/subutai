@@ -973,3 +973,54 @@
 .help-close-btn:hover {
   background: #3a3a55;
 }
+
+/* Promotion dialog */
+
+.promotion-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.promotion-dialog {
+  background: #161626;
+  border: 1px solid var(--btn-border);
+  border-radius: 12px;
+  padding: 16px 20px;
+  text-align: center;
+}
+
+.promotion-title {
+  font-size: 14px;
+  color: var(--text);
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.promotion-options {
+  display: flex;
+  gap: 8px;
+}
+
+.promotion-option {
+  width: 56px;
+  height: 56px;
+  border: 1px solid var(--btn-border);
+  border-radius: 8px;
+  background: var(--btn-bg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.promotion-option:hover {
+  background: #3a3a55;
+  border-color: var(--accent-gold);
+}

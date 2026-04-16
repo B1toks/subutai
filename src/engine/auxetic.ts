@@ -160,7 +160,7 @@ function getPhysicalMapB(): Map<string, SquareId> {
 
 // --- Movement helpers ---
 
-function stepInDirection(
+export function stepInDirection(
   from: SquareId,
   df: number,
   dr: number,

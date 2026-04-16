@@ -69,7 +69,18 @@ export interface Move {
   readonly castleRookTo?: SquareId;
 }
 
+export interface SerializedMove {
+  readonly san?: string;
+  readonly from?: SquareId;
+  readonly to?: SquareId;
+  readonly kind: MoveKind;
+  readonly promotion?: PieceType;
+  readonly topology?: TopologyState;
+  readonly timestamp: number;
+}
+
 export interface SerializedBoardState {
+  readonly gameId: string;
   readonly fen: string;
   readonly topologyState: TopologyState;
   readonly blockAngles: readonly number[];
@@ -80,4 +91,5 @@ export interface SerializedBoardState {
   readonly enPassantTarget: SquareId | null;
   readonly halfmoveClock: number;
   readonly fullmoveNumber: number;
+  readonly moveHistory?: readonly SerializedMove[];
 }

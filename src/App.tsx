@@ -19,7 +19,7 @@ import { SubutaiAgent } from './ai/agents';
 import { PIECE_VALUE } from './ai/evaluate';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
-import { appendMove, createGameLog } from './recording/log';
+import { appendMove, computeSAN, createGameLog } from './recording/log';
 import { buildSavedGameFromLog, buildSavedGameSnapshot } from './memory/build';
 import { localStorageAdapter } from './memory/storage';
 import { MemoryPanel } from './memory/MemoryPanel';
@@ -70,6 +70,10 @@ function App() {
   const [showReplayDialog, setShowReplayDialog] = useState(false);
   const [replayText, setReplayText] = useState('');
   const [replayError, setReplayError] = useState<string | null>(null);
+  const [pendingPromotion, setPendingPromotion] = useState<{
+    from: SquareId;
+    to: SquareId;
+  } | null>(null);
   const formationInputRef = useRef<HTMLInputElement>(null);
   const aiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedForLogIdRef = useRef<string | null>(null);
@@ -226,7 +230,8 @@ function App() {
     setPreviewTopology(null);
 
     const toggleMove: Move = { kind: 'topologyToggle' };
-    setLog((prev) => appendMove(prev, toggleMove, undefined, state.topologyState));
+    const toggleSan = computeSAN(state, toggleMove);
+    setLog((prev) => appendMove(prev, toggleMove, toggleSan, state.topologyState));
     setLastMove(null);
 
     checkGameOver(next, true);
@@ -265,7 +270,8 @@ function App() {
         // #endregion
         setLegalMoves(nextMoves);
         setSelected(null);
-        setLog((prev) => appendMove(prev, move, undefined, boardState.topologyState));
+        const aiSan = computeSAN(boardState, move);
+        setLog((prev) => appendMove(prev, move, aiSan, boardState.topologyState));
         setLastMove(
           move.kind === 'topologyToggle'
             ? null
@@ -449,21 +455,40 @@ function App() {
       setSelected(square);
       return;
     }
+    // Promotion: show picker instead of applying immediately
+    if (move.kind === 'promotion' && move.from && move.to) {
+      setPendingPromotion({ from: move.from, to: move.to });
+      return;
+    }
+    const san = computeSAN(state, move);
     const next = applyMove(state, move);
     setState(next);
     const nextMoves = generateLegalMoves(next);
-    // #region agent log
-    if (
-      typeof window !== 'undefined' &&
-      (window.location.hostname === 'localhost' ||
-        window.location.hostname === '127.0.0.1')
-    ) {
-      fetch('http://127.0.0.1:7519/ingest/37bd3e22-11f2-45c3-b325-8dbcf69a5172',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'389750'},body:JSON.stringify({sessionId:'389750',location:'App.tsx:onSquareClick',message:'Human moved, AI legal moves computed',data:{humanMove:{kind:move.kind,from:move.from,to:move.to},topology:next.topologyState,aiLegalMoves:nextMoves.length,aiSide:next.sideToMove},timestamp:Date.now(),hypothesisId:'H1,H2'})}).catch(()=>{});
-    }
-    // #endregion
     setLegalMoves(nextMoves);
     setSelected(null);
-    setLog((prev) => appendMove(prev, move, undefined, state.topologyState));
+    setLog((prev) => appendMove(prev, move, san, state.topologyState));
+    setLastMove({ from: move.from, to: move.to });
+    checkGameOver(next);
+  }
+
+  function handlePromotion(pieceType: PieceType) {
+    if (!pendingPromotion) return;
+    const move = legalMoves.find(
+      (m) =>
+        m.from === pendingPromotion.from &&
+        m.to === pendingPromotion.to &&
+        m.kind === 'promotion' &&
+        m.promotion === pieceType,
+    );
+    if (!move) return;
+    const san = computeSAN(state, move);
+    const next = applyMove(state, move);
+    setState(next);
+    const nextMoves = generateLegalMoves(next);
+    setLegalMoves(nextMoves);
+    setSelected(null);
+    setPendingPromotion(null);
+    setLog((prev) => appendMove(prev, move, san, state.topologyState));
     setLastMove({ from: move.from, to: move.to });
     checkGameOver(next);
   }
@@ -535,18 +560,52 @@ function App() {
       let current: BoardState = initial;
       let replayLog: GameLog = createGameLog(`replay-${Date.now()}`, initial, Date.now());
 
-      for (const mv of parsed.moves) {
+      for (const token of parsed.moves) {
+        const mv = token.move;
+
+        // Auto-switch topology if @B/@A suffix requires it
+        if (token.requiredTopology && current.topologyState !== token.requiredTopology) {
+          const topoBefore = current.topologyState;
+          const toggleSan = computeSAN(current, { kind: 'topologyToggle' });
+          current = applyRotationMove(current);
+          replayLog = appendMove(replayLog, { kind: 'topologyToggle' }, toggleSan, topoBefore);
+        }
+
         if (mv.kind === 'topologyToggle') {
           const topoBefore = current.topologyState;
+          const san = computeSAN(current, mv);
           current = applyRotationMove(current);
-          replayLog = appendMove(replayLog, mv, undefined, topoBefore);
+          replayLog = appendMove(replayLog, mv, san, topoBefore);
+        } else if (mv.kind === 'castle') {
+          // Resolve castle from legal moves
+          const legal = generateLegalMoves(current);
+          const targetFile = token.castleSide === 'queen' ? 'c' : 'g';
+          const castleMove = legal.find(
+            (m) => m.kind === 'castle' && m.to && m.to[0] === targetFile,
+          );
+          if (!castleMove) {
+            throw new NotationParseError('No legal castle move available at this position.');
+          }
+          const topoBefore = current.topologyState;
+          const san = computeSAN(current, castleMove);
+          current = applyMove(current, castleMove);
+          replayLog = appendMove(replayLog, castleMove, san, topoBefore);
         } else if (mv.from && mv.to) {
           if (!current.pieces[mv.from]) {
             throw new NotationParseError(`Illegal move: no piece on ${mv.from}.`);
           }
+          // Match against legal moves to get correct kind (capture vs normal)
+          const legal = generateLegalMoves(current);
+          const matched = legal.find(
+            (m) =>
+              m.from === mv.from &&
+              m.to === mv.to &&
+              (!mv.promotion || m.promotion === mv.promotion),
+          ) ?? mv;
           const topoBefore = current.topologyState;
-          current = applyMove(current, mv);
-          replayLog = appendMove(replayLog, mv, undefined, topoBefore);
+          const san = computeSAN(current, matched);
+          current = applyMove(current, matched);
+          replayLog = appendMove(replayLog, matched, san, topoBefore);
         }
       }
 
@@ -587,7 +646,6 @@ function App() {
       `[Seed "${seed}"]`,
       '',
     ];
-    let prevTopology: TopologyState = initialState.topologyState;
     const entries = log.moves;
     for (let i = 0; i < entries.length; i += 2) {
       const moveNum = Math.floor(i / 2) + 1;
@@ -595,15 +653,26 @@ function App() {
       const black = entries[i + 1];
 
       function fmt(entry: typeof white): string {
-        if (entry.move.kind === 'topologyToggle') {
-          const from = prevTopology;
-          const to = from === 'A' ? 'B' : 'A';
-          prevTopology = to;
-          return `${from}\u2192${to}`;
+        let san = entry.san;
+        if (!san) {
+          if (entry.move.kind === 'topologyToggle') {
+            const from = entry.topology ?? 'A';
+            return `${from}\u2192${from === 'A' ? 'B' : 'A'}`;
+          }
+          if (entry.move.kind === 'castle') {
+            san = entry.move.to && entry.move.to[0] === 'c' ? 'O-O-O' : 'O-O';
+          } else {
+            san = `${entry.move.from}\u2192${entry.move.to}`;
+            if (entry.move.kind === 'promotion' && entry.move.promotion) {
+              const pl: Record<string, string> = { queen: 'Q', rook: 'R', bishop: 'B', knight: 'N' };
+              san += `=${pl[entry.move.promotion] ?? ''}`;
+            }
+          }
         }
-        const topoAtMove = entry.topology ?? prevTopology;
-        const suffix = topoAtMove === 'B' ? '@B' : '';
-        return `${entry.move.from}\u2192${entry.move.to}${suffix}`;
+        if (entry.move.kind !== 'topologyToggle' && entry.topology === 'B') {
+          if (!san.includes('@')) san += '@B';
+        }
+        return san;
       }
 
       let line = `${moveNum}. ${fmt(white)}`;
@@ -611,7 +680,7 @@ function App() {
       lines.push(line);
     }
     return lines.join('\n');
-  }, [log.moves, positionLabel, seed, initialState.topologyState]);
+  }, [log.moves, positionLabel, seed]);
 
   function copyNotation() {
     navigator.clipboard.writeText(notationString).then(() => {
@@ -797,6 +866,29 @@ function App() {
           </svg>
         )}
       </div>
+
+      {pendingPromotion && (
+        <div className="promotion-backdrop" onClick={() => setPendingPromotion(null)}>
+          <div className="promotion-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="promotion-title">Promote pawn to:</div>
+            <div className="promotion-options">
+              {(['queen', 'rook', 'bishop', 'knight'] as const).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  className="promotion-option"
+                  onClick={() => handlePromotion(type)}
+                  title={type}
+                >
+                  <span className="piece piece-white">
+                    {glyphForPiece('white', type)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {gameOverMessage && (
         <div className="game-over-banner">{gameOverMessage}</div>

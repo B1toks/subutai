@@ -1,8 +1,9 @@
-import type { BoardState, TopologyState } from '../engine';
+import type { BoardState } from '../engine';
 import { applyMove } from '../engine/moves';
 import { applyRotationMove } from '../engine/auxetic';
 import { PIECE_VALUE } from '../ai/evaluate';
 import type { GameLog } from '../recording/log';
+import { computeSAN } from '../recording/log';
 import type { SavedGame } from './types';
 import type { PieceType } from '../engine';
 
@@ -37,7 +38,7 @@ function buildNotation(log: GameLog, config960: string): string {
     `[Seed "${log.randomSeed}"]`,
     '',
   ];
-  let prevTopology: TopologyState = log.initialTopology;
+  let current: BoardState = log.initialState;
   const entries = log.moves;
   for (let i = 0; i < entries.length; i += 2) {
     const moveNum = Math.floor(i / 2) + 1;
@@ -45,15 +46,19 @@ function buildNotation(log: GameLog, config960: string): string {
     const black = entries[i + 1];
 
     function fmt(entry: typeof white): string {
-      if (entry.move.kind === 'topologyToggle') {
-        const from = prevTopology;
-        const to = from === 'A' ? 'B' : 'A';
-        prevTopology = to;
-        return `${from}\u2192${to}`;
+      let san = entry.san;
+      if (!san) {
+        san = computeSAN(current, entry.move);
       }
-      const topoAtMove = entry.topology ?? prevTopology;
-      const suffix = topoAtMove === 'B' ? '@B' : '';
-      return `${entry.move.from}\u2192${entry.move.to}${suffix}`;
+      if (entry.move.kind !== 'topologyToggle' && entry.topology === 'B') {
+        if (!san.includes('@')) san += '@B';
+      }
+      if (entry.move.kind === 'topologyToggle') {
+        current = applyRotationMove(current);
+      } else if (entry.move.from && entry.move.to) {
+        current = applyMove(current, entry.move);
+      }
+      return san;
     }
 
     let line = `${moveNum}. ${fmt(white)}`;

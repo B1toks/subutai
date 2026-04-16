@@ -1,6 +1,12 @@
-import type { Move } from '../engine';
+import type { Move, MoveKind, PieceType, SquareId, TopologyState } from '../engine';
 
 export class NotationParseError extends Error {}
+
+export interface ParsedToken {
+  move: Move;
+  requiredTopology?: TopologyState;
+  castleSide?: 'king' | 'queen';
+}
 
 function parseChess960Header(lines: string[]): string {
   const header = lines.find((l) => l.startsWith('[Chess960 '));
@@ -14,24 +20,53 @@ function parseChess960Header(lines: string[]): string {
   return m[1];
 }
 
-function parseMoveToken(tokenRaw: string): Move {
+const PROMO_MAP: Record<string, PieceType> = {
+  Q: 'queen', R: 'rook', B: 'bishop', N: 'knight',
+};
+
+function parseMoveToken(tokenRaw: string): ParsedToken {
   const token = tokenRaw.trim();
   if (!token) throw new NotationParseError('Empty move token.');
 
-  // Topology toggle token like "A→B" or "B→A"
-  if (/^[AB]\s*→\s*[AB]$/.test(token)) {
-    return { kind: 'topologyToggle' };
+  // Topology toggle: "A→B" or "B→A"
+  if (/^[AB]\s*[→\-\>]\s*[AB]$/.test(token)) {
+    return { move: { kind: 'topologyToggle' } };
   }
 
-  // Square move token like "e2→e4" with optional "@B" topology marker.
-  const m = token.match(/^([a-h][1-8])\s*→\s*([a-h][1-8])(?:@[AB])?$/);
-  if (!m) {
-    throw new NotationParseError(`Unrecognized move token: "${tokenRaw}"`);
+  // Castling: O-O-O or O-O, with optional @A/@B suffix
+  const castleMatch = token.match(/^(O-O-O|O-O)(?:@([AB]))?$/);
+  if (castleMatch) {
+    return {
+      move: { kind: 'castle' },
+      castleSide: castleMatch[1] === 'O-O-O' ? 'queen' : 'king',
+      requiredTopology: castleMatch[2] as TopologyState | undefined,
+    };
   }
-  return { from: m[1] as any, to: m[2] as any, kind: 'normal' };
+
+  // Piece move: [NBRQK]?from→to[=QRBN]?[@AB]?
+  // Accepts both → and - as separators for robustness.
+  const moveMatch = token.match(
+    /^([NBRQK])?([a-h][1-8])\s*[→\-]\s*([a-h][1-8])(?:=([QRBN]))?(?:@([AB]))?$/,
+  );
+  if (moveMatch) {
+    const [, , from, to, promo, topo] = moveMatch;
+    const promotion = promo ? PROMO_MAP[promo] : undefined;
+    const kind: MoveKind = promotion ? 'promotion' : 'normal';
+    return {
+      move: {
+        from: from as SquareId,
+        to: to as SquareId,
+        kind,
+        ...(promotion ? { promotion } : {}),
+      },
+      requiredTopology: topo as TopologyState | undefined,
+    };
+  }
+
+  throw new NotationParseError(`Unrecognized move token: "${tokenRaw}"`);
 }
 
-export function parseMemoryNotation(notation: string): { config960: string; moves: Move[] } {
+export function parseMemoryNotation(notation: string): { config960: string; moves: ParsedToken[] } {
   const lines = notation
     .split('\n')
     .map((l) => l.trim())
@@ -39,13 +74,12 @@ export function parseMemoryNotation(notation: string): { config960: string; move
 
   const config960 = parseChess960Header(lines);
 
-  const moves: Move[] = [];
+  const moves: ParsedToken[] = [];
 
   for (const line of lines) {
     const mm = line.match(/^(\d+)\.\s+(.+)$/);
     if (!mm) continue;
     const rest = mm[2];
-    // White and black tokens are separated by 2+ spaces in our formatter.
     const parts = rest.split(/\s{2,}/).map((p) => p.trim()).filter(Boolean);
     if (parts.length >= 1) moves.push(parseMoveToken(parts[0]));
     if (parts.length >= 2) moves.push(parseMoveToken(parts[1]));
@@ -57,4 +91,3 @@ export function parseMemoryNotation(notation: string): { config960: string; move
 
   return { config960, moves };
 }
-

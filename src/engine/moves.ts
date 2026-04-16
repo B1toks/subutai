@@ -4,6 +4,7 @@ import {
   pawnCaptureTargets,
   pawnForwardTargets,
   rayFrom,
+  stepInDirection,
   toggleTopology,
 } from './auxetic';
 import type { BoardState, CastlingRights, Color, Move, Piece, SquareId, TopologyState } from './types';
@@ -454,9 +455,9 @@ export function generateLegalMoves(state: BoardState): Move[] {
   return legal;
 }
 
-function isPromotionRank(square: SquareId, color: Color): boolean {
-  const rank = Number(square[1]);
-  return (color === 'white' && rank === 8) || (color === 'black' && rank === 1);
+function isPromotionRank(square: SquareId, color: Color, topology: TopologyState): boolean {
+  const direction = color === 'white' ? 1 : -1;
+  return stepInDirection(square, 0, direction, topology) === null;
 }
 
 const PROMOTION_PIECES: readonly ('queen' | 'rook' | 'bishop' | 'knight')[] =
@@ -468,8 +469,9 @@ function addPawnMove(
   color: Color,
   isCapture: boolean,
   moves: Move[],
+  topology: TopologyState,
 ) {
-  if (isPromotionRank(to, color)) {
+  if (isPromotionRank(to, color, topology)) {
     for (const promo of PROMOTION_PIECES) {
       moves.push({ from, to, kind: 'promotion', promotion: promo });
     }
@@ -487,16 +489,16 @@ function generatePawnMoves(
 ) {
   const { one, two } = pawnForwardTargets(from, piece.color, topology);
   if (one && !pieceAt(state, one)) {
-    addPawnMove(from, one, piece.color, false, moves);
+    addPawnMove(from, one, piece.color, false, moves, topology);
     if (two && !pieceAt(state, two)) {
-      moves.push({ from, to: two, kind: 'normal' });
+      addPawnMove(from, two, piece.color, false, moves, topology);
     }
   }
 
   for (const target of pawnCaptureTargets(from, piece.color, topology)) {
     const targetPiece = pieceAt(state, target);
     if (targetPiece && targetPiece.color !== piece.color) {
-      addPawnMove(from, target, piece.color, true, moves);
+      addPawnMove(from, target, piece.color, true, moves, topology);
     }
   }
 }
