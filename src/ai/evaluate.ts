@@ -1,4 +1,4 @@
-import type { BoardState, Color, PieceType, SquareId, TopologyState } from '../engine/types';
+import type { BoardState, Color, Piece, PieceType, PieceMap, SquareId, TopologyState } from '../engine/types';
 import { rayFrom, knightTargets } from '../engine/auxetic';
 
 export const PIECE_VALUE: Record<PieceType, number> = {
@@ -19,7 +19,8 @@ export function evaluate(state: BoardState): number {
   const topo = state.topologyState;
   let score = 0;
 
-  for (const [sq, piece] of state.pieces) {
+  for (const [sq, piece] of Object.entries(state.pieces) as Array<[SquareId, Piece | undefined]>) {
+    if (!piece) continue;
     const sign = piece.color === side ? 1 : -1;
     score += sign * PIECE_VALUE[piece.type];
     score += sign * pieceActivity(sq, piece.type, piece.color, topo, state.pieces);
@@ -37,7 +38,7 @@ function pieceActivity(
   type: PieceType,
   color: Color,
   topo: TopologyState,
-  pieces: ReadonlyMap<SquareId, unknown>,
+  pieces: PieceMap,
 ): number {
   switch (type) {
     case 'pawn': {
@@ -66,13 +67,13 @@ function slidingReach(
   sq: SquareId,
   dirs: readonly (readonly [number, number])[],
   topo: TopologyState,
-  pieces: ReadonlyMap<SquareId, unknown>,
+  pieces: PieceMap,
 ): number {
   let count = 0;
   for (const [df, dr] of dirs) {
     for (const t of rayFrom(sq, df, dr, topo)) {
       count++;
-      if (pieces.has(t)) break;
+      if (pieces[t] !== undefined) break;
     }
   }
   return count;

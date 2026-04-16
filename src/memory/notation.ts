@@ -23,8 +23,8 @@ function parseMoveToken(tokenRaw: string): Move {
     return { kind: 'topologyToggle' };
   }
 
-  // Square move token like "e2→e4"
-  const m = token.match(/^([a-h][1-8])\s*→\s*([a-h][1-8])$/);
+  // Square move token like "e2→e4" with optional "@B" topology marker.
+  const m = token.match(/^([a-h][1-8])\s*→\s*([a-h][1-8])(?:@[AB])?$/);
   if (!m) {
     throw new NotationParseError(`Unrecognized move token: "${tokenRaw}"`);
   }

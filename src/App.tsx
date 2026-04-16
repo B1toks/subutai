@@ -14,7 +14,7 @@ import {
   findKing,
   findCheckingPieces,
 } from './engine/moves';
-import { toggleTopology, computeBoardLayout, tilePixelCenter } from './engine/auxetic';
+import { applyRotationMove, toggleTopology, computeBoardLayout, tilePixelCenter } from './engine/auxetic';
 import { SubutaiAgent } from './ai/agents';
 import { PIECE_VALUE } from './ai/evaluate';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -35,7 +35,7 @@ function backRankString(boardState: BoardState): string {
   };
   return files
     .map((f) => {
-      const piece = boardState.pieces.get(`${f}1` as SquareId);
+      const piece = boardState.pieces[`${f}1` as SquareId];
       return piece ? abbrev[piece.type] ?? '?' : '?';
     })
     .join('');
@@ -167,7 +167,7 @@ function App() {
       (window.location.hostname === 'localhost' ||
         window.location.hostname === '127.0.0.1')
     ) {
-      fetch('http://127.0.0.1:7519/ingest/37bd3e22-11f2-45c3-b325-8dbcf69a5172',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'389750'},body:JSON.stringify({sessionId:'389750',location:'App.tsx:checkGameOver',message:'checkGameOver called',data:{sideToMove:nextState.sideToMove,topology:nextState.topologyState,legalMoveCount:lm.length,isCheckmate:inChk,isStalemate:inStale,kingSq,pieceCount:nextState.pieces.size},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7519/ingest/37bd3e22-11f2-45c3-b325-8dbcf69a5172',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'389750'},body:JSON.stringify({sessionId:'389750',location:'App.tsx:checkGameOver',message:'checkGameOver called',data:{sideToMove:nextState.sideToMove,topology:nextState.topologyState,legalMoveCount:lm.length,isCheckmate:inChk,isStalemate:inStale,kingSq,pieceCount:Object.keys(nextState.pieces).length},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
     }
     // #endregion
     if (isCheckmate(nextState, lastMoveWasRotation)) {
@@ -211,13 +211,14 @@ function App() {
     if (gameStatus !== 'playing') return;
     if (currentPlayer !== 'human') return;
 
-    const next = toggleTopology(state);
+    const rotated = toggleTopology(state);
 
-    const ourKing = findKing(next, state.sideToMove);
+    const ourKing = findKing(rotated, state.sideToMove);
     if (!ourKing) return;
     const opponent = state.sideToMove === 'white' ? 'black' : 'white';
-    if (isSquareAttacked(next, ourKing, opponent as 'white' | 'black', next.topologyState)) return;
+    if (isSquareAttacked(rotated, ourKing, opponent as 'white' | 'black', rotated.topologyState)) return;
 
+    const next = applyRotationMove(state);
     setState(next);
     const nextMoves = generateLegalMoves(next);
     setLegalMoves(nextMoves);
@@ -248,7 +249,7 @@ function App() {
 
         const next =
           move.kind === 'topologyToggle'
-            ? toggleTopology(boardState)
+            ? applyRotationMove(boardState)
             : applyMove(boardState, move);
 
         setState(next);
@@ -290,7 +291,8 @@ function App() {
     };
     let whiteTotal = 0;
     let blackTotal = 0;
-    for (const [, piece] of state.pieces) {
+    for (const piece of Object.values(state.pieces)) {
+      if (!piece) continue;
       const v = PIECE_VALUE[piece.type];
       if (piece.color === 'white') {
         white[piece.type]++;
@@ -347,8 +349,12 @@ function App() {
     if (!selected) return new Set<string>();
     const targets = new Set<string>();
     for (const move of legalMoves) {
-      if (move.from === selected && move.to) {
-        targets.add(move.to);
+      if (move.from !== selected) continue;
+      if (move.to) targets.add(move.to);
+      // Chess960: clicking the own rook also triggers castling, so the rook
+      // square is a valid interaction target for a selected king.
+      if (move.kind === 'castle' && move.castleRookFrom) {
+        targets.add(move.castleRookFrom);
       }
     }
     return targets;
@@ -393,7 +399,7 @@ function App() {
     const ourColor: Color = 'white';
     const pairs: [SquareId, SquareId][] = [];
     for (const to of allSquares) {
-      const piece = state.pieces.get(to);
+      const piece = state.pieces[to];
       if (!piece || piece.color !== ourColor) continue;
       const attackers = getAttackerSquares(state, to, ourColor, displayTopology);
       for (const from of attackers) {
@@ -426,9 +432,19 @@ function App() {
       setSelected(null);
       return;
     }
-    const move = legalMoves.find(
+    let move = legalMoves.find(
       (m) => m.from === selected && m.to === square,
     );
+    // Chess960 castling: clicking own rook while the king is selected is
+    // interpreted as a castle, not an illegal self-capture.
+    if (!move) {
+      move = legalMoves.find(
+        (m) =>
+          m.from === selected &&
+          m.kind === 'castle' &&
+          m.castleRookFrom === square,
+      );
+    }
     if (!move) {
       setSelected(square);
       return;
@@ -488,7 +504,7 @@ function App() {
     for (const entry of game.moves) {
       const mv = entry.move;
       if (mv.kind === 'topologyToggle') {
-        current = toggleTopology(current);
+        current = applyRotationMove(current);
         nextLog = appendMove(nextLog, mv, undefined, entry.topology);
         continue;
       }
@@ -522,10 +538,10 @@ function App() {
       for (const mv of parsed.moves) {
         if (mv.kind === 'topologyToggle') {
           const topoBefore = current.topologyState;
-          current = toggleTopology(current);
+          current = applyRotationMove(current);
           replayLog = appendMove(replayLog, mv, undefined, topoBefore);
         } else if (mv.from && mv.to) {
-          if (!current.pieces.get(mv.from)) {
+          if (!current.pieces[mv.from]) {
             throw new NotationParseError(`Illegal move: no piece on ${mv.from}.`);
           }
           const topoBefore = current.topologyState;
@@ -585,7 +601,9 @@ function App() {
           prevTopology = to;
           return `${from}\u2192${to}`;
         }
-        return `${entry.move.from}\u2192${entry.move.to}`;
+        const topoAtMove = entry.topology ?? prevTopology;
+        const suffix = topoAtMove === 'B' ? '@B' : '';
+        return `${entry.move.from}\u2192${entry.move.to}${suffix}`;
       }
 
       let line = `${moveNum}. ${fmt(white)}`;
@@ -624,7 +642,7 @@ function App() {
         style={{ width: boardSize, height: boardSize }}
       >
         {squares.map((sq) => {
-          const piece = state.pieces.get(sq as SquareId);
+          const piece = state.pieces[sq as SquareId];
           const isDark =
             ((sq.charCodeAt(0) - 'a'.charCodeAt(0)) +
               (Number(sq[1]) - 1)) %

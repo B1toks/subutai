@@ -1,5 +1,5 @@
 import { createEmptyBoardState, makePiece } from '../board';
-import type { BoardState, PieceType } from '../types';
+import type { BoardState, Piece, PieceType, SquareId } from '../types';
 
 function randomInt(maxExclusive: number, seed: { value: number }): number {
   const x = Math.sin(seed.value++) * 10000;
@@ -50,7 +50,7 @@ export function chess960BackRank(seedNumber = 1): BoardState {
   const rook2 = rookKingCandidates[2];
 
   const state = createEmptyBoardState('white');
-  const pieces = new Map(state.pieces);
+  const pieces: Record<string, Piece> = { ...state.pieces } as Record<string, Piece>;
 
   files.forEach((file, index) => {
     let type: 'rook' | 'knight' | 'bishop' | 'queen' | 'king';
@@ -66,27 +66,27 @@ export function chess960BackRank(seedNumber = 1): BoardState {
       type = 'knight';
     }
 
-    pieces.set(
-      `${file}1`,
-      makePiece('white', type),
-    );
-    pieces.set(
-      `${file}2`,
-      makePiece('white', 'pawn'),
-    );
-    pieces.set(
-      `${file}7`,
-      makePiece('black', 'pawn'),
-    );
-    pieces.set(
-      `${file}8`,
-      makePiece('black', type),
-    );
+    pieces[`${file}1`] = makePiece('white', type);
+    pieces[`${file}2`] = makePiece('white', 'pawn');
+    pieces[`${file}7`] = makePiece('black', 'pawn');
+    pieces[`${file}8`] = makePiece('black', type);
   });
 
+  const queenRookFile = Math.min(rook1, rook2);
+  const kingRookFile = Math.max(rook1, rook2);
   return {
     ...state,
     pieces,
+    castlingRights: {
+      whiteQueenSide: `${files[queenRookFile]}1` as SquareId,
+      whiteKingSide: `${files[kingRookFile]}1` as SquareId,
+      blackQueenSide: `${files[queenRookFile]}8` as SquareId,
+      blackKingSide: `${files[kingRookFile]}8` as SquareId,
+    },
+    kingStartSquares: {
+      white: `${files[king]}1` as SquareId,
+      black: `${files[king]}8` as SquareId,
+    },
   };
 }
 
@@ -113,7 +113,7 @@ export function chess960FromBackRankKey(key: string): BoardState {
   }
   const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const;
   const state = createEmptyBoardState('white');
-  const pieces = new Map(state.pieces);
+  const pieces: Record<string, Piece> = { ...state.pieces } as Record<string, Piece>;
 
   const charToType = (ch: string): PieceType => {
     switch (ch) {
@@ -129,11 +129,33 @@ export function chess960FromBackRankKey(key: string): BoardState {
   files.forEach((file, index) => {
     const letter = key[index]!;
     const type = charToType(letter);
-    pieces.set(`${file}1`, makePiece('white', type));
-    pieces.set(`${file}2`, makePiece('white', 'pawn'));
-    pieces.set(`${file}7`, makePiece('black', 'pawn'));
-    pieces.set(`${file}8`, makePiece('black', type));
+    pieces[`${file}1`] = makePiece('white', type);
+    pieces[`${file}2`] = makePiece('white', 'pawn');
+    pieces[`${file}7`] = makePiece('black', 'pawn');
+    pieces[`${file}8`] = makePiece('black', type);
   });
 
-  return { ...state, pieces };
+  const rookFiles: number[] = [];
+  let kingFile = -1;
+  for (let i = 0; i < 8; i++) {
+    if (key[i] === 'R') rookFiles.push(i);
+    if (key[i] === 'K') kingFile = i;
+  }
+  const queenRookFile = Math.min(rookFiles[0]!, rookFiles[1]!);
+  const kingRookFile = Math.max(rookFiles[0]!, rookFiles[1]!);
+
+  return {
+    ...state,
+    pieces,
+    castlingRights: {
+      whiteQueenSide: `${files[queenRookFile]}1` as SquareId,
+      whiteKingSide: `${files[kingRookFile]}1` as SquareId,
+      blackQueenSide: `${files[queenRookFile]}8` as SquareId,
+      blackKingSide: `${files[kingRookFile]}8` as SquareId,
+    },
+    kingStartSquares: {
+      white: `${files[kingFile]}1` as SquareId,
+      black: `${files[kingFile]}8` as SquareId,
+    },
+  };
 }

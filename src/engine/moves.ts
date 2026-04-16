@@ -6,10 +6,10 @@ import {
   rayFrom,
   toggleTopology,
 } from './auxetic';
-import type { BoardState, Color, Move, Piece, SquareId, TopologyState } from './types';
+import type { BoardState, CastlingRights, Color, Move, Piece, SquareId, TopologyState } from './types';
 
 function pieceAt(state: BoardState, square: SquareId): Piece | undefined {
-  return state.pieces.get(square);
+  return state.pieces[square];
 }
 
 function enemyColor(color: Color): Color {
@@ -19,8 +19,8 @@ function enemyColor(color: Color): Color {
 // --- King / check utilities ---
 
 export function findKing(state: BoardState, color: Color): SquareId | null {
-  for (const [sq, piece] of state.pieces) {
-    if (piece.type === 'king' && piece.color === color) return sq;
+  for (const [sq, piece] of Object.entries(state.pieces) as Array<[SquareId, Piece | undefined]>) {
+    if (piece && piece.type === 'king' && piece.color === color) return sq;
   }
   return null;
 }
@@ -321,10 +321,99 @@ function generatePseudoLegalMoves(state: BoardState): Move[] {
         break;
       case 'king':
         generateKingMoves(state, square, piece, moves, topology);
+        generateCastlingMoves(state, square, piece, moves, topology);
         break;
     }
   }
   return moves;
+}
+
+// --- Castling (Chess960 / FRC) ---
+
+function filesBetween(fromFile: number, toFile: number, rank: string): SquareId[] {
+  const out: SquareId[] = [];
+  if (fromFile === toFile) {
+    out.push(`${String.fromCharCode(97 + fromFile)}${rank}` as SquareId);
+    return out;
+  }
+  const step = fromFile < toFile ? 1 : -1;
+  for (let f = fromFile; ; f += step) {
+    out.push(`${String.fromCharCode(97 + f)}${rank}` as SquareId);
+    if (f === toFile) break;
+  }
+  return out;
+}
+
+function generateCastlingMoves(
+  state: BoardState,
+  from: SquareId,
+  piece: Piece,
+  moves: Move[],
+  topology: TopologyState,
+) {
+  if (piece.type !== 'king') return;
+  const kingStart = state.kingStartSquares[piece.color];
+  if (!kingStart || from !== kingStart) return;
+
+  const enemy: Color = enemyColor(piece.color);
+  const rank = piece.color === 'white' ? '1' : '8';
+  const rights = state.castlingRights;
+  const kingSideRook =
+    piece.color === 'white' ? rights.whiteKingSide : rights.blackKingSide;
+  const queenSideRook =
+    piece.color === 'white' ? rights.whiteQueenSide : rights.blackQueenSide;
+
+  const kingFromFile = from.charCodeAt(0) - 97;
+
+  function trySide(
+    rookFrom: SquareId | null,
+    kingToFile: 'g' | 'c',
+    rookToFile: 'f' | 'd',
+  ) {
+    if (!rookFrom) return;
+    const rook = state.pieces[rookFrom];
+    if (!rook || rook.type !== 'rook' || rook.color !== piece.color) return;
+
+    const kingTo = `${kingToFile}${rank}` as SquareId;
+    const rookTo = `${rookToFile}${rank}` as SquareId;
+
+    const kingPath = filesBetween(
+      kingFromFile,
+      kingToFile.charCodeAt(0) - 97,
+      rank,
+    );
+    const rookPath = filesBetween(
+      rookFrom.charCodeAt(0) - 97,
+      rookToFile.charCodeAt(0) - 97,
+      rank,
+    );
+
+    // Every square in both paths must be empty, except the king's and rook's
+    // own origin squares (they're the pieces moving).
+    const pathSet = new Set<SquareId>([...kingPath, ...rookPath]);
+    for (const sq of pathSet) {
+      if (sq === from || sq === rookFrom) continue;
+      if (state.pieces[sq]) return;
+    }
+
+    // Every square the king passes through (inclusive of start and end) must
+    // not be attacked by the enemy. Attacks are evaluated on the pre-castling
+    // position, which is standard.
+    for (const sq of kingPath) {
+      if (isSquareAttacked(state, sq, enemy, topology)) return;
+    }
+
+    moves.push({
+      from,
+      to: kingTo,
+      kind: 'castle',
+      castleRookFrom: rookFrom,
+      castleRookTo: rookTo,
+    });
+  }
+
+  trySide(kingSideRook, 'g', 'f');
+  trySide(queenSideRook, 'c', 'd');
 }
 
 let _glmLogCount = 0;
@@ -483,13 +572,87 @@ function generateKingMoves(
   }
 }
 
+function revokeCastlingRights(
+  rights: CastlingRights,
+  kingStart: BoardState['kingStartSquares'],
+  mover: Piece,
+  from: SquareId,
+  capturedAt: SquareId | null,
+  capturedPiece: Piece | undefined,
+): CastlingRights {
+  let next = rights;
+
+  // King moves: both sides for that color lose castling rights.
+  if (mover.type === 'king' && from === kingStart[mover.color]) {
+    if (mover.color === 'white') {
+      next = { ...next, whiteKingSide: null, whiteQueenSide: null };
+    } else {
+      next = { ...next, blackKingSide: null, blackQueenSide: null };
+    }
+  }
+
+  // Rook moves from its original square: revoke the matching side.
+  if (mover.type === 'rook') {
+    if (mover.color === 'white') {
+      if (from === next.whiteKingSide) next = { ...next, whiteKingSide: null };
+      if (from === next.whiteQueenSide) next = { ...next, whiteQueenSide: null };
+    } else {
+      if (from === next.blackKingSide) next = { ...next, blackKingSide: null };
+      if (from === next.blackQueenSide) next = { ...next, blackQueenSide: null };
+    }
+  }
+
+  // Capture lands on (or originates from) an opponent's initial-rook square.
+  // Promotions to rook are unaffected: a promoted rook never lives on its
+  // own side's original rook anchor, so no rights are granted.
+  if (capturedAt && capturedPiece && capturedPiece.type === 'rook') {
+    if (capturedPiece.color === 'white') {
+      if (capturedAt === next.whiteKingSide) next = { ...next, whiteKingSide: null };
+      if (capturedAt === next.whiteQueenSide) next = { ...next, whiteQueenSide: null };
+    } else {
+      if (capturedAt === next.blackKingSide) next = { ...next, blackKingSide: null };
+      if (capturedAt === next.blackQueenSide) next = { ...next, blackQueenSide: null };
+    }
+  }
+
+  return next;
+}
+
 export function applyMove(state: BoardState, move: Move): BoardState {
   if (!move.from || !move.to) {
     return state;
   }
 
-  const piece = state.pieces.get(move.from);
+  const piece = state.pieces[move.from];
   if (!piece) return state;
+
+  if (move.kind === 'castle' && move.castleRookFrom && move.castleRookTo) {
+    const rook = state.pieces[move.castleRookFrom];
+    if (!rook) return state;
+
+    // Clear both origins first, then place both pieces at their targets.
+    // This ordering is safe even when a target square coincides with an
+    // origin square (a common case in Chess960).
+    let next = state;
+    next = setPiece(next, move.from, null);
+    next = setPiece(next, move.castleRookFrom, null);
+    next = setPiece(next, move.to, piece);
+    next = setPiece(next, move.castleRookTo, rook);
+
+    const cr = state.castlingRights;
+    const clearedRights =
+      piece.color === 'white'
+        ? { ...cr, whiteKingSide: null, whiteQueenSide: null }
+        : { ...cr, blackKingSide: null, blackQueenSide: null };
+
+    return {
+      ...next,
+      castlingRights: clearedRights,
+      sideToMove: enemyColor(state.sideToMove),
+    };
+  }
+
+  const capturedPiece = state.pieces[move.to];
 
   let nextState = state;
 
@@ -502,8 +665,18 @@ export function applyMove(state: BoardState, move: Move): BoardState {
 
   nextState = setPiece(nextState, move.to, movedPiece);
 
+  const nextRights = revokeCastlingRights(
+    state.castlingRights,
+    state.kingStartSquares,
+    piece,
+    move.from,
+    capturedPiece ? move.to : null,
+    capturedPiece,
+  );
+
   return {
     ...nextState,
+    castlingRights: nextRights,
     sideToMove: enemyColor(state.sideToMove),
   };
 }

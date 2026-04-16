@@ -250,7 +250,23 @@ export function pawnCaptureTargets(
   return [left, right].filter((sq): sq is SquareId => Boolean(sq));
 }
 
+/**
+ * Pure rotation: flips the board topology between 'A' and 'B' and nothing else.
+ * The turn does NOT advance — callers that want rotation to cost a move must
+ * use `applyRotationMove` instead.
+ */
 export function toggleTopology(state: BoardState): BoardState {
+  return {
+    ...state,
+    topologyState: state.topologyState === 'A' ? 'B' : 'A',
+  };
+}
+
+/**
+ * Applies a rotation as a recorded move: flips topology AND advances the turn.
+ * Use this when rotation is submitted as the player's move in the game log.
+ */
+export function applyRotationMove(state: BoardState): BoardState {
   return {
     ...state,
     topologyState: state.topologyState === 'A' ? 'B' : 'A',

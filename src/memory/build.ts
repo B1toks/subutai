@@ -1,6 +1,6 @@
 import type { BoardState, TopologyState } from '../engine';
 import { applyMove } from '../engine/moves';
-import { toggleTopology } from '../engine/auxetic';
+import { applyRotationMove } from '../engine/auxetic';
 import { PIECE_VALUE } from '../ai/evaluate';
 import type { GameLog } from '../recording/log';
 import type { SavedGame } from './types';
@@ -13,7 +13,7 @@ function backRankString(boardState: BoardState): string {
   };
   return files
     .map((f) => {
-      const piece = boardState.pieces.get(`${f}1` as import('../engine').SquareId);
+      const piece = boardState.pieces[`${f}1` as import('../engine').SquareId];
       return piece ? abbrev[piece.type] ?? '?' : '?';
     })
     .join('');
@@ -22,7 +22,8 @@ function backRankString(boardState: BoardState): string {
 function materialScore(state: BoardState): number {
   let white = 0;
   let black = 0;
-  for (const [, piece] of state.pieces) {
+  for (const piece of Object.values(state.pieces)) {
+    if (!piece) continue;
     const v = PIECE_VALUE[piece.type as PieceType];
     if (piece.color === 'white') white += v;
     else black += v;
@@ -50,7 +51,9 @@ function buildNotation(log: GameLog, config960: string): string {
         prevTopology = to;
         return `${from}\u2192${to}`;
       }
-      return `${entry.move.from}\u2192${entry.move.to}`;
+      const topoAtMove = entry.topology ?? prevTopology;
+      const suffix = topoAtMove === 'B' ? '@B' : '';
+      return `${entry.move.from}\u2192${entry.move.to}${suffix}`;
     }
 
     let line = `${moveNum}. ${fmt(white)}`;
@@ -86,7 +89,7 @@ function buildBaseFromLog(
   scoreHistory.push(materialScore(current));
   for (const entry of log.moves) {
     if (entry.move.kind === 'topologyToggle') {
-      current = toggleTopology(current);
+      current = applyRotationMove(current);
     } else if (entry.move.from && entry.move.to) {
       current = applyMove(current, entry.move);
     }

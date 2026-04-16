@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { getSquarePosition, toggleTopology } from '../engine/auxetic';
+import { applyRotationMove, getSquarePosition } from '../engine/auxetic';
 import { applyMove } from '../engine/moves';
 import { createPositionFromBackRankKey } from '../engine';
 import type { SquareId } from '../engine';
@@ -55,11 +55,11 @@ function pieceHistogramFromMoves(
     let state = createPositionFromBackRankKey(config960);
     for (const { move } of moves) {
       if (move.kind === 'topologyToggle') {
-        state = toggleTopology(state);
+        state = applyRotationMove(state);
         continue;
       }
       if (!move.from || !move.to) continue;
-      const piece = state.pieces.get(move.from);
+      const piece = state.pieces[move.from];
       if (!piece) continue;
       const counts = piece.color === 'white' ? white : black;
       counts[piece.type]++;

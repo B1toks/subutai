@@ -6,7 +6,7 @@ import {
   findKing,
   isSquareAttacked,
 } from '../engine/moves';
-import { toggleTopology } from '../engine/auxetic';
+import { applyRotationMove, toggleTopology } from '../engine/auxetic';
 import { evaluate, PIECE_VALUE } from './evaluate';
 
 const MATE_SCORE = 100_000;
@@ -22,8 +22,8 @@ function moveOrderScore(move: Move, state: BoardState): number {
   if (move.kind === 'topologyToggle') return -10;
   if (move.kind === 'promotion') return 8000;
   if (move.kind === 'capture' && move.to) {
-    const victim = state.pieces.get(move.to);
-    const attacker = move.from ? state.pieces.get(move.from) : undefined;
+    const victim = state.pieces[move.to];
+    const attacker = move.from ? state.pieces[move.from] : undefined;
     const vv = victim ? PIECE_VALUE[victim.type] : 0;
     const av = attacker ? PIECE_VALUE[attacker.type] : 0;
     return vv * 10 - av;
@@ -61,12 +61,13 @@ function negamax(
   const moves = generateLegalMoves(state);
   const candidates = [...moves];
 
-  const toggled = toggleTopology(state);
-  const ourKing = findKing(toggled, state.sideToMove);
+  const rotated = toggleTopology(state);
+  const enemy: 'white' | 'black' = state.sideToMove === 'white' ? 'black' : 'white';
+  const ourKing = findKing(rotated, state.sideToMove);
   if (
     !lastMoveWasRotation &&
     ourKing &&
-    !isSquareAttacked(toggled, ourKing, toggled.sideToMove, toggled.topologyState)
+    !isSquareAttacked(rotated, ourKing, enemy, rotated.topologyState)
   ) {
     candidates.push({ kind: 'topologyToggle' });
   }
@@ -84,7 +85,7 @@ function negamax(
     if (ctx.cancelled) break;
 
     const next =
-      move.kind === 'topologyToggle' ? toggled : applyMove(state, move);
+      move.kind === 'topologyToggle' ? applyRotationMove(state) : applyMove(state, move);
 
     const result = negamax(
       next,

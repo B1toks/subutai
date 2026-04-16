@@ -25,18 +25,26 @@ export interface Piece {
 }
 
 export interface CastlingRights {
-  readonly whiteKingSide: boolean;
-  readonly whiteQueenSide: boolean;
-  readonly blackKingSide: boolean;
-  readonly blackQueenSide: boolean;
+  readonly whiteKingSide: SquareId | null;
+  readonly whiteQueenSide: SquareId | null;
+  readonly blackKingSide: SquareId | null;
+  readonly blackQueenSide: SquareId | null;
+}
+
+export interface KingStartSquares {
+  readonly white: SquareId | null;
+  readonly black: SquareId | null;
 }
 
 export type TopologyState = 'A' | 'B';
 
+export type PieceMap = Readonly<Partial<Record<SquareId, Piece>>>;
+
 export interface BoardState {
-  readonly pieces: ReadonlyMap<SquareId, Piece>;
+  readonly pieces: PieceMap;
   readonly sideToMove: Color;
   readonly castlingRights: CastlingRights;
+  readonly kingStartSquares: KingStartSquares;
   readonly enPassantTarget: SquareId | null;
   readonly halfmoveClock: number;
   readonly fullmoveNumber: number;
@@ -56,4 +64,20 @@ export interface Move {
   readonly to?: SquareId;
   readonly kind: MoveKind;
   readonly promotion?: PieceType;
+  // Populated only for kind === 'castle': the rook's origin and target squares.
+  readonly castleRookFrom?: SquareId;
+  readonly castleRookTo?: SquareId;
+}
+
+export interface SerializedBoardState {
+  readonly fen: string;
+  readonly topologyState: TopologyState;
+  readonly blockAngles: readonly number[];
+  readonly pieces: Record<string, Piece>;
+  readonly sideToMove: Color;
+  readonly castlingRights: CastlingRights;
+  readonly kingStartSquares: KingStartSquares;
+  readonly enPassantTarget: SquareId | null;
+  readonly halfmoveClock: number;
+  readonly fullmoveNumber: number;
 }
