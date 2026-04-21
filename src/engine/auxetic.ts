@@ -1,4 +1,5 @@
 import type { BoardState, SquareId, TopologyState } from './types';
+import { positionSignature } from './board';
 
 // --- Block geometry ---
 
@@ -267,9 +268,15 @@ export function toggleTopology(state: BoardState): BoardState {
  * Use this when rotation is submitted as the player's move in the game log.
  */
 export function applyRotationMove(state: BoardState): BoardState {
-  return {
+  const base: BoardState = {
     ...state,
     topologyState: state.topologyState === 'A' ? 'B' : 'A',
     sideToMove: state.sideToMove === 'white' ? 'black' : 'white',
+    halfmoveClock: state.halfmoveClock + 1,
+    fullmoveNumber:
+      state.sideToMove === 'black' ? state.fullmoveNumber + 1 : state.fullmoveNumber,
+    lastMoveWasRotation: true,
   };
+  const sig = positionSignature(base);
+  return { ...base, positionHistory: [...state.positionHistory, sig] };
 }

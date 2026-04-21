@@ -61,15 +61,14 @@ function negamax(
   const moves = generateLegalMoves(state);
   const candidates = [...moves];
 
-  const rotated = toggleTopology(state);
-  const enemy: 'white' | 'black' = state.sideToMove === 'white' ? 'black' : 'white';
-  const ourKing = findKing(rotated, state.sideToMove);
-  if (
-    !lastMoveWasRotation &&
-    ourKing &&
-    !isSquareAttacked(rotated, ourKing, enemy, rotated.topologyState)
-  ) {
-    candidates.push({ kind: 'topologyToggle' });
+  const rotationBlocked = state.lastMoveWasRotation || lastMoveWasRotation;
+  if (!rotationBlocked) {
+    const rotated = toggleTopology(state);
+    const enemy: 'white' | 'black' = state.sideToMove === 'white' ? 'black' : 'white';
+    const ourKing = findKing(rotated, state.sideToMove);
+    if (ourKing && !isSquareAttacked(rotated, ourKing, enemy, rotated.topologyState)) {
+      candidates.push({ kind: 'topologyToggle' });
+    }
   }
 
   if (candidates.length === 0) {

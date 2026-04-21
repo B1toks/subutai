@@ -29,7 +29,25 @@ export function createEmptyBoardState(sideToMove: Color = 'white'): BoardState {
     halfmoveClock: 0,
     fullmoveNumber: 1,
     topologyState: 'A',
+    positionHistory: [],
+    lastMoveWasRotation: false,
   };
+}
+
+export function positionSignature(state: BoardState): string {
+  const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+  const piecesStr: string[] = [];
+  for (let r = 8; r >= 1; r--) {
+    for (const f of files) {
+      const sq = `${f}${r}` as SquareId;
+      const p = state.pieces[sq];
+      if (p) piecesStr.push(`${sq}${p.color[0]}${p.type[0]}`);
+    }
+  }
+  const cr = state.castlingRights;
+  const crStr = [cr.whiteKingSide, cr.whiteQueenSide, cr.blackKingSide, cr.blackQueenSide]
+    .map((v) => v ?? '-').join(',');
+  return `${piecesStr.join('|')}|${state.sideToMove}|${crStr}|${state.enPassantTarget ?? '-'}|${state.topologyState}`;
 }
 
 export function emptyCastlingRights(): CastlingRights {

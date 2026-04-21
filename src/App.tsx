@@ -7,6 +7,7 @@ import {
   generateLegalMoves,
   isCheckmate,
   isStalemate,
+  checkDrawConditions,
   isInCheck,
   isSquareAttacked,
   countAttackers,
@@ -26,7 +27,13 @@ import { MemoryPanel } from './memory/MemoryPanel';
 import type { SavedGame } from './memory/types';
 import { NotationParseError, parseMemoryNotation } from './memory/notation';
 
-type GameStatus = 'playing' | 'checkmate' | 'stalemate';
+type GameStatus =
+  | 'active'
+  | 'checkmate'
+  | 'draw_stalemate'
+  | 'draw_material'
+  | 'draw_repetition'
+  | 'draw_50move';
 
 function backRankString(boardState: BoardState): string {
   const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
@@ -52,7 +59,7 @@ function App() {
   const [log, setLog] = useState<GameLog>(() =>
     createGameLog('game-1', createStartingPosition(1), 1),
   );
-  const [gameStatus, setGameStatus] = useState<GameStatus>('playing');
+  const [gameStatus, setGameStatus] = useState<GameStatus>('active');
   const [previewTopology, setPreviewTopology] = useState<TopologyState | null>(null);
   const [lastMove, setLastMove] = useState<{ from?: SquareId; to?: SquareId } | null>(null);
   const [showHelp, setShowHelp] = useState(false);
@@ -98,12 +105,14 @@ function App() {
   }, [formationInputMode]);
 
   useEffect(() => {
-    if (gameStatus !== 'checkmate' && gameStatus !== 'stalemate') return;
+    if (gameStatus === 'active') return;
     if (log.moves.length === 0) return;
     if (savedForLogIdRef.current === log.id) return;
 
     const sourceId = liveSavedGameIdRef.current;
-    const saved = buildSavedGameFromLog(log, state, gameStatus, sourceId);
+    const termination: 'checkmate' | 'stalemate' =
+      gameStatus === 'checkmate' ? 'checkmate' : 'stalemate';
+    const saved = buildSavedGameFromLog(log, state, termination, sourceId);
     (localStorageAdapter.saveOrUpdateGame?.(saved) ?? localStorageAdapter.saveGame(saved));
 
     // Clean up the live snapshot so Memory shows one final entry.
@@ -115,7 +124,7 @@ function App() {
   }, [gameStatus, log, state]);
 
   useEffect(() => {
-    if (gameStatus !== 'playing') return;
+    if (gameStatus !== 'active') return;
     if (log.moves.length === 0) return;
     const liveId = liveSavedGameIdRef.current;
     if (!liveId) return;
@@ -141,7 +150,7 @@ function App() {
     setSelected(null);
     setLegalMoves(generateLegalMoves(initial));
     setLog(createGameLog(`game-${Date.now()}`, initial, Date.now()));
-    setGameStatus('playing');
+    setGameStatus('active');
     setPreviewTopology(null);
     setLastMove(null);
     setFormationLocked(true);
@@ -176,9 +185,13 @@ function App() {
     // #endregion
     if (isCheckmate(nextState, lastMoveWasRotation)) {
       setGameStatus('checkmate');
-    } else if (isStalemate(nextState, lastMoveWasRotation)) {
-      setGameStatus('stalemate');
+      return;
     }
+    const draw = checkDrawConditions(nextState, lastMoveWasRotation);
+    if (draw === 'stalemate') setGameStatus('draw_stalemate');
+    else if (draw === 'insufficient_material') setGameStatus('draw_material');
+    else if (draw === 'threefold_repetition') setGameStatus('draw_repetition');
+    else if (draw === 'fifty_move_rule') setGameStatus('draw_50move');
   }
 
   function startNewGame() {
@@ -195,7 +208,7 @@ function App() {
     setLegalMoves(generateLegalMoves(initial));
     setLog(createGameLog(`game-${newSeed}`, initial, newSeed));
     savedForLogIdRef.current = null;
-    setGameStatus('playing');
+    setGameStatus('active');
     setPreviewTopology(null);
     setLastMove(null);
 
@@ -212,8 +225,9 @@ function App() {
   }
 
   function handleRotate() {
-    if (gameStatus !== 'playing') return;
+    if (gameStatus !== 'active') return;
     if (currentPlayer !== 'human') return;
+    if (state.lastMoveWasRotation) return;
 
     const rotated = toggleTopology(state);
 
@@ -251,6 +265,10 @@ function App() {
           lastMoveWasRotation,
         });
         if (!move) return;
+        if (move.kind === 'topologyToggle' && boardState.lastMoveWasRotation) {
+          console.warn('[rotation guard] AI returned rotation when not allowed — ignoring');
+          return;
+        }
 
         const next =
           move.kind === 'topologyToggle'
@@ -343,7 +361,7 @@ function App() {
   const materialScore = materialBreakdown.score;
 
   useEffect(() => {
-    if (gameStatus !== 'playing') return;
+    if (gameStatus !== 'active') return;
     if (currentPlayer !== 'ai') return;
     scheduleAiMove(state, legalMoves, lastMoveWasRotation);
     return () => {
@@ -428,7 +446,7 @@ function App() {
   }, [showSupport, selected, hoveredSquare, state, displayTopology]);
 
   function onSquareClick(square: string) {
-    if (gameStatus !== 'playing') return;
+    if (gameStatus !== 'active') return;
     if (currentPlayer !== 'human') return;
     if (!selected) {
       setSelected(square);
@@ -544,7 +562,7 @@ function App() {
     setSelected(null);
     setLegalMoves(generateLegalMoves(current));
     setLog(nextLog);
-    setGameStatus('playing');
+    setGameStatus('active');
     setPreviewTopology(null);
     setLastMove(null);
     setFormationLocked(true);
@@ -622,7 +640,7 @@ function App() {
       setSelected(null);
       setLegalMoves(generateLegalMoves(current));
       setLog(replayLog);
-      setGameStatus('playing');
+      setGameStatus('active');
       setPreviewTopology(null);
       setLastMove(null);
       savedForLogIdRef.current = null;
@@ -694,8 +712,17 @@ function App() {
       const winner = state.sideToMove === 'white' ? 'Black' : 'White';
       return `Checkmate \u2014 ${winner} wins!`;
     }
-    if (gameStatus === 'stalemate') {
-      return 'Stalemate \u2014 Draw';
+    if (gameStatus === 'draw_stalemate') {
+      return 'Draw \u2014 Stalemate';
+    }
+    if (gameStatus === 'draw_material') {
+      return 'Draw \u2014 Insufficient material';
+    }
+    if (gameStatus === 'draw_repetition') {
+      return 'Draw \u2014 Threefold repetition';
+    }
+    if (gameStatus === 'draw_50move') {
+      return 'Draw \u2014 50-move rule';
     }
     return null;
   }, [gameStatus, state.sideToMove]);

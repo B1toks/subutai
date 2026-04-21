@@ -49,6 +49,8 @@ export interface BoardState {
   readonly halfmoveClock: number;
   readonly fullmoveNumber: number;
   readonly topologyState: TopologyState;
+  readonly positionHistory: readonly string[];
+  readonly lastMoveWasRotation: boolean;
 }
 
 export type MoveKind =

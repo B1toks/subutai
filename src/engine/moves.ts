@@ -1,4 +1,4 @@
-import { allSquares, setPiece } from './board';
+import { allSquares, positionSignature, setPiece } from './board';
 import {
   knightTargets,
   pawnCaptureTargets,
@@ -238,6 +238,70 @@ export function isStalemate(
   }
   // #endregion
   return !toggleEscape;
+}
+
+export type DrawReason =
+  | 'stalemate'
+  | 'insufficient_material'
+  | 'threefold_repetition'
+  | 'fifty_move_rule';
+
+export function isThreefoldRepetition(state: BoardState): boolean {
+  if (state.positionHistory.length === 0) return false;
+  const current = state.positionHistory[state.positionHistory.length - 1];
+  let count = 0;
+  for (const sig of state.positionHistory) {
+    if (sig === current) count++;
+  }
+  return count >= 3;
+}
+
+export function isFiftyMoveRule(state: BoardState): boolean {
+  return state.halfmoveClock >= 100;
+}
+
+export function isInsufficientMaterial(state: BoardState): boolean {
+  const pieces = Object.values(state.pieces).filter((p): p is Piece => Boolean(p));
+
+  // Any pawn, rook, or queen → mate is still possible.
+  for (const p of pieces) {
+    if (p.type === 'pawn' || p.type === 'rook' || p.type === 'queen') return false;
+  }
+
+  const nonKings = pieces.filter((p) => p.type !== 'king');
+  // K vs K
+  if (nonKings.length === 0) return true;
+
+  // K + minor vs K  (minor = knight or bishop)
+  if (nonKings.length === 1) {
+    const m = nonKings[0];
+    return m.type === 'knight' || m.type === 'bishop';
+  }
+
+  // K+B vs K+B where both bishops are on squares of the same color.
+  if (nonKings.length === 2 && nonKings.every((p) => p.type === 'bishop')) {
+    const bishopColors = (Object.entries(state.pieces) as Array<[SquareId, Piece | undefined]>)
+      .filter(([, p]) => p && p.type === 'bishop')
+      .map(([sq]) => {
+        const file = sq.charCodeAt(0) - 'a'.charCodeAt(0);
+        const rank = Number(sq[1]) - 1;
+        return (file + rank) % 2;
+      });
+    if (bishopColors.length === 2 && bishopColors[0] === bishopColors[1]) return true;
+  }
+
+  return false;
+}
+
+export function checkDrawConditions(
+  state: BoardState,
+  lastMoveWasRotation: boolean = false,
+): DrawReason | null {
+  if (isStalemate(state, lastMoveWasRotation)) return 'stalemate';
+  if (isInsufficientMaterial(state)) return 'insufficient_material';
+  if (isThreefoldRepetition(state)) return 'threefold_repetition';
+  if (isFiftyMoveRule(state)) return 'fifty_move_rule';
+  return null;
 }
 
 export function findCheckingPieces(state: BoardState): SquareId[] {
@@ -628,6 +692,13 @@ export function applyMove(state: BoardState, move: Move): BoardState {
   const piece = state.pieces[move.from];
   if (!piece) return state;
 
+  const isCapture = Boolean(state.pieces[move.to]);
+  const isPawnMove = piece.type === 'pawn';
+  const isIrreversible =
+    isCapture || isPawnMove || move.kind === 'castle' || move.kind === 'promotion';
+
+  let base: BoardState;
+
   if (move.kind === 'castle' && move.castleRookFrom && move.castleRookTo) {
     const rook = state.pieces[move.castleRookFrom];
     if (!rook) return state;
@@ -647,38 +718,48 @@ export function applyMove(state: BoardState, move: Move): BoardState {
         ? { ...cr, whiteKingSide: null, whiteQueenSide: null }
         : { ...cr, blackKingSide: null, blackQueenSide: null };
 
-    return {
+    base = {
       ...next,
       castlingRights: clearedRights,
       sideToMove: enemyColor(state.sideToMove),
     };
+  } else {
+    let nextState = state;
+    nextState = setPiece(nextState, move.from, null);
+    let movedPiece: Piece = piece;
+    if (move.kind === 'promotion' && move.promotion) {
+      movedPiece = { ...piece, type: move.promotion };
+    }
+    nextState = setPiece(nextState, move.to, movedPiece);
+
+    const nextRights = revokeCastlingRights(
+      state.castlingRights,
+      state.kingStartSquares,
+      piece,
+      move.from,
+      isCapture ? move.to : null,
+      state.pieces[move.to],
+    );
+
+    base = {
+      ...nextState,
+      castlingRights: nextRights,
+      sideToMove: enemyColor(state.sideToMove),
+    };
   }
 
-  const capturedPiece = state.pieces[move.to];
+  const halfmoveClock = isIrreversible ? 0 : state.halfmoveClock + 1;
+  const fullmoveNumber =
+    state.sideToMove === 'black' ? state.fullmoveNumber + 1 : state.fullmoveNumber;
 
-  let nextState = state;
-
-  nextState = setPiece(nextState, move.from, null);
-
-  let movedPiece: Piece = piece;
-  if (move.kind === 'promotion' && move.promotion) {
-    movedPiece = { ...piece, type: move.promotion };
-  }
-
-  nextState = setPiece(nextState, move.to, movedPiece);
-
-  const nextRights = revokeCastlingRights(
-    state.castlingRights,
-    state.kingStartSquares,
-    piece,
-    move.from,
-    capturedPiece ? move.to : null,
-    capturedPiece,
-  );
-
-  return {
-    ...nextState,
-    castlingRights: nextRights,
-    sideToMove: enemyColor(state.sideToMove),
+  const withClocks: BoardState = {
+    ...base,
+    halfmoveClock,
+    fullmoveNumber,
+    lastMoveWasRotation: false,
   };
+  const sig = positionSignature(withClocks);
+  const positionHistory = isIrreversible ? [sig] : [...state.positionHistory, sig];
+
+  return { ...withClocks, positionHistory };
 }
