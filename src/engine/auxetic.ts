@@ -267,6 +267,22 @@ export function toggleTopology(state: BoardState): BoardState {
  * Applies a rotation as a recorded move: flips topology AND advances the turn.
  * Use this when rotation is submitted as the player's move in the game log.
  */
+/**
+ * Applies a "pass" (used in Roulette Mode when the spin produces no legal moves).
+ * Flips sideToMove with no board change; increments halfmove; leaves the
+ * rotation flag untouched.
+ */
+export function applyPassMove(state: BoardState): BoardState {
+  return {
+    ...state,
+    sideToMove: state.sideToMove === 'white' ? 'black' : 'white',
+    halfmoveClock: state.halfmoveClock + 1,
+    fullmoveNumber:
+      state.sideToMove === 'black' ? state.fullmoveNumber + 1 : state.fullmoveNumber,
+    lastMoveWasRotation: false,
+  };
+}
+
 export function applyRotationMove(state: BoardState): BoardState {
   const base: BoardState = {
     ...state,

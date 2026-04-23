@@ -1024,3 +1024,147 @@
   background: #3a3a55;
   border-color: var(--accent-gold);
 }
+
+/* Mode toggle + roulette panel */
+
+.mode-toggle {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 16px;
+  vertical-align: middle;
+}
+
+.mode-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--btn-bg);
+  color: var(--text);
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.mode-btn:hover {
+  background: #3a3a55;
+}
+
+.mode-btn-active {
+  background: var(--accent-gold);
+  color: #161626;
+  border-color: var(--accent-gold);
+}
+
+.roulette-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px auto;
+  padding: 10px 14px;
+  max-width: var(--board-size);
+  background: #161626;
+  border: 1px solid var(--btn-border);
+  border-radius: 8px;
+}
+
+.roulette-display {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
+}
+
+.roulette-face {
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tile-light);
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+}
+
+/* Override the board's board-size-based sizing so the glyph fits the slot.
+   No color, no text-shadow here — those come from .piece-white / .piece-black. */
+.roulette-face .piece {
+  font-size: 36px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.roulette-face-rolling {
+  background: var(--btn-bg);
+  color: var(--accent-gold);
+  font-size: 28px;
+  font-weight: 700;
+  animation: roulette-roll 0.4s infinite alternate;
+}
+
+.roulette-face.slot-used {
+  opacity: 0.35;
+  filter: grayscale(1);
+}
+
+.roulette-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+  opacity: 0.85;
+}
+
+.roulette-actions-label {
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.roulette-action-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 1px solid var(--btn-border);
+}
+
+.roulette-action-dot.active {
+  background: var(--accent-gold);
+  border-color: var(--accent-gold);
+  box-shadow: 0 0 6px rgba(200, 185, 138, 0.6);
+}
+
+.roulette-action-dot.spent {
+  background: transparent;
+  opacity: 0.5;
+}
+
+@keyframes roulette-roll {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-4px); }
+}
+
+.roulette-label {
+  font-size: 13px;
+  color: var(--text);
+  opacity: 0.75;
+}
+
+.roulette-spin-btn {
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--accent-gold);
+  color: #161626;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.roulette-spin-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

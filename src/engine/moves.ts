@@ -343,7 +343,7 @@ export function findCheckingPieces(state: BoardState): SquareId[] {
 
 // --- Move generation ---
 
-function generatePseudoLegalMoves(state: BoardState): Move[] {
+export function generatePseudoLegalMoves(state: BoardState): Move[] {
   const topology: TopologyState = state.topologyState;
   const moves: Move[] = [];
   for (const square of allSquares) {

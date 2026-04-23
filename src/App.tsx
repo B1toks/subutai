@@ -5,6 +5,7 @@ import { allSquares } from './engine/board';
 import {
   applyMove,
   generateLegalMoves,
+  generatePseudoLegalMoves,
   isCheckmate,
   isStalemate,
   checkDrawConditions,
@@ -15,7 +16,7 @@ import {
   findKing,
   findCheckingPieces,
 } from './engine/moves';
-import { applyRotationMove, toggleTopology, computeBoardLayout, tilePixelCenter } from './engine/auxetic';
+import { applyRotationMove, applyPassMove, toggleTopology, computeBoardLayout, tilePixelCenter } from './engine/auxetic';
 import { SubutaiAgent } from './ai/agents';
 import { PIECE_VALUE } from './ai/evaluate';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -33,7 +34,34 @@ type GameStatus =
   | 'draw_stalemate'
   | 'draw_material'
   | 'draw_repetition'
-  | 'draw_50move';
+  | 'draw_50move'
+  | 'king_captured_white_wins'
+  | 'king_captured_black_wins';
+
+type GameMode = 'classic' | 'roulette';
+
+const ROULETTE_SLOT_COUNT = 4;
+const ROULETTE_MAX_ACTIONS = 2;
+const AI_ROULETTE_REVEAL_MS = 1200;
+const AI_ROULETTE_BETWEEN_ACTIONS_MS = 900;
+
+/** Only piece types currently alive for `color` — no "dead" slots. */
+function getActivePieceTypes(state: BoardState, color: Color): PieceType[] {
+  const types = new Set<PieceType>();
+  for (const piece of Object.values(state.pieces)) {
+    if (piece && piece.color === color) types.add(piece.type);
+  }
+  return Array.from(types);
+}
+
+function spinRoulette(activeTypes: PieceType[]): PieceType[] {
+  if (activeTypes.length === 0) return [];
+  const out: PieceType[] = [];
+  for (let i = 0; i < ROULETTE_SLOT_COUNT; i++) {
+    out.push(activeTypes[Math.floor(Math.random() * activeTypes.length)]);
+  }
+  return out;
+}
 
 function backRankString(boardState: BoardState): string {
   const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
@@ -81,6 +109,11 @@ function App() {
     from: SquareId;
     to: SquareId;
   } | null>(null);
+  const [gameMode, setGameMode] = useState<GameMode>('classic');
+  const [allowedPieceTypes, setAllowedPieceTypes] = useState<PieceType[] | null>(null);
+  const [isRouletteSpinning, setIsRouletteSpinning] = useState<boolean>(false);
+  const [rouletteActionsLeft, setRouletteActionsLeft] = useState<number>(0);
+  const [usedRouletteSlots, setUsedRouletteSlots] = useState<number[]>([]);
   const formationInputRef = useRef<HTMLInputElement>(null);
   const aiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedForLogIdRef = useRef<string | null>(null);
@@ -111,7 +144,11 @@ function App() {
 
     const sourceId = liveSavedGameIdRef.current;
     const termination: 'checkmate' | 'stalemate' =
-      gameStatus === 'checkmate' ? 'checkmate' : 'stalemate';
+      gameStatus === 'checkmate'
+        || gameStatus === 'king_captured_white_wins'
+        || gameStatus === 'king_captured_black_wins'
+        ? 'checkmate'
+        : 'stalemate';
     const saved = buildSavedGameFromLog(log, state, termination, sourceId);
     (localStorageAdapter.saveOrUpdateGame?.(saved) ?? localStorageAdapter.saveGame(saved));
 
@@ -169,7 +206,96 @@ function App() {
 
   const tileBase = boardSize / 8;
 
+  function checkKingCaptured(nextState: BoardState): boolean {
+    const whiteKing = findKing(nextState, 'white');
+    const blackKing = findKing(nextState, 'black');
+    if (!whiteKing) {
+      setGameStatus('king_captured_black_wins');
+      return true;
+    }
+    if (!blackKing) {
+      setGameStatus('king_captured_white_wins');
+      return true;
+    }
+    return false;
+  }
+
+  // Moves playable given a spin + already-used slots: a piece type is still
+  // available if at least one slot of that type hasn't been consumed yet.
+  function playableRouletteMoves(
+    boardState: BoardState,
+    allowed: PieceType[],
+    used: number[],
+  ): Move[] {
+    const remaining = allowed.filter((_, idx) => !used.includes(idx));
+    if (remaining.length === 0) return [];
+    return generatePseudoLegalMoves(boardState).filter((m) => {
+      if (!m.from) return false;
+      const p = boardState.pieces[m.from];
+      return Boolean(p && remaining.includes(p.type));
+    });
+  }
+
+  // Pick the index of the slot this mover-type consumes. Prefers the first
+  // unused slot of that exact type.
+  function consumeSlotIndex(
+    allowed: PieceType[],
+    used: number[],
+    moverType: PieceType,
+  ): number {
+    return allowed.findIndex(
+      (type, idx) => type === moverType && !used.includes(idx),
+    );
+  }
+
+  function handleSpinRoulette() {
+    if (gameMode !== 'roulette') return;
+    if (gameStatus !== 'active') return;
+    if (allowedPieceTypes !== null) return;
+
+    setIsRouletteSpinning(true);
+    setTimeout(() => {
+      // Roll only from pieces the current player actually has on the board.
+      const activeTypes = getActivePieceTypes(state, state.sideToMove);
+      const rolled = spinRoulette(activeTypes);
+      const pseudo = generatePseudoLegalMoves(state);
+      const playable = pseudo.filter((m) => {
+        if (!m.from) return false;
+        const p = state.pieces[m.from];
+        return p && rolled.includes(p.type);
+      });
+
+      // Auto-pass only if the player has NO way to act — no piece move AND
+      // rotation is blocked (back-to-back guard). If they can rotate they
+      // should get a chance to spend their action on the rotation.
+      const canRotate = !state.lastMoveWasRotation;
+      if (playable.length === 0 && !canRotate) {
+        const next = applyPassMove(state);
+        setState(next);
+        setAllowedPieceTypes(null);
+        setSelected(null);
+        setIsRouletteSpinning(false);
+        setLastMove(null);
+        setLegalMoves(generateLegalMoves(next));
+        setRouletteActionsLeft(0);
+        setUsedRouletteSlots([]);
+      } else {
+        setAllowedPieceTypes(rolled);
+        setIsRouletteSpinning(false);
+        setRouletteActionsLeft(ROULETTE_MAX_ACTIONS);
+        setUsedRouletteSlots([]);
+        // Board highlights expect `legalMoves`; swap in the roulette-filtered
+        // set so target squares (teal) show up for the allowed pieces.
+        setLegalMoves(playable);
+      }
+    }, 400);
+  }
+
   function checkGameOver(nextState: BoardState, lastMoveWasRotation: boolean = false) {
+    if (gameMode === 'roulette') {
+      checkKingCaptured(nextState);
+      return;
+    }
     // #region agent log
     const lm = generateLegalMoves(nextState);
     const inChk = isCheckmate(nextState, lastMoveWasRotation);
@@ -211,6 +337,10 @@ function App() {
     setGameStatus('active');
     setPreviewTopology(null);
     setLastMove(null);
+    setAllowedPieceTypes(null);
+    setIsRouletteSpinning(false);
+    setRouletteActionsLeft(0);
+    setUsedRouletteSlots([]);
 
     // New play session => new live snapshot id.
     liveSavedGameIdRef.current = `live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -229,29 +359,257 @@ function App() {
     if (currentPlayer !== 'human') return;
     if (state.lastMoveWasRotation) return;
 
-    const rotated = toggleTopology(state);
+    const toggled = toggleTopology(state);
 
-    const ourKing = findKing(rotated, state.sideToMove);
-    if (!ourKing) return;
-    const opponent = state.sideToMove === 'white' ? 'black' : 'white';
-    if (isSquareAttacked(rotated, ourKing, opponent as 'white' | 'black', rotated.topologyState)) return;
+    // Classic mode: king-safety check; rotation consumes the whole turn.
+    if (gameMode !== 'roulette') {
+      const ourKing = findKing(toggled, state.sideToMove);
+      if (!ourKing) return;
+      const opponent = state.sideToMove === 'white' ? 'black' : 'white';
+      if (isSquareAttacked(toggled, ourKing, opponent as 'white' | 'black', toggled.topologyState)) return;
 
-    const next = applyRotationMove(state);
-    setState(next);
-    const nextMoves = generateLegalMoves(next);
-    setLegalMoves(nextMoves);
-    setSelected(null);
-    setPreviewTopology(null);
+      const next = applyRotationMove(state);
+      setState(next);
+      setLegalMoves(generateLegalMoves(next));
+      setSelected(null);
+      setPreviewTopology(null);
 
+      const toggleMove: Move = { kind: 'topologyToggle' };
+      const toggleSan = computeSAN(state, toggleMove);
+      setLog((prev) => appendMove(prev, toggleMove, toggleSan, state.topologyState));
+      setLastMove(null);
+      checkGameOver(next, true);
+      return;
+    }
+
+    // Roulette mode: rotation costs exactly 1 Action Point.
+    // - Must have spun (allowedPieceTypes !== null) and have at least 1 action.
+    // - usedRouletteSlots is NOT modified (rotation doesn't consume a slot).
+    if (allowedPieceTypes === null || rouletteActionsLeft < 1) return;
+
+    const rotated = applyRotationMove(state); // sideToMove flipped, lastMoveWasRotation=true
     const toggleMove: Move = { kind: 'topologyToggle' };
     const toggleSan = computeSAN(state, toggleMove);
     setLog((prev) => appendMove(prev, toggleMove, toggleSan, state.topologyState));
     setLastMove(null);
+    setSelected(null);
+    setPreviewTopology(null);
 
-    checkGameOver(next, true);
+    const actionsAfter = rouletteActionsLeft - 1;
+
+    if (actionsAfter === 0) {
+      // Last action: accept the side flip, end the turn.
+      setState(rotated);
+      setAllowedPieceTypes(null);
+      setIsRouletteSpinning(false);
+      setRouletteActionsLeft(0);
+      setUsedRouletteSlots([]);
+      setLegalMoves(generateLegalMoves(rotated));
+      checkGameOver(rotated, true);
+      return;
+    }
+
+    // First action: keep the turn. Clamp sideToMove back to the current player
+    // and refresh legalMoves for the new topology (usedRouletteSlots intact).
+    const clamped: BoardState = { ...rotated, sideToMove: state.sideToMove };
+    const nextPlayable = playableRouletteMoves(
+      clamped,
+      allowedPieceTypes,
+      usedRouletteSlots,
+    );
+    // We cannot rotate again this turn (lastMoveWasRotation=true). If there's
+    // also no piece move available, the remaining action can't be used — end
+    // the turn to keep the game flowing.
+    if (nextPlayable.length === 0) {
+      setState(rotated);
+      setAllowedPieceTypes(null);
+      setIsRouletteSpinning(false);
+      setRouletteActionsLeft(0);
+      setUsedRouletteSlots([]);
+      setLegalMoves(generateLegalMoves(rotated));
+      checkGameOver(rotated, true);
+      return;
+    }
+
+    setState(clamped);
+    setRouletteActionsLeft(actionsAfter);
+    setLegalMoves(nextPlayable);
+    // allowedPieceTypes and usedRouletteSlots unchanged — rotation doesn't
+    // consume a specific slot.
+    checkGameOver(clamped, true);
   }
 
   const currentPlayer = state.sideToMove === 'white' ? 'human' : 'ai';
+
+  // Mode can only be switched before the first move — otherwise rules would
+  // change mid-game (e.g. switching out of Roulette skips a spin).
+  const modeToggleLocked = log.moves.length > 0 || state.fullmoveNumber > 1;
+
+  // --- Roulette AI helpers (state-driven; each is ONE atomic state transition).
+
+  // Pick the best AI move from a set of allowed moves.
+  // Priority: (a) king capture, (b) highest-value capture, (c) random fallback.
+  function pickAiRouletteMove(bs: BoardState, playable: Move[]): Move {
+    const enemy: Color = bs.sideToMove === 'white' ? 'black' : 'white';
+    const enemyKingSq = findKing(bs, enemy);
+    if (enemyKingSq) {
+      const kingCap = playable.find((m) => m.to === enemyKingSq);
+      if (kingCap) return kingCap;
+    }
+    const scored = playable
+      .map((m) => {
+        const victim = m.to ? bs.pieces[m.to] : undefined;
+        return { m, score: victim ? PIECE_VALUE[victim.type] : 0 };
+      })
+      .sort((a, b) => b.score - a.score);
+    if (scored[0] && scored[0].score > 0) return scored[0].m;
+    return playable[Math.floor(Math.random() * playable.length)];
+  }
+
+  // Apply the AI's spin. Sets allowedPieceTypes, seeds actions / slots, and
+  // exits — the main effect picks up Phase 2 on the next render.
+  function applyAiSpin(bs: BoardState) {
+    const activeTypes = getActivePieceTypes(bs, bs.sideToMove);
+    const rolled = spinRoulette(activeTypes);
+    setAllowedPieceTypes(rolled);
+    setUsedRouletteSlots([]);
+    setRouletteActionsLeft(ROULETTE_MAX_ACTIONS);
+    setLegalMoves(playableRouletteMoves(bs, rolled, []));
+  }
+
+  // Apply an AI rotation as one action. Same semantics as handleRotate's
+  // roulette branch, but self-contained for the AI driver.
+  function executeAiRouletteRotation(
+    bs: BoardState,
+    rolled: PieceType[],
+    used: number[],
+    actionsLeft: number,
+  ) {
+    const rotated = applyRotationMove(bs);
+    const toggleMove: Move = { kind: 'topologyToggle' };
+    const san = computeSAN(bs, toggleMove);
+    setLog((prev) => appendMove(prev, toggleMove, san, bs.topologyState));
+    setLastMove(null);
+
+    const actionsAfter = actionsLeft - 1;
+
+    if (actionsAfter === 0) {
+      setState(rotated);
+      setAllowedPieceTypes(null);
+      setUsedRouletteSlots([]);
+      setRouletteActionsLeft(0);
+      setLegalMoves(generateLegalMoves(rotated));
+      return;
+    }
+
+    // Stay on turn. Clamp side back; no further rotation allowed this turn.
+    const clamped: BoardState = { ...rotated, sideToMove: bs.sideToMove };
+    const nextPlayable = playableRouletteMoves(clamped, rolled, used);
+    if (nextPlayable.length === 0) {
+      // Nothing useful left — end the turn.
+      setState(rotated);
+      setAllowedPieceTypes(null);
+      setUsedRouletteSlots([]);
+      setRouletteActionsLeft(0);
+      setLegalMoves(generateLegalMoves(rotated));
+      return;
+    }
+
+    setState(clamped);
+    setRouletteActionsLeft(actionsAfter);
+    setLegalMoves(nextPlayable);
+    // allowedPieceTypes and usedRouletteSlots unchanged.
+  }
+
+  // Execute ONE AI sub-move and update React state. Never schedules another
+  // timer — the effect re-fires on the resulting state change.
+  function executeAiRouletteAction(
+    bs: BoardState,
+    rolled: PieceType[],
+    used: number[],
+    actionsLeft: number,
+  ) {
+    const playable = playableRouletteMoves(bs, rolled, used);
+
+    if (playable.length === 0) {
+      // No piece move for the remaining slots. Try rotation as a fallback:
+      // only worthwhile if the rotated topology opens up playable moves.
+      const canRotate = !bs.lastMoveWasRotation;
+      if (canRotate) {
+        const rotatedPreview = toggleTopology(bs);
+        const postRotPlayable = playableRouletteMoves(rotatedPreview, rolled, used);
+        if (postRotPlayable.length > 0) {
+          executeAiRouletteRotation(bs, rolled, used, actionsLeft);
+          return;
+        }
+      }
+      // Truly stuck — pass the turn.
+      const passed = applyPassMove(bs);
+      setState(passed);
+      setAllowedPieceTypes(null);
+      setUsedRouletteSlots([]);
+      setRouletteActionsLeft(0);
+      setLegalMoves(generateLegalMoves(passed));
+      setLastMove(null);
+      return;
+    }
+
+    const choice = pickAiRouletteMove(bs, playable);
+    const mv: Move =
+      choice.kind === 'promotion' && !choice.promotion
+        ? { ...choice, promotion: 'queen' }
+        : choice;
+    const moverType = bs.pieces[mv.from!]!.type;
+    const slotIdx = consumeSlotIndex(rolled, used, moverType);
+    const newUsed = slotIdx >= 0 ? [...used, slotIdx] : used;
+    const newActions = actionsLeft - 1;
+
+    const san = computeSAN(bs, mv);
+    const afterMove = applyMove(bs, mv);
+
+    setLog((prev) => appendMove(prev, mv, san, bs.topologyState));
+    setLastMove({ from: mv.from, to: mv.to });
+
+    const kingCaptured =
+      !findKing(afterMove, 'white') || !findKing(afterMove, 'black');
+
+    if (kingCaptured) {
+      setState(afterMove);
+      setAllowedPieceTypes(null);
+      setUsedRouletteSlots([]);
+      setRouletteActionsLeft(0);
+      checkGameOver(afterMove);
+      return;
+    }
+
+    const noMoreActions = newActions <= 0;
+    const clampedNext: BoardState = { ...afterMove, sideToMove: bs.sideToMove };
+    const nextPlayable = noMoreActions
+      ? []
+      : playableRouletteMoves(clampedNext, rolled, newUsed);
+    // Can the AI still do *something* next action? Either a piece move exists,
+    // or rotation is available (and potentially useful — checked by the next
+    // executeAiRouletteAction call).
+    const canContinue =
+      nextPlayable.length > 0 || !clampedNext.lastMoveWasRotation;
+    const endTurn = noMoreActions || !canContinue;
+
+    if (endTurn) {
+      // Accept the side flip from applyMove — opponent's spin phase next.
+      setState(afterMove);
+      setAllowedPieceTypes(null);
+      setUsedRouletteSlots([]);
+      setRouletteActionsLeft(0);
+      setLegalMoves(generateLegalMoves(afterMove));
+      return;
+    }
+
+    // Keep AI on the turn — clamp sideToMove back to 'bs.sideToMove'.
+    setState(clampedNext);
+    setUsedRouletteSlots(newUsed);
+    setRouletteActionsLeft(newActions);
+    setLegalMoves(nextPlayable);
+  }
 
   const scheduleAiMove = useCallback(
     (
@@ -363,11 +721,71 @@ function App() {
   useEffect(() => {
     if (gameStatus !== 'active') return;
     if (currentPlayer !== 'ai') return;
-    scheduleAiMove(state, legalMoves, lastMoveWasRotation);
-    return () => {
-      if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
-    };
-  }, [currentPlayer, state, legalMoves, gameStatus, scheduleAiMove, lastMoveWasRotation]);
+
+    // Classic: the old path handles its own setTimeout + minimax.
+    if (gameMode !== 'roulette') {
+      scheduleAiMove(state, legalMoves, lastMoveWasRotation);
+      return () => {
+        if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
+      };
+    }
+
+    // --- Roulette (state-driven, one phase per render) -------------------
+    //
+    // Each branch schedules exactly ONE timer and performs ONE atomic state
+    // transition. No chained timers, no closures over stale state: after the
+    // timer fires and state updates, React re-runs this effect with fresh
+    // state and selects the next phase.
+    //
+    // Phase 1 — AI spins (no roll yet).
+    // Phase 2a — AI has rolled; execute action 1 after REVEAL pause.
+    // Phase 2b — AI has acted once; execute action 2 after THINK pause.
+    // (2a and 2b are the same branch; the delay is longer on the first one
+    //  so the human can see the fresh roll.)
+
+    if (allowedPieceTypes === null) {
+      // Phase 1 — spin after a short pause so the UI can settle.
+      const t = setTimeout(() => {
+        applyAiSpin(state);
+      }, 500);
+      aiTimerRef.current = t;
+      return () => clearTimeout(t);
+    }
+
+    if (rouletteActionsLeft > 0) {
+      // Phase 2a/2b — one action, then exit. State change re-triggers effect.
+      const delay =
+        usedRouletteSlots.length === 0
+          ? AI_ROULETTE_REVEAL_MS
+          : AI_ROULETTE_BETWEEN_ACTIONS_MS;
+      const t = setTimeout(() => {
+        executeAiRouletteAction(
+          state,
+          allowedPieceTypes,
+          usedRouletteSlots,
+          rouletteActionsLeft,
+        );
+      }, delay);
+      aiTimerRef.current = t;
+      return () => clearTimeout(t);
+    }
+  // The helpers (applyAiSpin, executeAiRouletteAction) are re-created each
+  // render and close over the current setState setters (stable refs). We
+  // intentionally depend on the roulette fields so each phase transition
+  // re-fires the effect with the latest state.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    currentPlayer,
+    state,
+    gameStatus,
+    gameMode,
+    allowedPieceTypes,
+    rouletteActionsLeft,
+    usedRouletteSlots,
+    legalMoves,
+    scheduleAiMove,
+    lastMoveWasRotation,
+  ]);
 
   const highlightedTargets = useMemo(() => {
     if (!selected) return new Set<string>();
@@ -448,7 +866,34 @@ function App() {
   function onSquareClick(square: string) {
     if (gameStatus !== 'active') return;
     if (currentPlayer !== 'human') return;
+
+    // In roulette mode the board is locked until a roll has happened.
+    if (gameMode === 'roulette' && allowedPieceTypes === null) return;
+
+    // In roulette mode, each sub-move needs an action point.
+    if (gameMode === 'roulette' && rouletteActionsLeft <= 0) return;
+
+    // Active move pool differs per mode: roulette uses pseudo-legal (king
+    // safety disabled) filtered to *unused* slot types.
+    const remainingTypes: PieceType[] =
+      gameMode === 'roulette'
+        ? allowedPieceTypes!.filter((_, idx) => !usedRouletteSlots.includes(idx))
+        : [];
+    const activeMoves: Move[] =
+      gameMode === 'roulette'
+        ? generatePseudoLegalMoves(state).filter((m) => {
+            if (!m.from) return false;
+            const p = state.pieces[m.from];
+            return Boolean(p && remainingTypes.includes(p.type));
+          })
+        : legalMoves;
+
     if (!selected) {
+      if (gameMode === 'roulette') {
+        const p = state.pieces[square as SquareId];
+        if (!p || p.color !== state.sideToMove) return;
+        if (!remainingTypes.includes(p.type)) return;
+      }
       setSelected(square);
       return;
     }
@@ -456,13 +901,11 @@ function App() {
       setSelected(null);
       return;
     }
-    let move = legalMoves.find(
+    let move = activeMoves.find(
       (m) => m.from === selected && m.to === square,
     );
-    // Chess960 castling: clicking own rook while the king is selected is
-    // interpreted as a castle, not an illegal self-capture.
     if (!move) {
-      move = legalMoves.find(
+      move = activeMoves.find(
         (m) =>
           m.from === selected &&
           m.kind === 'castle' &&
@@ -470,23 +913,77 @@ function App() {
       );
     }
     if (!move) {
+      if (gameMode === 'roulette') {
+        const p = state.pieces[square as SquareId];
+        if (!p || p.color !== state.sideToMove) return;
+        if (!remainingTypes.includes(p.type)) return;
+      }
       setSelected(square);
       return;
     }
-    // Promotion: show picker instead of applying immediately
-    if (move.kind === 'promotion' && move.from && move.to) {
+    // Promotion picker (classic only — in roulette we auto-queen to keep the
+    // multi-action flow uninterrupted).
+    if (move.kind === 'promotion' && move.from && move.to && gameMode !== 'roulette') {
       setPendingPromotion({ from: move.from, to: move.to });
       return;
     }
-    const san = computeSAN(state, move);
-    const next = applyMove(state, move);
-    setState(next);
-    const nextMoves = generateLegalMoves(next);
-    setLegalMoves(nextMoves);
-    setSelected(null);
-    setLog((prev) => appendMove(prev, move, san, state.topologyState));
-    setLastMove({ from: move.from, to: move.to });
-    checkGameOver(next);
+    const resolvedMove: Move =
+      gameMode === 'roulette' && move.kind === 'promotion' && !move.promotion
+        ? { ...move, promotion: 'queen' }
+        : move;
+
+    const san = computeSAN(state, resolvedMove);
+    const moverType = state.pieces[resolvedMove.from!]!.type;
+    const afterMove = applyMove(state, resolvedMove);
+    setLog((prev) => appendMove(prev, resolvedMove, san, state.topologyState));
+    setLastMove({ from: resolvedMove.from, to: resolvedMove.to });
+
+    if (gameMode !== 'roulette') {
+      setState(afterMove);
+      setLegalMoves(generateLegalMoves(afterMove));
+      setSelected(null);
+      checkGameOver(afterMove);
+      return;
+    }
+
+    // --- Roulette mode: decide whether the turn continues or ends.
+    const slotIdx = consumeSlotIndex(allowedPieceTypes!, usedRouletteSlots, moverType);
+    const newUsed = slotIdx >= 0 ? [...usedRouletteSlots, slotIdx] : usedRouletteSlots;
+    const actionsAfter = rouletteActionsLeft - 1;
+
+    // If a king was just captured, end the game regardless of remaining actions.
+    const kingCaptured =
+      !findKing(afterMove, 'white') || !findKing(afterMove, 'black');
+
+    let stayOnTurn = false;
+    let nextPlayable: Move[] = [];
+    if (!kingCaptured && actionsAfter > 0) {
+      // Clamp sideToMove back so the same player continues — we still evaluate
+      // remaining-slot playability against that clamped state.
+      const clamped: BoardState = { ...afterMove, sideToMove: state.sideToMove };
+      nextPlayable = playableRouletteMoves(clamped, allowedPieceTypes!, newUsed);
+      // Stay on turn if piece moves exist OR rotation is still available
+      // (the human may want to spend the remaining action on rotating).
+      stayOnTurn = nextPlayable.length > 0 || !clamped.lastMoveWasRotation;
+    }
+
+    if (stayOnTurn) {
+      const clamped: BoardState = { ...afterMove, sideToMove: state.sideToMove };
+      setState(clamped);
+      setUsedRouletteSlots(newUsed);
+      setRouletteActionsLeft(actionsAfter);
+      setLegalMoves(nextPlayable);
+      setSelected(null);
+    } else {
+      // End of turn: accept the side-flip from applyMove, clear roulette state.
+      setState(afterMove);
+      setUsedRouletteSlots([]);
+      setRouletteActionsLeft(0);
+      setAllowedPieceTypes(null);
+      setLegalMoves(generateLegalMoves(afterMove));
+      setSelected(null);
+    }
+    checkGameOver(afterMove);
   }
 
   function handlePromotion(pieceType: PieceType) {
@@ -521,14 +1018,21 @@ function App() {
 
   const canRotate = useMemo(() => {
     if (currentPlayer !== 'human') return false;
-    const lastEntry = log.moves[log.moves.length - 1];
-    if (lastEntry?.move.kind === 'topologyToggle') return false;
+    if (state.lastMoveWasRotation) return false; // back-to-back guard
+
+    if (gameMode === 'roulette') {
+      // Rotation costs 1 action point — needs an active spin AND >= 1 action.
+      // King-safety check is intentionally bypassed (kill-the-king rules).
+      return allowedPieceTypes !== null && rouletteActionsLeft >= 1;
+    }
+
+    // Classic: standard king-safety self-check.
     const toggled = toggleTopology(state);
     const king = findKing(toggled, state.sideToMove);
     if (!king) return false;
     const opp = state.sideToMove === 'white' ? 'black' : 'white';
     return !isSquareAttacked(toggled, king, opp as 'white' | 'black', toggled.topologyState);
-  }, [currentPlayer, state, log.moves]);
+  }, [currentPlayer, state, gameMode, allowedPieceTypes, rouletteActionsLeft]);
 
   const layout = useMemo(
     () => computeBoardLayout(displayTopology, boardSize),
@@ -724,6 +1228,12 @@ function App() {
     if (gameStatus === 'draw_50move') {
       return 'Draw \u2014 50-move rule';
     }
+    if (gameStatus === 'king_captured_white_wins') {
+      return 'King captured \u2014 White wins!';
+    }
+    if (gameStatus === 'king_captured_black_wins') {
+      return 'King captured \u2014 Black wins!';
+    }
     return null;
   }, [gameStatus, state.sideToMove]);
 
@@ -731,7 +1241,98 @@ function App() {
     <div className="app-root" style={{ '--board-size': `${boardSize}px` } as React.CSSProperties}>
       <header className="app-header">
         <h1>subutai</h1>
+        <div className="mode-toggle">
+          <button
+            type="button"
+            className={`mode-btn${gameMode === 'classic' ? ' mode-btn-active' : ''}`}
+            disabled={modeToggleLocked}
+            title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Classic chess rules'}
+            onClick={() => {
+              if (gameMode === 'classic') return;
+              setGameMode('classic');
+              setAllowedPieceTypes(null);
+              setIsRouletteSpinning(false);
+              setRouletteActionsLeft(0);
+              setUsedRouletteSlots([]);
+            }}
+          >
+            Classic
+          </button>
+          <button
+            type="button"
+            className={`mode-btn${gameMode === 'roulette' ? ' mode-btn-active' : ''}`}
+            disabled={modeToggleLocked}
+            title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Kill the king — spin the roulette each turn'}
+            onClick={() => {
+              if (gameMode === 'roulette') return;
+              setGameMode('roulette');
+              setAllowedPieceTypes(null);
+              setIsRouletteSpinning(false);
+              setRouletteActionsLeft(0);
+              setUsedRouletteSlots([]);
+            }}
+          >
+            Roulette
+          </button>
+        </div>
       </header>
+
+      {gameMode === 'roulette' && gameStatus === 'active' && (
+        <div className="roulette-panel">
+          <div className="roulette-display">
+            {allowedPieceTypes ? (
+              allowedPieceTypes.map((t, i) => {
+                const isUsed = usedRouletteSlots.includes(i);
+                return (
+                  <span
+                    key={i}
+                    className={`roulette-face roulette-face-${t}${isUsed ? ' slot-used' : ''}`}
+                  >
+                    <span className={`piece piece-${state.sideToMove}`}>
+                      {glyphForPiece(state.sideToMove, t)}
+                    </span>
+                  </span>
+                );
+              })
+            ) : isRouletteSpinning ? (
+              Array.from({ length: ROULETTE_SLOT_COUNT }, (_, i) => (
+                <span key={i} className="roulette-face roulette-face-rolling">?</span>
+              ))
+            ) : (
+              <span className="roulette-label">
+                {currentPlayer === 'human'
+                  ? 'Your turn — spin the roulette'
+                  : 'AI is about to spin...'}
+              </span>
+            )}
+          </div>
+
+          {allowedPieceTypes && (
+            <div className="roulette-actions" aria-label="Actions remaining">
+              <span className="roulette-actions-label">Actions:</span>
+              {Array.from({ length: ROULETTE_MAX_ACTIONS }, (_, i) => (
+                <span
+                  key={i}
+                  className={`roulette-action-dot${i < rouletteActionsLeft ? ' active' : ' spent'}`}
+                />
+              ))}
+            </div>
+          )}
+
+          <button
+            type="button"
+            className="roulette-spin-btn"
+            onClick={handleSpinRoulette}
+            disabled={
+              allowedPieceTypes !== null ||
+              isRouletteSpinning ||
+              currentPlayer !== 'human'
+            }
+          >
+            Spin Roulette
+          </button>
+        </div>
+      )}
 
       <div
         className={`board${previewTopology || previewLocked ? ' previewing' : ''}`}
