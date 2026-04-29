@@ -23,7 +23,13 @@ import { classifyMove, type MoveClass } from './analysis/classify';
 import { GameReview } from './components/GameReview';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
-import { appendMove, computeSAN, createGameLog, updateLastMoveAnalysis } from './recording/log';
+import {
+  appendMove,
+  computeSAN,
+  createGameLog,
+  updateLastMoveAnalysis,
+  updateMoveAnalysisAt,
+} from './recording/log';
 import { buildSavedGameFromLog, buildSavedGameSnapshot } from './memory/build';
 import { localStorageAdapter } from './memory/storage';
 import { MemoryPanel } from './memory/MemoryPanel';
@@ -284,6 +290,46 @@ function App() {
       shell.style.setProperty('--flash-opacity', '0');
     }, 50);
   }, []);
+
+  /**
+   * Walks an imported log forward, classifying each move asynchronously.
+   * Each step is its own setTimeout(0) so the UI stays responsive between
+   * ~300 ms classifies. The captured log id ensures we don't patch a
+   * different game if the user starts a new one mid-classify.
+   */
+  const classifyImportedLog = useCallback(
+    (loadedLog: GameLog) => {
+      const capturedId = loadedLog.id;
+      // Pre-compute all positions synchronously — cheap (no search) — so the
+      // classifier can grab `stateBefore` for each move by index later.
+      const states: BoardState[] = [loadedLog.initialState];
+      for (const entry of loadedLog.moves) {
+        const prev = states[states.length - 1];
+        let next: BoardState;
+        if (entry.move.kind === 'topologyToggle') {
+          next = applyRotationMove(prev);
+        } else if (entry.move.from && entry.move.to) {
+          next = applyMove(prev, entry.move);
+        } else {
+          next = prev;
+        }
+        states.push(next);
+      }
+      let idx = 0;
+      const step = () => {
+        if (idx >= loadedLog.moves.length) return;
+        const i = idx++;
+        const entry = loadedLog.moves[i];
+        if (entry.move.kind !== 'topologyToggle' && entry.move.from && entry.move.to) {
+          const a = classifyMove(states[i], entry.move, states[i + 1]);
+          setLog((prev) => (prev.id === capturedId ? updateMoveAnalysisAt(prev, i, a) : prev));
+        }
+        setTimeout(step, 0);
+      };
+      setTimeout(step, 0);
+    },
+    [],
+  );
 
   function applyFormationCode() {
     const raw = formationInputValue.trim().toUpperCase();
@@ -1235,6 +1281,7 @@ function App() {
     setLockedFormationKey(game.config960);
     savedForLogIdRef.current = null;
     liveSavedGameIdRef.current = game.id;
+    classifyImportedLog(nextLog);
   }
 
   function importReplayFromNotation() {
@@ -1310,6 +1357,7 @@ function App() {
       setPreviewTopology(null);
       setLastMove(null);
       savedForLogIdRef.current = null;
+      classifyImportedLog(replayLog);
 
       setReplayError(null);
       setShowReplayDialog(false);
