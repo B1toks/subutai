@@ -39,6 +39,13 @@ function sortMoves(moves: Move[], state: BoardState): void {
   for (let i = 0; i < moves.length; i++) moves[i] = sorted[i];
 }
 
+interface NegamaxResult {
+  readonly score: number;
+  readonly bestMove: Move | null;
+  /** Triangular PV — the principal variation from this node downward. */
+  readonly pv: readonly Move[];
+}
+
 function negamax(
   state: BoardState,
   depth: number,
@@ -47,15 +54,15 @@ function negamax(
   ply: number,
   ctx: SearchContext,
   lastMoveWasRotation: boolean,
-): { score: number; bestMove: Move | null } {
+): NegamaxResult {
   ctx.nodes++;
   if ((ctx.nodes & 1023) === 0 && performance.now() > ctx.deadline) {
     ctx.cancelled = true;
   }
-  if (ctx.cancelled) return { score: 0, bestMove: null };
+  if (ctx.cancelled) return { score: 0, bestMove: null, pv: [] };
 
   if (depth <= 0) {
-    return { score: quiescence(state, alpha, beta, 4, ctx), bestMove: null };
+    return { score: quiescence(state, alpha, beta, 4, ctx), bestMove: null, pv: [] };
   }
 
   const moves = generateLegalMoves(state);
@@ -72,13 +79,14 @@ function negamax(
   }
 
   if (candidates.length === 0) {
-    if (isInCheck(state)) return { score: -(MATE_SCORE - ply), bestMove: null };
-    return { score: 0, bestMove: null };
+    if (isInCheck(state)) return { score: -(MATE_SCORE - ply), bestMove: null, pv: [] };
+    return { score: 0, bestMove: null, pv: [] };
   }
 
   sortMoves(candidates, state);
 
   let bestMove: Move | null = candidates[0];
+  let bestPv: readonly Move[] = [];
 
   for (const move of candidates) {
     if (ctx.cancelled) break;
@@ -97,14 +105,20 @@ function negamax(
     );
     const score = -result.score;
 
-    if (score >= beta) return { score: beta, bestMove: move };
+    if (score >= beta) {
+      // Beta cutoff — standard practice is to skip writing PV for this node
+      // (the line was good enough to refute, but we don't have the full
+      // principal continuation since alpha-beta pruned the rest).
+      return { score: beta, bestMove: move, pv: [] };
+    }
     if (score > alpha) {
       alpha = score;
       bestMove = move;
+      bestPv = [move, ...result.pv];
     }
   }
 
-  return { score: alpha, bestMove };
+  return { score: alpha, bestMove, pv: bestPv };
 }
 
 function quiescence(
@@ -168,11 +182,14 @@ export interface SearchResult {
   readonly bestMove: Move | null;
   /** Score from the perspective of state.sideToMove (centipawns). */
   readonly score: number;
+  /** Engine's principal variation. Only populated for non-cancelled depths. */
+  readonly pv: readonly Move[];
 }
 
 /**
- * Iterative deepening search exposing both the best move and its score.
- * Used by the analysis layer for centipawn-loss classification.
+ * Iterative deepening search exposing best move, score, and the principal
+ * variation. Used by the analysis layer for centipawn-loss classification
+ * and for showing the engine's expected continuation in tooltips.
  */
 export function searchPosition(
   state: BoardState,
@@ -182,6 +199,7 @@ export function searchPosition(
   const lastMoveWasRotation = options.lastMoveWasRotation ?? false;
   let bestMove: Move | null = null;
   let bestScore = 0;
+  let bestPv: readonly Move[] = [];
 
   for (let depth = 1; depth <= options.maxDepth; depth++) {
     const ctx: SearchContext = { deadline, nodes: 0, cancelled: false };
@@ -198,10 +216,11 @@ export function searchPosition(
     if (!ctx.cancelled && result.bestMove) {
       bestMove = result.bestMove;
       bestScore = result.score;
+      bestPv = result.pv;
     }
     if (ctx.cancelled) break;
     if (Math.abs(result.score) >= MATE_SCORE - 100) break;
   }
 
-  return { bestMove, score: bestScore };
+  return { bestMove, score: bestScore, pv: bestPv };
 }

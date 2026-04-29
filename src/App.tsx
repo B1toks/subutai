@@ -1360,8 +1360,15 @@ function App() {
         if (a) {
           const marker = MOVE_CLASS_MARKER[a.classification];
           if (marker) san += marker;
-          if (a.classification === 'blunder' && a.bestMoveSan) {
-            san += ` \u2190 \u043a\u0440\u0430\u0449\u0435: ${a.bestMoveSan}`;
+          if (a.classification === 'blunder') {
+            const pv = a.bestPvSan;
+            if (pv && pv.length > 0) {
+              const head = pv.slice(0, 4).join(' ');
+              const tail = pv.length > 4 ? ' \u2026' : '';
+              san += ` \u2190 \u043a\u0440\u0430\u0449\u0435: ${head}${tail}`;
+            } else if (a.bestMoveSan) {
+              san += ` \u2190 \u043a\u0440\u0430\u0449\u0435: ${a.bestMoveSan}`;
+            }
           }
         }
         return san;

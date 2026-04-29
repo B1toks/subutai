@@ -3,7 +3,9 @@ import {
   generateLegalMoves,
   isCheckmate,
   getAttackerSquares,
+  applyMove,
 } from '../engine/moves';
+import { applyRotationMove } from '../engine/auxetic';
 import { PIECE_VALUE } from '../ai/evaluate';
 import { searchPosition } from '../ai/search';
 
@@ -21,8 +23,10 @@ export interface MoveAnalysis {
   cpl: number;
   /** Engine's preferred move from stateBefore. */
   bestMove?: Move;
-  /** Human-readable rendering of bestMove (e.g. "Q a4→d7"). */
+  /** Human-readable rendering of bestMove (e.g. "Qa4→d7"). */
   bestMoveSan?: string;
+  /** Engine's full principal variation rendered as SAN tokens. */
+  bestPvSan?: string[];
   discoveredAttack?: boolean;
   isSacrifice?: boolean;
 }
@@ -48,6 +52,23 @@ function moverColor(stateBefore: BoardState): Color {
 
 function opposite(color: Color): Color {
   return color === 'white' ? 'black' : 'white';
+}
+
+/** Walks the PV forward from stateBefore, producing a SAN per move. */
+function pvToSans(stateBefore: BoardState, pv: readonly Move[]): string[] {
+  const sans: string[] = [];
+  let current = stateBefore;
+  for (const move of pv) {
+    sans.push(shortSan(current, move));
+    if (move.kind === 'topologyToggle') {
+      current = applyRotationMove(current);
+    } else if (move.from && move.to) {
+      current = applyMove(current, move);
+    } else {
+      break;
+    }
+  }
+  return sans;
 }
 
 function shortSan(state: BoardState, move: Move): string {
@@ -218,6 +239,8 @@ export function classifyMove(
 
   const bestMove = bestSearch.bestMove ?? undefined;
   const bestMoveSan = bestMove ? shortSan(stateBefore, bestMove) : undefined;
+  const bestPvSan =
+    bestSearch.pv.length > 0 ? pvToSans(stateBefore, bestSearch.pv) : undefined;
 
   // 4. Sacrifice + best-move check — promotes good/best plays to brilliant.
   let isSacrifice = false;
@@ -246,6 +269,7 @@ export function classifyMove(
     cpl,
     bestMove,
     bestMoveSan,
+    bestPvSan,
     isSacrifice: isSacrifice || undefined,
   };
 }
