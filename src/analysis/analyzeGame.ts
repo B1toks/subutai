@@ -36,7 +36,7 @@ export function analyzeGame(log: GameLog): GameReviewResult {
       next = applyMove(current, move);
     } else {
       // Pass / no-op moves don't have a meaningful classification.
-      analyses.push({ classification: 'good', cpl: 0 });
+      analyses.push({ classification: 'good', cpl: 0, searchScoreFromWhite: 0 });
       continue;
     }
     const analysis = classifyMove(current, move, next);

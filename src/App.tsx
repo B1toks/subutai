@@ -19,7 +19,7 @@ import {
 import { applyRotationMove, applyPassMove, toggleTopology, computeBoardLayout, tilePixelCenter } from './engine/auxetic';
 import { SubutaiAgent } from './ai/agents';
 import { evaluate, PIECE_VALUE } from './ai/evaluate';
-import { classifyMove, type MoveClass } from './analysis/classify';
+import { classifyMove, type MoveClass, type MoveAnalysis } from './analysis/classify';
 import { GameReview } from './components/GameReview';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
@@ -169,9 +169,17 @@ function App() {
   );
 
   // --- Dynamic evaluation + background --------------------------------------
-  // White-perspective centipawn score. Recomputed on every state change.
-  const currentEval = useMemo(() => evaluateFromWhite(state), [state]);
-  // Previous eval — kept for delta comparisons used by the classifier (Stage 3+).
+  // Search-backed eval (White-perspective, centipawns) gets pushed in by the
+  // classifier after every move. While null (start-of-game / fresh reset)
+  // we fall back to the static evaluator so the bar isn't blank.
+  const [searchEvalFromWhite, setSearchEvalFromWhite] = useState<number | null>(null);
+  // Set when the search found a forced mate from the post-move position.
+  const [searchMateInPlies, setSearchMateInPlies] = useState<number | null>(null);
+  const currentEval = useMemo(() => {
+    if (searchEvalFromWhite !== null) return searchEvalFromWhite;
+    return evaluateFromWhite(state);
+  }, [searchEvalFromWhite, state]);
+  // Previous eval — kept for delta comparisons used by the classifier.
   const prevEvalRef = useRef<number>(currentEval);
   // The element whose CSS variables drive the gradient. Setting via ref
   // (rather than inline style) so React doesn't churn the style object every
@@ -247,6 +255,13 @@ function App() {
   } | null>(null);
   const classifyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Push the search-backed eval from an analysis into the bar/gradient state.
+  // Used by every classify callsite (live moves, AI, imported-log completion).
+  const pushSearchEval = useCallback((analysis: MoveAnalysis) => {
+    setSearchEvalFromWhite(analysis.searchScoreFromWhite);
+    setSearchMateInPlies(analysis.isMate ? analysis.mateInPlies ?? 0 : null);
+  }, []);
+
   const flagClassifiedSquare = useCallback(
     (square: SquareId, classification: 'blunder' | 'brilliant') => {
       if (classifyTimerRef.current) clearTimeout(classifyTimerRef.current);
@@ -316,19 +331,26 @@ function App() {
         states.push(next);
       }
       let idx = 0;
+      // Only the last move's analysis feeds the bar — otherwise it would
+      // pinball through 30 mid-game scores while the loading completes.
+      let lastAnalysis: MoveAnalysis | null = null;
       const step = () => {
-        if (idx >= loadedLog.moves.length) return;
+        if (idx >= loadedLog.moves.length) {
+          if (lastAnalysis) pushSearchEval(lastAnalysis);
+          return;
+        }
         const i = idx++;
         const entry = loadedLog.moves[i];
         if (entry.move.kind !== 'topologyToggle' && entry.move.from && entry.move.to) {
           const a = classifyMove(states[i], entry.move, states[i + 1]);
           setLog((prev) => (prev.id === capturedId ? updateMoveAnalysisAt(prev, i, a) : prev));
+          lastAnalysis = a;
         }
         setTimeout(step, 0);
       };
       setTimeout(step, 0);
     },
-    [],
+    [pushSearchEval],
   );
 
   function applyFormationCode() {
@@ -356,6 +378,8 @@ function App() {
     setLockedFormationKey(raw);
     setFormationInputMode(false);
     setFormationInputValue('');
+    setSearchEvalFromWhite(null);
+    setSearchMateInPlies(null);
 
     // New play session => new live snapshot id.
     liveSavedGameIdRef.current = `live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -503,6 +527,8 @@ function App() {
     setIsRouletteSpinning(false);
     setRouletteActionsLeft(0);
     setUsedRouletteSlots([]);
+    setSearchEvalFromWhite(null);
+    setSearchMateInPlies(null);
 
     // New play session => new live snapshot id.
     liveSavedGameIdRef.current = `live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -824,6 +850,7 @@ function App() {
               const aiAnalysis = classifyMove(boardState, move, next);
               setLog((prev) => updateLastMoveAnalysis(prev, aiAnalysis));
               triggerFlash(aiAnalysis.classification);
+              pushSearchEval(aiAnalysis);
               if (
                 move.to &&
                 (aiAnalysis.classification === 'blunder' ||
@@ -839,7 +866,7 @@ function App() {
         checkGameOver(next, move.kind === 'topologyToggle');
       }, 650);
     },
-    [triggerFlash, flagClassifiedSquare],
+    [triggerFlash, flagClassifiedSquare, pushSearchEval],
   );
 
   const lastMoveWasRotation =
@@ -1127,6 +1154,7 @@ function App() {
       const analysis = classifyMove(state, resolvedMove, afterMove);
       setLog((prev) => updateLastMoveAnalysis(prev, analysis));
       triggerFlash(analysis.classification);
+      pushSearchEval(analysis);
       if (
         resolvedMove.to &&
         (analysis.classification === 'blunder' || analysis.classification === 'brilliant')
@@ -1206,6 +1234,7 @@ function App() {
       const analysis = classifyMove(state, move, next);
       setLog((prev) => updateLastMoveAnalysis(prev, analysis));
       triggerFlash(analysis.classification);
+      pushSearchEval(analysis);
       if (
         move.to &&
         (analysis.classification === 'blunder' || analysis.classification === 'brilliant')
@@ -1281,6 +1310,8 @@ function App() {
     setLockedFormationKey(game.config960);
     savedForLogIdRef.current = null;
     liveSavedGameIdRef.current = game.id;
+    setSearchEvalFromWhite(null);
+    setSearchMateInPlies(null);
     classifyImportedLog(nextLog);
   }
 
@@ -1357,6 +1388,8 @@ function App() {
       setPreviewTopology(null);
       setLastMove(null);
       savedForLogIdRef.current = null;
+      setSearchEvalFromWhite(null);
+      setSearchMateInPlies(null);
       classifyImportedLog(replayLog);
 
       setReplayError(null);
@@ -1579,7 +1612,7 @@ function App() {
       )}
 
       <div className="board-with-eval">
-        <EvalBar evalCp={currentEval} />
+        <EvalBar evalCp={currentEval} mateInPlies={searchMateInPlies} />
       <div
         className={`board${previewTopology || previewLocked ? ' previewing' : ''}`}
         style={{ width: boardSize, height: boardSize }}
@@ -2038,18 +2071,39 @@ function App() {
   );
 }
 
-function EvalBar({ evalCp }: { evalCp: number }) {
-  // 50% baseline + tanh-shaped scale so big advantages don't peg the bar to
-  // 0/100 and tiny ones still register. Clamp so the loser always shows a
-  // sliver — fully empty looks broken.
-  const t = Math.tanh(evalCp / 400);
-  const whitePercent = Math.max(5, Math.min(95, 50 + t * 45));
-  const display = `${evalCp >= 0 ? '+' : '−'}${(Math.abs(evalCp) / 100).toFixed(1)}`;
+function EvalBar({
+  evalCp,
+  mateInPlies,
+}: {
+  evalCp: number;
+  mateInPlies: number | null;
+}) {
+  const isMate = mateInPlies !== null;
+  let whitePercent: number;
+  let display: string;
+  if (isMate) {
+    // Snap to the winning edge so the bar visually screams "the game is
+    // ending" — bypass the smooth tanh curve.
+    whitePercent = evalCp > 0 ? 95 : 5;
+    const sign = evalCp > 0 ? '' : '−';
+    const moves = Math.ceil((mateInPlies as number) / 2);
+    display = moves <= 0 ? `${sign}#` : `${sign}M${moves}`;
+  } else {
+    // 50% baseline + tanh-shaped scale so big advantages don't peg the bar
+    // to 0/100 and tiny ones still register. Clamp so the loser always
+    // shows a sliver — fully empty looks broken.
+    const t = Math.tanh(evalCp / 400);
+    whitePercent = Math.max(5, Math.min(95, 50 + t * 45));
+    display = `${evalCp >= 0 ? '+' : '−'}${(Math.abs(evalCp) / 100).toFixed(1)}`;
+  }
   // Position the number on the dominant side. Near zero we leave it on top
   // (black side) so the layout doesn't twitch.
   const textOnBottom = evalCp > 50;
   return (
-    <div className="eval-bar" aria-label={`Evaluation ${display}`}>
+    <div
+      className={`eval-bar${isMate ? ' is-mate' : ''}`}
+      aria-label={`Evaluation ${display}`}
+    >
       <div className="eval-bar-white" style={{ height: `${whitePercent}%` }} />
       <span
         className={`eval-bar-text${textOnBottom ? ' eval-bar-text-bottom' : ' eval-bar-text-top'}`}

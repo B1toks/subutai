@@ -25,8 +25,8 @@
   align-items: center;
   background: linear-gradient(135deg, var(--eval-c1) 0%, var(--eval-c2) 100%);
   transition:
-    --eval-c1 1.5s ease,
-    --eval-c2 1.5s ease;
+    --eval-c1 0.6s ease,
+    --eval-c2 0.6s ease;
 }
 
 .app-shell::after {
@@ -1478,7 +1478,16 @@
   left: 0;
   right: 0;
   background: #f0f0e8;
-  transition: height 0.6s ease;
+  transition: height 0.4s ease;
+}
+
+@keyframes eval-mate-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(255, 200, 80, 0.4); }
+  50%      { box-shadow: 0 0 14px rgba(255, 200, 80, 0.8); }
+}
+
+.eval-bar.is-mate {
+  animation: eval-mate-pulse 1.2s ease-in-out infinite;
 }
 
 .eval-bar-text {

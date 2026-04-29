@@ -29,7 +29,22 @@ export interface MoveAnalysis {
   bestPvSan?: string[];
   discoveredAttack?: boolean;
   isSacrifice?: boolean;
+  /**
+   * Search-backed eval after the move, normalised to White's perspective
+   * (centipawns). The UI uses this for the eval bar / gradient because it
+   * sees recaptures and tactics that a static evaluator misses.
+   */
+  searchScoreFromWhite: number;
+  /** True when the search found a forced mate from the post-move position. */
+  isMate?: boolean;
+  /** Plies until mate (0 = mate already on the board). Defined when isMate. */
+  mateInPlies?: number;
 }
+
+// Mirrors src/ai/search.ts. The 100 buffer matches the threshold
+// iterativeDeepen itself uses to early-exit on a found mate.
+const MATE_SCORE = 100_000;
+const MATE_THRESHOLD = MATE_SCORE - 100;
 
 const CLASSIFY_BUDGET_MS = 150;
 const CLASSIFY_MAX_DEPTH = 5;
@@ -186,38 +201,21 @@ export function classifyMove(
     generateLegalMoves(stateAfter).length === 0
   ) {
     if (isCheckmate(stateAfter, move.kind === 'topologyToggle')) {
-      return { classification: 'checkmate', cpl: 0 };
+      // Mover delivered mate. Score is +∞ for the mover; from White's POV
+      // it's ±MATE_SCORE depending on who moved.
+      const score = mover === 'white' ? MATE_SCORE : -MATE_SCORE;
+      return {
+        classification: 'checkmate',
+        cpl: 0,
+        searchScoreFromWhite: score,
+        isMate: true,
+        mateInPlies: 0,
+      };
     }
   }
 
-  // 2. Discovered attack heuristic (runs before CPL — wins on its own merits).
-  if (move.kind !== 'topologyToggle' && movedTo) {
-    const discovered = findDiscoveredTargets(stateBefore, stateAfter, mover, movedTo);
-    if (discovered.length > 0) {
-      const enemyKingDiscovered = discovered.some((sq) => {
-        const p = stateAfter.pieces[sq];
-        return p && p.type === 'king' && p.color !== mover;
-      });
-      if (enemyKingDiscovered) {
-        return { classification: 'brilliant', cpl: 0, discoveredAttack: true };
-      }
-      // Highest-value discovered hanging target decides whether it's brilliant or just good.
-      let highestHangingValue = 0;
-      for (const sq of discovered) {
-        if (!isHanging(stateAfter, sq, mover)) continue;
-        const v = pieceValueOn(stateAfter, sq);
-        if (v > highestHangingValue) highestHangingValue = v;
-      }
-      if (highestHangingValue >= MAJOR_PIECE_THRESHOLD) {
-        return { classification: 'brilliant', cpl: 0, discoveredAttack: true };
-      }
-      if (highestHangingValue >= MINOR_PIECE_THRESHOLD) {
-        return { classification: 'good', cpl: 0, discoveredAttack: true };
-      }
-    }
-  }
-
-  // 3. CPL analysis — what did the engine want vs. what was played?
+  // 2. Search runs first — both the discovered-attack and CPL paths need
+  // searchScoreFromWhite to populate the eval bar consistently.
   const bestSearch = searchPosition(stateBefore, {
     budgetMs: CLASSIFY_BUDGET_MS,
     maxDepth: CLASSIFY_MAX_DEPTH,
@@ -231,16 +229,82 @@ export function classifyMove(
   const actualEvalForMover = -afterSearch.score;
   const cpl = Math.max(0, bestSearch.score - actualEvalForMover);
 
-  let classification: MoveClass;
-  if (cpl >= 300) classification = 'blunder';
-  else if (cpl >= 50) classification = 'mistake';
-  else if (cpl < 10) classification = 'best';
-  else classification = 'good';
+  // White-perspective version of the same number, for the eval bar / gradient.
+  const searchScoreFromWhite =
+    stateAfter.sideToMove === 'white' ? afterSearch.score : -afterSearch.score;
+  // Mate detection: scores within 100 of the mate ceiling encode "mate in N
+  // plies", where N = MATE_SCORE − |score|. The 100-plies buffer matches what
+  // iterativeDeepen uses to early-exit on a found mate.
+  const isMate = Math.abs(afterSearch.score) >= MATE_THRESHOLD;
+  const mateInPlies = isMate ? MATE_SCORE - Math.abs(afterSearch.score) : undefined;
 
   const bestMove = bestSearch.bestMove ?? undefined;
   const bestMoveSan = bestMove ? shortSan(stateBefore, bestMove) : undefined;
   const bestPvSan =
     bestSearch.pv.length > 0 ? pvToSans(stateBefore, bestSearch.pv) : undefined;
+
+  // 3. Discovered-attack heuristic — overrides classification on its own merits.
+  if (move.kind !== 'topologyToggle' && movedTo) {
+    const discovered = findDiscoveredTargets(stateBefore, stateAfter, mover, movedTo);
+    if (discovered.length > 0) {
+      const enemyKingDiscovered = discovered.some((sq) => {
+        const p = stateAfter.pieces[sq];
+        return p && p.type === 'king' && p.color !== mover;
+      });
+      if (enemyKingDiscovered) {
+        return {
+          classification: 'brilliant',
+          cpl,
+          bestMove,
+          bestMoveSan,
+          bestPvSan,
+          discoveredAttack: true,
+          searchScoreFromWhite,
+          isMate: isMate || undefined,
+          mateInPlies,
+        };
+      }
+      // Highest-value discovered hanging target decides whether it's brilliant or just good.
+      let highestHangingValue = 0;
+      for (const sq of discovered) {
+        if (!isHanging(stateAfter, sq, mover)) continue;
+        const v = pieceValueOn(stateAfter, sq);
+        if (v > highestHangingValue) highestHangingValue = v;
+      }
+      if (highestHangingValue >= MAJOR_PIECE_THRESHOLD) {
+        return {
+          classification: 'brilliant',
+          cpl,
+          bestMove,
+          bestMoveSan,
+          bestPvSan,
+          discoveredAttack: true,
+          searchScoreFromWhite,
+          isMate: isMate || undefined,
+          mateInPlies,
+        };
+      }
+      if (highestHangingValue >= MINOR_PIECE_THRESHOLD) {
+        return {
+          classification: 'good',
+          cpl,
+          bestMove,
+          bestMoveSan,
+          bestPvSan,
+          discoveredAttack: true,
+          searchScoreFromWhite,
+          isMate: isMate || undefined,
+          mateInPlies,
+        };
+      }
+    }
+  }
+
+  let classification: MoveClass;
+  if (cpl >= 300) classification = 'blunder';
+  else if (cpl >= 50) classification = 'mistake';
+  else if (cpl < 10) classification = 'best';
+  else classification = 'good';
 
   // 4. Sacrifice + best-move check — promotes good/best plays to brilliant.
   let isSacrifice = false;
@@ -271,5 +335,8 @@ export function classifyMove(
     bestMoveSan,
     bestPvSan,
     isSacrifice: isSacrifice || undefined,
+    searchScoreFromWhite,
+    isMate: isMate || undefined,
+    mateInPlies,
   };
 }
