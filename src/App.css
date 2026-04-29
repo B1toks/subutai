@@ -1,3 +1,46 @@
+/* @property registration — required for CSS to interpolate <color> and
+   <number> values between transitions. Without this, gradients snap. */
+@property --eval-c1 {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: #2a2520;
+}
+@property --eval-c2 {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: #1a1612;
+}
+@property --flash-opacity {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+
+.app-shell {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: linear-gradient(135deg, var(--eval-c1) 0%, var(--eval-c2) 100%);
+  transition:
+    --eval-c1 1.5s ease,
+    --eval-c2 1.5s ease;
+}
+
+.app-shell::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: var(--flash-color, white);
+  opacity: var(--flash-opacity, 0);
+  pointer-events: none;
+  transition: --flash-opacity 0.4s ease-out;
+  mix-blend-mode: screen;
+  z-index: 9000;
+}
+
 .app-root {
   width: var(--board-size);
   margin: 0 auto;

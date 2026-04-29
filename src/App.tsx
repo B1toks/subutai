@@ -18,7 +18,7 @@ import {
 } from './engine/moves';
 import { applyRotationMove, applyPassMove, toggleTopology, computeBoardLayout, tilePixelCenter } from './engine/auxetic';
 import { SubutaiAgent } from './ai/agents';
-import { PIECE_VALUE } from './ai/evaluate';
+import { evaluate, PIECE_VALUE } from './ai/evaluate';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
 import { appendMove, computeSAN, createGameLog } from './recording/log';
@@ -76,6 +76,35 @@ function backRankString(boardState: BoardState): string {
     .join('');
 }
 
+// White-perspective static eval. evaluate() returns the score for sideToMove,
+// so we negate when it's Black's turn — this way + always means White is ahead.
+function evaluateFromWhite(state: BoardState): number {
+  const raw = evaluate(state);
+  return state.sideToMove === 'white' ? raw : -raw;
+}
+
+// Map a White-perspective centipawn score to a pair of HSL colors that drive
+// the linear-gradient. tanh squashes extreme positions into [-1, 1] so the
+// gradient eases off rather than running away on crushing material wins.
+function evalToColors(evalCp: number): { c1: string; c2: string } {
+  const t = Math.tanh(evalCp / 400);
+  if (t > 0.1) {
+    const i = Math.min(t, 1);
+    return {
+      c1: `hsl(45, ${30 + 30 * i}%, ${15 + 5 * i}%)`,
+      c2: `hsl(35, ${20 + 20 * i}%, ${8 + 3 * i}%)`,
+    };
+  }
+  if (t < -0.1) {
+    const i = Math.min(-t, 1);
+    return {
+      c1: `hsl(355, ${25 + 35 * i}%, ${12 + 4 * i}%)`,
+      c2: `hsl(345, ${20 + 25 * i}%, ${6 + 3 * i}%)`,
+    };
+  }
+  return { c1: '#2a2520', c2: '#1a1612' };
+}
+
 function App() {
   const [seed, setSeed] = useState<number>(1);
   const [state, setState] = useState<BoardState>(() => createStartingPosition(1));
@@ -120,6 +149,16 @@ function App() {
   const liveSavedGameIdRef = useRef<string>(
     `live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   );
+
+  // --- Dynamic evaluation + background --------------------------------------
+  // White-perspective centipawn score. Recomputed on every state change.
+  const currentEval = useMemo(() => evaluateFromWhite(state), [state]);
+  // Previous eval — kept for delta comparisons used by the classifier (Stage 3+).
+  const prevEvalRef = useRef<number>(currentEval);
+  // The element whose CSS variables drive the gradient. Setting via ref
+  // (rather than inline style) so React doesn't churn the style object every
+  // render and break the @property transition.
+  const shellRef = useRef<HTMLDivElement>(null);
 
   const [boardSize, setBoardSize] = useState(() =>
     Math.min(window.innerWidth - 32, 520),
@@ -168,6 +207,19 @@ function App() {
     const snapshot = buildSavedGameSnapshot(log, liveId);
     (localStorageAdapter.saveOrUpdateGame?.(snapshot) ?? localStorageAdapter.saveGame(snapshot));
   }, [gameStatus, log]);
+
+  // Drive the gradient via CSS custom properties. setProperty (rather than
+  // inline style) lets the @property-registered transition interpolate
+  // colour-to-colour smoothly. prevEvalRef is updated here too so Stage 3's
+  // classifier can read it.
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    const { c1, c2 } = evalToColors(currentEval);
+    shell.style.setProperty('--eval-c1', c1);
+    shell.style.setProperty('--eval-c2', c2);
+    prevEvalRef.current = currentEval;
+  }, [currentEval]);
 
   function applyFormationCode() {
     const raw = formationInputValue.trim().toUpperCase();
@@ -1238,6 +1290,7 @@ function App() {
   }, [gameStatus, state.sideToMove]);
 
   return (
+    <div className="app-shell" ref={shellRef}>
     <div className="app-root" style={{ '--board-size': `${boardSize}px` } as React.CSSProperties}>
       <header className="app-header">
         <h1>subutai</h1>
@@ -1782,6 +1835,7 @@ function App() {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }
