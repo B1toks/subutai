@@ -20,6 +20,7 @@ import { applyRotationMove, applyPassMove, toggleTopology, computeBoardLayout, t
 import { SubutaiAgent } from './ai/agents';
 import { evaluate, PIECE_VALUE } from './ai/evaluate';
 import { classifyMove, type MoveClass } from './analysis/classify';
+import { GameReview } from './components/GameReview';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
 import { appendMove, computeSAN, createGameLog } from './recording/log';
@@ -116,6 +117,7 @@ function evalToColors(evalCp: number): { c1: string; c2: string } {
 }
 
 function App() {
+  const [view, setView] = useState<'game' | 'review'>('game');
   const [seed, setSeed] = useState<number>(1);
   const [state, setState] = useState<BoardState>(() => createStartingPosition(1));
   const [initialState, setInitialState] = useState<BoardState>(() => createStartingPosition(1));
@@ -1348,6 +1350,14 @@ function App() {
     return null;
   }, [gameStatus, state.sideToMove]);
 
+  if (view === 'review') {
+    return (
+      <div className="app-shell" ref={shellRef}>
+        <GameReview log={log} onBack={() => setView('game')} />
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell" ref={shellRef}>
     <div className="app-root" style={{ '--board-size': `${boardSize}px` } as React.CSSProperties}>
@@ -1760,6 +1770,15 @@ function App() {
             </div>
           )}
         </div>
+        <button
+          type="button"
+          className="review-trigger-btn"
+          onClick={() => setView('review')}
+          disabled={log.moves.length === 0}
+          title="Review the game move-by-move"
+        >
+          📊 Review
+        </button>
         <button
           type="button"
           className="action-btn"
