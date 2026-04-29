@@ -1449,3 +1449,55 @@
 .review-trigger-btn:hover {
   background: #3a3a55;
 }
+
+/* ─── Eval bar ───────────────────────────────────────────────────────── */
+
+/* Positioned-relative wrapper so the bar can sit just outside the board's
+   left edge without consuming layout width — .app-root is fixed at
+   var(--board-size) and we don't want the board to shift right by 20px. */
+.board-with-eval {
+  position: relative;
+  width: var(--board-size);
+}
+
+.eval-bar {
+  width: 12px;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -20px;
+  background: #1a1a1a;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.eval-bar-white {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #f0f0e8;
+  transition: height 0.6s ease;
+}
+
+.eval-bar-text {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.3px;
+  pointer-events: none;
+}
+
+.eval-bar-text-top {
+  top: 4px;
+  color: #d4c8a0;
+}
+
+.eval-bar-text-bottom {
+  bottom: 4px;
+  color: #1a1a1a;
+}

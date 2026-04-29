@@ -1530,6 +1530,8 @@ function App() {
         </div>
       )}
 
+      <div className="board-with-eval">
+        <EvalBar evalCp={currentEval} />
       <div
         className={`board${previewTopology || previewLocked ? ' previewing' : ''}`}
         style={{ width: boardSize, height: boardSize }}
@@ -1692,6 +1694,7 @@ function App() {
             })}
           </svg>
         )}
+      </div>
       </div>
 
       {pendingPromotion && (
@@ -1983,6 +1986,28 @@ function App() {
         </div>
       )}
     </div>
+    </div>
+  );
+}
+
+function EvalBar({ evalCp }: { evalCp: number }) {
+  // 50% baseline + tanh-shaped scale so big advantages don't peg the bar to
+  // 0/100 and tiny ones still register. Clamp so the loser always shows a
+  // sliver — fully empty looks broken.
+  const t = Math.tanh(evalCp / 400);
+  const whitePercent = Math.max(5, Math.min(95, 50 + t * 45));
+  const display = `${evalCp >= 0 ? '+' : '−'}${(Math.abs(evalCp) / 100).toFixed(1)}`;
+  // Position the number on the dominant side. Near zero we leave it on top
+  // (black side) so the layout doesn't twitch.
+  const textOnBottom = evalCp > 50;
+  return (
+    <div className="eval-bar" aria-label={`Evaluation ${display}`}>
+      <div className="eval-bar-white" style={{ height: `${whitePercent}%` }} />
+      <span
+        className={`eval-bar-text${textOnBottom ? ' eval-bar-text-bottom' : ' eval-bar-text-top'}`}
+      >
+        {display}
+      </span>
     </div>
   );
 }
