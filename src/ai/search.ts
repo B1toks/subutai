@@ -151,10 +151,39 @@ export function iterativeDeepen(
   timeBudgetMs: number,
   lastMoveWasRotation: boolean = false,
 ): Move | null {
-  const deadline = performance.now() + timeBudgetMs;
-  let bestMove: Move | null = null;
+  return searchPosition(state, {
+    budgetMs: timeBudgetMs,
+    maxDepth: 6,
+    lastMoveWasRotation,
+  }).bestMove;
+}
 
-  for (let depth = 1; depth <= 6; depth++) {
+export interface SearchOptions {
+  readonly budgetMs: number;
+  readonly maxDepth: number;
+  readonly lastMoveWasRotation?: boolean;
+}
+
+export interface SearchResult {
+  readonly bestMove: Move | null;
+  /** Score from the perspective of state.sideToMove (centipawns). */
+  readonly score: number;
+}
+
+/**
+ * Iterative deepening search exposing both the best move and its score.
+ * Used by the analysis layer for centipawn-loss classification.
+ */
+export function searchPosition(
+  state: BoardState,
+  options: SearchOptions,
+): SearchResult {
+  const deadline = performance.now() + options.budgetMs;
+  const lastMoveWasRotation = options.lastMoveWasRotation ?? false;
+  let bestMove: Move | null = null;
+  let bestScore = 0;
+
+  for (let depth = 1; depth <= options.maxDepth; depth++) {
     const ctx: SearchContext = { deadline, nodes: 0, cancelled: false };
     const result = negamax(
       state,
@@ -168,10 +197,11 @@ export function iterativeDeepen(
 
     if (!ctx.cancelled && result.bestMove) {
       bestMove = result.bestMove;
+      bestScore = result.score;
     }
     if (ctx.cancelled) break;
     if (Math.abs(result.score) >= MATE_SCORE - 100) break;
   }
 
-  return bestMove;
+  return { bestMove, score: bestScore };
 }
