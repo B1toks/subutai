@@ -36,7 +36,7 @@
   background: var(--flash-color, white);
   opacity: var(--flash-opacity, 0);
   pointer-events: none;
-  transition: --flash-opacity 0.4s ease-out;
+  transition: --flash-opacity var(--flash-duration, 0.4s) ease-out;
   mix-blend-mode: screen;
   z-index: 9000;
 }

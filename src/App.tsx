@@ -19,6 +19,7 @@ import {
 import { applyRotationMove, applyPassMove, toggleTopology, computeBoardLayout, tilePixelCenter } from './engine/auxetic';
 import { SubutaiAgent } from './ai/agents';
 import { evaluate, PIECE_VALUE } from './ai/evaluate';
+import { classifyMove, type MoveClass } from './analysis/classify';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
 import { appendMove, computeSAN, createGameLog } from './recording/log';
@@ -75,6 +76,15 @@ function backRankString(boardState: BoardState): string {
     })
     .join('');
 }
+
+const MOVE_CLASS_MARKER: Record<MoveClass, string> = {
+  best: ' ⭐',
+  good: '',
+  mistake: '?',
+  blunder: '??',
+  brilliant: '!!',
+  checkmate: '#',
+};
 
 // White-perspective static eval. evaluate() returns the score for sideToMove,
 // so we negate when it's Black's turn — this way + always means White is ahead.
@@ -210,7 +220,7 @@ function App() {
 
   // Drive the gradient via CSS custom properties. setProperty (rather than
   // inline style) lets the @property-registered transition interpolate
-  // colour-to-colour smoothly. prevEvalRef is updated here too so Stage 3's
+  // colour-to-colour smoothly. prevEvalRef is updated here too so the
   // classifier can read it.
   useEffect(() => {
     const shell = shellRef.current;
@@ -220,6 +230,38 @@ function App() {
     shell.style.setProperty('--eval-c2', c2);
     prevEvalRef.current = currentEval;
   }, [currentEval]);
+
+  // Triggers a screen flash for a classified move. Sets the colour/peak
+  // opacity/transition duration as CSS variables; on the next frame, snaps
+  // opacity back to 0 so the registered --flash-opacity transition fades it.
+  const triggerFlash = useCallback((cls: MoveClass) => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    let color: string;
+    let peak: string;
+    let durationMs: number;
+    if (cls === 'blunder') {
+      color = 'rgb(220, 40, 40)';
+      peak = '0.35';
+      durationMs = 400;
+    } else if (cls === 'brilliant') {
+      color = 'rgb(255, 200, 80)';
+      peak = '0.45';
+      durationMs = 600;
+    } else if (cls === 'checkmate') {
+      color = 'rgb(255, 255, 255)';
+      peak = '0.6';
+      durationMs = 800;
+    } else {
+      return;
+    }
+    shell.style.setProperty('--flash-color', color);
+    shell.style.setProperty('--flash-duration', `${durationMs}ms`);
+    shell.style.setProperty('--flash-opacity', peak);
+    setTimeout(() => {
+      shell.style.setProperty('--flash-opacity', '0');
+    }, 50);
+  }, []);
 
   function applyFormationCode() {
     const raw = formationInputValue.trim().toUpperCase();
@@ -699,7 +741,12 @@ function App() {
         setLegalMoves(nextMoves);
         setSelected(null);
         const aiSan = computeSAN(boardState, move);
-        setLog((prev) => appendMove(prev, move, aiSan, boardState.topologyState));
+        const aiAnalysis =
+          move.kind === 'topologyToggle'
+            ? undefined
+            : classifyMove(boardState, move, next);
+        if (aiAnalysis) triggerFlash(aiAnalysis.classification);
+        setLog((prev) => appendMove(prev, move, aiSan, boardState.topologyState, aiAnalysis));
         setLastMove(
           move.kind === 'topologyToggle'
             ? null
@@ -708,7 +755,7 @@ function App() {
         checkGameOver(next, move.kind === 'topologyToggle');
       }, 650);
     },
-    [],
+    [triggerFlash],
   );
 
   const lastMoveWasRotation =
@@ -987,7 +1034,9 @@ function App() {
     const san = computeSAN(state, resolvedMove);
     const moverType = state.pieces[resolvedMove.from!]!.type;
     const afterMove = applyMove(state, resolvedMove);
-    setLog((prev) => appendMove(prev, resolvedMove, san, state.topologyState));
+    const analysis = classifyMove(state, resolvedMove, afterMove);
+    triggerFlash(analysis.classification);
+    setLog((prev) => appendMove(prev, resolvedMove, san, state.topologyState, analysis));
     setLastMove({ from: resolvedMove.from, to: resolvedMove.to });
 
     if (gameMode !== 'roulette') {
@@ -1050,12 +1099,14 @@ function App() {
     if (!move) return;
     const san = computeSAN(state, move);
     const next = applyMove(state, move);
+    const analysis = classifyMove(state, move, next);
+    triggerFlash(analysis.classification);
     setState(next);
     const nextMoves = generateLegalMoves(next);
     setLegalMoves(nextMoves);
     setSelected(null);
     setPendingPromotion(null);
-    setLog((prev) => appendMove(prev, move, san, state.topologyState));
+    setLog((prev) => appendMove(prev, move, san, state.topologyState, analysis));
     setLastMove({ from: move.from, to: move.to });
     checkGameOver(next);
   }
@@ -1245,6 +1296,14 @@ function App() {
         }
         if (entry.move.kind !== 'topologyToggle' && entry.topology === 'B') {
           if (!san.includes('@')) san += '@B';
+        }
+        const a = entry.analysis;
+        if (a) {
+          const marker = MOVE_CLASS_MARKER[a.classification];
+          if (marker) san += marker;
+          if (a.classification === 'blunder' && a.bestMoveSan) {
+            san += ` \u2190 \u043a\u0440\u0430\u0449\u0435: ${a.bestMoveSan}`;
+          }
         }
         return san;
       }

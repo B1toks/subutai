@@ -1,10 +1,13 @@
 import type { BoardState, Move, PieceType, TopologyState } from '../engine';
+import type { MoveAnalysis } from '../analysis/classify';
 
 export interface LoggedMove {
   readonly san?: string;
   readonly move: Move;
   readonly topology?: TopologyState;
   readonly timestamp: number;
+  /** Populated when the move was classified at play time. */
+  readonly analysis?: MoveAnalysis;
 }
 
 export interface GameLog {
@@ -60,9 +63,10 @@ export function appendMove(
   move: Move,
   san?: string,
   topology?: TopologyState,
+  analysis?: MoveAnalysis,
 ): GameLog {
   return {
     ...log,
-    moves: [...log.moves, { san, move, topology, timestamp: Date.now() }],
+    moves: [...log.moves, { san, move, topology, timestamp: Date.now(), analysis }],
   };
 }
