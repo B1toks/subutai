@@ -23,7 +23,7 @@ import { classifyMove, type MoveClass } from './analysis/classify';
 import { GameReview } from './components/GameReview';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
-import { appendMove, computeSAN, createGameLog } from './recording/log';
+import { appendMove, computeSAN, createGameLog, updateLastMoveAnalysis } from './recording/log';
 import { buildSavedGameFromLog, buildSavedGameSnapshot } from './memory/build';
 import { localStorageAdapter } from './memory/storage';
 import { MemoryPanel } from './memory/MemoryPanel';
@@ -232,6 +232,26 @@ function App() {
     shell.style.setProperty('--eval-c2', c2);
     prevEvalRef.current = currentEval;
   }, [currentEval]);
+
+  // Square to pulse-highlight after a blunder/brilliant. Cleared after the
+  // animation duration (4 cycles × 600ms = 2.4s, rounded to 2500).
+  const [classifiedSquare, setClassifiedSquare] = useState<{
+    square: SquareId;
+    classification: 'blunder' | 'brilliant';
+  } | null>(null);
+  const classifyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flagClassifiedSquare = useCallback(
+    (square: SquareId, classification: 'blunder' | 'brilliant') => {
+      if (classifyTimerRef.current) clearTimeout(classifyTimerRef.current);
+      setClassifiedSquare({ square, classification });
+      classifyTimerRef.current = setTimeout(() => {
+        setClassifiedSquare(null);
+        classifyTimerRef.current = null;
+      }, 2500);
+    },
+    [],
+  );
 
   // Triggers a screen flash for a classified move. Sets the colour/peak
   // opacity/transition duration as CSS variables; on the next frame, snaps
@@ -743,21 +763,37 @@ function App() {
         setLegalMoves(nextMoves);
         setSelected(null);
         const aiSan = computeSAN(boardState, move);
-        const aiAnalysis =
-          move.kind === 'topologyToggle'
-            ? undefined
-            : classifyMove(boardState, move, next);
-        if (aiAnalysis) triggerFlash(aiAnalysis.classification);
-        setLog((prev) => appendMove(prev, move, aiSan, boardState.topologyState, aiAnalysis));
+        setLog((prev) => appendMove(prev, move, aiSan, boardState.topologyState));
         setLastMove(
           move.kind === 'topologyToggle'
             ? null
             : { from: move.from, to: move.to },
         );
+
+        // Block until classify finishes — keeps any subsequent AI scheduling
+        // from overlapping a blocking classify on the main thread.
+        if (move.kind !== 'topologyToggle') {
+          await new Promise<void>((resolve) => {
+            setTimeout(() => {
+              const aiAnalysis = classifyMove(boardState, move, next);
+              setLog((prev) => updateLastMoveAnalysis(prev, aiAnalysis));
+              triggerFlash(aiAnalysis.classification);
+              if (
+                move.to &&
+                (aiAnalysis.classification === 'blunder' ||
+                  aiAnalysis.classification === 'brilliant')
+              ) {
+                flagClassifiedSquare(move.to, aiAnalysis.classification);
+              }
+              resolve();
+            }, 0);
+          });
+        }
+
         checkGameOver(next, move.kind === 'topologyToggle');
       }, 650);
     },
-    [triggerFlash],
+    [triggerFlash, flagClassifiedSquare],
   );
 
   const lastMoveWasRotation =
@@ -1036,10 +1072,22 @@ function App() {
     const san = computeSAN(state, resolvedMove);
     const moverType = state.pieces[resolvedMove.from!]!.type;
     const afterMove = applyMove(state, resolvedMove);
-    const analysis = classifyMove(state, resolvedMove, afterMove);
-    triggerFlash(analysis.classification);
-    setLog((prev) => appendMove(prev, resolvedMove, san, state.topologyState, analysis));
+    setLog((prev) => appendMove(prev, resolvedMove, san, state.topologyState));
     setLastMove({ from: resolvedMove.from, to: resolvedMove.to });
+    // Defer classify so the click feels instant — main thread is still
+    // single-threaded but the DOM paints first, then the analysis lands
+    // ~300 ms later as if the engine is "thinking".
+    setTimeout(() => {
+      const analysis = classifyMove(state, resolvedMove, afterMove);
+      setLog((prev) => updateLastMoveAnalysis(prev, analysis));
+      triggerFlash(analysis.classification);
+      if (
+        resolvedMove.to &&
+        (analysis.classification === 'blunder' || analysis.classification === 'brilliant')
+      ) {
+        flagClassifiedSquare(resolvedMove.to, analysis.classification);
+      }
+    }, 0);
 
     if (gameMode !== 'roulette') {
       setState(afterMove);
@@ -1101,15 +1149,24 @@ function App() {
     if (!move) return;
     const san = computeSAN(state, move);
     const next = applyMove(state, move);
-    const analysis = classifyMove(state, move, next);
-    triggerFlash(analysis.classification);
     setState(next);
     const nextMoves = generateLegalMoves(next);
     setLegalMoves(nextMoves);
     setSelected(null);
     setPendingPromotion(null);
-    setLog((prev) => appendMove(prev, move, san, state.topologyState, analysis));
+    setLog((prev) => appendMove(prev, move, san, state.topologyState));
     setLastMove({ from: move.from, to: move.to });
+    setTimeout(() => {
+      const analysis = classifyMove(state, move, next);
+      setLog((prev) => updateLastMoveAnalysis(prev, analysis));
+      triggerFlash(analysis.classification);
+      if (
+        move.to &&
+        (analysis.classification === 'blunder' || analysis.classification === 'brilliant')
+      ) {
+        flagClassifiedSquare(move.to, analysis.classification);
+      }
+    }, 0);
     checkGameOver(next);
   }
 
@@ -1363,6 +1420,7 @@ function App() {
     <div className="app-root" style={{ '--board-size': `${boardSize}px` } as React.CSSProperties}>
       <header className="app-header">
         <h1>subutai</h1>
+        <div className="header-controls">
         <div className="mode-toggle">
           <button
             type="button"
@@ -1396,6 +1454,15 @@ function App() {
           >
             Roulette
           </button>
+        </div>
+        <button
+          type="button"
+          className="header-help-btn"
+          onClick={() => setShowHelp(true)}
+          title="Rules & info"
+        >
+          ?
+        </button>
         </div>
       </header>
 
@@ -1500,6 +1567,9 @@ function App() {
                 isCheckingPiece ? (gameStatus === 'checkmate' ? 'mating-piece' : 'checking-piece') : '',
                 threatCount > 0 ? 'threatened' : '',
                 isThreateningPiece ? 'threatening-piece' : '',
+                classifiedSquare?.square === sq
+                  ? `classified-${classifiedSquare.classification}`
+                  : '',
               ]
                 .filter(Boolean)
                 .join(' ')}
@@ -1778,14 +1848,6 @@ function App() {
           title="Review the game move-by-move"
         >
           📊 Review
-        </button>
-        <button
-          type="button"
-          className="action-btn"
-          onClick={() => setShowHelp(true)}
-          title="Rules & info"
-        >
-          ?
         </button>
       </div>
 

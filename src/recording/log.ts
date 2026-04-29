@@ -70,3 +70,29 @@ export function appendMove(
     moves: [...log.moves, { san, move, topology, timestamp: Date.now(), analysis }],
   };
 }
+
+/**
+ * Attach an analysis object to the last logged move. Used by the async
+ * classifier — the move is appended immediately for snappy UI, then
+ * `setTimeout(0)` runs `classifyMove` and patches the result back in.
+ */
+export function updateLastMoveAnalysis(log: GameLog, analysis: MoveAnalysis): GameLog {
+  if (log.moves.length === 0) return log;
+  const idx = log.moves.length - 1;
+  const updated = log.moves.slice();
+  updated[idx] = { ...updated[idx], analysis };
+  return { ...log, moves: updated };
+}
+
+/** Patch a specific move (by index) with an analysis. Used by the
+ *  imported-log classifier where moves are processed out-of-order. */
+export function updateMoveAnalysisAt(
+  log: GameLog,
+  index: number,
+  analysis: MoveAnalysis,
+): GameLog {
+  if (index < 0 || index >= log.moves.length) return log;
+  const updated = log.moves.slice();
+  updated[index] = { ...updated[index], analysis };
+  return { ...log, moves: updated };
+}
