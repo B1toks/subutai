@@ -1478,7 +1478,13 @@
   left: 0;
   right: 0;
   background: #f0f0e8;
-  transition: height 0.4s ease;
+  transition: height 0.4s ease, opacity 0.2s ease;
+}
+
+/* Static-eval fallback while the worker classifier is still running.
+   Tones the white half down so the user reads it as "preliminary". */
+.eval-bar.is-pending .eval-bar-white {
+  opacity: 0.7;
 }
 
 @keyframes eval-mate-pulse {

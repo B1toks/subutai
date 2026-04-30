@@ -881,6 +881,10 @@ function App() {
         // synchronous setLog call returns).
         if (move.kind !== 'topologyToggle') {
           const moveIdx = logLengthRef.current;
+          // Drop search-eval so the bar follows the static fallback for the
+          // ~1 s before the worker comes back with the upgraded score.
+          setSearchEvalFromWhite(null);
+          setSearchMateInPlies(null);
           const aiAnalysis = await classifyAsync(boardState, move, next, {
             budgetMs: 1000,
             maxDepth: 7,
@@ -1180,6 +1184,11 @@ function App() {
     // ~1 s depth-7 search runs. moveIdx is captured pre-append so the .then
     // can patch by index even if the user / AI has moved on by the time the
     // analysis lands. Visuals are gated to "still the latest move".
+    // Drop the previous search-eval immediately — currentEval falls back to
+    // the static evaluator, which gives the bar an instant first-pass shift
+    // (matters most on captures). The classify .then upgrades it ~1s later.
+    setSearchEvalFromWhite(null);
+    setSearchMateInPlies(null);
     const moveIdx = log.moves.length;
     classifyAsync(state, resolvedMove, afterMove, { budgetMs: 1000, maxDepth: 7 })
       .then((analysis) => {
@@ -1254,6 +1263,10 @@ function App() {
     setPendingPromotion(null);
     setLog((prev) => appendMove(prev, move, san, state.topologyState));
     setLastMove({ from: move.from, to: move.to });
+    // See onSquareClick: drop search-eval so the static fallback paints the
+    // bar instantly while the worker classifier catches up.
+    setSearchEvalFromWhite(null);
+    setSearchMateInPlies(null);
     const moveIdx = log.moves.length;
     classifyAsync(state, move, next, { budgetMs: 1000, maxDepth: 7 }).then(
       (analysis) => {
@@ -1631,7 +1644,11 @@ function App() {
       )}
 
       <div className="board-with-eval">
-        <EvalBar evalCp={currentEval} mateInPlies={searchMateInPlies} />
+        <EvalBar
+          evalCp={currentEval}
+          mateInPlies={searchMateInPlies}
+          isPending={searchEvalFromWhite === null}
+        />
       <div
         className={`board${previewTopology || previewLocked ? ' previewing' : ''}`}
         style={{ width: boardSize, height: boardSize }}
@@ -2093,9 +2110,12 @@ function App() {
 function EvalBar({
   evalCp,
   mateInPlies,
+  isPending,
 }: {
   evalCp: number;
   mateInPlies: number | null;
+  /** True while we're showing the static-eval fallback waiting on the worker. */
+  isPending: boolean;
 }) {
   const isMate = mateInPlies !== null;
   let whitePercent: number;
@@ -2120,7 +2140,7 @@ function EvalBar({
   const textOnBottom = evalCp > 50;
   return (
     <div
-      className={`eval-bar${isMate ? ' is-mate' : ''}`}
+      className={`eval-bar${isMate ? ' is-mate' : ''}${isPending ? ' is-pending' : ''}`}
       aria-label={`Evaluation ${display}`}
     >
       <div className="eval-bar-white" style={{ height: `${whitePercent}%` }} />
