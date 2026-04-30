@@ -19,7 +19,8 @@ import {
 import { applyRotationMove, applyPassMove, toggleTopology, computeBoardLayout, tilePixelCenter } from './engine/auxetic';
 import { SubutaiAgent } from './ai/agents';
 import { evaluate, PIECE_VALUE } from './ai/evaluate';
-import { classifyMove, type MoveClass, type MoveAnalysis } from './analysis/classify';
+import { type MoveClass, type MoveAnalysis } from './analysis/classify';
+import { classifyAsync } from './analysis/classifyClient';
 import { GameReview } from './components/GameReview';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
@@ -27,7 +28,6 @@ import {
   appendMove,
   computeSAN,
   createGameLog,
-  updateLastMoveAnalysis,
   updateMoveAnalysisAt,
 } from './recording/log';
 import { buildSavedGameFromLog, buildSavedGameSnapshot } from './memory/build';
@@ -185,6 +185,10 @@ function App() {
   // (rather than inline style) so React doesn't churn the style object every
   // render and break the @property transition.
   const shellRef = useRef<HTMLDivElement>(null);
+  // Worker-backed classify can resolve AFTER subsequent moves have been
+  // played — we read this ref in each .then() to decide whether the analysis
+  // is still "current" (visuals fire) or stale (log patched, visuals skipped).
+  const logLengthRef = useRef<number>(0);
 
   const [boardSize, setBoardSize] = useState(() =>
     Math.min(window.innerWidth - 32, 520),
@@ -247,6 +251,12 @@ function App() {
     prevEvalRef.current = currentEval;
   }, [currentEval]);
 
+  // Keep logLengthRef in sync with committed log state — used by classify
+  // .then handlers to decide if their analysis is still the latest.
+  useEffect(() => {
+    logLengthRef.current = log.moves.length;
+  }, [log.moves.length]);
+
   // Square to pulse-highlight after a blunder/brilliant. Cleared after the
   // animation duration (4 cycles × 600ms = 2.4s, rounded to 2500).
   const [classifiedSquare, setClassifiedSquare] = useState<{
@@ -306,6 +316,25 @@ function App() {
     }, 50);
   }, []);
 
+  // Apply per-move visual side-effects, but only if no newer move has been
+  // played since the analysis was queued. With the Worker-backed classifier
+  // a response can land seconds after a subsequent move; we don't want a
+  // stale flash for an old move firing while the bar should reflect a newer one.
+  const applyClassifyVisuals = useCallback(
+    (moveIdx: number, analysis: MoveAnalysis, moveTo: SquareId | undefined) => {
+      if (logLengthRef.current !== moveIdx + 1) return;
+      pushSearchEval(analysis);
+      triggerFlash(analysis.classification);
+      if (
+        moveTo &&
+        (analysis.classification === 'blunder' || analysis.classification === 'brilliant')
+      ) {
+        flagClassifiedSquare(moveTo, analysis.classification);
+      }
+    },
+    [pushSearchEval, triggerFlash, flagClassifiedSquare],
+  );
+
   /**
    * Walks an imported log forward, classifying each move asynchronously.
    * Each step is its own setTimeout(0) so the UI stays responsive between
@@ -330,25 +359,26 @@ function App() {
         }
         states.push(next);
       }
-      let idx = 0;
       // Only the last move's analysis feeds the bar — otherwise it would
       // pinball through 30 mid-game scores while the loading completes.
       let lastAnalysis: MoveAnalysis | null = null;
-      const step = () => {
-        if (idx >= loadedLog.moves.length) {
-          if (lastAnalysis) pushSearchEval(lastAnalysis);
-          return;
-        }
-        const i = idx++;
-        const entry = loadedLog.moves[i];
-        if (entry.move.kind !== 'topologyToggle' && entry.move.from && entry.move.to) {
-          const a = classifyMove(states[i], entry.move, states[i + 1]);
-          setLog((prev) => (prev.id === capturedId ? updateMoveAnalysisAt(prev, i, a) : prev));
+      (async () => {
+        for (let i = 0; i < loadedLog.moves.length; i++) {
+          const entry = loadedLog.moves[i];
+          if (entry.move.kind === 'topologyToggle' || !entry.move.from || !entry.move.to) {
+            continue;
+          }
+          const a = await classifyAsync(states[i], entry.move, states[i + 1], {
+            budgetMs: 1000,
+            maxDepth: 7,
+          });
+          setLog((prev) =>
+            prev.id === capturedId ? updateMoveAnalysisAt(prev, i, a) : prev,
+          );
           lastAnalysis = a;
         }
-        setTimeout(step, 0);
-      };
-      setTimeout(step, 0);
+        if (lastAnalysis) pushSearchEval(lastAnalysis);
+      })();
     },
     [pushSearchEval],
   );
@@ -842,31 +872,27 @@ function App() {
             : { from: move.from, to: move.to },
         );
 
-        // Block until classify finishes — keeps any subsequent AI scheduling
-        // from overlapping a blocking classify on the main thread.
+        // Worker-backed classify: takes ~1 s of background work for depth 7
+        // but doesn't block the main thread. logLengthRef gives us AI's
+        // moveIdx (the count BEFORE the append we just did would be the same
+        // value the ref still holds, so capture it BEFORE setLog above runs
+        // its commit — which it has, but the ref only updates on next effect.
+        // In practice the timing works because we read it right after the
+        // synchronous setLog call returns).
         if (move.kind !== 'topologyToggle') {
-          await new Promise<void>((resolve) => {
-            setTimeout(() => {
-              const aiAnalysis = classifyMove(boardState, move, next);
-              setLog((prev) => updateLastMoveAnalysis(prev, aiAnalysis));
-              triggerFlash(aiAnalysis.classification);
-              pushSearchEval(aiAnalysis);
-              if (
-                move.to &&
-                (aiAnalysis.classification === 'blunder' ||
-                  aiAnalysis.classification === 'brilliant')
-              ) {
-                flagClassifiedSquare(move.to, aiAnalysis.classification);
-              }
-              resolve();
-            }, 0);
+          const moveIdx = logLengthRef.current;
+          const aiAnalysis = await classifyAsync(boardState, move, next, {
+            budgetMs: 1000,
+            maxDepth: 7,
           });
+          setLog((prev) => updateMoveAnalysisAt(prev, moveIdx, aiAnalysis));
+          applyClassifyVisuals(moveIdx, aiAnalysis, move.to);
         }
 
         checkGameOver(next, move.kind === 'topologyToggle');
       }, 650);
     },
-    [triggerFlash, flagClassifiedSquare, pushSearchEval],
+    [applyClassifyVisuals],
   );
 
   const lastMoveWasRotation =
@@ -1150,18 +1176,16 @@ function App() {
     // Defer classify so the click feels instant — main thread is still
     // single-threaded but the DOM paints first, then the analysis lands
     // ~300 ms later as if the engine is "thinking".
-    setTimeout(() => {
-      const analysis = classifyMove(state, resolvedMove, afterMove);
-      setLog((prev) => updateLastMoveAnalysis(prev, analysis));
-      triggerFlash(analysis.classification);
-      pushSearchEval(analysis);
-      if (
-        resolvedMove.to &&
-        (analysis.classification === 'blunder' || analysis.classification === 'brilliant')
-      ) {
-        flagClassifiedSquare(resolvedMove.to, analysis.classification);
-      }
-    }, 0);
+    // Worker-backed classify: keeps the main thread responsive while the
+    // ~1 s depth-7 search runs. moveIdx is captured pre-append so the .then
+    // can patch by index even if the user / AI has moved on by the time the
+    // analysis lands. Visuals are gated to "still the latest move".
+    const moveIdx = log.moves.length;
+    classifyAsync(state, resolvedMove, afterMove, { budgetMs: 1000, maxDepth: 7 })
+      .then((analysis) => {
+        setLog((prev) => updateMoveAnalysisAt(prev, moveIdx, analysis));
+        applyClassifyVisuals(moveIdx, analysis, resolvedMove.to);
+      });
 
     if (gameMode !== 'roulette') {
       setState(afterMove);
@@ -1230,18 +1254,13 @@ function App() {
     setPendingPromotion(null);
     setLog((prev) => appendMove(prev, move, san, state.topologyState));
     setLastMove({ from: move.from, to: move.to });
-    setTimeout(() => {
-      const analysis = classifyMove(state, move, next);
-      setLog((prev) => updateLastMoveAnalysis(prev, analysis));
-      triggerFlash(analysis.classification);
-      pushSearchEval(analysis);
-      if (
-        move.to &&
-        (analysis.classification === 'blunder' || analysis.classification === 'brilliant')
-      ) {
-        flagClassifiedSquare(move.to, analysis.classification);
-      }
-    }, 0);
+    const moveIdx = log.moves.length;
+    classifyAsync(state, move, next, { budgetMs: 1000, maxDepth: 7 }).then(
+      (analysis) => {
+        setLog((prev) => updateMoveAnalysisAt(prev, moveIdx, analysis));
+        applyClassifyVisuals(moveIdx, analysis, move.to);
+      },
+    );
     checkGameOver(next);
   }
 

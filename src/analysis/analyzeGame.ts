@@ -2,7 +2,8 @@ import type { BoardState } from '../engine/types';
 import { applyMove } from '../engine/moves';
 import { applyRotationMove } from '../engine/auxetic';
 import type { GameLog } from '../recording/log';
-import { classifyMove, type MoveAnalysis } from './classify';
+import { type MoveAnalysis } from './classify';
+import { classifyAsync } from './classifyClient';
 
 export interface GameReviewResult {
   /** Per-move analysis, parallel to log.moves. */
@@ -19,30 +20,59 @@ export interface GameReviewResult {
 }
 
 /**
- * Replays the game forward, classifying each move. Synchronous — for a
- * 30-move game this freezes the main thread for ~5-10s, which is why the
- * caller should show a spinner. Web Worker is intentionally out of scope.
+ * Replays the game forward, queuing each move for classification on the
+ * Worker thread. The worker processes them serially (so the UI stays
+ * responsive); we collect results via Promise.all. Progress fires after
+ * each completion.
  */
-export function analyzeGame(log: GameLog): GameReviewResult {
-  const analyses: MoveAnalysis[] = [];
-  let current: BoardState = log.initialState;
+export async function analyzeGame(
+  log: GameLog,
+  opts?: {
+    onProgress?: (done: number, total: number) => void;
+    budgetMs?: number;
+    maxDepth?: number;
+  },
+): Promise<GameReviewResult> {
+  const budgetMs = opts?.budgetMs ?? 2000;
+  const maxDepth = opts?.maxDepth ?? 8;
 
+  // Pre-compute all positions synchronously — cheap, no search.
+  const states: BoardState[] = [log.initialState];
   for (const entry of log.moves) {
     const move = entry.move;
-    let next: BoardState;
     if (move.kind === 'topologyToggle') {
-      next = applyRotationMove(current);
+      states.push(applyRotationMove(states[states.length - 1]));
     } else if (move.from && move.to) {
-      next = applyMove(current, move);
+      states.push(applyMove(states[states.length - 1], move));
     } else {
-      // Pass / no-op moves don't have a meaningful classification.
-      analyses.push({ classification: 'good', cpl: 0, searchScoreFromWhite: 0 });
-      continue;
+      states.push(states[states.length - 1]);
     }
-    const analysis = classifyMove(current, move, next);
-    analyses.push(analysis);
-    current = next;
   }
+
+  let done = 0;
+  const total = log.moves.length;
+  // Queue all classifies into the worker. Worker processes serially so the
+  // main thread never blocks; Promise.all collects them in order.
+  const promises: Promise<MoveAnalysis>[] = log.moves.map((entry, i) => {
+    const move = entry.move;
+    if (move.kind === 'topologyToggle' || !move.from || !move.to) {
+      done++;
+      opts?.onProgress?.(done, total);
+      return Promise.resolve<MoveAnalysis>({
+        classification: 'good',
+        cpl: 0,
+        searchScoreFromWhite: 0,
+      });
+    }
+    return classifyAsync(states[i], move, states[i + 1], { budgetMs, maxDepth }).then(
+      (a) => {
+        done++;
+        opts?.onProgress?.(done, total);
+        return a;
+      },
+    );
+  });
+  const analyses = await Promise.all(promises);
 
   let blunders = 0;
   let mistakes = 0;

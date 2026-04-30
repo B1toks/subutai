@@ -121,12 +121,21 @@ function negamax(
   return { score: alpha, bestMove, pv: bestPv };
 }
 
+/** Cheap "does this move attack the opponent's king?" probe. Apply the move,
+ *  flip side-to-move, then test isInCheck (which checks current side's king). */
+function givesCheck(state: BoardState, move: Move): boolean {
+  if (move.kind === 'topologyToggle') return false;
+  const after = applyMove(state, move);
+  return isInCheck(after);
+}
+
 function quiescence(
   state: BoardState,
   alpha: number,
   beta: number,
   depthLeft: number,
   ctx: SearchContext,
+  checksLeft: number = 2,
 ): number {
   ctx.nodes++;
   if ((ctx.nodes & 1023) === 0 && performance.now() > ctx.deadline) {
@@ -144,15 +153,42 @@ function quiescence(
     return isInCheck(state) ? -(MATE_SCORE) : 0;
   }
 
-  const captures = allMoves.filter(
-    (m) => m.kind === 'capture' || m.kind === 'promotion',
-  );
-  sortMoves(captures, state);
+  // Tactical move set: captures + promotions always; non-capture checks
+  // only while we still have a check budget. Without the budget the qsearch
+  // tree explodes (every quiet move that gives check spawns another full
+  // qsearch branch).
+  const tactical: Array<{ move: Move; isCheckExt: boolean }> = [];
+  for (const m of allMoves) {
+    if (m.kind === 'capture' || m.kind === 'promotion') {
+      tactical.push({ move: m, isCheckExt: false });
+    } else if (
+      checksLeft > 0 &&
+      m.kind !== 'topologyToggle' &&
+      givesCheck(state, m)
+    ) {
+      tactical.push({ move: m, isCheckExt: true });
+    }
+  }
 
-  for (const move of captures) {
+  // Reuse the captures-first MVV/LVA ordering. sortMoves expects a Move[],
+  // so sort the moves and reapply the original order to our tagged list.
+  const orderedMoves = tactical.map((t) => t.move);
+  sortMoves(orderedMoves, state);
+  const checkExtensionByMove = new Map<Move, boolean>();
+  for (const t of tactical) checkExtensionByMove.set(t.move, t.isCheckExt);
+
+  for (const move of orderedMoves) {
     if (ctx.cancelled) break;
     const next = applyMove(state, move);
-    const score = -quiescence(next, -beta, -alpha, depthLeft - 1, ctx);
+    const wasCheckExt = checkExtensionByMove.get(move) === true;
+    const score = -quiescence(
+      next,
+      -beta,
+      -alpha,
+      depthLeft - 1,
+      ctx,
+      wasCheckExt ? checksLeft - 1 : checksLeft,
+    );
     if (score >= beta) return beta;
     if (score > alpha) alpha = score;
   }

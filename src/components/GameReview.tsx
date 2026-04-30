@@ -48,18 +48,28 @@ function shortMoveText(entry: GameLog['moves'][number]): string {
 export function GameReview({ log, onBack }: Props) {
   const [result, setResult] = useState<GameReviewResult | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [progress, setProgress] = useState<{ done: number; total: number }>({
+    done: 0,
+    total: log.moves.length,
+  });
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setResult(null);
-    // Defer to the next tick so the spinner has a chance to render before
-    // the main thread blocks on the analysis loop.
-    const handle = setTimeout(() => {
-      const out = analyzeGame(log);
+    setProgress({ done: 0, total: log.moves.length });
+    analyzeGame(log, {
+      onProgress: (done, total) => {
+        if (!cancelled) setProgress({ done, total });
+      },
+    }).then((out) => {
+      if (cancelled) return;
       setResult(out);
       setLoading(false);
-    }, 50);
-    return () => clearTimeout(handle);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [log]);
 
   return (
@@ -74,7 +84,9 @@ export function GameReview({ log, onBack }: Props) {
       {loading && (
         <div className="game-review-loading">
           <div className="spinner" />
-          <span>Analyzing {log.moves.length} moves…</span>
+          <span>
+            Analyzing {progress.done}/{progress.total} moves…
+          </span>
         </div>
       )}
 

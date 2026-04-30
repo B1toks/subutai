@@ -46,8 +46,13 @@ export interface MoveAnalysis {
 const MATE_SCORE = 100_000;
 const MATE_THRESHOLD = MATE_SCORE - 100;
 
-const CLASSIFY_BUDGET_MS = 150;
-const CLASSIFY_MAX_DEPTH = 5;
+const DEFAULT_BUDGET_MS = 150;
+const DEFAULT_MAX_DEPTH = 5;
+
+export interface ClassifyOptions {
+  budgetMs?: number;
+  maxDepth?: number;
+}
 
 const MAJOR_PIECE_THRESHOLD = 500; // rook+
 const MINOR_PIECE_THRESHOLD = 300; // bishop/knight
@@ -189,7 +194,10 @@ export function classifyMove(
   stateBefore: BoardState,
   move: Move,
   stateAfter: BoardState,
+  opts: ClassifyOptions = {},
 ): MoveAnalysis {
+  const budgetMs = opts.budgetMs ?? DEFAULT_BUDGET_MS;
+  const maxDepth = opts.maxDepth ?? DEFAULT_MAX_DEPTH;
   const mover = moverColor(stateBefore);
   const movedTo: SquareId | null = move.to ?? null;
 
@@ -216,14 +224,8 @@ export function classifyMove(
 
   // 2. Search runs first — both the discovered-attack and CPL paths need
   // searchScoreFromWhite to populate the eval bar consistently.
-  const bestSearch = searchPosition(stateBefore, {
-    budgetMs: CLASSIFY_BUDGET_MS,
-    maxDepth: CLASSIFY_MAX_DEPTH,
-  });
-  const afterSearch = searchPosition(stateAfter, {
-    budgetMs: CLASSIFY_BUDGET_MS,
-    maxDepth: CLASSIFY_MAX_DEPTH,
-  });
+  const bestSearch = searchPosition(stateBefore, { budgetMs, maxDepth });
+  const afterSearch = searchPosition(stateAfter, { budgetMs, maxDepth });
   // afterSearch.score is from stateAfter.sideToMove's perspective (opponent).
   // Flip to mover's perspective to compare apples-to-apples with bestSearch.score.
   const actualEvalForMover = -afterSearch.score;
