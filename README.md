@@ -1,73 +1,41 @@
-# React + TypeScript + Vite
+# Subutai — Kinetic Chess
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A **Chess 960 variant** with dynamically rotating 2×2 board segments and custom castling. Built as the technical implementation for **[Lucid Dreams 2026](https://www.lucid-dreams.at/2026-projekte/projekt-027)** — FH St. Pölten's annual interactive media exhibition.
 
-Currently, two official plugins are available:
+♟ **Live:** [b1toks.github.io/subutai](https://b1toks.github.io/subutai/)
+✦ **Exhibition:** [Lucid Dreams · Projekt 027](https://www.lucid-dreams.at/2026-projekte/projekt-027)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+---
 
-## React Compiler
+## What it does
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Plays a custom chess variant where 2×2 segments of the board rotate mid-game, forcing players to re-read the position on every turn
+- Chess 960 starting layout — back rank shuffled per game
+- Custom castling rules adapted to the rotation mechanic
+- All standard rules + segment-rotation logic + global state synchronization
 
-## Expanding the ESLint configuration
+## Tech
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- **React 18** + **TypeScript**
+- **Vite** — dev server + build
+- **Tailwind CSS** + **ShadCN UI** — interface chrome
+- Pure-state board representation (no DOM-driven game state)
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Run locally
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+git clone https://github.com/B1toks/subutai.git
+cd subutai
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## My role
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Joined the project as **Technical Lead** for the front-end implementation, working with an international 5-person team at FH St. Pölten. Owned the technical architecture and most of the implementation — segment-rotation math, custom castling, state sync.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+The repository is forked from **[vschetinger/subutai](https://github.com/vschetinger/subutai)** (the originating team space) where ongoing collaboration happens.
+
+---
+
+Built by **Oleksandr Honchar** with the FH St. Pölten EPS team · [honchar.dev](https://www.honchar.dev) · [LinkedIn](https://www.linkedin.com/in/honchar-oleksandr/)
