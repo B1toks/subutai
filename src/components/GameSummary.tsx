@@ -1,4 +1,4 @@
-import type { GameOutcome, GamePoints } from '../analysis/points';
+import type { GameOutcome, GamePoints, MoveQualityCounts } from '../analysis/points';
 import { FeedbackPrompt } from './FeedbackPrompt';
 
 interface GameSummaryProps {
@@ -65,6 +65,15 @@ export function GameSummary({
                 <span>Capture points</span>
                 <span className="summary-num">{points.capturePoints}</span>
               </div>
+              {points.qualityPoints > 0 && (
+                <div className="summary-row summary-row-quality">
+                  <span>
+                    Move quality
+                    <QualityBreakdown counts={points.moveQualityCounts} />
+                  </span>
+                  <span className="summary-num">{points.qualityPoints}</span>
+                </div>
+              )}
               <div className="summary-row">
                 <span>Outcome bonus</span>
                 <span className="summary-num">{points.outcomeBonus}</span>
@@ -146,4 +155,13 @@ export function GameSummary({
       </div>
     </div>
   );
+}
+
+function QualityBreakdown({ counts }: { counts: MoveQualityCounts }) {
+  const parts: string[] = [];
+  if (counts.brilliant > 0) parts.push(`${counts.brilliant} brilliant`);
+  if (counts.best > 0) parts.push(`${counts.best} best`);
+  if (counts.good > 0) parts.push(`${counts.good} good`);
+  if (parts.length === 0) return null;
+  return <span className="summary-quality-detail">{parts.join(' · ')}</span>;
 }

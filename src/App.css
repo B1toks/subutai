@@ -2247,6 +2247,20 @@
   min-width: 110px;
 }
 
+.summary-row-quality > span:first-child {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.summary-quality-detail {
+  font-size: 11px;
+  opacity: 0.6;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+
 .feedback-error {
   margin-top: 8px;
 }

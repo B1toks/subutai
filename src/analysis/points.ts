@@ -2,16 +2,27 @@ import type { GameLog } from '../recording/log';
 import type { Color, PieceType, BoardState } from '../engine/types';
 import { applyMove } from '../engine/moves';
 import { toggleTopology } from '../engine/auxetic';
+import type { MoveClass } from './classify';
 
 export type GameOutcome = 'human-win' | 'ai-win' | 'draw' | 'human-resign';
+
+export interface MoveQualityCounts {
+  brilliant: number;
+  best: number;
+  good: number;
+  mistake: number;
+  blunder: number;
+}
 
 export interface GamePoints {
   movePoints: number;
   capturePoints: number;
+  qualityPoints: number;
   outcomeBonus: number;
   total: number;
   moveCount: number;
   captureValueCp: number;
+  moveQualityCounts: MoveQualityCounts;
   /** False when anti-farming kicks in (too short). Resigning a long game
    *  still counts — see RESIGN_SCALE below. */
   counted: boolean;
@@ -29,7 +40,19 @@ const PIECE_VALUE_CP: Record<PieceType, number> = {
 const MIN_COUNTED_MOVES = 10;
 // Resigning a long game still earns points, but only half of the move-points
 // portion and no capture or outcome bonus — playing it out always pays more.
+// Quality bonus is intentionally NOT scaled: good moves before resign still
+// reward the player.
 const RESIGN_SCALE = 0.5;
+
+/** Per-classification reward for human moves. Positive-only — no penalties. */
+export const QUALITY_BONUS: Record<MoveClass, number> = {
+  brilliant: 10,
+  best: 3,
+  good: 1,
+  mistake: 0,
+  blunder: 0,
+  checkmate: 0, // already covered by outcomeBonus
+};
 
 export function computeGamePoints(
   log: GameLog,
@@ -42,15 +65,20 @@ export function computeGamePoints(
     return zeroResult(moveCount);
   }
 
+  const quality = computeQualityBonus(log, humanColor);
+
   if (outcome === 'human-resign') {
     const movePoints = Math.floor(moveCount * 5 * RESIGN_SCALE);
+    const total = movePoints + quality.bonus;
     return {
       movePoints,
       capturePoints: 0,
+      qualityPoints: quality.bonus,
       outcomeBonus: 0,
-      total: movePoints,
+      total,
       moveCount,
       captureValueCp: 0,
+      moveQualityCounts: quality.counts,
       counted: true,
     };
   }
@@ -66,16 +94,51 @@ export function computeGamePoints(
   return {
     movePoints,
     capturePoints,
+    qualityPoints: quality.bonus,
     outcomeBonus,
-    total: movePoints + capturePoints + outcomeBonus,
+    total: movePoints + capturePoints + quality.bonus + outcomeBonus,
     moveCount,
     captureValueCp,
+    moveQualityCounts: quality.counts,
     counted: true,
   };
 }
 
 function countAllMoves(log: GameLog): number {
   return log.moves.length;
+}
+
+function computeQualityBonus(
+  log: GameLog,
+  humanColor: Color,
+): { bonus: number; counts: MoveQualityCounts } {
+  const counts: MoveQualityCounts = {
+    brilliant: 0,
+    best: 0,
+    good: 0,
+    mistake: 0,
+    blunder: 0,
+  };
+  let bonus = 0;
+  let state: BoardState = log.initialState;
+
+  for (const entry of log.moves) {
+    const wasHumanTurn = state.sideToMove === humanColor;
+    const cls = entry.analysis?.classification;
+
+    if (wasHumanTurn && cls && cls in counts) {
+      counts[cls as keyof MoveQualityCounts]++;
+      bonus += QUALITY_BONUS[cls];
+    }
+
+    if (entry.move.kind === 'topologyToggle') {
+      state = toggleTopology(state);
+    } else {
+      state = applyMove(state, entry.move);
+    }
+  }
+
+  return { bonus, counts };
 }
 
 function sumHumanCaptures(log: GameLog, humanColor: Color): number {
@@ -104,10 +167,18 @@ function zeroResult(moveCount: number): GamePoints {
   return {
     movePoints: 0,
     capturePoints: 0,
+    qualityPoints: 0,
     outcomeBonus: 0,
     total: 0,
     moveCount,
     captureValueCp: 0,
+    moveQualityCounts: {
+      brilliant: 0,
+      best: 0,
+      good: 0,
+      mistake: 0,
+      blunder: 0,
+    },
     counted: false,
   };
 }

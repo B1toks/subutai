@@ -1,7 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { GameLog } from '../recording/log';
 import { analyzeGame, type GameReviewResult } from '../analysis/analyzeGame';
-import type { MoveClass } from '../analysis/classify';
+import type { MoveClass, MoveAnalysis } from '../analysis/classify';
+import { QUALITY_BONUS } from '../analysis/points';
+import { applyMove } from '../engine/moves';
+import { toggleTopology } from '../engine/auxetic';
+import type { BoardState, Color } from '../engine/types';
+
+// Human is always white in v1 — same convention as App.tsx.
+const HUMAN_COLOR: Color = 'white';
 
 interface Props {
   readonly log: GameLog;
@@ -45,6 +52,27 @@ function shortMoveText(entry: GameLog['moves'][number]): string {
   return entry.san ?? '?';
 }
 
+function humanQualityBonus(
+  log: GameLog,
+  analyses: readonly MoveAnalysis[],
+): number {
+  let state: BoardState = log.initialState;
+  let bonus = 0;
+  for (let i = 0; i < log.moves.length; i++) {
+    const entry = log.moves[i];
+    const a = analyses[i];
+    if (state.sideToMove === HUMAN_COLOR && a) {
+      bonus += QUALITY_BONUS[a.classification] ?? 0;
+    }
+    if (entry.move.kind === 'topologyToggle') {
+      state = toggleTopology(state);
+    } else {
+      state = applyMove(state, entry.move);
+    }
+  }
+  return bonus;
+}
+
 export function GameReview({ log, onBack }: Props) {
   const [result, setResult] = useState<GameReviewResult | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -52,6 +80,11 @@ export function GameReview({ log, onBack }: Props) {
     done: 0,
     total: log.moves.length,
   });
+
+  const qualityBonus = useMemo(
+    () => (result ? humanQualityBonus(log, result.moves) : 0),
+    [log, result],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -98,6 +131,9 @@ export function GameReview({ log, onBack }: Props) {
             <Stat label="Mistakes" value={result.stats.mistakes} tone="mistake" />
             <Stat label="Blunders" value={result.stats.blunders} tone="blunder" />
             <Stat label="Avg. CPL" value={result.stats.averageCpl} tone="neutral" />
+            {qualityBonus > 0 && (
+              <Stat label="Quality bonus" value={qualityBonus} tone="best" prefix="+" />
+            )}
           </div>
 
           <ol className="game-review-list">
@@ -142,14 +178,19 @@ function Stat({
   label,
   value,
   tone,
+  prefix,
 }: {
   label: string;
   value: number;
   tone: 'brilliant' | 'best' | 'mistake' | 'blunder' | 'neutral';
+  prefix?: string;
 }) {
   return (
     <div className={`review-stat review-stat-${tone}`}>
-      <div className="review-stat-value">{value}</div>
+      <div className="review-stat-value">
+        {prefix}
+        {value}
+      </div>
       <div className="review-stat-label">{label}</div>
     </div>
   );
