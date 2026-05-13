@@ -67,6 +67,20 @@
   margin: 0;
 }
 
+.app-brand {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.app-tagline {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+  margin: 4px 0 0 0;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+
 .header-controls {
   display: flex;
   align-items: center;
@@ -1515,4 +1529,743 @@
 .eval-bar-text-bottom {
   bottom: 4px;
   color: #1a1a1a;
+}
+
+/* Header username + change-name button */
+
+.header-username {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-right: 4px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-username-btn {
+  font-size: 13px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.header-username-btn:hover {
+  background: var(--btn-bg);
+  border-color: var(--btn-border);
+  color: var(--text);
+}
+
+/* Generic modal (NamePicker, future dialogs) */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.modal-dialog {
+  width: 100%;
+  max-width: 380px;
+  background: #161626;
+  border: 1px solid var(--btn-border);
+  border-radius: 12px;
+  padding: 22px 22px 18px;
+  color: var(--text);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.modal-title {
+  font-size: 20px;
+  margin: 0 0 4px;
+}
+
+.modal-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 0 16px;
+}
+
+.namepicker-tagline {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text);
+  margin: 4px 0 18px;
+}
+
+.namepicker-tagline strong {
+  color: var(--accent-gold);
+}
+
+.modal-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font-size: 16px;
+  background: #0f0f1c;
+  border: 1px solid var(--btn-border);
+  border-radius: 8px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.modal-input:focus {
+  border-color: var(--accent-gold);
+}
+
+.modal-input:disabled {
+  opacity: 0.6;
+}
+
+.modal-status {
+  margin-top: 8px;
+  font-size: 12px;
+  min-height: 16px;
+}
+
+.modal-status-ok {
+  color: #6ed27a;
+}
+
+.modal-status-warn {
+  color: #e8a64a;
+}
+
+.modal-status-neutral {
+  color: var(--text-muted);
+}
+
+.modal-error {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #e87070;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.modal-btn {
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid var(--btn-border);
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.modal-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.modal-btn-secondary {
+  background: var(--btn-bg);
+  color: var(--text);
+}
+
+.modal-btn-secondary:hover:not(:disabled) {
+  background: #3a3a55;
+}
+
+.modal-btn-primary {
+  background: var(--accent-gold);
+  color: #161626;
+  border-color: var(--accent-gold);
+}
+
+.modal-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.modal-btn-danger {
+  background: #b54040;
+  color: #fff;
+  border-color: #b54040;
+}
+
+.modal-btn-danger:hover:not(:disabled) {
+  background: #c84a4a;
+  border-color: #c84a4a;
+}
+
+/* Resign action button — tints the white-flag icon red on hover. */
+
+.resign-btn {
+  color: #c8b8a0;
+}
+
+.resign-btn:hover:not(:disabled) {
+  color: #e87070;
+}
+
+.resign-btn:disabled {
+  opacity: 0.4;
+}
+
+/* Game summary dialog */
+
+.summary-dialog {
+  max-width: 420px;
+}
+
+.summary-table {
+  margin-top: 6px;
+  border-top: 1px solid var(--btn-border);
+  padding-top: 10px;
+}
+
+.summary-extras {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--btn-border);
+}
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.summary-num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.summary-total {
+  border-top: 1px dashed var(--btn-border);
+  margin-top: 6px;
+  padding-top: 8px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.summary-total .summary-num {
+  font-size: 16px;
+  color: var(--accent-gold);
+}
+
+.summary-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--accent-gold);
+  color: #161626;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.summary-uncounted {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px dashed var(--btn-border);
+  border-radius: 8px;
+  background: #0f0f1c;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.summary-uncounted strong {
+  display: block;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.summary-uncounted p {
+  margin: 0;
+}
+
+/* Header leaderboard button */
+
+.header-leaderboard-btn {
+  padding: 4px 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.header-leaderboard-btn:hover {
+  background: #3a3a55;
+  color: var(--text);
+  border-color: var(--accent-gold);
+}
+
+/* Watching banner */
+
+.watch-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px auto;
+  padding: 8px 14px;
+  max-width: var(--board-size);
+  background: #1a1530;
+  border: 1px solid var(--accent-gold);
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+
+.watch-banner-label {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.watch-banner-label strong {
+  color: var(--accent-gold);
+}
+
+.watch-banner-controls {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.watch-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--btn-bg);
+  color: var(--text);
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.watch-btn:hover:not(:disabled) {
+  background: #3a3a55;
+}
+
+.watch-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.watch-btn-active {
+  background: var(--accent-gold);
+  color: #161626;
+  border-color: var(--accent-gold);
+}
+
+.watch-btn-stop {
+  border-color: #b54040;
+  color: #e87070;
+}
+
+.watch-btn-stop:hover:not(:disabled) {
+  background: #2a1a1a;
+}
+
+/* Leaderboard */
+
+.leaderboard {
+  width: 100%;
+  max-width: 720px;
+  padding: 16px;
+  margin: 0 auto;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.leaderboard-header {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.leaderboard-spacer {
+  display: block;
+}
+
+.leaderboard-back {
+  justify-self: start;
+  padding: 6px 12px;
+  background: var(--btn-bg);
+  color: var(--text);
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.leaderboard-back:hover {
+  background: #3a3a55;
+}
+
+.leaderboard-title {
+  font-size: 22px;
+  margin: 0;
+  justify-self: center;
+  text-align: center;
+}
+
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: 44px 1fr 64px 88px 110px 40px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.leaderboard-row-head {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  border-bottom: 1px solid var(--btn-border);
+  border-radius: 0;
+  padding-bottom: 6px;
+}
+
+.leaderboard-row.is-me {
+  background: #1f1a35;
+  border: 1px solid var(--accent-gold);
+  font-weight: 600;
+}
+
+.leaderboard-row:not(.leaderboard-row-head):hover {
+  background: #1a1626;
+}
+
+.lb-rank {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.is-me .lb-rank {
+  color: var(--accent-gold);
+}
+
+.lb-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lb-me-badge {
+  color: var(--accent-gold);
+}
+
+.lb-points {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--accent-gold);
+  text-align: right;
+}
+
+.lb-survived {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.lb-outcome {
+  font-size: 12px;
+}
+
+.lb-outcome-glyph {
+  margin-right: 4px;
+}
+
+.lb-outcome-win .lb-outcome-label {
+  color: #6ed27a;
+}
+
+.lb-outcome-draw .lb-outcome-label {
+  color: var(--text-muted);
+}
+
+.lb-outcome-loss .lb-outcome-label {
+  color: var(--text-muted);
+}
+
+.lb-action {
+  text-align: right;
+}
+
+.leaderboard-replay-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.leaderboard-replay-btn:hover:not(:disabled) {
+  background: var(--accent-gold);
+  color: #161626;
+  border-color: var(--accent-gold);
+}
+
+.leaderboard-replay-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.leaderboard-empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--text-muted);
+}
+
+.leaderboard-error {
+  color: #e87070;
+}
+
+.leaderboard-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+/* Header feedback button — same shape as leaderboard button. */
+
+.header-feedback-btn {
+  padding: 4px 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.header-feedback-btn:hover:not(:disabled) {
+  background: #3a3a55;
+  color: var(--text);
+  border-color: var(--accent-gold);
+}
+
+.header-feedback-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Inline feedback block inside GameSummary */
+
+.feedback-prompt {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--btn-border);
+}
+
+.feedback-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: var(--text);
+}
+
+/* General-feedback modal layout */
+
+.feedback-modal-dialog {
+  max-width: 440px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.feedback-field {
+  margin-top: 12px;
+}
+
+.feedback-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.feedback-smileys {
+  display: flex;
+  gap: 8px;
+}
+
+.feedback-smiley {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.feedback-smiley:hover:not(:disabled) {
+  background: #3a3a55;
+  transform: translateY(-1px);
+}
+
+.feedback-smiley:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.feedback-smiley.is-selected {
+  background: #1f1a35;
+  border-color: var(--accent-gold);
+}
+
+.feedback-smiley-glyph {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.feedback-smiley-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.feedback-smiley.is-selected .feedback-smiley-label {
+  color: var(--accent-gold);
+}
+
+/* Per-game prompt animates the textarea in once a rating is picked.
+   The textarea is always rendered so the user can also type without
+   picking a smiley first — we just nudge it open visually. */
+
+.feedback-comment-wrap {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.25s ease, opacity 0.2s ease, margin-top 0.2s ease;
+  margin-top: 0;
+}
+
+.feedback-comment-wrap.is-open {
+  max-height: 40vh;
+  opacity: 1;
+  margin-top: 10px;
+}
+
+.feedback-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  font-size: 14px;
+  font-family: inherit;
+  background: #0f0f1c;
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  color: var(--text);
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.feedback-textarea:focus {
+  border-color: var(--accent-gold);
+}
+
+.feedback-textarea:disabled {
+  opacity: 0.6;
+}
+
+.feedback-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.feedback-skip-link {
+  background: transparent;
+  border: none;
+  padding: 4px 2px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-decoration: underline;
+  opacity: 0.6;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.feedback-skip-link:hover:not(:disabled) {
+  opacity: 1;
+}
+
+.feedback-skip-link:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Action row at the bottom of GameSummary — pull away from the feedback
+   block so the primary CTAs read as a separate cluster. */
+.summary-actions {
+  margin-top: 24px;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.summary-action-btn {
+  min-width: 110px;
+}
+
+.feedback-error {
+  margin-top: 8px;
+}
+
+.feedback-thanks {
+  text-align: center;
+  padding: 16px 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent-gold);
+  animation: feedback-thanks-fade 0.4s ease both;
+}
+
+.feedback-thanks-large {
+  font-size: 20px;
+  padding: 32px 8px;
+}
+
+@keyframes feedback-thanks-fade {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }

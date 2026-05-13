@@ -30,6 +30,10 @@ npm install
 npm run dev
 ```
 
+## Backend (optional)
+
+Display names, saved games, the leaderboard, and the feedback collector use Firebase (Anonymous Auth + Firestore) on the free Spark plan. The chess engine, classifier, and eval bar work fully offline without it. See [FIREBASE_SETUP.md](./FIREBASE_SETUP.md) for the setup walkthrough.
+
 ## My role
 
 Joined the project as **Technical Lead** for the front-end implementation, working with an international 5-person team at FH St. Pölten. Owned the technical architecture and most of the implementation — segment-rotation math, custom castling, state sync.

@@ -203,18 +203,7 @@ export function isCheckmate(
   if (!isInCheck(state)) return false;
   if (generateLegalMoves(state).length > 0) return false;
   if (lastMoveWasRotation) return true;
-  const toggleEscape = canEscapeViaToggle(state);
-  // #region agent log
-  if (
-    toggleEscape &&
-    typeof window !== 'undefined' &&
-    (window.location.hostname === 'localhost' ||
-      window.location.hostname === '127.0.0.1')
-  ) {
-    fetch('http://127.0.0.1:7519/ingest/37bd3e22-11f2-45c3-b325-8dbcf69a5172',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'389750'},body:JSON.stringify({sessionId:'389750',location:'moves.ts:isCheckmate',message:'In check with no piece moves but rotation escapes',data:{side:state.sideToMove,topology:state.topologyState},timestamp:Date.now(),hypothesisId:'H_ROTATE_ESCAPE'})}).catch(()=>{});
-  }
-  // #endregion
-  return !toggleEscape;
+  return !canEscapeViaToggle(state);
 }
 
 export function isStalemate(
@@ -223,21 +212,8 @@ export function isStalemate(
 ): boolean {
   if (isInCheck(state)) return false;
   if (generateLegalMoves(state).length > 0) return false;
-  if (lastMoveWasRotation) {
-    return true;
-  }
-  const toggleEscape = canEscapeViaToggle(state);
-  // #region agent log
-  if (
-    toggleEscape &&
-    typeof window !== 'undefined' &&
-    (window.location.hostname === 'localhost' ||
-      window.location.hostname === '127.0.0.1')
-  ) {
-    fetch('http://127.0.0.1:7519/ingest/37bd3e22-11f2-45c3-b325-8dbcf69a5172',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'389750'},body:JSON.stringify({sessionId:'389750',location:'moves.ts:isStalemate',message:'No piece moves but rotation available (not stalemate)',data:{side:state.sideToMove,topology:state.topologyState},timestamp:Date.now(),hypothesisId:'H_ROTATE_ESCAPE'})}).catch(()=>{});
-  }
-  // #endregion
-  return !toggleEscape;
+  if (lastMoveWasRotation) return true;
+  return !canEscapeViaToggle(state);
 }
 
 export type DrawReason =
@@ -481,42 +457,17 @@ function generateCastlingMoves(
   trySide(queenSideRook, 'c', 'd');
 }
 
-let _glmLogCount = 0;
 export function generateLegalMoves(state: BoardState): Move[] {
   const pseudo = generatePseudoLegalMoves(state);
   const side = state.sideToMove;
   const opponent = enemyColor(side);
 
-  // #region agent log
-  const filtered: Array<{from?:string,to?:string,kind:string,reason:string}> = [];
-  // #endregion
-
-  const legal = pseudo.filter((move) => {
+  return pseudo.filter((move) => {
     const next = applyMove(state, move);
     const kingSquare = findKing(next, side);
-    if (!kingSquare) {
-      // #region agent log
-      filtered.push({from:move.from,to:move.to,kind:move.kind,reason:'noKing'});
-      // #endregion
-      return false;
-    }
-    const attacked = isSquareAttacked(next, kingSquare, opponent, next.topologyState);
-    if (attacked) {
-      // #region agent log
-      filtered.push({from:move.from,to:move.to,kind:move.kind,reason:`kingAt${kingSquare}Attacked`});
-      // #endregion
-    }
-    return !attacked;
+    if (!kingSquare) return false;
+    return !isSquareAttacked(next, kingSquare, opponent, next.topologyState);
   });
-
-  // #region agent log
-  _glmLogCount++;
-  if (_glmLogCount <= 60 && pseudo.length > 0 && legal.length <= 3) {
-    fetch('http://127.0.0.1:7519/ingest/37bd3e22-11f2-45c3-b325-8dbcf69a5172',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'389750'},body:JSON.stringify({sessionId:'389750',location:'moves.ts:generateLegalMoves',message:'Low legal move count',data:{side,topology:state.topologyState,pseudoCount:pseudo.length,legalCount:legal.length,filteredSample:filtered.slice(0,10),legalMoves:legal.map(m=>({from:m.from,to:m.to,kind:m.kind}))},timestamp:Date.now(),hypothesisId:'H1,H4,H5'})}).catch(()=>{});
-  }
-  // #endregion
-
-  return legal;
 }
 
 function isPromotionRank(square: SquareId, color: Color, topology: TopologyState): boolean {

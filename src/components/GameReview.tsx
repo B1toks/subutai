@@ -126,7 +126,7 @@ export function GameReview({ log, onBack }: Props) {
                   <span className="review-label">{CLASS_LABEL[cls]}</span>
                   {showCpl && <span className="review-cpl">(−{a.cpl} cp)</span>}
                   {betterText && (
-                    <span className="review-better">← краще: {betterText}</span>
+                    <span className="review-better">← better: {betterText}</span>
                   )}
                 </li>
               );

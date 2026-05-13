@@ -1,0 +1,149 @@
+import type { GameOutcome, GamePoints } from '../analysis/points';
+import { FeedbackPrompt } from './FeedbackPrompt';
+
+interface GameSummaryProps {
+  points: GamePoints;
+  outcome: GameOutcome;
+  personalBest: number | null;
+  isNewPersonalBest: boolean;
+  currentRank: number | null;
+  saving: boolean;
+  saveError: string | null;
+  chess960Id: string;
+  gameId: string | null;
+  /** uid + name come from useAuth; null when sign-in hasn't completed. */
+  playerId: string | null;
+  playerName: string | null;
+  onClose: () => void;
+  onPlayAgain: () => void;
+}
+
+function headline(outcome: GameOutcome, moveCount: number): string {
+  switch (outcome) {
+    case 'human-win':
+      return `You won in ${moveCount} moves`;
+    case 'ai-win':
+      return `You lost in ${moveCount} moves`;
+    case 'draw':
+      return `Draw after ${moveCount} moves`;
+    case 'human-resign':
+      return `You resigned after ${moveCount} moves`;
+  }
+}
+
+export function GameSummary({
+  points,
+  outcome,
+  personalBest,
+  isNewPersonalBest,
+  currentRank,
+  saving,
+  saveError,
+  chess960Id,
+  gameId,
+  playerId,
+  playerName,
+  onClose,
+  onPlayAgain,
+}: GameSummaryProps) {
+  const counted = points.counted;
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-dialog summary-dialog" onClick={(e) => e.stopPropagation()}>
+        <h2 className="modal-title">Game over</h2>
+        <p className="modal-subtitle">{headline(outcome, points.moveCount)}</p>
+
+        {counted ? (
+          <>
+            <div className="summary-table">
+              <div className="summary-row">
+                <span>Move points</span>
+                <span className="summary-num">{points.movePoints}</span>
+              </div>
+              <div className="summary-row">
+                <span>Capture points</span>
+                <span className="summary-num">{points.capturePoints}</span>
+              </div>
+              <div className="summary-row">
+                <span>Outcome bonus</span>
+                <span className="summary-num">{points.outcomeBonus}</span>
+              </div>
+              <div className="summary-row summary-total">
+                <span>This game</span>
+                <span className="summary-num">{points.total}</span>
+              </div>
+            </div>
+
+            <div className="summary-extras">
+              <div className="summary-row">
+                <span>Personal best</span>
+                <span className="summary-num">
+                  {isNewPersonalBest ? (
+                    <>
+                      {points.total} <span className="summary-badge">NEW BEST</span>
+                    </>
+                  ) : personalBest !== null ? (
+                    personalBest
+                  ) : saving ? (
+                    '…'
+                  ) : (
+                    '—'
+                  )}
+                </span>
+              </div>
+              <div className="summary-row">
+                <span>Rank</span>
+                <span className="summary-num">
+                  {saving
+                    ? '…'
+                    : currentRank !== null
+                      ? `#${currentRank}`
+                      : '—'}
+                </span>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="summary-uncounted">
+            <strong>This game wasn’t counted</strong>
+            <p>Games under 10 moves don’t earn points.</p>
+          </div>
+        )}
+
+        {saveError && <div className="modal-error">{saveError}</div>}
+
+        {playerId && playerName && (
+          <FeedbackPrompt
+            playerId={playerId}
+            playerName={playerName}
+            gameId={gameId}
+            gameContext={{
+              outcome,
+              moveCount: points.moveCount,
+              points: points.total,
+              chess960Id,
+            }}
+          />
+        )}
+
+        <div className="modal-actions summary-actions">
+          <button
+            type="button"
+            className="modal-btn modal-btn-secondary summary-action-btn"
+            onClick={onClose}
+          >
+            Close
+          </button>
+          <button
+            type="button"
+            className="modal-btn modal-btn-primary summary-action-btn"
+            onClick={onPlayAgain}
+          >
+            Play again
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

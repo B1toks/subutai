@@ -7,7 +7,6 @@ import {
   generateLegalMoves,
   generatePseudoLegalMoves,
   isCheckmate,
-  isStalemate,
   checkDrawConditions,
   isInCheck,
   isSquareAttacked,
@@ -22,6 +21,19 @@ import { evaluate, PIECE_VALUE } from './ai/evaluate';
 import { type MoveClass, type MoveAnalysis } from './analysis/classify';
 import { classifyAsync } from './analysis/classifyClient';
 import { GameReview } from './components/GameReview';
+import { NamePicker } from './components/NamePicker';
+import { GameSummary } from './components/GameSummary';
+import { ConfirmDialog } from './components/ConfirmDialog';
+import { FeedbackModal } from './components/FeedbackModal';
+import { useAuth } from './firebase/useAuth';
+import {
+  saveCompletedGame,
+  getPersonalBest,
+  fetchSavedGame,
+  deserializeGameLog,
+} from './firebase/games';
+import { Leaderboard } from './components/Leaderboard';
+import { computeGamePoints, type GameOutcome, type GamePoints } from './analysis/points';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
 import {
@@ -122,8 +134,53 @@ function evalToColors(evalCp: number): { c1: string; c2: string } {
   return { c1: '#2a2520', c2: '#1a1612' };
 }
 
+const HUMAN_COLOR: Color = 'white';
+const WATCH_AUTOPLAY_MS = 1500;
+
+interface WatchingGame {
+  log: GameLog;
+  playerName: string;
+  gameId: string;
+  currentMoveIdx: number;
+  autoplay: boolean;
+}
+
+interface GameBackup {
+  seed: number;
+  state: BoardState;
+  initialState: BoardState;
+  legalMoves: Move[];
+  log: GameLog;
+  gameStatus: GameStatus;
+  lastMove: { from?: SquareId; to?: SquareId } | null;
+  liveSavedGameId: string;
+  savedForLogId: string | null;
+  completedLogId: string | null;
+  searchEvalFromWhite: number | null;
+  searchMateInPlies: number | null;
+  formationLocked: boolean;
+  lockedFormationKey: string | null;
+}
+
 function App() {
-  const [view, setView] = useState<'game' | 'review'>('game');
+  const { user, displayName, loading: authLoading, setDisplayName } = useAuth();
+  const [showNameModal, setShowNameModal] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [lastGamePoints, setLastGamePoints] = useState<GamePoints | null>(null);
+  const [gameOutcome, setGameOutcome] = useState<GameOutcome | null>(null);
+  const [confirmingResign, setConfirmingResign] = useState(false);
+  const [savingGame, setSavingGame] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [currentRank, setCurrentRank] = useState<number | null>(null);
+  const [isNewBest, setIsNewBest] = useState(false);
+  const [personalBest, setPersonalBest] = useState<number | null>(null);
+  const [lastGameId, setLastGameId] = useState<string | null>(null);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const completedLogIdRef = useRef<string | null>(null);
+  const [view, setView] = useState<'game' | 'review' | 'leaderboard'>('game');
+  const [watchingGame, setWatchingGame] = useState<WatchingGame | null>(null);
+  const watchAutoplayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gameBackupRef = useRef<GameBackup | null>(null);
   const [seed, setSeed] = useState<number>(1);
   const [state, setState] = useState<BoardState>(() => createStartingPosition(1));
   const [initialState, setInitialState] = useState<BoardState>(() => createStartingPosition(1));
@@ -238,6 +295,219 @@ function App() {
     (localStorageAdapter.saveOrUpdateGame?.(snapshot) ?? localStorageAdapter.saveGame(snapshot));
   }, [gameStatus, log]);
 
+  // Game-completion pipeline: detects terminal gameStatus transitions, computes
+  // points, opens the GameSummary modal, and kicks the async Firestore save.
+  // The ref guards against double-fires (StrictMode + deps that move together).
+  useEffect(() => {
+    if (gameStatus === 'active') return;
+    if (log.moves.length === 0) return;
+    if (completedLogIdRef.current === log.id) return;
+    // Resign sets gameOutcome before flipping status — don't overwrite it.
+    if (gameOutcome) return;
+    completedLogIdRef.current = log.id;
+
+    let outcome: GameOutcome;
+    if (gameStatus === 'checkmate') {
+      outcome = state.sideToMove === HUMAN_COLOR ? 'ai-win' : 'human-win';
+    } else if (gameStatus === 'king_captured_black_wins') {
+      // Black wins => human (white) lost.
+      outcome = 'ai-win';
+    } else if (gameStatus === 'king_captured_white_wins') {
+      outcome = 'human-win';
+    } else {
+      outcome = 'draw';
+    }
+    void finishGame(outcome);
+    // finishGame closes over current state/log/user/displayName; we want this
+    // to fire once per terminal transition, hence the ref-guard above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameStatus, log.id, log.moves.length]);
+
+  async function finishGame(outcome: GameOutcome) {
+    const points = computeGamePoints(log, outcome, HUMAN_COLOR);
+    setGameOutcome(outcome);
+    setLastGamePoints(points);
+    setSummaryOpen(true);
+    setSaveError(null);
+    setIsNewBest(false);
+    setCurrentRank(null);
+
+    if (!user || !displayName) {
+      // Not signed in / no name yet — show summary locally and skip Firestore.
+      return;
+    }
+
+    setSavingGame(true);
+    try {
+      // Snapshot the pre-write best so the modal can show "old" alongside new.
+      const oldBest = await getPersonalBest(user.uid);
+      setPersonalBest(oldBest);
+
+      const { gameId, isNewBest: nb, newRank } = await saveCompletedGame({
+        uid: user.uid,
+        displayName,
+        log,
+        outcome,
+        points,
+        chess960Id: positionLabel,
+        seed,
+        humanColor: HUMAN_COLOR,
+      });
+      setLastGameId(gameId);
+      setIsNewBest(nb);
+      setCurrentRank(newRank);
+      if (nb) setPersonalBest(points.total);
+    } catch (err) {
+      console.error('[finishGame] save failed', err);
+      setSaveError('Could not save this game. Check your connection.');
+    } finally {
+      setSavingGame(false);
+    }
+  }
+
+  // Replay the first `moveCount` entries of a log on top of its initialState.
+  // Returns the resulting BoardState — used by watching-mode to project the
+  // current frame without mutating the underlying log.
+  function replayBoardAt(replayLog: GameLog, moveCount: number): BoardState {
+    let cur: BoardState = replayLog.initialState;
+    const cap = Math.min(moveCount, replayLog.moves.length);
+    for (let i = 0; i < cap; i++) {
+      const mv = replayLog.moves[i].move;
+      if (mv.kind === 'topologyToggle') {
+        cur = applyRotationMove(cur);
+      } else {
+        cur = applyMove(cur, mv);
+      }
+    }
+    return cur;
+  }
+
+  async function startWatching(gameId: string, playerName: string) {
+    try {
+      const saved = await fetchSavedGame(gameId);
+      if (!saved) {
+        console.warn('[watch] game not found', gameId);
+        return;
+      }
+      const replayLog = deserializeGameLog(saved);
+
+      // Snapshot current game so Stop can restore it exactly.
+      gameBackupRef.current = {
+        seed,
+        state,
+        initialState,
+        legalMoves,
+        log,
+        gameStatus,
+        lastMove,
+        liveSavedGameId: liveSavedGameIdRef.current,
+        savedForLogId: savedForLogIdRef.current,
+        completedLogId: completedLogIdRef.current,
+        searchEvalFromWhite,
+        searchMateInPlies,
+        formationLocked,
+        lockedFormationKey,
+      };
+
+      if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
+      if (watchAutoplayRef.current) clearTimeout(watchAutoplayRef.current);
+
+      // Project frame 0 of the replay.
+      const projected = replayBoardAt(replayLog, 0);
+      setState(projected);
+      setInitialState(replayLog.initialState);
+      setSeed(replayLog.randomSeed);
+      setLegalMoves(generateLegalMoves(projected));
+      setLog({ ...replayLog, moves: [] });
+      setSelected(null);
+      setGameStatus('active');
+      setLastMove(null);
+      setPreviewTopology(null);
+      setSearchEvalFromWhite(null);
+      setSearchMateInPlies(null);
+      // Block the completion-watcher effect from firing on this log id.
+      completedLogIdRef.current = replayLog.id;
+
+      setView('game');
+      setWatchingGame({
+        log: replayLog,
+        playerName,
+        gameId,
+        currentMoveIdx: 0,
+        autoplay: false,
+      });
+    } catch (err) {
+      console.error('[watch] startWatching failed', err);
+    }
+  }
+
+  function seekWatchTo(idx: number) {
+    setWatchingGame((cur) => {
+      if (!cur) return cur;
+      const clamped = Math.max(0, Math.min(idx, cur.log.moves.length));
+      const projected = replayBoardAt(cur.log, clamped);
+      setState(projected);
+      setLog({ ...cur.log, moves: cur.log.moves.slice(0, clamped) });
+      setLegalMoves(generateLegalMoves(projected));
+      setSelected(null);
+      const lastEntry = clamped > 0 ? cur.log.moves[clamped - 1] : null;
+      if (lastEntry && lastEntry.move.from && lastEntry.move.to) {
+        setLastMove({ from: lastEntry.move.from, to: lastEntry.move.to });
+      } else {
+        setLastMove(null);
+      }
+      return { ...cur, currentMoveIdx: clamped };
+    });
+  }
+
+  function toggleWatchAutoplay() {
+    setWatchingGame((cur) => (cur ? { ...cur, autoplay: !cur.autoplay } : cur));
+  }
+
+  function stopWatching() {
+    if (watchAutoplayRef.current) {
+      clearTimeout(watchAutoplayRef.current);
+      watchAutoplayRef.current = null;
+    }
+    const backup = gameBackupRef.current;
+    setWatchingGame(null);
+    if (!backup) return;
+
+    setSeed(backup.seed);
+    setState(backup.state);
+    setInitialState(backup.initialState);
+    setLegalMoves(backup.legalMoves);
+    setLog(backup.log);
+    setGameStatus(backup.gameStatus);
+    setLastMove(backup.lastMove);
+    setFormationLocked(backup.formationLocked);
+    setLockedFormationKey(backup.lockedFormationKey);
+    setSearchEvalFromWhite(backup.searchEvalFromWhite);
+    setSearchMateInPlies(backup.searchMateInPlies);
+    setSelected(null);
+    liveSavedGameIdRef.current = backup.liveSavedGameId;
+    savedForLogIdRef.current = backup.savedForLogId;
+    completedLogIdRef.current = backup.completedLogId;
+    gameBackupRef.current = null;
+  }
+
+  function requestResign() {
+    if (watchingGame) return;
+    if (gameStatus !== 'active') return;
+    if (log.moves.length === 0) return;
+    setConfirmingResign(true);
+  }
+
+  function confirmResign() {
+    setConfirmingResign(false);
+    if (gameStatus !== 'active') return;
+    // Pre-set the outcome so the gameStatus-watching effect skips this one.
+    setGameOutcome('human-resign');
+    setGameStatus('checkmate');
+    completedLogIdRef.current = log.id;
+    void finishGame('human-resign');
+  }
+
   // Drive the gradient via CSS custom properties. setProperty (rather than
   // inline style) lets the @property-registered transition interpolate
   // colour-to-colour smoothly. prevEvalRef is updated here too so the
@@ -256,6 +526,30 @@ function App() {
   useEffect(() => {
     logLengthRef.current = log.moves.length;
   }, [log.moves.length]);
+
+  // Watching-mode autoplay: when enabled, advances one move every
+  // WATCH_AUTOPLAY_MS until we hit the end of the replay.
+  useEffect(() => {
+    if (!watchingGame || !watchingGame.autoplay) return;
+    if (watchingGame.currentMoveIdx >= watchingGame.log.moves.length) {
+      // Hit the end — flip autoplay off so the play button resets to ▶.
+      setWatchingGame((cur) => (cur ? { ...cur, autoplay: false } : cur));
+      return;
+    }
+    watchAutoplayRef.current = setTimeout(() => {
+      seekWatchTo(watchingGame.currentMoveIdx + 1);
+    }, WATCH_AUTOPLAY_MS);
+    return () => {
+      if (watchAutoplayRef.current) {
+        clearTimeout(watchAutoplayRef.current);
+        watchAutoplayRef.current = null;
+      }
+    };
+    // seekWatchTo is stable-ish (defined in the component body but captures
+    // setState which is stable); we intentionally drive this effect off the
+    // watchingGame snapshot only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchingGame?.autoplay, watchingGame?.currentMoveIdx]);
 
   // Square to pulse-highlight after a blunder/brilliant. Cleared after the
   // animation duration (4 cycles × 600ms = 2.4s, rounded to 2500).
@@ -512,19 +806,6 @@ function App() {
       checkKingCaptured(nextState);
       return;
     }
-    // #region agent log
-    const lm = generateLegalMoves(nextState);
-    const inChk = isCheckmate(nextState, lastMoveWasRotation);
-    const inStale = isStalemate(nextState, lastMoveWasRotation);
-    const kingSq = findKing(nextState, nextState.sideToMove);
-    if (
-      typeof window !== 'undefined' &&
-      (window.location.hostname === 'localhost' ||
-        window.location.hostname === '127.0.0.1')
-    ) {
-      fetch('http://127.0.0.1:7519/ingest/37bd3e22-11f2-45c3-b325-8dbcf69a5172',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'389750'},body:JSON.stringify({sessionId:'389750',location:'App.tsx:checkGameOver',message:'checkGameOver called',data:{sideToMove:nextState.sideToMove,topology:nextState.topologyState,legalMoveCount:lm.length,isCheckmate:inChk,isStalemate:inStale,kingSq,pieceCount:Object.keys(nextState.pieces).length},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
-    }
-    // #endregion
     if (isCheckmate(nextState, lastMoveWasRotation)) {
       setGameStatus('checkmate');
       return;
@@ -559,6 +840,16 @@ function App() {
     setUsedRouletteSlots([]);
     setSearchEvalFromWhite(null);
     setSearchMateInPlies(null);
+    setSummaryOpen(false);
+    setLastGamePoints(null);
+    setGameOutcome(null);
+    setSavingGame(false);
+    setSaveError(null);
+    setCurrentRank(null);
+    setIsNewBest(false);
+    setPersonalBest(null);
+    setLastGameId(null);
+    completedLogIdRef.current = null;
 
     // New play session => new live snapshot id.
     liveSavedGameIdRef.current = `live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -573,6 +864,7 @@ function App() {
   }
 
   function handleRotate() {
+    if (watchingGame) return;
     if (gameStatus !== 'active') return;
     if (currentPlayer !== 'human') return;
     if (state.lastMoveWasRotation) return;
@@ -853,15 +1145,6 @@ function App() {
 
         setState(next);
         const nextMoves = generateLegalMoves(next);
-        // #region agent log
-        if (
-          typeof window !== 'undefined' &&
-          (window.location.hostname === 'localhost' ||
-            window.location.hostname === '127.0.0.1')
-        ) {
-          fetch('http://127.0.0.1:7519/ingest/37bd3e22-11f2-45c3-b325-8dbcf69a5172',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'389750'},body:JSON.stringify({sessionId:'389750',location:'App.tsx:scheduleAiMove',message:'AI moved, human legal moves computed',data:{aiMove:{kind:move.kind,from:move.from,to:move.to},topology:next.topologyState,humanLegalMoves:nextMoves.length,humanMoveSample:nextMoves.slice(0,8).map(m=>({from:m.from,to:m.to,kind:m.kind})),humanSide:next.sideToMove},timestamp:Date.now(),hypothesisId:'H1,H2'})}).catch(()=>{});
-        }
-        // #endregion
         setLegalMoves(nextMoves);
         setSelected(null);
         const aiSan = computeSAN(boardState, move);
@@ -961,6 +1244,7 @@ function App() {
   useEffect(() => {
     if (gameStatus !== 'active') return;
     if (currentPlayer !== 'ai') return;
+    if (watchingGame) return; // replay mode — never let the AI move.
 
     // Classic: the old path handles its own setTimeout + minimax.
     if (gameMode !== 'roulette') {
@@ -1025,6 +1309,7 @@ function App() {
     legalMoves,
     scheduleAiMove,
     lastMoveWasRotation,
+    watchingGame,
   ]);
 
   const highlightedTargets = useMemo(() => {
@@ -1104,6 +1389,7 @@ function App() {
   }, [showSupport, selected, hoveredSquare, state, displayTopology]);
 
   function onSquareClick(square: string) {
+    if (watchingGame) return; // replay mode is read-only.
     if (gameStatus !== 'active') return;
     if (currentPlayer !== 'human') return;
 
@@ -1535,12 +1821,57 @@ function App() {
     );
   }
 
+  if (view === 'leaderboard') {
+    return (
+      <div className="app-shell" ref={shellRef}>
+        <Leaderboard
+          currentUid={user?.uid ?? null}
+          onBack={() => setView('game')}
+          onWatchGame={(gameId, playerName) => {
+            void startWatching(gameId, playerName);
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell" ref={shellRef}>
     <div className="app-root" style={{ '--board-size': `${boardSize}px` } as React.CSSProperties}>
       <header className="app-header">
-        <h1>subutai</h1>
+        <div className="app-brand">
+          <h1>subutai</h1>
+          <p className="app-tagline">Try to survive 50 moves against the AI</p>
+        </div>
         <div className="header-controls">
+        {displayName && (
+          <button
+            type="button"
+            className="header-username-btn"
+            onClick={() => setShowNameModal(true)}
+            title="Change name"
+          >
+            {displayName}
+          </button>
+        )}
+        <button
+          type="button"
+          className="header-leaderboard-btn"
+          onClick={() => setView('leaderboard')}
+          title="Leaderboard"
+        >
+          {'\u{1F3C6}'}
+        </button>
+        <button
+          type="button"
+          className="header-feedback-btn"
+          onClick={() => setShowFeedbackModal(true)}
+          disabled={!user || !displayName}
+          title="Share feedback"
+          aria-label="Share feedback"
+        >
+          {'\u{1F4AC}'}
+        </button>
         <div className="mode-toggle">
           <button
             type="button"
@@ -1585,6 +1916,52 @@ function App() {
         </button>
         </div>
       </header>
+
+      {watchingGame && (
+        <div className="watch-banner">
+          <span className="watch-banner-label">
+            {'\u{1F441}'} Watching <strong>{watchingGame.playerName}</strong>’s game ·
+            move {watchingGame.currentMoveIdx}/{watchingGame.log.moves.length}
+          </span>
+          <div className="watch-banner-controls">
+            <button
+              type="button"
+              className="watch-btn"
+              onClick={() => seekWatchTo(watchingGame.currentMoveIdx - 1)}
+              disabled={watchingGame.currentMoveIdx === 0}
+              title="Previous move"
+            >
+              ← Prev
+            </button>
+            <button
+              type="button"
+              className="watch-btn"
+              onClick={() => seekWatchTo(watchingGame.currentMoveIdx + 1)}
+              disabled={watchingGame.currentMoveIdx >= watchingGame.log.moves.length}
+              title="Next move"
+            >
+              Next →
+            </button>
+            <button
+              type="button"
+              className={`watch-btn${watchingGame.autoplay ? ' watch-btn-active' : ''}`}
+              onClick={toggleWatchAutoplay}
+              disabled={watchingGame.currentMoveIdx >= watchingGame.log.moves.length}
+              title="Auto play"
+            >
+              {watchingGame.autoplay ? '⏸ Pause' : '▶ Auto'}
+            </button>
+            <button
+              type="button"
+              className="watch-btn watch-btn-stop"
+              onClick={stopWatching}
+              title="Stop and return to your game"
+            >
+              ✕ Stop
+            </button>
+          </div>
+        </div>
+      )}
 
       {gameMode === 'roulette' && gameStatus === 'active' && (
         <div className="roulette-panel">
@@ -1859,6 +2236,15 @@ function App() {
           >
             {'\u{1F512}'}
           </button>
+          <button
+            type="button"
+            className="action-btn resign-btn"
+            onClick={requestResign}
+            disabled={!!watchingGame || gameStatus !== 'active' || log.moves.length === 0}
+            title="Resign \u2014 half move points, no bonus"
+          >
+            {'\u{1F3F3}'}
+          </button>
         </div>
 
         <div className="action-group action-group-center">
@@ -2070,6 +2456,70 @@ function App() {
           if (g.status === 'incomplete') resumeGame(g);
         }}
       />
+
+      {!authLoading && user && !displayName && (
+        <NamePicker
+          mode="initial"
+          uid={user.uid}
+          onComplete={(name) => {
+            setDisplayName(name);
+          }}
+        />
+      )}
+
+      {showNameModal && user && displayName && (
+        <NamePicker
+          mode="change"
+          uid={user.uid}
+          currentName={displayName}
+          onComplete={(name) => {
+            setDisplayName(name);
+            setShowNameModal(false);
+          }}
+          onCancel={() => setShowNameModal(false)}
+        />
+      )}
+
+      {confirmingResign && (
+        <ConfirmDialog
+          title="Resign this game?"
+          message="Resigning only earns half move points and no capture or outcome bonus. Are you sure?"
+          confirmLabel="Resign anyway"
+          cancelLabel="Cancel"
+          danger
+          onConfirm={confirmResign}
+          onCancel={() => setConfirmingResign(false)}
+        />
+      )}
+
+      {summaryOpen && lastGamePoints && gameOutcome && (
+        <GameSummary
+          points={lastGamePoints}
+          outcome={gameOutcome}
+          personalBest={personalBest}
+          isNewPersonalBest={isNewBest}
+          currentRank={currentRank}
+          saving={savingGame}
+          saveError={saveError}
+          chess960Id={positionLabel}
+          gameId={lastGameId}
+          playerId={user?.uid ?? null}
+          playerName={displayName}
+          onClose={() => setSummaryOpen(false)}
+          onPlayAgain={() => {
+            setSummaryOpen(false);
+            startNewGame();
+          }}
+        />
+      )}
+
+      {showFeedbackModal && user && displayName && (
+        <FeedbackModal
+          playerId={user.uid}
+          playerName={displayName}
+          onClose={() => setShowFeedbackModal(false)}
+        />
+      )}
 
       {showHelp && (
         <div className="help-backdrop" onClick={() => setShowHelp(false)}>
