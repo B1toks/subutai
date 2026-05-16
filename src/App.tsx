@@ -25,6 +25,7 @@ import { NamePicker } from './components/NamePicker';
 import { GameSummary } from './components/GameSummary';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { FeedbackModal } from './components/FeedbackModal';
+import { MilestoneModal } from './components/MilestoneModal';
 import { useAuth } from './firebase/useAuth';
 import {
   saveCompletedGame,
@@ -176,6 +177,8 @@ function App() {
   const [personalBest, setPersonalBest] = useState<number | null>(null);
   const [lastGameId, setLastGameId] = useState<string | null>(null);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [milestoneShown, setMilestoneShown] = useState(false);
+  const [showMilestoneModal, setShowMilestoneModal] = useState(false);
   const completedLogIdRef = useRef<string | null>(null);
   const [view, setView] = useState<'game' | 'review' | 'leaderboard'>('game');
   const [watchingGame, setWatchingGame] = useState<WatchingGame | null>(null);
@@ -551,6 +554,33 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchingGame?.autoplay, watchingGame?.currentMoveIdx]);
 
+  // Brief glowing outline on the board container whenever topology flips,
+  // so rotations don't feel invisible. Fires for both manual rotates and
+  // Roulette-driven auto-rotations.
+  const [recentRotation, setRecentRotation] = useState(false);
+  const prevTopologyRef = useRef(state.topologyState);
+  useEffect(() => {
+    if (prevTopologyRef.current === state.topologyState) return;
+    prevTopologyRef.current = state.topologyState;
+    setRecentRotation(true);
+    const t = setTimeout(() => setRecentRotation(false), 2500);
+    return () => clearTimeout(t);
+  }, [state.topologyState]);
+
+  // 50-move milestone celebration. Fires exactly once per game the first
+  // time the human has played 50 full chess moves. Skipped during replay
+  // and after the game ends.
+  useEffect(() => {
+    if (watchingGame) return;
+    if (gameStatus !== 'active') return;
+    if (milestoneShown) return;
+    const fullMoves = Math.floor(log.moves.length / 2);
+    if (fullMoves >= 50) {
+      setMilestoneShown(true);
+      setShowMilestoneModal(true);
+    }
+  }, [log.moves.length, gameStatus, milestoneShown, watchingGame]);
+
   // Square to pulse-highlight after a blunder/brilliant. Cleared after the
   // animation duration (4 cycles × 600ms = 2.4s, rounded to 2500).
   const [classifiedSquare, setClassifiedSquare] = useState<{
@@ -849,6 +879,8 @@ function App() {
     setIsNewBest(false);
     setPersonalBest(null);
     setLastGameId(null);
+    setMilestoneShown(false);
+    setShowMilestoneModal(false);
     completedLogIdRef.current = null;
 
     // New play session => new live snapshot id.
@@ -987,6 +1019,12 @@ function App() {
     setLegalMoves(playableRouletteMoves(bs, rolled, []));
   }
 
+  // TODO(Stage H): on the FIRST roulette rotation per game, surface a quick
+  // confirmation banner ("AI rotates the board to find playable moves —
+  // continue?") to teach the mechanic, then auto-rotate thereafter. The
+  // multi-phase scheduling effect makes interjecting a modal here tricky
+  // without splitting the AI turn across renders; the rotation-outline
+  // pulse covers most of the same UX in the meantime.
   // Apply an AI rotation as one action. Same semantics as handleRotate's
   // roulette branch, but self-contained for the AI driver.
   function executeAiRouletteRotation(
@@ -1596,6 +1634,25 @@ function App() {
 
   const scale = layout.tileSize / tileBase;
 
+  // Highlight the last N piece-plies on the board. Roulette mode plays two
+  // sub-moves per AI turn, so we widen the window to 2; classic stays at 1
+  // and renders identically to the old single-lastMove behaviour.
+  // Indexed 0 = most recent, 1 = previous (used for an 'older' opacity).
+  const recentPlyHighlights = useMemo(() => {
+    const wantCount = gameMode === 'roulette' ? 2 : 1;
+    const from = new Map<string, number>();
+    const to = new Map<string, number>();
+    let found = 0;
+    for (let i = log.moves.length - 1; i >= 0 && found < wantCount; i--) {
+      const m = log.moves[i].move;
+      if (!m.from || !m.to || m.kind === 'topologyToggle') continue;
+      if (!from.has(m.from)) from.set(m.from, found);
+      if (!to.has(m.to)) to.set(m.to, found);
+      found++;
+    }
+    return { from, to };
+  }, [log.moves, gameMode]);
+
   const positionLabel = backRankString(initialState);
 
   function resumeGame(game: SavedGame) {
@@ -1921,7 +1978,8 @@ function App() {
         <div className="watch-banner">
           <span className="watch-banner-label">
             {'\u{1F441}'} Watching <strong>{watchingGame.playerName}</strong>’s game ·
-            move {watchingGame.currentMoveIdx}/{watchingGame.log.moves.length}
+            move {Math.floor((watchingGame.currentMoveIdx + 1) / 2)}/
+            {Math.floor(watchingGame.log.moves.length / 2)}
           </span>
           <div className="watch-banner-controls">
             <button
@@ -2026,8 +2084,14 @@ function App() {
           mateInPlies={searchMateInPlies}
           isPending={searchEvalFromWhite === null}
         />
+      <div className="board-with-coords" style={{ width: boardSize }}>
+      <div className="board-ranks" style={{ height: boardSize }}>
+        {['8', '7', '6', '5', '4', '3', '2', '1'].map((r) => (
+          <div key={r} className="board-rank">{r}</div>
+        ))}
+      </div>
       <div
-        className={`board${previewTopology || previewLocked ? ' previewing' : ''}`}
+        className={`board${previewTopology || previewLocked ? ' previewing' : ''}${recentRotation ? ' is-rotated' : ''}`}
         style={{ width: boardSize, height: boardSize }}
       >
         {squares.map((sq) => {
@@ -2039,8 +2103,20 @@ function App() {
             1;
           const isSelected = selected === sq;
           const isTarget = highlightedTargets.has(sq);
-          const isLastFrom = lastMove?.from === sq;
-          const isLastTo = lastMove?.to === sq;
+          // Classic uses the single lastMove state; roulette derives the
+          // last two piece-plies from the log so both AI sub-moves show.
+          const isLastFrom =
+            gameMode === 'roulette'
+              ? recentPlyHighlights.from.has(sq)
+              : lastMove?.from === sq;
+          const isLastTo =
+            gameMode === 'roulette'
+              ? recentPlyHighlights.to.has(sq)
+              : lastMove?.to === sq;
+          const olderHighlight =
+            gameMode === 'roulette' &&
+            (recentPlyHighlights.from.get(sq) === 1 ||
+              recentPlyHighlights.to.get(sq) === 1);
           const isCheckedKing = checkSquares.king === sq;
           const isCheckingPiece = checkSquares.checkers.has(sq);
           const threatCount = threatenedSquares.get(sq) ?? 0;
@@ -2066,6 +2142,7 @@ function App() {
                 isTarget ? 'target' : '',
                 isLastFrom ? 'last-from' : '',
                 isLastTo ? 'last-to' : '',
+                olderHighlight ? 'last-older' : '',
                 isCheckedKing ? (gameStatus === 'checkmate' ? 'mated-king' : 'checked-king') : '',
                 isCheckingPiece ? (gameStatus === 'checkmate' ? 'mating-piece' : 'checking-piece') : '',
                 threatCount > 0 ? 'threatened' : '',
@@ -2188,6 +2265,12 @@ function App() {
             })}
           </svg>
         )}
+      </div>
+      <div className="board-files">
+        {['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((f) => (
+          <div key={f} className="board-file">{f}</div>
+        ))}
+      </div>
       </div>
       </div>
 
@@ -2518,6 +2601,21 @@ function App() {
           playerId={user.uid}
           playerName={displayName}
           onClose={() => setShowFeedbackModal(false)}
+        />
+      )}
+
+      {showMilestoneModal && (
+        <MilestoneModal
+          fullMoves={Math.floor(log.moves.length / 2)}
+          currentScoreEstimate={Math.floor(log.moves.length / 2) * 5}
+          onKeepPlaying={() => setShowMilestoneModal(false)}
+          onResignNow={() => {
+            setShowMilestoneModal(false);
+            // The modal already explained the consequence — go straight to
+            // the resign-confirmation dialog so the player can change their
+            // mind without an extra click.
+            setConfirmingResign(true);
+          }}
         />
       )}
 

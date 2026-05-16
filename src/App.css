@@ -2261,6 +2261,129 @@
   letter-spacing: 0.02em;
 }
 
+/* Coordinate labels around the board. The inner .board keeps its fixed
+   width/height (boardSize px) — the wrapper just adds a rank column on
+   the left and a file row underneath. */
+
+.board-with-coords {
+  display: grid;
+  grid-template-columns: 22px auto;
+  grid-template-rows: auto 22px;
+  grid-template-areas:
+    "ranks board"
+    ".     files";
+  align-items: stretch;
+}
+
+.board-with-coords > .board-ranks {
+  grid-area: ranks;
+}
+
+.board-with-coords > .board {
+  grid-area: board;
+}
+
+.board-with-coords > .board-files {
+  grid-area: files;
+}
+
+.board-ranks {
+  display: flex;
+  flex-direction: column;
+}
+
+.board-files {
+  display: flex;
+  flex-direction: row;
+}
+
+.board-rank,
+.board-file {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.5);
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Rotation outline pulse — fires for ~2.5s after every topology flip. */
+
+.board.is-rotated {
+  box-shadow:
+    0 0 0 2px rgba(255, 200, 80, 0.55),
+    0 0 24px rgba(255, 200, 80, 0.3);
+  animation: rotation-pulse 1.2s ease-in-out 2;
+}
+
+@keyframes rotation-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 2px rgba(255, 200, 80, 0.55),
+      0 0 24px rgba(255, 200, 80, 0.3);
+  }
+  50% {
+    box-shadow:
+      0 0 0 3px rgba(255, 200, 80, 0.85),
+      0 0 32px rgba(255, 200, 80, 0.55);
+  }
+}
+
+/* Older roulette ply — same hue, dimmer, so order is readable. */
+
+.tile.last-older::before {
+  opacity: 0.55;
+}
+
+/* Milestone celebration modal */
+
+.milestone-dialog {
+  max-width: 420px;
+  text-align: center;
+}
+
+.milestone-celebration {
+  font-size: 56px;
+  line-height: 1;
+  margin-bottom: 6px;
+  animation: milestone-bounce 3s ease-in-out infinite;
+}
+
+@keyframes milestone-bounce {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.1); }
+}
+
+.milestone-title {
+  color: var(--accent-gold);
+  margin-bottom: 12px;
+}
+
+.milestone-message {
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 0 0 10px;
+  color: var(--text);
+}
+
+.milestone-message-muted {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.milestone-score {
+  margin: 14px 0 4px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.milestone-score strong {
+  color: var(--accent-gold);
+}
+
 .feedback-error {
   margin-top: 8px;
 }

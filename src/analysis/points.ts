@@ -104,8 +104,11 @@ export function computeGamePoints(
   };
 }
 
+// Full chess moves played: a "move" is white + black together, so we divide
+// the ply count by 2. The 50-move milestone and "lost in N moves" headline
+// both read from this — keep it canonical chess counting.
 function countAllMoves(log: GameLog): number {
-  return log.moves.length;
+  return Math.floor(log.moves.length / 2);
 }
 
 function computeQualityBonus(
