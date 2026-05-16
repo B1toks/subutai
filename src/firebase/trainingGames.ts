@@ -14,6 +14,8 @@ interface StoredMove {
   move: LoggedMove['move'];
   topology?: TopologyState;
   timestamp: number;
+  /** Optional shallow-search label from White's perspective (centipawns). */
+  searchScore?: number;
 }
 
 interface StoredGameLog {
@@ -38,12 +40,18 @@ export interface TrainingGameDoc {
 function serializeGameLog(log: GameLog): StoredGameLog {
   return {
     initialTopology: log.initialTopology,
-    moves: log.moves.map((m) => ({
-      san: m.san,
-      move: m.move,
-      topology: m.topology,
-      timestamp: m.timestamp,
-    })),
+    moves: log.moves.map((m) => {
+      // Firestore rejects `undefined` values — only include searchScore when
+      // the labeller actually produced one.
+      const stored: StoredMove = {
+        san: m.san,
+        move: m.move,
+        topology: m.topology,
+        timestamp: m.timestamp,
+      };
+      if (typeof m.searchScore === 'number') stored.searchScore = m.searchScore;
+      return stored;
+    }),
   };
 }
 

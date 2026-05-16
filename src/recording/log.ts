@@ -8,6 +8,9 @@ export interface LoggedMove {
   readonly timestamp: number;
   /** Populated when the move was classified at play time. */
   readonly analysis?: MoveAnalysis;
+  /** Search-evaluated centipawn score from White's perspective after the
+   *  move was applied. Auto-mode only — used for future NNUE training data. */
+  readonly searchScore?: number;
 }
 
 export interface GameLog {
@@ -81,6 +84,20 @@ export function updateLastMoveAnalysis(log: GameLog, analysis: MoveAnalysis): Ga
   const idx = log.moves.length - 1;
   const updated = log.moves.slice();
   updated[idx] = { ...updated[idx], analysis };
+  return { ...log, moves: updated };
+}
+
+/** Attach a White-perspective search score to the last logged move. Used by
+ *  auto mode to label every position with a shallow search eval for future
+ *  training-data extraction. */
+export function attachSearchScoreToLastMove(
+  log: GameLog,
+  scoreFromWhite: number,
+): GameLog {
+  if (log.moves.length === 0) return log;
+  const idx = log.moves.length - 1;
+  const updated = log.moves.slice();
+  updated[idx] = { ...updated[idx], searchScore: scoreFromWhite };
   return { ...log, moves: updated };
 }
 

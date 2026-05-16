@@ -18,7 +18,7 @@ import {
 import { applyRotationMove, applyPassMove, toggleTopology, computeBoardLayout, tilePixelCenter } from './engine/auxetic';
 import { SubutaiAgent } from './ai/agents';
 import { evaluate, PIECE_VALUE } from './ai/evaluate';
-import { ttClear } from './ai/search';
+import { searchPosition, ttClear } from './ai/search';
 import { type MoveClass, type MoveAnalysis } from './analysis/classify';
 import { classifyAsync } from './analysis/classifyClient';
 import { GameReview } from './components/GameReview';
@@ -28,6 +28,7 @@ import { ConfirmDialog } from './components/ConfirmDialog';
 import { FeedbackModal } from './components/FeedbackModal';
 import { MilestoneModal } from './components/MilestoneModal';
 import { AutoPlayView } from './components/AutoPlayView';
+import { StatsPage } from './components/StatsPage';
 import { saveTrainingGame } from './firebase/trainingGames';
 import { useAuth } from './firebase/useAuth';
 import {
@@ -42,6 +43,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
 import {
   appendMove,
+  attachSearchScoreToLastMove,
   computeSAN,
   createGameLog,
   updateMoveAnalysisAt,
@@ -145,9 +147,13 @@ const WATCH_AUTOPLAY_MS = 1500;
 const AUTO_MOVE_DELAY_MS = 50;
 const AUTO_BETWEEN_GAMES_MS = 600;
 const AUTO_WATCHDOG_MS = 60_000;
+// Shallow search used to label each auto-mode position for training data.
+// ~100ms × ~80 plies ≈ +8s per game on top of the move-generation cost.
+const AUTO_SEARCH_LABEL_BUDGET_MS = 100;
+const AUTO_SEARCH_LABEL_DEPTH = 4;
 // Bumped per release so /training_games docs can be filtered by engine
 // version when we later use them for training data.
-const AI_VERSION = 'stage-i';
+const AI_VERSION = 'stage-j';
 
 interface WatchingGame {
   log: GameLog;
@@ -189,6 +195,12 @@ function App() {
     const n = parseInt(m, 10);
     return Number.isFinite(n) && n > 0 ? n : 0;
   }, []);
+  // Internal monitoring page for the /training_games collection. URL-only so
+  // it never shows up in the regular navigation UI.
+  const isStatsMode = useMemo(
+    () => new URLSearchParams(window.location.search).get('stats') === '1',
+    [],
+  );
 
   const [autoGamesCompleted, setAutoGamesCompleted] = useState(0);
   const [autoLastOutcome, setAutoLastOutcome] = useState<GameOutcome | null>(null);
@@ -1397,6 +1409,21 @@ function App() {
         );
         autoLastMoveAtRef.current = Date.now();
         checkGameOver(next, move.kind === 'topologyToggle');
+
+        // Label the resulting position with a shallow search score. Synchronous
+        // (worker-free) so we don't add a second round-trip per move. Wrapped
+        // in try/catch — a labeller failure must never stall the auto loop.
+        try {
+          const labelled = searchPosition(next, {
+            budgetMs: AUTO_SEARCH_LABEL_BUDGET_MS,
+            maxDepth: AUTO_SEARCH_LABEL_DEPTH,
+          });
+          const scoreFromWhite =
+            next.sideToMove === 'white' ? labelled.score : -labelled.score;
+          setLog((prev) => attachSearchScoreToLastMove(prev, scoreFromWhite));
+        } catch (err) {
+          console.warn('[autoplay] label search failed', err);
+        }
       }, AUTO_MOVE_DELAY_MS);
     },
     // checkGameOver is captured from the enclosing scope; identical pattern to
@@ -2064,6 +2091,10 @@ function App() {
     }
     return null;
   }, [gameStatus, state.sideToMove]);
+
+  if (isStatsMode) {
+    return <StatsPage />;
+  }
 
   if (isAutoMode) {
     const avgMoves =
