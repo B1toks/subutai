@@ -27,6 +27,8 @@ import { GameSummary } from './components/GameSummary';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { FeedbackModal } from './components/FeedbackModal';
 import { MilestoneModal } from './components/MilestoneModal';
+import { AutoPlayView } from './components/AutoPlayView';
+import { saveTrainingGame } from './firebase/trainingGames';
 import { useAuth } from './firebase/useAuth';
 import {
   saveCompletedGame,
@@ -138,6 +140,14 @@ function evalToColors(evalCp: number): { c1: string; c2: string } {
 
 const HUMAN_COLOR: Color = 'white';
 const WATCH_AUTOPLAY_MS = 1500;
+// Auto-mode tuning. We skip the move classifier (expensive worker round-trip)
+// and use a small inter-move delay so a 60-ply game finishes in ~30s.
+const AUTO_MOVE_DELAY_MS = 50;
+const AUTO_BETWEEN_GAMES_MS = 600;
+const AUTO_WATCHDOG_MS = 60_000;
+// Bumped per release so /training_games docs can be filtered by engine
+// version when we later use them for training data.
+const AI_VERSION = 'stage-i';
 
 interface WatchingGame {
   log: GameLog;
@@ -165,6 +175,33 @@ interface GameBackup {
 }
 
 function App() {
+  // Self-play / training data collection mode: ?auto=1 in the URL puts both
+  // sides under AI control, hides the regular UI, and writes finished games
+  // to /training_games. URL-derived so it survives reloads but can be exited
+  // by clicking Stop (which navigates back to the no-param URL).
+  const isAutoMode = useMemo(
+    () => new URLSearchParams(window.location.search).get('auto') === '1',
+    [],
+  );
+  const maxGames = useMemo(() => {
+    const m = new URLSearchParams(window.location.search).get('max');
+    if (!m) return 0;
+    const n = parseInt(m, 10);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }, []);
+
+  const [autoGamesCompleted, setAutoGamesCompleted] = useState(0);
+  const [autoLastOutcome, setAutoLastOutcome] = useState<GameOutcome | null>(null);
+  // Rolling history of full-move counts so the panel can show an average.
+  const [autoMoveHistory, setAutoMoveHistory] = useState<number[]>([]);
+  const [autoStopped, setAutoStopped] = useState(false);
+  const [autoStoppedReason, setAutoStoppedReason] = useState<string | null>(null);
+  const autoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoNextGameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoLastMoveAtRef = useRef<number>(Date.now());
+  // Each completed game-id is processed exactly once by the auto-save effect.
+  const autoSavedLogIdRef = useRef<string | null>(null);
+
   const { user, displayName, loading: authLoading, setDisplayName } = useAuth();
   const [showNameModal, setShowNameModal] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -302,7 +339,9 @@ function App() {
   // Game-completion pipeline: detects terminal gameStatus transitions, computes
   // points, opens the GameSummary modal, and kicks the async Firestore save.
   // The ref guards against double-fires (StrictMode + deps that move together).
+  // Auto mode handles completion via its own effect — never enters this path.
   useEffect(() => {
+    if (isAutoMode) return;
     if (gameStatus === 'active') return;
     if (log.moves.length === 0) return;
     if (completedLogIdRef.current === log.id) return;
@@ -325,7 +364,7 @@ function App() {
     // finishGame closes over current state/log/user/displayName; we want this
     // to fire once per terminal transition, hence the ref-guard above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameStatus, log.id, log.moves.length]);
+  }, [gameStatus, log.id, log.moves.length, isAutoMode]);
 
   async function finishGame(outcome: GameOutcome) {
     const points = computeGamePoints(log, outcome, HUMAN_COLOR);
@@ -367,6 +406,109 @@ function App() {
     } finally {
       setSavingGame(false);
     }
+  }
+
+  // Auto-mode completion: when a self-play game ends, save to
+  // /training_games (separate collection from the human leaderboard) and
+  // queue the next game. Bypasses the regular finishGame path entirely.
+  useEffect(() => {
+    if (!isAutoMode) return;
+    if (autoStopped) return;
+    if (gameStatus === 'active') return;
+    if (log.moves.length === 0) return;
+    if (autoSavedLogIdRef.current === log.id) return;
+    autoSavedLogIdRef.current = log.id;
+
+    let outcome: GameOutcome;
+    if (gameStatus === 'checkmate') {
+      // The side now to move was just checkmated. White=human alias gives us
+      // a "human-win"/"ai-win" mapping consistent with the rest of the codebase.
+      outcome = state.sideToMove === HUMAN_COLOR ? 'ai-win' : 'human-win';
+    } else if (gameStatus === 'king_captured_black_wins') {
+      outcome = 'ai-win';
+    } else if (gameStatus === 'king_captured_white_wins') {
+      outcome = 'human-win';
+    } else {
+      outcome = 'draw';
+    }
+    const moveCount = Math.floor(log.moves.length / 2);
+    const finalEvalFromWhite =
+      state.sideToMove === 'white' ? evaluate(state) : -evaluate(state);
+
+    setAutoLastOutcome(outcome);
+    setAutoGamesCompleted((n) => n + 1);
+    setAutoMoveHistory((prev) => {
+      const next = [...prev, moveCount];
+      // Keep the rolling average bounded.
+      return next.length > 50 ? next.slice(-50) : next;
+    });
+
+    void saveTrainingGame({
+      log,
+      chess960Id: backRankString(initialState),
+      seed,
+      outcome,
+      moveCount,
+      finalEvalFromWhite,
+      aiVersion: AI_VERSION,
+    }).catch((err) => {
+      console.error('[autoplay] saveTrainingGame failed', err);
+    });
+
+    if (autoNextGameTimerRef.current) clearTimeout(autoNextGameTimerRef.current);
+    autoNextGameTimerRef.current = setTimeout(() => {
+      startNewGame();
+    }, AUTO_BETWEEN_GAMES_MS);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAutoMode, autoStopped, gameStatus, log.id, log.moves.length]);
+
+  // Capped-run stop: once the requested number of games is reached, stop
+  // queuing new ones. The current game finishes saving but the loop ends.
+  useEffect(() => {
+    if (!isAutoMode || maxGames <= 0 || autoStopped) return;
+    if (autoGamesCompleted >= maxGames) {
+      setAutoStopped(true);
+      setAutoStoppedReason(`Done. ${autoGamesCompleted} games completed.`);
+      if (autoNextGameTimerRef.current) clearTimeout(autoNextGameTimerRef.current);
+      if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
+    }
+  }, [autoGamesCompleted, maxGames, isAutoMode, autoStopped]);
+
+  // Watchdog: if no move has been made in 60s, the AI has hung (rare). Reset.
+  useEffect(() => {
+    if (!isAutoMode || autoStopped) return;
+    const id = setInterval(() => {
+      if (Date.now() - autoLastMoveAtRef.current > AUTO_WATCHDOG_MS) {
+        console.warn('[autoplay] watchdog: no move in 60s, forcing new game');
+        autoLastMoveAtRef.current = Date.now();
+        autoSavedLogIdRef.current = null;
+        startNewGame();
+      }
+    }, 10_000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAutoMode, autoStopped]);
+
+  // Clear auto timers on unmount.
+  useEffect(() => {
+    return () => {
+      if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
+      if (autoNextGameTimerRef.current) clearTimeout(autoNextGameTimerRef.current);
+    };
+  }, []);
+
+  function stopAuto() {
+    setAutoStopped(true);
+    setAutoStoppedReason('Stopped by user.');
+    if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
+    if (autoNextGameTimerRef.current) clearTimeout(autoNextGameTimerRef.current);
+    // Navigate back to the clean URL so a reload exits auto mode entirely.
+    setTimeout(() => {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('auto');
+      url.searchParams.delete('max');
+      window.location.href = url.toString();
+    }, 400);
   }
 
   // Replay the first `moveCount` entries of a log on top of its initialState.
@@ -886,6 +1028,8 @@ function App() {
     setMilestoneShown(false);
     setShowMilestoneModal(false);
     completedLogIdRef.current = null;
+    autoSavedLogIdRef.current = null;
+    autoLastMoveAtRef.current = Date.now();
 
     // New play session => new live snapshot id.
     liveSavedGameIdRef.current = `live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -1224,6 +1368,43 @@ function App() {
     [applyClassifyVisuals],
   );
 
+  // Slim AI step for auto mode: no classifier round-trip, tighter delay.
+  // The standard scheduleAiMove path is preserved unchanged for human play.
+  const scheduleAutoMove = useCallback(
+    (boardState: BoardState, moves: Move[], wasRotation: boolean) => {
+      if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
+      autoTimerRef.current = setTimeout(async () => {
+        const move = await SubutaiAgent.chooseMove(boardState, moves, {
+          lastMoveWasRotation: wasRotation,
+        });
+        if (!move) return;
+        if (move.kind === 'topologyToggle' && boardState.lastMoveWasRotation) return;
+
+        const next =
+          move.kind === 'topologyToggle'
+            ? applyRotationMove(boardState)
+            : applyMove(boardState, move);
+
+        const san = computeSAN(boardState, move);
+        setState(next);
+        setLegalMoves(generateLegalMoves(next));
+        setSelected(null);
+        setLog((prev) => appendMove(prev, move, san, boardState.topologyState));
+        setLastMove(
+          move.kind === 'topologyToggle'
+            ? null
+            : { from: move.from, to: move.to },
+        );
+        autoLastMoveAtRef.current = Date.now();
+        checkGameOver(next, move.kind === 'topologyToggle');
+      }, AUTO_MOVE_DELAY_MS);
+    },
+    // checkGameOver is captured from the enclosing scope; identical pattern to
+    // scheduleAiMove which also does not list it in deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   const lastMoveWasRotation =
     log.moves.length > 0 &&
     log.moves[log.moves.length - 1]?.move.kind === 'topologyToggle';
@@ -1285,8 +1466,15 @@ function App() {
 
   useEffect(() => {
     if (gameStatus !== 'active') return;
-    if (currentPlayer !== 'ai') return;
     if (watchingGame) return; // replay mode — never let the AI move.
+    if (isAutoMode) {
+      if (autoStopped) return;
+      scheduleAutoMove(state, legalMoves, lastMoveWasRotation);
+      return () => {
+        if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
+      };
+    }
+    if (currentPlayer !== 'ai') return;
 
     // Classic: the old path handles its own setTimeout + minimax.
     if (gameMode !== 'roulette') {
@@ -1350,8 +1538,11 @@ function App() {
     usedRouletteSlots,
     legalMoves,
     scheduleAiMove,
+    scheduleAutoMove,
     lastMoveWasRotation,
     watchingGame,
+    isAutoMode,
+    autoStopped,
   ]);
 
   const highlightedTargets = useMemo(() => {
@@ -1873,6 +2064,82 @@ function App() {
     }
     return null;
   }, [gameStatus, state.sideToMove]);
+
+  if (isAutoMode) {
+    const avgMoves =
+      autoMoveHistory.length > 0
+        ? Math.round(
+            autoMoveHistory.reduce((s, n) => s + n, 0) / autoMoveHistory.length,
+          )
+        : null;
+    const currentFullMoves = Math.floor(log.moves.length / 2);
+    const autoBoard = (
+      <div
+        className={`board${recentRotation ? ' is-rotated' : ''}`}
+        style={{ width: boardSize, height: boardSize }}
+      >
+        {squares.map((sq) => {
+          const piece = state.pieces[sq as SquareId];
+          const isDark =
+            ((sq.charCodeAt(0) - 'a'.charCodeAt(0)) +
+              (Number(sq[1]) - 1)) %
+              2 ===
+            1;
+          const isLastFrom = lastMove?.from === sq;
+          const isLastTo = lastMove?.to === sq;
+          const { cx, cy, angle } = tilePixelCenter(
+            sq as SquareId,
+            displayTopology,
+            layout,
+          );
+          const tx = cx - tileBase / 2;
+          const ty = cy - tileBase / 2;
+          return (
+            <div
+              key={sq}
+              className={[
+                'tile',
+                isDark ? 'dark' : 'light',
+                isLastFrom ? 'last-from' : '',
+                isLastTo ? 'last-to' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              style={{
+                width: tileBase,
+                height: tileBase,
+                transform: `translate(${tx}px, ${ty}px) rotate(${angle}deg) scale(${scale})`,
+              }}
+            >
+              {piece && (
+                <span
+                  className={`piece piece-${piece.color}`}
+                  style={angle ? { transform: `rotate(${-angle}deg)` } : undefined}
+                >
+                  {glyphForPiece(piece.color, piece.type)}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+    return (
+      <div className="app-shell auto-shell-root" ref={shellRef}>
+        <AutoPlayView
+          gamesCompleted={autoGamesCompleted}
+          maxGames={maxGames}
+          currentGameFullMoves={currentFullMoves}
+          lastOutcome={autoLastOutcome}
+          avgGameMoves={avgMoves}
+          stopped={autoStopped}
+          stoppedReason={autoStoppedReason}
+          onStop={stopAuto}
+          board={autoBoard}
+        />
+      </div>
+    );
+  }
 
   if (view === 'review') {
     return (

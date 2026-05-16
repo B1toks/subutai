@@ -2384,6 +2384,104 @@
   color: var(--accent-gold);
 }
 
+/* Auto-play self-play mode — headless layout with a stat panel + board. */
+
+.auto-shell-root {
+  background: #0c0c18;
+}
+
+.auto-shell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 24px 16px;
+  min-height: 100vh;
+}
+
+.auto-panel {
+  width: 100%;
+  max-width: 480px;
+  background: #161626;
+  border: 1px solid var(--btn-border);
+  border-radius: 10px;
+  padding: 14px 18px;
+  color: var(--text);
+}
+
+.auto-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.auto-badge {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--accent-gold);
+}
+
+.auto-stop-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: transparent;
+  color: #e87070;
+  border: 1px solid #b54040;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.auto-stop-btn:hover {
+  background: #2a1a1a;
+}
+
+.auto-panel-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 18px;
+}
+
+.auto-stat {
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+}
+
+.auto-stat-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.auto-stat-value {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.auto-stat-cap {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.auto-stopped {
+  margin-top: 12px;
+  padding: 10px;
+  border-top: 1px solid var(--btn-border);
+  text-align: center;
+  color: var(--accent-gold);
+  font-size: 14px;
+}
+
+.auto-board-wrap {
+  display: flex;
+  justify-content: center;
+}
+
 .feedback-error {
   margin-top: 8px;
 }
