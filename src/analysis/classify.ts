@@ -4,8 +4,9 @@ import {
   isCheckmate,
   getAttackerSquares,
   applyMove,
+  isSquareAttacked,
 } from '../engine/moves';
-import { applyRotationMove } from '../engine/auxetic';
+import { applyRotationMove, toggleTopology } from '../engine/auxetic';
 import { PIECE_VALUE } from '../ai/evaluate';
 import { searchPosition } from '../ai/search';
 
@@ -154,6 +155,35 @@ function findDiscoveredTargets(
     }
   }
   return discovered;
+}
+
+/**
+ * Subutai-specific: detects threats that become live only after the opponent
+ * rotates the board. The move itself looks safe under the current topology,
+ * but a rotation opens a line/jump onto an undefended piece. Returns the
+ * highest-value such piece, or 0 if no loaded threat exists.
+ *
+ * Skip when stateAfter already has lastMoveWasRotation=true (the opponent
+ * cannot immediately rotate back) — those positions don't have the hidden
+ * trap we're trying to catch.
+ */
+function crossTopologyThreatValue(stateAfter: BoardState, mover: Color): number {
+  if (stateAfter.lastMoveWasRotation) return 0;
+  const enemy = opposite(mover);
+  const rotated = toggleTopology(stateAfter);
+  let worst = 0;
+  for (const [sq, piece] of Object.entries(stateAfter.pieces) as Array<[SquareId, BoardState['pieces'][SquareId]]>) {
+    if (!piece || piece.color !== mover) continue;
+    const attackedNow = isSquareAttacked(stateAfter, sq, enemy, stateAfter.topologyState);
+    if (attackedNow) continue; // already visible — not a hidden trap
+    const attackedRotated = isSquareAttacked(rotated, sq, enemy, rotated.topologyState);
+    if (!attackedRotated) continue;
+    const defendersRotated = getAttackerSquares(rotated, sq, mover, rotated.topologyState);
+    if (defendersRotated.length > 0) continue;
+    const v = PIECE_VALUE[piece.type];
+    if (v > worst) worst = v;
+  }
+  return worst;
 }
 
 /** A target is hanging if attacked and (for our v1) has zero defenders. */
@@ -330,6 +360,16 @@ export function classifyMove(
     }
   }
 
+  // 5. Subutai twist — if rotation by the opponent next turn would expose
+  // a meaningful undefended piece, the move isn't actually as strong as the
+  // raw chess analysis suggests. Demote one step.
+  const loadedThreatValue = crossTopologyThreatValue(stateAfter, mover);
+  if (loadedThreatValue >= MAJOR_PIECE_THRESHOLD) {
+    classification = demoteForLoadedThreat(classification);
+  } else if (loadedThreatValue >= MINOR_PIECE_THRESHOLD && classification === 'brilliant') {
+    classification = 'good';
+  }
+
   return {
     classification,
     cpl,
@@ -341,4 +381,17 @@ export function classifyMove(
     isMate: isMate || undefined,
     mateInPlies,
   };
+}
+
+function demoteForLoadedThreat(cls: MoveClass): MoveClass {
+  switch (cls) {
+    case 'brilliant':
+      return 'good';
+    case 'best':
+      return 'good';
+    case 'good':
+      return 'mistake';
+    default:
+      return cls;
+  }
 }

@@ -1,5 +1,5 @@
-import type { BoardState, Color, Piece, PieceType, PieceMap, SquareId, TopologyState } from '../engine/types';
-import { rayFrom, knightTargets } from '../engine/auxetic';
+import type { BoardState, Color, Piece, PieceType, SquareId } from '../engine/types';
+import { computePhase, pstValue } from './pst';
 
 export const PIECE_VALUE: Record<PieceType, number> = {
   pawn: 100,
@@ -10,71 +10,108 @@ export const PIECE_VALUE: Record<PieceType, number> = {
   king: 20000,
 };
 
+const BISHOP_PAIR = 30;
+const DOUBLED_PENALTY = 20;
+const ISOLATED_PENALTY = 15;
+const PASSED_PER_RANK = 20;
+const TEMPO = 10;
+
+function opposite(c: Color): Color {
+  return c === 'white' ? 'black' : 'white';
+}
+
 /**
  * Static evaluation from the perspective of state.sideToMove.
  * Positive = good for side to move.
  */
 export function evaluate(state: BoardState): number {
   const side = state.sideToMove;
-  const topo = state.topologyState;
+  const phase = computePhase(state);
   let score = 0;
 
   for (const [sq, piece] of Object.entries(state.pieces) as Array<[SquareId, Piece | undefined]>) {
     if (!piece) continue;
     const sign = piece.color === side ? 1 : -1;
-    score += sign * PIECE_VALUE[piece.type];
-    score += sign * pieceActivity(sq, piece.type, piece.color, topo, state.pieces);
+    score += sign * (PIECE_VALUE[piece.type] + pstValue(piece.type, piece.color, sq, phase));
   }
+
+  const opp = opposite(side);
+  score += pawnStructureScore(state, side) - pawnStructureScore(state, opp);
+  score += bishopPairBonus(state, side) - bishopPairBonus(state, opp);
+  score += TEMPO;
 
   return score;
 }
 
-const DIAG: readonly (readonly [number, number])[] = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
-const STRAIGHT: readonly (readonly [number, number])[] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-const ALL_DIRS: readonly (readonly [number, number])[] = [...STRAIGHT, ...DIAG];
+// ---- Pawn structure ---------------------------------------------------------
 
-function pieceActivity(
-  sq: SquareId,
-  type: PieceType,
-  color: Color,
-  topo: TopologyState,
-  pieces: PieceMap,
-): number {
-  switch (type) {
-    case 'pawn': {
-      const rank = Number(sq[1]);
-      return (color === 'white' ? rank - 2 : 7 - rank) * 5;
-    }
-    case 'knight':
-      return knightTargets(sq, topo).length * 3;
-    case 'bishop':
-      return slidingReach(sq, DIAG, topo, pieces) * 3;
-    case 'rook':
-      return slidingReach(sq, STRAIGHT, topo, pieces) * 2;
-    case 'queen':
-      return slidingReach(sq, ALL_DIRS, topo, pieces) * 1;
-    case 'king': {
-      let reach = 0;
-      for (const [df, dr] of ALL_DIRS) {
-        if (rayFrom(sq, df, dr, topo).length > 0) reach++;
-      }
-      return reach;
-    }
+/** file → list of ranks occupied by colour's pawns. */
+function pawnsByFile(state: BoardState, color: Color): Map<number, number[]> {
+  const map = new Map<number, number[]>();
+  for (const [sq, piece] of Object.entries(state.pieces) as Array<[SquareId, Piece | undefined]>) {
+    if (!piece || piece.type !== 'pawn' || piece.color !== color) continue;
+    const file = sq.charCodeAt(0) - 'a'.charCodeAt(0);
+    const rank = Number(sq[1]);
+    const list = map.get(file);
+    if (list) list.push(rank);
+    else map.set(file, [rank]);
   }
+  return map;
 }
 
-function slidingReach(
-  sq: SquareId,
-  dirs: readonly (readonly [number, number])[],
-  topo: TopologyState,
-  pieces: PieceMap,
-): number {
-  let count = 0;
-  for (const [df, dr] of dirs) {
-    for (const t of rayFrom(sq, df, dr, topo)) {
-      count++;
-      if (pieces[t] !== undefined) break;
+function isPassed(
+  rank: number,
+  file: number,
+  color: Color,
+  oppPawns: Map<number, number[]>,
+): boolean {
+  // No enemy pawns on this file or adjacent files in front of us.
+  for (let f = file - 1; f <= file + 1; f++) {
+    const enemyRanks = oppPawns.get(f);
+    if (!enemyRanks) continue;
+    for (const er of enemyRanks) {
+      if (color === 'white' ? er > rank : er < rank) return false;
     }
   }
-  return count;
+  return true;
+}
+
+function pawnStructureScore(state: BoardState, color: Color): number {
+  const my = pawnsByFile(state, color);
+  const opp = pawnsByFile(state, opposite(color));
+  let score = 0;
+
+  for (let file = 0; file < 8; file++) {
+    const ranks = my.get(file);
+    if (!ranks || ranks.length === 0) continue;
+
+    // Doubled pawns: each extra pawn on the file costs DOUBLED_PENALTY.
+    if (ranks.length > 1) score -= DOUBLED_PENALTY * (ranks.length - 1);
+
+    // Isolated pawn: no friendly pawns on the two adjacent files at all.
+    const leftEmpty = (my.get(file - 1)?.length ?? 0) === 0;
+    const rightEmpty = (my.get(file + 1)?.length ?? 0) === 0;
+    if (leftEmpty && rightEmpty) score -= ISOLATED_PENALTY;
+
+    // Passed pawn: bonus scales with advancement toward the promotion rank.
+    for (const rank of ranks) {
+      if (isPassed(rank, file, color, opp)) {
+        const advancement = color === 'white' ? rank - 1 : 8 - rank;
+        score += PASSED_PER_RANK * advancement;
+      }
+    }
+  }
+  return score;
+}
+
+// ---- Bishop pair ------------------------------------------------------------
+
+function bishopPairBonus(state: BoardState, color: Color): number {
+  let count = 0;
+  for (const piece of Object.values(state.pieces)) {
+    if (!piece) continue;
+    if (piece.color === color && piece.type === 'bishop') count++;
+    if (count >= 2) return BISHOP_PAIR;
+  }
+  return 0;
 }

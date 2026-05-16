@@ -18,6 +18,7 @@ import {
 import { applyRotationMove, applyPassMove, toggleTopology, computeBoardLayout, tilePixelCenter } from './engine/auxetic';
 import { SubutaiAgent } from './ai/agents';
 import { evaluate, PIECE_VALUE } from './ai/evaluate';
+import { ttClear } from './ai/search';
 import { type MoveClass, type MoveAnalysis } from './analysis/classify';
 import { classifyAsync } from './analysis/classifyClient';
 import { GameReview } from './components/GameReview';
@@ -849,6 +850,9 @@ function App() {
 
   function startNewGame() {
     if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
+    // Reset the transposition table so positions from the previous game can't
+    // bias the new search. (TT is reused across moves WITHIN one game.)
+    ttClear();
     const newSeed = Date.now();
     const initial =
       formationLocked && lockedFormationKey

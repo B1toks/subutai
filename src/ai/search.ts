@@ -1,4 +1,4 @@
-import type { BoardState, Move } from '../engine/types';
+import type { BoardState, Move, SquareId } from '../engine/types';
 import {
   generateLegalMoves,
   applyMove,
@@ -8,35 +8,131 @@ import {
 } from '../engine/moves';
 import { applyRotationMove, toggleTopology } from '../engine/auxetic';
 import { evaluate, PIECE_VALUE } from './evaluate';
+import { zobristHash } from './zobrist';
+import {
+  ttProbe,
+  ttStore,
+  ttNewGeneration,
+  ttClear,
+  type NodeType,
+} from './tt';
+
+export { ttClear };
 
 const MATE_SCORE = 100_000;
 const INF = MATE_SCORE * 2;
+const MAX_PLY = 32;
 
 interface SearchContext {
   deadline: number;
   nodes: number;
   cancelled: boolean;
+  /** killers[ply] = [primary, secondary] — quiet moves that produced a
+   *  beta-cutoff at this ply. */
+  killers: (Move | null)[][];
 }
 
-function moveOrderScore(move: Move, state: BoardState): number {
+// History heuristic — persists across moves so quiet moves that historically
+// caused cutoffs get sorted earlier. Periodically halved to keep it bounded.
+const history: number[][] = Array.from({ length: 64 }, () => new Array(64).fill(0));
+let historyTotalDepth = 0;
+
+function squareIdx(sq: SquareId | undefined): number {
+  if (!sq) return -1;
+  const file = sq.charCodeAt(0) - 'a'.charCodeAt(0);
+  const rank = Number(sq[1]) - 1;
+  return rank * 8 + file;
+}
+
+function isQuiet(move: Move): boolean {
+  return (
+    move.kind !== 'capture' &&
+    move.kind !== 'promotion' &&
+    move.kind !== 'enPassant'
+  );
+}
+
+function sameMove(a: Move | null | undefined, b: Move | null | undefined): boolean {
+  if (!a || !b) return false;
+  return (
+    a.from === b.from &&
+    a.to === b.to &&
+    a.kind === b.kind &&
+    a.promotion === b.promotion
+  );
+}
+
+function recordKiller(ctx: SearchContext, ply: number, move: Move): void {
+  if (!isQuiet(move)) return;
+  if (ply >= MAX_PLY) return;
+  const slot = ctx.killers[ply];
+  if (sameMove(slot[0], move)) return;
+  slot[1] = slot[0];
+  slot[0] = move;
+}
+
+function recordHistory(move: Move, depth: number): void {
+  if (!isQuiet(move)) return;
+  const f = squareIdx(move.from);
+  const t = squareIdx(move.to);
+  if (f < 0 || t < 0) return;
+  history[f][t] += depth * depth;
+  historyTotalDepth += depth;
+  // Cheap decay every ~32 ply of accumulation, so old games don't dominate.
+  if (historyTotalDepth > 512) {
+    for (let i = 0; i < 64; i++) for (let j = 0; j < 64; j++) history[i][j] >>= 3;
+    historyTotalDepth = 0;
+  }
+}
+
+function historyScore(move: Move): number {
+  const f = squareIdx(move.from);
+  const t = squareIdx(move.to);
+  if (f < 0 || t < 0) return 0;
+  return history[f][t];
+}
+
+const TT_MOVE_BONUS = 1_000_000;
+const PROMOTION_BONUS = 800_000;
+const CAPTURE_BONUS = 100_000;
+const KILLER_PRIMARY = 90_000;
+const KILLER_SECONDARY = 80_000;
+
+function moveOrderScore(
+  move: Move,
+  state: BoardState,
+  ttMove: Move | null | undefined,
+  ctx: SearchContext,
+  ply: number,
+): number {
+  if (sameMove(move, ttMove)) return TT_MOVE_BONUS;
   if (move.kind === 'topologyToggle') return -10;
-  if (move.kind === 'promotion') return 8000;
+  if (move.kind === 'promotion') return PROMOTION_BONUS;
   if (move.kind === 'capture' && move.to) {
     const victim = state.pieces[move.to];
     const attacker = move.from ? state.pieces[move.from] : undefined;
     const vv = victim ? PIECE_VALUE[victim.type] : 0;
     const av = attacker ? PIECE_VALUE[attacker.type] : 0;
-    return vv * 10 - av;
+    return CAPTURE_BONUS + vv * 10 - av;
   }
-  return 0;
+  if (ply < MAX_PLY) {
+    const k = ctx.killers[ply];
+    if (sameMove(move, k[0])) return KILLER_PRIMARY;
+    if (sameMove(move, k[1])) return KILLER_SECONDARY;
+  }
+  return historyScore(move);
 }
 
-function sortMoves(moves: Move[], state: BoardState): void {
-  const scores = moves.map((m) => moveOrderScore(m, state));
-  const indices = moves.map((_, i) => i);
-  indices.sort((a, b) => scores[b] - scores[a]);
-  const sorted = indices.map((i) => moves[i]);
-  for (let i = 0; i < moves.length; i++) moves[i] = sorted[i];
+function sortMoves(
+  moves: Move[],
+  state: BoardState,
+  ttMove: Move | null | undefined,
+  ctx: SearchContext,
+  ply: number,
+): void {
+  const scored = moves.map((m, i) => ({ m, i, s: moveOrderScore(m, state, ttMove, ctx, ply) }));
+  scored.sort((a, b) => b.s - a.s);
+  for (let i = 0; i < moves.length; i++) moves[i] = scored[i].m;
 }
 
 interface NegamaxResult {
@@ -61,6 +157,16 @@ function negamax(
   }
   if (ctx.cancelled) return { score: 0, bestMove: null, pv: [] };
 
+  const originalAlpha = alpha;
+  const hash = zobristHash(state);
+
+  // TT probe — fastest win, before move generation.
+  const probe = ttProbe(hash, depth, alpha, beta);
+  if (probe?.score !== undefined) {
+    return { score: probe.score, bestMove: probe.bestMove ?? null, pv: [] };
+  }
+  const ttMove = probe?.bestMove ?? null;
+
   if (depth <= 0) {
     return { score: quiescence(state, alpha, beta, 4, ctx), bestMove: null, pv: [] };
   }
@@ -83,10 +189,11 @@ function negamax(
     return { score: 0, bestMove: null, pv: [] };
   }
 
-  sortMoves(candidates, state);
+  sortMoves(candidates, state, ttMove, ctx, ply);
 
   let bestMove: Move | null = candidates[0];
   let bestPv: readonly Move[] = [];
+  let bestScore = -INF;
 
   for (const move of candidates) {
     if (ctx.cancelled) break;
@@ -105,20 +212,32 @@ function negamax(
     );
     const score = -result.score;
 
-    if (score >= beta) {
-      // Beta cutoff — standard practice is to skip writing PV for this node
-      // (the line was good enough to refute, but we don't have the full
-      // principal continuation since alpha-beta pruned the rest).
-      return { score: beta, bestMove: move, pv: [] };
-    }
-    if (score > alpha) {
-      alpha = score;
+    if (score > bestScore) {
+      bestScore = score;
       bestMove = move;
-      bestPv = [move, ...result.pv];
+      if (score > alpha) {
+        alpha = score;
+        bestPv = [move, ...result.pv];
+      }
+    }
+
+    if (score >= beta) {
+      // Fail-high — quiet move that refuted the position; remember it.
+      recordKiller(ctx, ply, move);
+      recordHistory(move, depth);
+      const nodeType: NodeType = 'lower';
+      ttStore(hash, depth, beta, move, nodeType);
+      return { score: beta, bestMove: move, pv: [] };
     }
   }
 
-  return { score: alpha, bestMove, pv: bestPv };
+  // Choose the bound based on whether we improved alpha. Failed-low (no move
+  // beat originalAlpha) → upper bound; otherwise the score is exact.
+  let nodeType: NodeType = 'exact';
+  if (bestScore <= originalAlpha) nodeType = 'upper';
+  ttStore(hash, depth, bestScore, bestMove, nodeType);
+
+  return { score: bestScore, bestMove, pv: bestPv };
 }
 
 /** Cheap "does this move attack the opponent's king?" probe. Apply the move,
@@ -170,10 +289,10 @@ function quiescence(
     }
   }
 
-  // Reuse the captures-first MVV/LVA ordering. sortMoves expects a Move[],
-  // so sort the moves and reapply the original order to our tagged list.
+  // Same MVV/LVA-driven ordering as the main search, minus killer/history
+  // (qsearch is shallow and tactical-only — those heuristics aren't useful).
   const orderedMoves = tactical.map((t) => t.move);
-  sortMoves(orderedMoves, state);
+  orderedMoves.sort((a, b) => mvvLvaScore(b, state) - mvvLvaScore(a, state));
   const checkExtensionByMove = new Map<Move, boolean>();
   for (const t of tactical) checkExtensionByMove.set(t.move, t.isCheckExt);
 
@@ -194,6 +313,18 @@ function quiescence(
   }
 
   return alpha;
+}
+
+function mvvLvaScore(move: Move, state: BoardState): number {
+  if (move.kind === 'promotion') return PROMOTION_BONUS;
+  if (move.kind === 'capture' && move.to) {
+    const victim = state.pieces[move.to];
+    const attacker = move.from ? state.pieces[move.from] : undefined;
+    const vv = victim ? PIECE_VALUE[victim.type] : 0;
+    const av = attacker ? PIECE_VALUE[attacker.type] : 0;
+    return CAPTURE_BONUS + vv * 10 - av;
+  }
+  return 0;
 }
 
 export function iterativeDeepen(
@@ -237,8 +368,19 @@ export function searchPosition(
   let bestScore = 0;
   let bestPv: readonly Move[] = [];
 
+  // Bump TT generation so old entries can be replaced once this search
+  // produces deeper data. Killers are reset per search — old plies don't
+  // apply once the root position has changed.
+  ttNewGeneration();
+  const killers: (Move | null)[][] = Array.from({ length: MAX_PLY }, () => [null, null]);
+
   for (let depth = 1; depth <= options.maxDepth; depth++) {
-    const ctx: SearchContext = { deadline, nodes: 0, cancelled: false };
+    const ctx: SearchContext = {
+      deadline,
+      nodes: 0,
+      cancelled: false,
+      killers,
+    };
     const result = negamax(
       state,
       depth,
