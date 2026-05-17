@@ -21,8 +21,7 @@ service cloud.firestore {
     match /games/{gameId} {
       allow read: if true;
       allow create: if request.auth != null
-                    && request.resource.data.playerId == request.auth.uid
-                    && request.resource.data.vsAI == true;
+                    && request.resource.data.playerId == request.auth.uid;
       allow update, delete: if false;
     }
 
@@ -41,25 +40,22 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // Stage Q.A: PvP private matches keyed by a 6-char share code. The code
-    // itself functions as the access secret — anyone with it (and auth) can
-    // read/observe. Writes are limited to the two participants.
     match /matches/{code} {
       allow read: if request.auth != null;
 
-      // Host create: must stamp their own uid, room must start empty + waiting.
       allow create: if request.auth != null
                     && request.resource.data.host.uid == request.auth.uid
                     && request.resource.data.status == 'waiting'
                     && request.resource.data.guest == null;
 
-      // Both host and (once joined) guest may patch the doc — turn handoff,
-      // move append, and outcome write all go through here. Field-level
-      // validation lives client-side for the MVP; tighten later.
-      allow update: if request.auth != null
-                    && (resource.data.host.uid == request.auth.uid
-                        || (resource.data.guest != null
-                            && resource.data.guest.uid == request.auth.uid));
+      allow update: if request.auth != null && (
+        resource.data.host.uid == request.auth.uid
+        || (resource.data.guest != null && resource.data.guest.uid == request.auth.uid)
+        || (resource.data.status == 'waiting'
+            && resource.data.guest == null
+            && request.resource.data.guest != null
+            && request.resource.data.guest.uid == request.auth.uid)
+      );
 
       allow delete: if false;
     }

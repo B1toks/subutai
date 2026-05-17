@@ -58,7 +58,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 .app-header h1 {
@@ -72,7 +73,7 @@
   flex-direction: row;
   align-items: baseline;
   gap: 16px;
-  flex-wrap: wrap;
+  flex-shrink: 0;
   min-width: 0;
 }
 
@@ -82,6 +83,13 @@
   margin: 0;
   font-weight: 400;
   letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .app-tagline {
+    display: none;
+  }
 }
 
 .header-controls {
@@ -2535,6 +2543,266 @@
   font-weight: 700;
   letter-spacing: 0.5px;
   vertical-align: middle;
+}
+
+/* --- Multiplayer game view (Stage Q.B.2) ------------------------------ */
+/* The PvP flow now reuses the single-player board/header/move-log. The
+   only multiplayer-specific surfaces are the turn banner, the offline
+   banner, the completion modal, and a board-flip helper for black. */
+
+/* Rotate the whole board container 180° so the black player sees their
+   own back rank at the bottom. The tile transform inline-styles already
+   handle absolute positioning, so the parent rotation just inverts the
+   visual axis. Pieces inside are counter-rotated so glyphs stay upright
+   for the viewer (topology A only — MP MVP doesn't allow rotation). */
+.board.board-flipped {
+  transform: rotate(180deg);
+}
+
+.board.board-flipped .piece {
+  transform: rotate(180deg);
+}
+
+.mp-banner {
+  width: 100%;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: 0.2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.mp-banner-info {
+  background: rgba(80, 160, 255, 0.08);
+  border: 1px solid rgba(80, 160, 255, 0.3);
+  color: #6ec0ff;
+}
+
+.mp-banner-active {
+  background: rgba(255, 200, 80, 0.08);
+  border: 1px solid var(--accent-gold);
+  color: var(--accent-gold);
+}
+
+.mp-banner-wait {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--btn-border);
+  color: var(--text-muted);
+}
+
+.mp-banner-warn {
+  background: rgba(255, 140, 60, 0.1);
+  border: 1px solid rgba(255, 140, 60, 0.4);
+  color: #ffaa66;
+}
+
+.mp-banner-error {
+  background: rgba(232, 112, 112, 0.1);
+  border: 1px solid rgba(232, 112, 112, 0.4);
+  color: #e87070;
+}
+
+.mp-spinner {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--text);
+  border-radius: 50%;
+  animation: friend-lobby-spin 0.9s linear infinite;
+}
+
+.mp-board {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  grid-template-rows: repeat(8, 1fr);
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: #161626;
+}
+
+.mp-tile {
+  border: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 28px;
+  position: relative;
+  outline: none;
+  transition: background 0.1s ease;
+}
+
+.mp-tile:disabled {
+  cursor: default;
+}
+
+.mp-tile.light {
+  background: #e8d8b8;
+}
+
+.mp-tile.dark {
+  background: #8a6a44;
+}
+
+.mp-tile.selected {
+  outline: 3px solid var(--accent-gold);
+  outline-offset: -3px;
+  z-index: 2;
+}
+
+.mp-tile.target::after {
+  content: '';
+  position: absolute;
+  inset: 35%;
+  background: rgba(80, 200, 160, 0.55);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.mp-tile.last-from {
+  box-shadow: inset 0 0 0 3px rgba(255, 220, 120, 0.45);
+}
+
+.mp-tile.last-to {
+  box-shadow: inset 0 0 0 3px rgba(255, 220, 120, 0.7);
+}
+
+.mp-piece {
+  font-size: 36px;
+  line-height: 1;
+  user-select: none;
+  pointer-events: none;
+}
+
+.mp-piece-white {
+  color: #fff;
+  text-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.4),
+    0 0 2px rgba(0, 0, 0, 0.6);
+}
+
+.mp-piece-black {
+  color: #111;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.mp-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.mp-btn {
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid var(--btn-border);
+}
+
+.mp-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mp-btn-secondary {
+  background: transparent;
+  color: var(--text);
+}
+
+.mp-btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.mp-btn-danger {
+  background: #b54040;
+  color: #fff;
+  border-color: #b54040;
+}
+
+.mp-btn-danger:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.mp-btn-primary {
+  background: var(--accent-gold);
+  color: #1a1612;
+  border-color: var(--accent-gold);
+  font-weight: 700;
+}
+
+.mp-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.mp-resign-confirm {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.mp-completion-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.mp-completion-dialog {
+  max-width: 420px;
+  width: calc(100% - 32px);
+  padding: 24px 22px;
+  background: #161626;
+  border: 1px solid var(--accent-gold);
+  border-radius: 12px;
+  text-align: center;
+  color: var(--text);
+}
+
+.mp-completion-title {
+  margin: 0 0 6px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.mp-completion-headline {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent-gold);
+}
+
+.mp-completion-subline {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.mp-completion-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.mp-completion-footnote {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.2px;
 }
 
 /* --- Friend lobby (Stage Q.A) ----------------------------------------- */

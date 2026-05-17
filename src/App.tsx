@@ -30,6 +30,12 @@ import { MilestoneModal } from './components/MilestoneModal';
 import { AutoPlayView } from './components/AutoPlayView';
 import { StatsPage } from './components/StatsPage';
 import { FriendLobby } from './components/FriendLobby';
+import { useMultiplayerSync } from './components/MultiplayerGameView';
+import type { MatchDoc, MatchOutcome } from './firebase/matches';
+import {
+  saveMultiplayerGameToGames,
+  translateOutcomeForPlayer,
+} from './firebase/multiplayerGames';
 import { saveTrainingGame } from './firebase/trainingGames';
 import { useAuth } from './firebase/useAuth';
 import {
@@ -152,6 +158,33 @@ function evalToColors(evalCp: number): { c1: string; c2: string } {
 }
 
 const HUMAN_COLOR: Color = 'white';
+
+/** Reshape a live MatchDoc into the GameLog the single-player render code
+ *  already knows how to consume. The stored move shape happens to be a
+ *  superset of LoggedMove (analysis is absent in MP). */
+function deriveMpLog(live: MatchDoc): GameLog {
+  return {
+    id: `mp-${live.code}`,
+    createdAt: new Date().toISOString(),
+    randomSeed: live.seed,
+    initialTopology: live.log.initialTopology,
+    initialState: createPositionFromBackRankKey(live.chess960Id),
+    moves: live.log.moves.map((m) => ({
+      san: m.san,
+      move: m.move,
+      topology: m.topology,
+      timestamp: m.timestamp,
+    })),
+  };
+}
+
+function deriveMpLastMove(
+  live: MatchDoc,
+): { from?: SquareId; to?: SquareId } | null {
+  const last = live.log.moves[live.log.moves.length - 1]?.move;
+  if (!last || last.kind === 'topologyToggle') return null;
+  return { from: last.from, to: last.to };
+}
 const WATCH_AUTOPLAY_MS = 1500;
 // Auto-mode tuning. We skip the move classifier (expensive worker round-trip)
 // and use a small inter-move delay so a 60-ply game finishes in ~30s.
@@ -251,25 +284,56 @@ function App() {
     'game' | 'review' | 'leaderboard' | 'friend-lobby'
   >('game');
   // Stage Q.A: opponent selector in the header. 'ai' keeps the existing
-  // solo flow; 'friend' opens the PvP lobby. Only the toggle + lobby live
-  // in this stage; move-sync arrives in Q.B.
+  // solo flow; 'friend' opens the PvP lobby. Once a match starts it just
+  // overlays the existing 'game' view — the board/log/header reuse the
+  // single-player UI, only the data source flips.
   const [opponentMode, setOpponentMode] = useState<'ai' | 'friend'>('ai');
+  // Q.B.2: active PvP match handshake. When non-null, the rest of App
+  // sources its board / log / turn state from useMultiplayerSync below
+  // instead of the local engine.
+  const [activeMatch, setActiveMatch] = useState<MatchDoc | null>(null);
+  // Match-completion modal state (separate from the AI GameSummary which
+  // is points-driven and doesn't fit the PvP shape).
+  const [mpEndOutcome, setMpEndOutcome] = useState<MatchOutcome | null>(null);
+  const mpSavedGameIdRef = useRef<string | null>(null);
+  const mpWroteOutcomeRef = useRef<string | null>(null);
+  // Q.B.2: PvP sync. Hook is always called (with null match before any
+  // game starts) so React's hook-order rules are respected. Returns null
+  // when no match — every consumer guards on isMultiplayer below.
+  const mpSync = useMultiplayerSync(
+    activeMatch,
+    user?.uid ?? null,
+    () => {
+      // Doc was deleted out from under us — drop back to lobby.
+      setActiveMatch(null);
+      setMpEndOutcome(null);
+      mpSavedGameIdRef.current = null;
+      mpWroteOutcomeRef.current = null;
+      setView('friend-lobby');
+    },
+  );
+  const isMultiplayer = mpSync !== null;
   const [watchingGame, setWatchingGame] = useState<WatchingGame | null>(null);
   const watchAutoplayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gameBackupRef = useRef<GameBackup | null>(null);
   const [seed, setSeed] = useState<number>(1);
-  const [state, setState] = useState<BoardState>(() => createStartingPosition(1));
+  // Local single-player engine state. In multiplayer (Q.B.2) the rest of
+  // App reads through the `state` / `legalMoves` / `log` / `lastMove`
+  // const aliases below, which swap to mpSync-derived values; the local
+  // setters keep firing for safety but their writes are visually inert
+  // because the aliases ignore them.
+  const [stateLocal, setState] = useState<BoardState>(() => createStartingPosition(1));
   const [initialState, setInitialState] = useState<BoardState>(() => createStartingPosition(1));
   const [selected, setSelected] = useState<string | null>(null);
-  const [legalMoves, setLegalMoves] = useState<Move[]>(() =>
+  const [legalMovesLocal, setLegalMoves] = useState<Move[]>(() =>
     generateLegalMoves(createStartingPosition(1)),
   );
-  const [log, setLog] = useState<GameLog>(() =>
+  const [logLocal, setLog] = useState<GameLog>(() =>
     createGameLog('game-1', createStartingPosition(1), 1),
   );
   const [gameStatus, setGameStatus] = useState<GameStatus>('active');
   const [previewTopology, setPreviewTopology] = useState<TopologyState | null>(null);
-  const [lastMove, setLastMove] = useState<{ from?: SquareId; to?: SquareId } | null>(null);
+  const [lastMoveLocal, setLastMove] = useState<{ from?: SquareId; to?: SquareId } | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [showMaterialPopup, setShowMaterialPopup] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -289,7 +353,11 @@ function App() {
     from: SquareId;
     to: SquareId;
   } | null>(null);
-  const [gameMode, setGameMode] = useState<GameMode>('classic');
+  const [gameModeLocal, setGameMode] = useState<GameMode>('classic');
+  // PvP is classic-only for MVP — the toggle is disabled while in a match
+  // and the read-side alias is forced to 'classic' here so any code that
+  // gates on gameMode does the right thing.
+  const gameMode: GameMode = isMultiplayer ? 'classic' : gameModeLocal;
   const [allowedPieceTypes, setAllowedPieceTypes] = useState<PieceType[] | null>(null);
   const [isRouletteSpinning, setIsRouletteSpinning] = useState<boolean>(false);
   const [rouletteActionsLeft, setRouletteActionsLeft] = useState<number>(0);
@@ -302,6 +370,23 @@ function App() {
   // First 3 spins of a game weight pawn slightly higher so beginners ease in
   // with familiar piece moves instead of front-loaded knight chaos.
   const [rouletteSpinCount, setRouletteSpinCount] = useState(0);
+
+  // -------- Q.B.2: read-side aliases for multiplayer mode -----------------
+  // When isMultiplayer the board / log / legal-moves come from the live
+  // Firestore doc via mpSync. Writers (setState/setLog/...) still target
+  // local state — they're effectively dead writes in MP because the
+  // aliases below ignore them, and every write path is guarded by
+  // isMultiplayer anyway.
+  const state: BoardState = isMultiplayer ? mpSync!.boardState : stateLocal;
+  const log: GameLog = isMultiplayer
+    ? deriveMpLog(mpSync!.matchState)
+    : logLocal;
+  const legalMoves: Move[] = isMultiplayer
+    ? generateLegalMoves(state)
+    : legalMovesLocal;
+  const lastMove: { from?: SquareId; to?: SquareId } | null = isMultiplayer
+    ? deriveMpLastMove(mpSync!.matchState)
+    : lastMoveLocal;
   const formationInputRef = useRef<HTMLInputElement>(null);
   const aiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Stage P addendum 7: wall-clock when the current game began. Used to
@@ -352,6 +437,7 @@ function App() {
   }, [formationInputMode]);
 
   useEffect(() => {
+    if (isMultiplayer) return; // PvP games persist via /games, not local Memory
     if (gameStatus === 'active') return;
     if (log.moves.length === 0) return;
     if (savedForLogIdRef.current === log.id) return;
@@ -375,13 +461,14 @@ function App() {
   }, [gameStatus, log, state]);
 
   useEffect(() => {
+    if (isMultiplayer) return; // no local Memory snapshots during PvP
     if (gameStatus !== 'active') return;
     if (log.moves.length === 0) return;
     const liveId = liveSavedGameIdRef.current;
     if (!liveId) return;
     const snapshot = buildSavedGameSnapshot(log, liveId);
     (localStorageAdapter.saveOrUpdateGame?.(snapshot) ?? localStorageAdapter.saveGame(snapshot));
-  }, [gameStatus, log]);
+  }, [gameStatus, log, isMultiplayer]);
 
   // Game-completion pipeline: detects terminal gameStatus transitions, computes
   // points, opens the GameSummary modal, and kicks the async Firestore save.
@@ -389,6 +476,7 @@ function App() {
   // Auto mode handles completion via its own effect — never enters this path.
   useEffect(() => {
     if (isAutoMode) return;
+    if (isMultiplayer) return; // MP completion runs through a separate effect
     if (gameStatus === 'active') return;
     if (log.moves.length === 0) return;
     if (completedLogIdRef.current === log.id) return;
@@ -412,6 +500,46 @@ function App() {
     // to fire once per terminal transition, hence the ref-guard above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameStatus, log.id, log.moves.length, isAutoMode]);
+
+  // ---- Q.B.2 multiplayer: terminal detection + host /games save ----------
+  // Runs whenever the live match changes. If the board reached mate/draw,
+  // first peer to notice writes the outcome (transaction-guarded). When
+  // status flips to completed, the host saves a /games doc once.
+  useEffect(() => {
+    if (!isMultiplayer || !mpSync) return;
+    const match = mpSync.matchState;
+    if (match.status !== 'active') return;
+    if (match.outcome) return;
+    if (mpWroteOutcomeRef.current === match.code) return;
+    const board = mpSync.boardState;
+    let outcome: MatchOutcome | null = null;
+    if (isCheckmate(board)) {
+      outcome = board.sideToMove === 'white' ? 'black-win' : 'white-win';
+    } else if (checkDrawConditions(board) !== null) {
+      outcome = 'draw';
+    }
+    if (!outcome) return;
+    mpWroteOutcomeRef.current = match.code;
+    void mpSync.writeOutcomeIfFirst(outcome);
+  }, [isMultiplayer, mpSync]);
+
+  useEffect(() => {
+    if (!isMultiplayer || !mpSync) return;
+    const match = mpSync.matchState;
+    if (match.status !== 'completed' || !match.outcome) return;
+    // Show local completion modal exactly once per terminal transition.
+    if (mpEndOutcome !== match.outcome) {
+      setMpEndOutcome(match.outcome);
+    }
+    // Host-only /games write — guarded by code so retries are idempotent.
+    if (mpSync.isHost && mpSavedGameIdRef.current !== match.code) {
+      mpSavedGameIdRef.current = match.code;
+      void saveMultiplayerGameToGames(match).catch((err) => {
+        console.error('[mp] save to /games failed', err);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMultiplayer, mpSync?.matchState.status, mpSync?.matchState.outcome]);
 
   async function finishGame(outcome: GameOutcome) {
     const points = computeGamePoints(log, outcome, HUMAN_COLOR, gameMode);
@@ -691,6 +819,11 @@ function App() {
 
   function requestResign() {
     if (watchingGame) return;
+    if (isMultiplayer) {
+      if (!mpSync || mpSync.matchState.status !== 'active') return;
+      setConfirmingResign(true);
+      return;
+    }
     if (gameStatus !== 'active') return;
     if (log.moves.length === 0) return;
     setConfirmingResign(true);
@@ -698,6 +831,14 @@ function App() {
 
   function confirmResign() {
     setConfirmingResign(false);
+    // PvP resign: route through the match doc so the opponent sees the
+    // status flip; their listener will mirror the outcome. Local engine
+    // state stays untouched (gameStatus etc.).
+    if (isMultiplayer) {
+      if (!mpSync) return;
+      void mpSync.resign();
+      return;
+    }
     if (gameStatus !== 'active') return;
     // Pre-set the outcome so the gameStatus-watching effect skips this one.
     setGameOutcome('human-resign');
@@ -1192,7 +1333,16 @@ function App() {
     checkGameOver(clamped, true);
   }
 
-  const currentPlayer = state.sideToMove === 'white' ? 'human' : 'ai';
+  // In MP currentPlayer reflects whose turn it is from MY seat: 'human' when
+  // I can act, 'ai' otherwise. Keeping the same vocabulary lets the existing
+  // canRotate / scheduler / UI-disable code work unchanged.
+  const currentPlayer = isMultiplayer
+    ? mpSync!.isMyTurn
+      ? 'human'
+      : 'ai'
+    : state.sideToMove === 'white'
+      ? 'human'
+      : 'ai';
 
   // Auto-trigger the human's roulette spin after the first manual click of
   // the game. Conditions mirror the Spin Roulette button's enabled-state:
@@ -1570,6 +1720,7 @@ function App() {
   const materialScore = materialBreakdown.score;
 
   useEffect(() => {
+    if (isMultiplayer) return; // PvP: no engine drives the opponent
     if (gameStatus !== 'active') return;
     if (watchingGame) return; // replay mode — never let the AI move.
     if (isAutoMode) {
@@ -1650,6 +1801,7 @@ function App() {
     watchingGame,
     isAutoMode,
     autoStopped,
+    isMultiplayer,
   ]);
 
   const highlightedTargets = useMemo(() => {
@@ -1730,6 +1882,41 @@ function App() {
 
   function onSquareClick(square: string) {
     if (watchingGame) return; // replay mode is read-only.
+
+    // Multiplayer: bypass the local engine pipeline entirely. Selection +
+    // legalMoves are the same shared values; the only difference is the
+    // move dispatch sends through Firestore instead of mutating local state.
+    if (isMultiplayer) {
+      if (!mpSync || !mpSync.isMyTurn) return;
+      if (mpSync.matchState.status !== 'active') return;
+      const sq = square as SquareId;
+      const piece = state.pieces[sq];
+      if (!selected) {
+        if (piece && piece.color === mpSync.myColor) setSelected(square);
+        return;
+      }
+      if (selected === square) {
+        setSelected(null);
+        return;
+      }
+      const move = legalMoves.find(
+        (m) => m.from === selected && m.to === square,
+      );
+      if (!move) {
+        // Click on another own piece → switch; else clear.
+        if (piece && piece.color === mpSync.myColor) setSelected(square);
+        else setSelected(null);
+        return;
+      }
+      const resolved: Move =
+        move.kind === 'promotion' && !move.promotion
+          ? { ...move, promotion: 'queen' }
+          : move;
+      setSelected(null);
+      void mpSync.sendMove(resolved);
+      return;
+    }
+
     if (gameStatus !== 'active') return;
     if (currentPlayer !== 'human') return;
 
@@ -2302,20 +2489,15 @@ function App() {
             setOpponentMode('ai');
           }}
           onMatchReady={(match) => {
-            // Stage Q.B will swap this for an actual PvP game view. For
-            // now: acknowledge so both peers can see the handshake worked,
-            // then drop the player back to the lobby.
-            // eslint-disable-next-line no-alert
-            alert(
-              `Match ${match.code} ready! Both players joined.\n` +
-                `Position: ${match.chess960Id}\n` +
-                `You play as ${
-                  match.host.uid === user?.uid
-                    ? match.host.color
-                    : match.guest?.color ?? '?'
-                }.\n\n` +
-                `Game-side sync arrives in the next stage.`,
-            );
+            // Q.B.2: hand the live match over to the regular game view.
+            // The board / log / header all reuse the single-player UI,
+            // sourcing their data from useMultiplayerSync.
+            setActiveMatch(match);
+            setView('game');
+            // Reset any stale completion state from a previous match.
+            setMpEndOutcome(null);
+            mpSavedGameIdRef.current = null;
+            mpWroteOutcomeRef.current = null;
           }}
         />
       </div>
@@ -2328,10 +2510,17 @@ function App() {
       <header className="app-header">
         <div className="app-brand">
           <h1>subutai</h1>
-          {gameMode === 'classic' && opponentMode === 'ai' && (
+          {isMultiplayer && mpSync ? (
             <p className="app-tagline">
-              Try to survive 50 moves against the AI
+              vs <strong>{mpSync.opponentDisplayName}</strong> · {mpSync.matchState.code}
             </p>
+          ) : (
+            gameMode === 'classic' &&
+            opponentMode === 'ai' && (
+              <p className="app-tagline">
+                Try to survive 50 moves against the AI
+              </p>
+            )
           )}
         </div>
         <div className="header-controls">
@@ -2535,20 +2724,53 @@ function App() {
         </div>
       )}
 
+      {isMultiplayer && mpSync && mpSync.matchState.status === 'active' && (
+        <div
+          className={`mp-banner${mpSync.isMyTurn ? ' mp-banner-active' : ' mp-banner-wait'}`}
+        >
+          {mpSync.isMyTurn ? (
+            'Your turn'
+          ) : (
+            <>
+              <span className="mp-spinner" aria-hidden />
+              Waiting for {mpSync.opponentDisplayName}…
+            </>
+          )}
+        </div>
+      )}
+
+      {isMultiplayer &&
+        mpSync &&
+        mpSync.opponentPresence === 'warning' &&
+        mpSync.matchState.status === 'active' && (
+          <div className="mp-banner mp-banner-warn">
+            Opponent appears to be offline. Auto-forfeit in ~30s if no move.
+          </div>
+        )}
+
+      {isMultiplayer && mpSync && mpSync.error && (
+        <div className="mp-banner mp-banner-error">{mpSync.error}</div>
+      )}
+
       <div className="board-with-eval">
-        <EvalBar
-          evalCp={currentEval}
-          mateInPlies={searchMateInPlies}
-          isPending={searchEvalFromWhite === null}
-        />
+        {!isMultiplayer && (
+          <EvalBar
+            evalCp={currentEval}
+            mateInPlies={searchMateInPlies}
+            isPending={searchEvalFromWhite === null}
+          />
+        )}
       <div className="board-with-coords" style={{ width: boardSize }}>
       <div className="board-ranks" style={{ height: boardSize }}>
-        {['8', '7', '6', '5', '4', '3', '2', '1'].map((r) => (
+        {(isMultiplayer && mpSync?.myColor === 'black'
+          ? ['1', '2', '3', '4', '5', '6', '7', '8']
+          : ['8', '7', '6', '5', '4', '3', '2', '1']
+        ).map((r) => (
           <div key={r} className="board-rank">{r}</div>
         ))}
       </div>
       <div
-        className={`board${previewTopology || previewLocked ? ' previewing' : ''}${recentRotation ? ' is-rotated' : ''}`}
+        className={`board${previewTopology || previewLocked ? ' previewing' : ''}${recentRotation ? ' is-rotated' : ''}${isMultiplayer && mpSync?.myColor === 'black' ? ' board-flipped' : ''}`}
         style={{ width: boardSize, height: boardSize }}
       >
         {squares.map((sq) => {
@@ -2724,7 +2946,10 @@ function App() {
         )}
       </div>
       <div className="board-files">
-        {['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((f) => (
+        {(isMultiplayer && mpSync?.myColor === 'black'
+          ? ['h', 'g', 'f', 'e', 'd', 'c', 'b', 'a']
+          : ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+        ).map((f) => (
           <div key={f} className="board-file">{f}</div>
         ))}
       </div>
@@ -2832,14 +3057,16 @@ function App() {
           >
             {'\u{1F441}'}
           </button>
-          <button
-            type="button"
-            className="rotate-btn"
-            onClick={handleRotate}
-            disabled={!canRotate}
-          >
-            Rotate &middot; {state.topologyState === 'A' ? 'A \u2192 B' : 'B \u2192 A'}
-          </button>
+          {!isMultiplayer && (
+            <button
+              type="button"
+              className="rotate-btn"
+              onClick={handleRotate}
+              disabled={!canRotate}
+            >
+              Rotate &middot; {state.topologyState === 'A' ? 'A \u2192 B' : 'B \u2192 A'}
+            </button>
+          )}
         </div>
         <div
           className="material-score-wrap"
@@ -2994,7 +3221,9 @@ function App() {
         </div>
       </details>
 
-      <MemoryPanel onGameActivate={onMemoryGameActivate} />
+      {!isMultiplayer && (
+        <MemoryPanel onGameActivate={onMemoryGameActivate} />
+      )}
 
       {!authLoading && user && !displayName && (
         <NamePicker
@@ -3030,6 +3259,75 @@ function App() {
           onCancel={() => setConfirmingResign(false)}
         />
       )}
+
+      {isMultiplayer && mpSync && mpEndOutcome && (() => {
+        const myView = translateOutcomeForPlayer(mpEndOutcome, {
+          uid: mpSync.myUid,
+          displayName: '',
+          color: mpSync.myColor,
+        });
+        const opp = mpSync.opponentDisplayName;
+        const headline =
+          myView === 'human-win'
+            ? `You won vs ${opp}!`
+            : myView === 'human-resign'
+              ? `You resigned vs ${opp}.`
+              : myView === 'ai-win'
+                ? `You lost vs ${opp}.`
+                : `Draw vs ${opp}.`;
+        const subline =
+          mpEndOutcome === 'host-resign'
+            ? `${mpSync.matchState.host.displayName} resigned.`
+            : mpEndOutcome === 'guest-resign'
+              ? `${mpSync.matchState.guest?.displayName ?? 'Guest'} resigned.`
+              : mpEndOutcome === 'draw'
+                ? 'Match drawn.'
+                : `${mpEndOutcome === 'white-win' ? 'White' : 'Black'} wins by checkmate.`;
+        function dismiss() {
+          setMpEndOutcome(null);
+          setActiveMatch(null);
+          setOpponentMode('ai');
+          setView('game');
+        }
+        function backToLobby() {
+          setMpEndOutcome(null);
+          setActiveMatch(null);
+          mpSavedGameIdRef.current = null;
+          mpWroteOutcomeRef.current = null;
+          setView('friend-lobby');
+        }
+        return (
+          <div className="mp-completion-backdrop" onClick={dismiss}>
+            <div
+              className="mp-completion-dialog"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="mp-completion-title">Match complete</h2>
+              <p className="mp-completion-headline">{headline}</p>
+              <p className="mp-completion-subline">{subline}</p>
+              <div className="mp-completion-actions">
+                <button
+                  type="button"
+                  className="mp-btn mp-btn-secondary"
+                  onClick={dismiss}
+                >
+                  Back to AI
+                </button>
+                <button
+                  type="button"
+                  className="mp-btn mp-btn-primary"
+                  onClick={backToLobby}
+                >
+                  Find new opponent
+                </button>
+              </div>
+              <p className="mp-completion-footnote">
+                PvP games don&apos;t affect leaderboard points.
+              </p>
+            </div>
+          </div>
+        );
+      })()}
 
       {summaryOpen && lastGamePoints && gameOutcome && (
         <GameSummary
