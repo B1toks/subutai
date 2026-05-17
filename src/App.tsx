@@ -1906,6 +1906,15 @@ function App() {
 
   const positionLabel = backRankString(initialState);
 
+  // Stable callback for <MemoryPanel onGameActivate>. The wrapped function
+  // closes over a ref that always points at the latest `resumeGame`, so the
+  // prop reference itself never changes and React.memo on MemoryPanel can
+  // skip the 300-card subtree on every App re-render.
+  const resumeGameRef = useRef<(game: SavedGame) => void>(() => {});
+  const onMemoryGameActivate = useCallback((g: SavedGame) => {
+    if (g.status === 'incomplete') resumeGameRef.current(g);
+  }, []);
+
   function resumeGame(game: SavedGame) {
     const initial = createPositionFromBackRankKey(game.config960);
     let current: BoardState = initial;
@@ -1940,6 +1949,9 @@ function App() {
     setSearchMateInPlies(null);
     classifyImportedLog(nextLog);
   }
+  // Keep the ref pointing at the latest resumeGame closure so the stable
+  // onMemoryGameActivate callback always invokes the fresh state-bound copy.
+  resumeGameRef.current = resumeGame;
 
   function importReplayFromNotation() {
     try {
@@ -2881,11 +2893,7 @@ function App() {
         </div>
       </details>
 
-      <MemoryPanel
-        onGameActivate={(g) => {
-          if (g.status === 'incomplete') resumeGame(g);
-        }}
-      />
+      <MemoryPanel onGameActivate={onMemoryGameActivate} />
 
       {!authLoading && user && !displayName && (
         <NamePicker

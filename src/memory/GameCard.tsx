@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { applyRotationMove, getSquarePosition } from '../engine/auxetic';
 import { applyMove } from '../engine/moves';
 import { createPositionFromBackRankKey } from '../engine';
@@ -119,18 +119,30 @@ interface GameCardProps {
   game: SavedGame;
 }
 
-export function GameCard({ game }: GameCardProps) {
+function GameCardImpl({ game }: GameCardProps) {
   const [copied, setCopied] = useState(false);
-  const heatmap = heatmapFromMoves(game.moves);
-  const maxHeat = Math.max(1, ...heatmap.values());
-  const pieceHist = pieceHistogramFromMoves(game.config960, game.moves);
+  // Heatmap + piece histogram depend ONLY on the game's immutable data — but
+  // pieceHistogramFromMoves replays every move via applyMove, which on a long
+  // game runs hundreds of state allocations. Memoizing here is critical: with
+  // 302 cards in the list, recomputing on every parent App re-render was the
+  // dominant cost behind the Stage-L INP regression (sync click→paint blocked
+  // ~3s while React reconciled the closed-by-default <details> children).
+  const heatmap = useMemo(() => heatmapFromMoves(game.moves), [game.moves]);
+  const maxHeat = useMemo(
+    () => Math.max(1, ...heatmap.values()),
+    [heatmap],
+  );
+  const pieceHist = useMemo(
+    () => pieceHistogramFromMoves(game.config960, game.moves),
+    [game.config960, game.moves],
+  );
 
-  function copyNotation() {
+  const copyNotation = useCallback(() => {
     navigator.clipboard.writeText(game.notation).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });
-  }
+  }, [game.notation]);
 
   const resultLabel =
     game.status === 'incomplete'
@@ -146,18 +158,33 @@ export function GameCard({ game }: GameCardProps) {
   const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
   const ranks = ['8', '7', '6', '5', '4', '3', '2', '1'];
 
-  function renderSparkline(height: number, width: number) {
+  // Normalize score history to a 0..1 curve once; the two callers scale to
+  // their own (height,width) box. Avoids walking scoreHistory twice per render.
+  const normalizedCurve = useMemo(() => {
     if (game.scoreHistory.length < 2) return null;
-    const min = Math.min(...game.scoreHistory);
-    const max = Math.max(...game.scoreHistory);
+    const sh = game.scoreHistory;
+    let min = sh[0];
+    let max = sh[0];
+    for (let i = 1; i < sh.length; i++) {
+      const v = sh[i];
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
     const range = max - min || 1;
     const pad = range * 0.1;
-    const scale = (v: number) =>
-      ((v - min + pad) / (range + 2 * pad)) * height;
-    const pts = game.scoreHistory
+    const denom = range + 2 * pad;
+    const norm: number[] = new Array(sh.length);
+    for (let i = 0; i < sh.length; i++) norm[i] = (sh[i] - min + pad) / denom;
+    return norm;
+  }, [game.scoreHistory]);
+
+  function renderSparkline(height: number, width: number) {
+    if (!normalizedCurve) return null;
+    const n = normalizedCurve.length;
+    const pts = normalizedCurve
       .map((v, i) => {
-        const x = (i / (game.scoreHistory.length - 1)) * width;
-        const y = height - scale(v);
+        const x = (i / (n - 1)) * width;
+        const y = height - v * height;
         return `${x},${y}`;
       })
       .join(' ');
@@ -304,3 +331,10 @@ export function GameCard({ game }: GameCardProps) {
     </details>
   );
 }
+
+/**
+ * SavedGame entries are immutable once stored, so shallow-equal on `game`
+ * (default React.memo behaviour) is sufficient to skip re-renders driven by
+ * unrelated state changes in App.
+ */
+export const GameCard = memo(GameCardImpl);

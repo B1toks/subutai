@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { localStorageAdapter } from './storage';
 import { matches960Pattern } from './filter';
 import { GameCard } from './GameCard';
@@ -27,7 +27,7 @@ function sortGames(games: SavedGame[], key: SortKey, dir: SortDir): SavedGame[] 
   return dir === 'desc' ? sorted.reverse() : sorted;
 }
 
-export function MemoryPanel({
+function MemoryPanelImpl({
   onGameActivate,
 }: {
   onGameActivate?: (game: SavedGame) => void;
@@ -45,10 +45,16 @@ export function MemoryPanel({
     loadGames();
   }, []);
 
-  const filtered = filterPattern.trim()
-    ? games.filter((g) => matches960Pattern(g.config960, filterPattern.trim()))
-    : games;
-  const sorted = sortGames(filtered, sortKey, sortDir);
+  // useMemo so the children-list reference is stable across re-renders
+  // triggered by unrelated state changes (the trimmed pattern and sort
+  // key/dir change rarely).
+  const sorted = useMemo(() => {
+    const trimmed = filterPattern.trim();
+    const filtered = trimmed
+      ? games.filter((g) => matches960Pattern(g.config960, trimmed))
+      : games;
+    return sortGames(filtered, sortKey, sortDir);
+  }, [games, filterPattern, sortKey, sortDir]);
 
   return (
     <details
@@ -126,3 +132,10 @@ export function MemoryPanel({
     </details>
   );
 }
+
+/**
+ * Memoized so App re-renders driven by chess state (every click) don't tear
+ * through 300+ saved-game cards. The only prop is `onGameActivate`; App must
+ * pass a stable callback (via useCallback / ref pattern) for this to work.
+ */
+export const MemoryPanel = memo(MemoryPanelImpl);
