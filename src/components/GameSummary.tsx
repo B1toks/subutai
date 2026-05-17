@@ -16,6 +16,8 @@ interface GameSummaryProps {
   playerName: string | null;
   /** Stage P addendum 7: wall-clock duration of this run, in ms. */
   durationMs?: number;
+  /** Stage R: drives roulette-specific row labels ("Speed bonus", "Win bonus"). */
+  gameMode?: 'classic' | 'roulette';
   onClose: () => void;
   onPlayAgain: () => void;
 }
@@ -53,10 +55,15 @@ export function GameSummary({
   playerId,
   playerName,
   durationMs,
+  gameMode = 'classic',
   onClose,
   onPlayAgain,
 }: GameSummaryProps) {
   const counted = points.counted;
+  const isRoulette = gameMode === 'roulette';
+  const movePointsLabel = isRoulette ? 'Speed bonus' : 'Move points';
+  const outcomeBonusLabel =
+    isRoulette && outcome === 'human-win' ? 'Win bonus' : 'Outcome bonus';
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -73,7 +80,7 @@ export function GameSummary({
           <>
             <div className="summary-table">
               <div className="summary-row">
-                <span>Move points</span>
+                <span>{movePointsLabel}</span>
                 <span className="summary-num">{points.movePoints}</span>
               </div>
               <div className="summary-row">
@@ -90,7 +97,7 @@ export function GameSummary({
                 </div>
               )}
               <div className="summary-row">
-                <span>Outcome bonus</span>
+                <span>{outcomeBonusLabel}</span>
                 <span className="summary-num">{points.outcomeBonus}</span>
               </div>
               <div className="summary-row summary-total">

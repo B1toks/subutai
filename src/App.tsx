@@ -2980,6 +2980,7 @@ function App() {
           playerId={user?.uid ?? null}
           playerName={displayName}
           durationMs={lastGameDurationMs ?? undefined}
+          gameMode={gameMode}
           onClose={() => setSummaryOpen(false)}
           onPlayAgain={() => {
             setSummaryOpen(false);

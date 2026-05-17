@@ -60,14 +60,23 @@ export function computeGamePoints(
   humanColor: Color,
   gameMode: 'classic' | 'roulette' = 'classic',
 ): GamePoints {
+  if (gameMode === 'roulette') {
+    return computeRoulettePoints(log, outcome, humanColor);
+  }
+  return computeClassicPoints(log, outcome, humanColor);
+}
+
+// Classic mode: survival-based. Long games + captures + quality bonuses;
+// outcome contributes a small finisher (+100 win / +50 draw). MIN_COUNTED
+// guards against farming 2-move resigns.
+function computeClassicPoints(
+  log: GameLog,
+  outcome: GameOutcome,
+  humanColor: Color,
+): GamePoints {
   const moveCount = countAllMoves(log);
 
-  // Stage O: roulette games skip the anti-farming length floor — even a
-  // 3-move stomp counts because the RNG-driven format produces wildly
-  // variable game lengths and a 10-move minimum was excluding legitimate
-  // wins. Classic mode still keeps MIN_COUNTED_MOVES as a farming guard.
-  const minMoves = gameMode === 'roulette' ? 0 : MIN_COUNTED_MOVES;
-  if (moveCount < minMoves) {
+  if (moveCount < MIN_COUNTED_MOVES) {
     return zeroResult(moveCount);
   }
 
@@ -108,6 +117,83 @@ export function computeGamePoints(
     moveQualityCounts: quality.counts,
     counted: true,
   };
+}
+
+// Roulette mode: win-focused. Zero on loss/resign, small draw consolation,
+// huge win base + speed bonus that decays linearly until move 60, plus
+// capture-value contribution. Quality bonuses are not computed (the format
+// is too chaotic for classifier-driven nuance to be meaningful).
+//
+//   Loss / resign: 0
+//   Draw:          100
+//   Win:           500 + max(0, 60 − moveCount) × 15 + capturePts
+const ROULETTE_WIN_BASE = 500;
+const ROULETTE_DRAW_BONUS = 100;
+const ROULETTE_SPEED_CUTOFF = 60;
+const ROULETTE_SPEED_PER_MOVE = 15;
+
+function computeRoulettePoints(
+  log: GameLog,
+  outcome: GameOutcome,
+  humanColor: Color,
+): GamePoints {
+  const moveCount = countAllMoves(log);
+
+  // Loss / resign — still counted so /users.rouletteGamesPlayed ticks up,
+  // but contributes nothing to bestPoints.
+  if (outcome === 'human-resign' || outcome === 'ai-win') {
+    return {
+      movePoints: 0,
+      capturePoints: 0,
+      qualityPoints: 0,
+      outcomeBonus: 0,
+      total: 0,
+      moveCount,
+      captureValueCp: 0,
+      moveQualityCounts: emptyCounts(),
+      counted: true,
+    };
+  }
+
+  if (outcome === 'draw') {
+    return {
+      movePoints: 0,
+      capturePoints: 0,
+      qualityPoints: 0,
+      outcomeBonus: ROULETTE_DRAW_BONUS,
+      total: ROULETTE_DRAW_BONUS,
+      moveCount,
+      captureValueCp: 0,
+      moveQualityCounts: emptyCounts(),
+      counted: true,
+    };
+  }
+
+  // human-win
+  const speedBonus =
+    Math.max(0, ROULETTE_SPEED_CUTOFF - moveCount) * ROULETTE_SPEED_PER_MOVE;
+  const captureValueCp = sumHumanCaptures(log, humanColor);
+  const capturePoints = Math.floor(captureValueCp / 10);
+  const total = ROULETTE_WIN_BASE + speedBonus + capturePoints;
+
+  return {
+    // movePoints is re-purposed as the speed bonus so existing UI rows
+    // render it without a new field. GameSummary relabels the row for
+    // roulette ("Speed bonus" vs "Move points").
+    movePoints: speedBonus,
+    capturePoints,
+    qualityPoints: 0,
+    outcomeBonus: ROULETTE_WIN_BASE,
+    total,
+    moveCount,
+    captureValueCp,
+    moveQualityCounts: emptyCounts(),
+    counted: true,
+  };
+}
+
+function emptyCounts(): MoveQualityCounts {
+  return { brilliant: 0, best: 0, good: 0, mistake: 0, blunder: 0 };
 }
 
 // Full chess moves played: a "move" is white + black together, so we divide
@@ -181,13 +267,7 @@ function zeroResult(moveCount: number): GamePoints {
     total: 0,
     moveCount,
     captureValueCp: 0,
-    moveQualityCounts: {
-      brilliant: 0,
-      best: 0,
-      good: 0,
-      mistake: 0,
-      blunder: 0,
-    },
+    moveQualityCounts: emptyCounts(),
     counted: false,
   };
 }
