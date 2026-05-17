@@ -11,8 +11,10 @@ export interface TTEntry {
   age: number;
 }
 
-// 2^16 entries × ~48 bytes each ≈ 3 MB. Enough for the depths we run.
-const TT_SIZE = 1 << 16;
+// 2^18 entries × ~48 bytes each ≈ 12 MB. Bumped from 2^16 in Stage L —
+// the faster single-pass evaluator lets us explore noticeably more nodes
+// within the same time budget, so a larger TT pays for itself in hit rate.
+const TT_SIZE = 1 << 18;
 const TT_MASK = TT_SIZE - 1;
 
 const table: (TTEntry | null)[] = new Array(TT_SIZE).fill(null);

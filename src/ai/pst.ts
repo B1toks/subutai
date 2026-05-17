@@ -96,7 +96,7 @@ const KING_EG: readonly number[] = [
   -50,-30,-30,-30,-30,-30,-30,-50,
 ];
 
-const MG_TABLES: Record<PieceType, readonly number[]> = {
+export const MG_TABLES: Record<PieceType, readonly number[]> = {
   pawn: PAWN_MG,
   knight: KNIGHT_PST,
   bishop: BISHOP_PST,
@@ -105,7 +105,7 @@ const MG_TABLES: Record<PieceType, readonly number[]> = {
   king: KING_MG,
 };
 
-const EG_TABLES: Record<PieceType, readonly number[]> = {
+export const EG_TABLES: Record<PieceType, readonly number[]> = {
   pawn: PAWN_EG,
   knight: KNIGHT_PST,
   bishop: BISHOP_PST,
@@ -128,7 +128,7 @@ export function pstIndexFor(color: Color, square: SquareId): number {
  * between the midgame and endgame piece-square tables so the king naturally
  * comes out to the centre as material drops.
  */
-const PHASE_WEIGHTS: Record<PieceType, number> = {
+export const PHASE_WEIGHTS: Record<PieceType, number> = {
   pawn: 0,
   knight: 1,
   bishop: 1,

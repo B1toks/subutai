@@ -2868,7 +2868,10 @@ function App() {
       )}
 
       <details className="move-log-details">
-        <summary>Moves ({Math.floor(log.moves.length / 2)})</summary>
+        {/* ceil so the count matches the highest move number actually visible
+            in the notation (after White's reply, "3." is on screen so we
+            show 3, not 2). */}
+        <summary>Moves ({Math.ceil(log.moves.length / 2)})</summary>
         <div className="move-log-content">
           <pre className="move-log-text">{notationString}</pre>
           <button type="button" className="copy-btn" onClick={copyNotation}>
