@@ -2482,6 +2482,34 @@
   justify-content: center;
 }
 
+/* --- Roulette rotation toast (first-rotation-per-game hint) ------------ */
+
+.roulette-rotation-toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 auto 10px;
+  padding: 8px 14px;
+  background: rgba(20, 20, 36, 0.92);
+  border: 1px solid var(--accent-gold);
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  align-self: center;
+  animation: roulette-toast-pop 0.25s ease-out;
+}
+
+.roulette-rotation-toast-glyph {
+  font-size: 16px;
+}
+
+@keyframes roulette-toast-pop {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 /* --- Internal stats page (?stats=1) ------------------------------------ */
 
 .stats-page {

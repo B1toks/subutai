@@ -139,7 +139,10 @@ export function buildSavedGameFromLog(
     status: 'complete',
     result,
     termination,
-    moveCount: log.moves.length,
+    // Chess-counting (full moves) for consistency with points.moveCount,
+    // GameSummary, Leaderboard, MilestoneModal. log.moves stores plies +
+    // rotations; dividing by 2 matches countAllMoves() in points.ts.
+    moveCount: Math.floor(log.moves.length / 2),
     moves: base.moves,
     movesInA: base.movesInA,
     movesInB: base.movesInB,
@@ -159,7 +162,7 @@ export function buildSavedGameSnapshot(
     id,
     createdAt: log.createdAt,
     status: 'incomplete',
-    moveCount: log.moves.length,
+    moveCount: Math.floor(log.moves.length / 2),
     moves: base.moves,
     movesInA: base.movesInA,
     movesInB: base.movesInB,

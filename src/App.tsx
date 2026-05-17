@@ -271,6 +271,12 @@ function App() {
   const [isRouletteSpinning, setIsRouletteSpinning] = useState<boolean>(false);
   const [rouletteActionsLeft, setRouletteActionsLeft] = useState<number>(0);
   const [usedRouletteSlots, setUsedRouletteSlots] = useState<number[]>([]);
+  // First AI roulette-rotation per game gets a one-shot info toast so the
+  // player learns the mechanic before the board flips. Subsequent rotations
+  // run automatically without delay (Stage K).
+  const [firstRouletteRotationDone, setFirstRouletteRotationDone] = useState(false);
+  const [rouletteRotationToast, setRouletteRotationToast] = useState(false);
+  const rouletteToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const formationInputRef = useRef<HTMLInputElement>(null);
   const aiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedForLogIdRef = useRef<string | null>(null);
@@ -1026,6 +1032,12 @@ function App() {
     setIsRouletteSpinning(false);
     setRouletteActionsLeft(0);
     setUsedRouletteSlots([]);
+    setFirstRouletteRotationDone(false);
+    setRouletteRotationToast(false);
+    if (rouletteToastTimerRef.current) {
+      clearTimeout(rouletteToastTimerRef.current);
+      rouletteToastTimerRef.current = null;
+    }
     setSearchEvalFromWhite(null);
     setSearchMateInPlies(null);
     setSummaryOpen(false);
@@ -1179,14 +1191,10 @@ function App() {
     setLegalMoves(playableRouletteMoves(bs, rolled, []));
   }
 
-  // TODO(Stage H): on the FIRST roulette rotation per game, surface a quick
-  // confirmation banner ("AI rotates the board to find playable moves —
-  // continue?") to teach the mechanic, then auto-rotate thereafter. The
-  // multi-phase scheduling effect makes interjecting a modal here tricky
-  // without splitting the AI turn across renders; the rotation-outline
-  // pulse covers most of the same UX in the meantime.
   // Apply an AI rotation as one action. Same semantics as handleRotate's
-  // roulette branch, but self-contained for the AI driver.
+  // roulette branch, but self-contained for the AI driver. The first
+  // rotation per game is gated behind a 2s toast in executeAiRouletteAction
+  // (Stage K) so the player can see what's about to happen.
   function executeAiRouletteRotation(
     bs: BoardState,
     rolled: PieceType[],
@@ -1247,6 +1255,27 @@ function App() {
         const rotatedPreview = toggleTopology(bs);
         const postRotPlayable = playableRouletteMoves(rotatedPreview, rolled, used);
         if (postRotPlayable.length > 0) {
+          // First time the AI rotates in this game: surface a brief toast so
+          // the player learns the mechanic, then run the rotation. After that
+          // every subsequent rotation fires instantly. Splitting one AI phase
+          // across two timer ticks is acceptable here because (a) it happens
+          // at most once per game, and (b) the toast→rotation order matches
+          // what a tutorial-style hint would show.
+          if (!firstRouletteRotationDone) {
+            setFirstRouletteRotationDone(true);
+            setRouletteRotationToast(true);
+            if (rouletteToastTimerRef.current) {
+              clearTimeout(rouletteToastTimerRef.current);
+            }
+            const t = setTimeout(() => {
+              setRouletteRotationToast(false);
+              rouletteToastTimerRef.current = null;
+              executeAiRouletteRotation(bs, rolled, used, actionsLeft);
+            }, 2000);
+            rouletteToastTimerRef.current = t;
+            aiTimerRef.current = t;
+            return;
+          }
           executeAiRouletteRotation(bs, rolled, used, actionsLeft);
           return;
         }
@@ -2047,6 +2076,11 @@ function App() {
             } else if (a.bestMoveSan) {
               san += ` \u2190 \u043a\u0440\u0430\u0449\u0435: ${a.bestMoveSan}`;
             }
+            // Append the centipawn loss so the player can gauge how marginal the
+            // suggestion is. cpl 50-100 = borderline, 300+ = real blunder.
+            if (a.cpl > 0) {
+              san += ` (\u2212${a.cpl} cp)`;
+            }
           }
         }
         return san;
@@ -2377,6 +2411,13 @@ function App() {
           >
             Spin Roulette
           </button>
+        </div>
+      )}
+
+      {rouletteRotationToast && (
+        <div className="roulette-rotation-toast" role="status">
+          <span className="roulette-rotation-toast-glyph">{'\u{1F4AB}'}</span>
+          <span>Roulette is rotating the board</span>
         </div>
       )}
 
@@ -2827,7 +2868,7 @@ function App() {
       )}
 
       <details className="move-log-details">
-        <summary>Moves ({log.moves.length})</summary>
+        <summary>Moves ({Math.floor(log.moves.length / 2)})</summary>
         <div className="move-log-content">
           <pre className="move-log-text">{notationString}</pre>
           <button type="button" className="copy-btn" onClick={copyNotation}>
