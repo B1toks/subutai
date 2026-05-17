@@ -2072,14 +2072,15 @@ function App() {
             if (pv && pv.length > 0) {
               const head = pv.slice(0, 4).join(' ');
               const tail = pv.length > 4 ? ' \u2026' : '';
-              san += ` \u2190 \u043a\u0440\u0430\u0449\u0435: ${head}${tail}`;
+              san += ` \u2190 Better: ${head}${tail}`;
             } else if (a.bestMoveSan) {
-              san += ` \u2190 \u043a\u0440\u0430\u0449\u0435: ${a.bestMoveSan}`;
+              san += ` \u2190 Better: ${a.bestMoveSan}`;
             }
-            // Append the centipawn loss so the player can gauge how marginal the
-            // suggestion is. cpl 50-100 = borderline, 300+ = real blunder.
+            // Append the centipawn loss so the player can gauge how marginal
+            // the suggestion is. cpl 50-100 = borderline, 300+ = real blunder.
+            // Stage L's float-eval makes cpl a non-integer \u2014 round for display.
             if (a.cpl > 0) {
-              san += ` (\u2212${a.cpl} cp)`;
+              san += ` (\u2212${Math.round(a.cpl)} cp)`;
             }
           }
         }

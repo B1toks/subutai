@@ -160,9 +160,9 @@ export function GameReview({ log, onBack }: Props) {
                   <span className="review-san">{shortMoveText(entry)}</span>
                   <span className="review-marker">{CLASS_MARKER[cls]}</span>
                   <span className="review-label">{CLASS_LABEL[cls]}</span>
-                  {showCpl && <span className="review-cpl">(−{a.cpl} cp)</span>}
+                  {showCpl && <span className="review-cpl">(−{Math.round(a.cpl)} cp)</span>}
                   {betterText && (
-                    <span className="review-better">← better: {betterText}</span>
+                    <span className="review-better">← Better: {betterText}</span>
                   )}
                 </li>
               );
