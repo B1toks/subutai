@@ -2482,52 +2482,62 @@
   justify-content: center;
 }
 
-/* --- Roulette first-spin confirm banner (Stage O) ---------------------- */
+/* --- Bot Slayer badge (Stage P addendum 8) ----------------------------- */
 
-.roulette-confirm-banner {
+.victor-badge {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  margin: 0 auto 10px;
-  padding: 8px 8px 8px 14px;
-  background: rgba(20, 20, 36, 0.92);
-  border: 1px solid var(--accent-gold);
-  border-radius: 999px;
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.2px;
-  align-self: center;
-  animation: roulette-confirm-pop 0.25s ease-out;
-}
-
-.roulette-confirm-glyph {
-  font-size: 16px;
-}
-
-.roulette-confirm-text {
+  gap: 4px;
+  padding: 3px 10px;
+  margin-left: 8px;
+  background: linear-gradient(135deg, #ffd700 0%, #ff8c00 50%, #ffd700 100%);
+  background-size: 200% 100%;
+  color: #2a1a00;
+  border-radius: 14px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  box-shadow:
+    0 0 16px rgba(255, 200, 80, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+  animation:
+    victor-shimmer 3s ease-in-out infinite,
+    victor-pulse 2s ease-in-out infinite;
   white-space: nowrap;
 }
 
-.roulette-confirm-btn {
-  padding: 4px 14px;
+.victor-badge.my-victor {
+  transform: scale(1.05);
+  animation-duration: 1.5s, 1.2s;
+}
+
+@keyframes victor-shimmer {
+  0%, 100% { background-position: 0% 0%; }
+  50%      { background-position: 100% 0%; }
+}
+
+@keyframes victor-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 16px rgba(255, 200, 80, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  }
+  50% {
+    box-shadow:
+      0 0 24px rgba(255, 200, 80, 0.9),
+      inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  }
+}
+
+/* --- GameSummary duration row (Stage P addendum 7) --------------------- */
+
+.summary-duration {
+  margin-top: -4px;
+  color: var(--text-muted);
   font-size: 12px;
-  font-weight: 700;
-  background: var(--accent-gold);
-  color: #1a1612;
-  border: none;
-  border-radius: 999px;
-  cursor: pointer;
-  letter-spacing: 0.3px;
-}
-
-.roulette-confirm-btn:hover {
-  filter: brightness(1.1);
-}
-
-@keyframes roulette-confirm-pop {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
+  letter-spacing: 0.2px;
 }
 
 /* --- Leaderboard tabs (Stage O: Classic / Roulette switcher) ----------- */

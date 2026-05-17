@@ -20,6 +20,10 @@ interface Stats {
   avgFinalEval: number;
   scoredMoves: number;
   totalMovesInSample: number;
+  /** Average wall-clock seconds across sample games that have durationMs.
+   *  Older games written before Stage P addendum 7 are excluded so we don't
+   *  drag the average toward zero. null when nothing in the sample qualifies. */
+  avgDurationSec: number | null;
   oldestGame: Date | null;
   newestGame: Date | null;
   loading: boolean;
@@ -38,11 +42,19 @@ const EMPTY: Stats = {
   avgFinalEval: 0,
   scoredMoves: 0,
   totalMovesInSample: 0,
+  avgDurationSec: null,
   oldestGame: null,
   newestGame: null,
   loading: true,
   error: null,
 };
+
+function formatDurationSec(totalSec: number): string {
+  const sec = Math.max(0, Math.round(totalSec));
+  const min = Math.floor(sec / 60);
+  const rem = sec % 60;
+  return min === 0 ? `${rem}s` : `${min}m ${rem}s`;
+}
 
 interface StoredMoveLike {
   searchScore?: number;
@@ -53,6 +65,7 @@ interface TrainingDocLike {
   moveCount?: number;
   finalEvalFromWhite?: number;
   createdAt?: Timestamp;
+  durationMs?: number;
   log?: { moves?: StoredMoveLike[] };
 }
 
@@ -75,6 +88,8 @@ async function loadStats(): Promise<Stats> {
   let count = 0;
   let scoredMoves = 0;
   let totalMovesInSample = 0;
+  let sumDurationMs = 0;
+  let durationCount = 0;
   let oldest: Date | null = null;
   let newest: Date | null = null;
 
@@ -86,6 +101,10 @@ async function loadStats(): Promise<Stats> {
     sumMoves += d.moveCount ?? 0;
     sumEval += d.finalEvalFromWhite ?? 0;
     count++;
+    if (typeof d.durationMs === 'number') {
+      sumDurationMs += d.durationMs;
+      durationCount++;
+    }
     const moves = d.log?.moves;
     if (moves) {
       totalMovesInSample += moves.length;
@@ -107,6 +126,8 @@ async function loadStats(): Promise<Stats> {
     avgFinalEval: count ? Math.round(sumEval / count) : 0,
     scoredMoves,
     totalMovesInSample,
+    avgDurationSec:
+      durationCount > 0 ? sumDurationMs / durationCount / 1000 : null,
     oldestGame: oldest,
     newestGame: newest,
     loading: false,
@@ -204,6 +225,14 @@ export function StatsPage() {
           <span className="stat-row-label">Avg game length</span>
           <strong className="stat-row-value">
             {stats.avgMoveCount} moves
+          </strong>
+        </div>
+        <div className="stat-row">
+          <span className="stat-row-label">Avg game duration</span>
+          <strong className="stat-row-value">
+            {stats.avgDurationSec !== null
+              ? formatDurationSec(stats.avgDurationSec)
+              : '—'}
           </strong>
         </div>
         <div className="stat-row">

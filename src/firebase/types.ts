@@ -6,6 +6,9 @@ export interface BestGameSnapshot {
   moveCount: number;
   outcome: GameOutcome;
   createdAt: Timestamp;
+  /** Wall-clock duration of the run, in ms. Optional for back-compat with
+   *  snapshots written before Stage P / addendum 7. */
+  durationMs?: number;
 }
 
 export interface UserProfile {

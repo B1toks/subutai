@@ -26,6 +26,13 @@ function outcomeIcon(outcome: GameOutcome): { glyph: string; label: string; tone
   }
 }
 
+function formatDuration(ms: number): string {
+  const totalSec = Math.max(0, Math.round(ms / 1000));
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return min === 0 ? `${sec}s` : `${min}m ${sec}s`;
+}
+
 export function Leaderboard({ currentUid, onBack, onWatchGame }: LeaderboardProps) {
   const [boardType, setBoardType] = useState<BoardType>('classic');
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
@@ -135,10 +142,20 @@ export function Leaderboard({ currentUid, onBack, onWatchGame }: LeaderboardProp
             const snap = e.bestGameSnapshot;
             const outcome = snap ? outcomeIcon(snap.outcome) : null;
             const survived = snap?.moveCount ?? e.longestSurvivalMoves;
+            // Stage P addendum 8: glowing golden badge for players whose best
+            // game ended in a human-win. Stays gated on the snapshot so old
+            // entries (no outcome stored) get nothing.
+            const isVictor = snap?.outcome === 'human-win';
+            // Stage P addendum 7: tooltip with best-game time when available.
+            const rowTitle =
+              typeof snap?.durationMs === 'number'
+                ? `Best game time: ${formatDuration(snap.durationMs)}`
+                : undefined;
             return (
               <div
                 key={e.uid}
                 className={`leaderboard-row${isMe ? ' is-me' : ''}`}
+                title={rowTitle}
               >
                 <span className="lb-rank">#{rank}</span>
                 <span className="lb-name">
@@ -146,6 +163,14 @@ export function Leaderboard({ currentUid, onBack, onWatchGame }: LeaderboardProp
                   {isMe && (
                     <span className="lb-me-badge" title="That’s you">
                       {' '}{'\u{1F451}'}
+                    </span>
+                  )}
+                  {isVictor && (
+                    <span
+                      className={`victor-badge${isMe ? ' my-victor' : ''}`}
+                      title="Defeated the AI!"
+                    >
+                      {'\u{1F451}'} Bot Slayer
                     </span>
                   )}
                 </span>

@@ -35,6 +35,10 @@ export interface TrainingGameDoc {
   finalEvalFromWhite: number;
   aiVersion: string;
   createdAt: Timestamp;
+  /** Wall-clock duration of the run in ms. Stage P addendum 7 — used by
+   *  the /?stats=1 dashboard to surface "Avg game duration". Optional for
+   *  back-compat with docs written before this field was added. */
+  durationMs?: number;
 }
 
 function serializeGameLog(log: GameLog): StoredGameLog {
@@ -63,8 +67,9 @@ export async function saveTrainingGame(args: {
   moveCount: number;
   finalEvalFromWhite: number;
   aiVersion: string;
+  durationMs?: number;
 }): Promise<string> {
-  const ref = await addDoc(collection(db, 'training_games'), {
+  const payload: Record<string, unknown> = {
     chess960Id: args.chess960Id,
     seed: args.seed,
     moveCount: args.moveCount,
@@ -73,6 +78,8 @@ export async function saveTrainingGame(args: {
     finalEvalFromWhite: args.finalEvalFromWhite,
     aiVersion: args.aiVersion,
     createdAt: serverTimestamp(),
-  });
+  };
+  if (typeof args.durationMs === 'number') payload.durationMs = args.durationMs;
+  const ref = await addDoc(collection(db, 'training_games'), payload);
   return ref.id;
 }

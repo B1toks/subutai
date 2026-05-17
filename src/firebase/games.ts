@@ -67,6 +67,9 @@ export async function saveCompletedGame(args: {
   // (rouletteBestPoints, rouletteBestGameId, ...) so the two leaderboards
   // can be queried independently. Defaults to 'classic' for back-compat.
   gameMode?: 'classic' | 'roulette';
+  // Stage P addendum 7: wall-clock duration of the run in ms. Persisted on
+  // the /games doc and (when this is a new best) on bestGameSnapshot.
+  durationMs?: number;
 }): Promise<SaveGameResult> {
   const {
     uid,
@@ -77,10 +80,11 @@ export async function saveCompletedGame(args: {
     chess960Id,
     seed,
     humanColor,
+    durationMs,
   } = args;
   const gameMode = args.gameMode ?? 'classic';
 
-  const gameRef = await addDoc(collection(db, 'games'), {
+  const gamePayload: Record<string, unknown> = {
     playerId: uid,
     playerName: displayName,
     chess960Id,
@@ -93,7 +97,9 @@ export async function saveCompletedGame(args: {
     gameMode,
     vsAI: true,
     createdAt: serverTimestamp(),
-  });
+  };
+  if (typeof durationMs === 'number') gamePayload.durationMs = durationMs;
+  const gameRef = await addDoc(collection(db, 'games'), gamePayload);
 
   let isNewBest = false;
   if (points.counted) {
@@ -117,12 +123,14 @@ export async function saveCompletedGame(args: {
         if (isNewBest) {
           patch.rouletteBestPoints = points.total;
           patch.rouletteBestGameId = gameRef.id;
-          patch.rouletteBestSnapshot = {
+          const snapshot: Record<string, unknown> = {
             chess960Id,
             moveCount: points.moveCount,
             outcome,
             createdAt: serverTimestamp(),
           };
+          if (typeof durationMs === 'number') snapshot.durationMs = durationMs;
+          patch.rouletteBestSnapshot = snapshot;
         }
       } else {
         const oldBest = (cur.bestGamePoints as number | undefined) ?? 0;
@@ -141,12 +149,14 @@ export async function saveCompletedGame(args: {
         if (isNewBest) {
           patch.bestGamePoints = points.total;
           patch.bestGameId = gameRef.id;
-          patch.bestGameSnapshot = {
+          const snapshot: Record<string, unknown> = {
             chess960Id,
             moveCount: points.moveCount,
             outcome,
             createdAt: serverTimestamp(),
           };
+          if (typeof durationMs === 'number') snapshot.durationMs = durationMs;
+          patch.bestGameSnapshot = snapshot;
         }
       }
       tx.update(userRef, patch);

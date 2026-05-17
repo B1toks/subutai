@@ -14,8 +14,17 @@ interface GameSummaryProps {
   /** uid + name come from useAuth; null when sign-in hasn't completed. */
   playerId: string | null;
   playerName: string | null;
+  /** Stage P addendum 7: wall-clock duration of this run, in ms. */
+  durationMs?: number;
   onClose: () => void;
   onPlayAgain: () => void;
+}
+
+function formatDuration(ms: number): string {
+  const totalSec = Math.max(0, Math.round(ms / 1000));
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return min === 0 ? `${sec}s` : `${min}m ${sec}s`;
 }
 
 function headline(outcome: GameOutcome, moveCount: number): string {
@@ -43,6 +52,7 @@ export function GameSummary({
   gameId,
   playerId,
   playerName,
+  durationMs,
   onClose,
   onPlayAgain,
 }: GameSummaryProps) {
@@ -53,6 +63,11 @@ export function GameSummary({
       <div className="modal-dialog summary-dialog" onClick={(e) => e.stopPropagation()}>
         <h2 className="modal-title">Game over</h2>
         <p className="modal-subtitle">{headline(outcome, points.moveCount)}</p>
+        {typeof durationMs === 'number' && (
+          <p className="modal-subtitle summary-duration">
+            Game time: {formatDuration(durationMs)}
+          </p>
+        )}
 
         {counted ? (
           <>

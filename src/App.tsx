@@ -228,6 +228,12 @@ function App() {
   const [showNameModal, setShowNameModal] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [lastGamePoints, setLastGamePoints] = useState<GamePoints | null>(null);
+  // Stage P addendum 7: captured at finishGame so the GameSummary modal
+  // keeps the previous game's duration even after Play Again resets the
+  // running start-time ref.
+  const [lastGameDurationMs, setLastGameDurationMs] = useState<number | null>(
+    null,
+  );
   const [gameOutcome, setGameOutcome] = useState<GameOutcome | null>(null);
   const [confirmingResign, setConfirmingResign] = useState(false);
   const [savingGame, setSavingGame] = useState(false);
@@ -281,19 +287,20 @@ function App() {
   const [isRouletteSpinning, setIsRouletteSpinning] = useState<boolean>(false);
   const [rouletteActionsLeft, setRouletteActionsLeft] = useState<number>(0);
   const [usedRouletteSlots, setUsedRouletteSlots] = useState<number[]>([]);
-  // Stage O: first roulette spin per game requires a manual click on a
-  // confirm banner. Subsequent spins (human via button, AI via scheduler)
-  // proceed automatically. pendingRouletteSpin holds the deferred spin
-  // execution; non-null = banner is showing.
+  // First roulette spin per game requires a manual click on the Spin
+  // Roulette button. Subsequent spins auto-fire via a useEffect after a
+  // short delay. Tracking just the boolean is enough — no pending-callback
+  // state, no banner: the existing button stays the single spin UI.
   const [firstRouletteSpinDone, setFirstRouletteSpinDone] = useState(false);
-  const [pendingRouletteSpin, setPendingRouletteSpin] = useState<
-    (() => void) | null
-  >(null);
   // First 3 spins of a game weight pawn slightly higher so beginners ease in
   // with familiar piece moves instead of front-loaded knight chaos.
   const [rouletteSpinCount, setRouletteSpinCount] = useState(0);
   const formationInputRef = useRef<HTMLInputElement>(null);
   const aiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Stage P addendum 7: wall-clock when the current game began. Used to
+  // compute durationMs on save. Set in startNewGame (and on initial mount
+  // for the first game).
+  const gameStartedAtRef = useRef<number>(Date.now());
   const savedForLogIdRef = useRef<string | null>(null);
   const liveSavedGameIdRef = useRef<string>(
     `live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -401,8 +408,10 @@ function App() {
 
   async function finishGame(outcome: GameOutcome) {
     const points = computeGamePoints(log, outcome, HUMAN_COLOR, gameMode);
+    const durationMs = Date.now() - gameStartedAtRef.current;
     setGameOutcome(outcome);
     setLastGamePoints(points);
+    setLastGameDurationMs(durationMs);
     setSummaryOpen(true);
     setSaveError(null);
     setIsNewBest(false);
@@ -429,6 +438,7 @@ function App() {
         seed,
         humanColor: HUMAN_COLOR,
         gameMode,
+        durationMs,
       });
       setLastGameId(gameId);
       setIsNewBest(nb);
@@ -485,6 +495,7 @@ function App() {
       moveCount,
       finalEvalFromWhite,
       aiVersion: AI_VERSION,
+      durationMs: Date.now() - gameStartedAtRef.current,
     }).catch((err) => {
       console.error('[autoplay] saveTrainingGame failed', err);
     });
@@ -965,29 +976,14 @@ function App() {
     );
   }
 
-  // Stage O: gate the very first spin per game behind the confirm banner.
-  // Subsequent spins (both human button and AI scheduler) run immediately.
-  // React unwraps function-typed state setters once, so we wrap the callback
-  // in an outer arrow that *returns* the confirm closure.
-  function requestRouletteSpin(execute: () => void) {
-    if (firstRouletteSpinDone) {
-      execute();
-      return;
-    }
-    setPendingRouletteSpin(() => () => {
-      setFirstRouletteSpinDone(true);
-      setPendingRouletteSpin(null);
-      execute();
-    });
-  }
-
   function handleSpinRoulette() {
     if (gameMode !== 'roulette') return;
     if (gameStatus !== 'active') return;
     if (allowedPieceTypes !== null) return;
-    if (pendingRouletteSpin) return; // banner is up — ignore button clicks
-
-    requestRouletteSpin(() => doSpinRouletteNow());
+    // First click of the game flips the gate so the auto-spin effect can
+    // take over on subsequent turns.
+    if (!firstRouletteSpinDone) setFirstRouletteSpinDone(true);
+    doSpinRouletteNow();
   }
 
   function doSpinRouletteNow() {
@@ -1072,7 +1068,6 @@ function App() {
     setRouletteActionsLeft(0);
     setUsedRouletteSlots([]);
     setFirstRouletteSpinDone(false);
-    setPendingRouletteSpin(null);
     setRouletteSpinCount(0);
     setSearchEvalFromWhite(null);
     setSearchMateInPlies(null);
@@ -1090,6 +1085,7 @@ function App() {
     completedLogIdRef.current = null;
     autoSavedLogIdRef.current = null;
     autoLastMoveAtRef.current = Date.now();
+    gameStartedAtRef.current = Date.now();
 
     // New play session => new live snapshot id.
     liveSavedGameIdRef.current = `live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -1190,6 +1186,37 @@ function App() {
   }
 
   const currentPlayer = state.sideToMove === 'white' ? 'human' : 'ai';
+
+  // Auto-trigger the human's roulette spin after the first manual click of
+  // the game. Conditions mirror the Spin Roulette button's enabled-state:
+  // roulette mode, not currently spinning, human's turn, no roll active,
+  // game still in progress, watcher not engaged. 500ms delay keeps the
+  // turn boundary visible.
+  useEffect(() => {
+    if (gameMode !== 'roulette') return;
+    if (!firstRouletteSpinDone) return;
+    if (gameStatus !== 'active') return;
+    if (watchingGame) return;
+    if (currentPlayer !== 'human') return;
+    if (allowedPieceTypes !== null) return;
+    if (isRouletteSpinning) return;
+    const t = setTimeout(() => {
+      doSpinRouletteNow();
+    }, 500);
+    return () => clearTimeout(t);
+    // doSpinRouletteNow re-allocates each render (captures the latest state
+    // via closure) — listing it would re-fire the effect every render and
+    // restart the 500ms timer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    gameMode,
+    firstRouletteSpinDone,
+    gameStatus,
+    watchingGame,
+    currentPlayer,
+    allowedPieceTypes,
+    isRouletteSpinning,
+  ]);
 
   // Mode can only be switched before the first move — otherwise rules would
   // change mid-game (e.g. switching out of Roulette skips a spin).
@@ -1569,17 +1596,9 @@ function App() {
     //  so the human can see the fresh roll.)
 
     if (allowedPieceTypes === null) {
-      // Phase 1 — spin. The very first spin per game is gated behind the
-      // confirm banner (Stage O); for subsequent spins we just wait for the
-      // standard short pause and fire.
-      if (!firstRouletteSpinDone) {
-        setPendingRouletteSpin(() => () => {
-          setFirstRouletteSpinDone(true);
-          setPendingRouletteSpin(null);
-          applyAiSpin(state);
-        });
-        return;
-      }
+      // Phase 1 — AI spin. Always runs after a short pause; the first-spin
+      // gate only applies to human turns (auto-spin effect there waits for
+      // the player's first manual click).
       const t = setTimeout(() => {
         applyAiSpin(state);
       }, 500);
@@ -2443,27 +2462,10 @@ function App() {
             disabled={
               allowedPieceTypes !== null ||
               isRouletteSpinning ||
-              currentPlayer !== 'human' ||
-              pendingRouletteSpin !== null
+              currentPlayer !== 'human'
             }
           >
             Spin Roulette
-          </button>
-        </div>
-      )}
-
-      {pendingRouletteSpin && (
-        <div className="roulette-confirm-banner" role="status">
-          <span className="roulette-confirm-glyph">{'\u{1F3B0}'}</span>
-          <span className="roulette-confirm-text">
-            Spin the roulette wheel?
-          </span>
-          <button
-            type="button"
-            className="roulette-confirm-btn"
-            onClick={pendingRouletteSpin}
-          >
-            Spin
           </button>
         </div>
       )}
@@ -2977,6 +2979,7 @@ function App() {
           gameId={lastGameId}
           playerId={user?.uid ?? null}
           playerName={displayName}
+          durationMs={lastGameDurationMs ?? undefined}
           onClose={() => setSummaryOpen(false)}
           onPlayAgain={() => {
             setSummaryOpen(false);
