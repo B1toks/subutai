@@ -29,6 +29,7 @@ import { FeedbackModal } from './components/FeedbackModal';
 import { MilestoneModal } from './components/MilestoneModal';
 import { AutoPlayView } from './components/AutoPlayView';
 import { StatsPage } from './components/StatsPage';
+import { FriendLobby } from './components/FriendLobby';
 import { saveTrainingGame } from './firebase/trainingGames';
 import { useAuth } from './firebase/useAuth';
 import {
@@ -246,7 +247,13 @@ function App() {
   const [milestoneShown, setMilestoneShown] = useState(false);
   const [showMilestoneModal, setShowMilestoneModal] = useState(false);
   const completedLogIdRef = useRef<string | null>(null);
-  const [view, setView] = useState<'game' | 'review' | 'leaderboard'>('game');
+  const [view, setView] = useState<
+    'game' | 'review' | 'leaderboard' | 'friend-lobby'
+  >('game');
+  // Stage Q.A: opponent selector in the header. 'ai' keeps the existing
+  // solo flow; 'friend' opens the PvP lobby. Only the toggle + lobby live
+  // in this stage; move-sync arrives in Q.B.
+  const [opponentMode, setOpponentMode] = useState<'ai' | 'friend'>('ai');
   const [watchingGame, setWatchingGame] = useState<WatchingGame | null>(null);
   const watchAutoplayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gameBackupRef = useRef<GameBackup | null>(null);
@@ -2284,13 +2291,48 @@ function App() {
     );
   }
 
+  if (view === 'friend-lobby') {
+    return (
+      <div className="app-shell" ref={shellRef}>
+        <FriendLobby
+          uid={user?.uid ?? null}
+          displayName={displayName}
+          onBack={() => {
+            setView('game');
+            setOpponentMode('ai');
+          }}
+          onMatchReady={(match) => {
+            // Stage Q.B will swap this for an actual PvP game view. For
+            // now: acknowledge so both peers can see the handshake worked,
+            // then drop the player back to the lobby.
+            // eslint-disable-next-line no-alert
+            alert(
+              `Match ${match.code} ready! Both players joined.\n` +
+                `Position: ${match.chess960Id}\n` +
+                `You play as ${
+                  match.host.uid === user?.uid
+                    ? match.host.color
+                    : match.guest?.color ?? '?'
+                }.\n\n` +
+                `Game-side sync arrives in the next stage.`,
+            );
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell" ref={shellRef}>
     <div className="app-root" style={{ '--board-size': `${boardSize}px` } as React.CSSProperties}>
       <header className="app-header">
         <div className="app-brand">
           <h1>subutai</h1>
-          <p className="app-tagline">Try to survive 50 moves against the AI</p>
+          {gameMode === 'classic' && opponentMode === 'ai' && (
+            <p className="app-tagline">
+              Try to survive 50 moves against the AI
+            </p>
+          )}
         </div>
         <div className="header-controls">
         {displayName && (
@@ -2321,6 +2363,29 @@ function App() {
         >
           {'\u{1F4AC}'}
         </button>
+        <div className="opponent-mode-switcher">
+          <button
+            type="button"
+            className={`opponent-mode-btn${opponentMode === 'ai' ? ' is-active' : ''}`}
+            onClick={() => setOpponentMode('ai')}
+            title="Play vs the engine"
+          >
+            {'\u{1F916}'} vs AI
+          </button>
+          <button
+            type="button"
+            className={`opponent-mode-btn${opponentMode === 'friend' ? ' is-active' : ''}`}
+            onClick={() => {
+              setOpponentMode('friend');
+              setView('friend-lobby');
+            }}
+            title="Private match by code"
+            disabled={!user || !displayName}
+          >
+            {'\u{1F465}'} vs Friend
+            <span className="beta-tag">BETA</span>
+          </button>
+        </div>
         <div className="mode-toggle">
           <button
             type="button"
