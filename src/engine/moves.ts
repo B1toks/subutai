@@ -514,6 +514,12 @@ function generatePawnMoves(
     const targetPiece = pieceAt(state, target);
     if (targetPiece && targetPiece.color !== piece.color) {
       addPawnMove(from, target, piece.color, true, moves, topology);
+    } else if (!targetPiece && state.enPassantTarget === target) {
+      // Stage T1: en passant. The target square is empty but matches the
+      // EP marker the opponent's last double-push set on the board state.
+      // The captured pawn sits behind the target (same file as `to`, same
+      // rank as `from`) — applyMove handles the removal.
+      moves.push({ from, to: target, kind: 'enPassant' });
     }
   }
 }
@@ -643,14 +649,27 @@ export function applyMove(state: BoardState, move: Move): BoardState {
   const piece = state.pieces[move.from];
   if (!piece) return state;
 
-  const isCapture = Boolean(state.pieces[move.to]);
+  const isCapture = Boolean(state.pieces[move.to]) || move.kind === 'enPassant';
   const isPawnMove = piece.type === 'pawn';
   const isIrreversible =
     isCapture || isPawnMove || move.kind === 'castle' || move.kind === 'promotion';
 
   let base: BoardState;
 
-  if (move.kind === 'castle' && move.castleRookFrom && move.castleRookTo) {
+  if (move.kind === 'enPassant') {
+    // Stage T1: pawn moves diagonally to the EP target square; captured
+    // pawn sits one rank behind on the same file as `to`.
+    let next = state;
+    next = setPiece(next, move.from, null);
+    next = setPiece(next, move.to, piece);
+    const capturedSquare = (move.to[0] + move.from[1]) as SquareId;
+    next = setPiece(next, capturedSquare, null);
+    base = {
+      ...next,
+      castlingRights: state.castlingRights,
+      sideToMove: enemyColor(state.sideToMove),
+    };
+  } else if (move.kind === 'castle' && move.castleRookFrom && move.castleRookTo) {
     const rook = state.pieces[move.castleRookFrom];
     if (!rook) return state;
 
@@ -703,10 +722,31 @@ export function applyMove(state: BoardState, move: Move): BoardState {
   const fullmoveNumber =
     state.sideToMove === 'black' ? state.fullmoveNumber + 1 : state.fullmoveNumber;
 
+  // Stage T1: set the en-passant marker on a fresh 2-square pawn push so
+  // the OPPONENT can en-passant capture on their next reply. Cleared on
+  // every other move. Restricted to topology A — auxetic B reshuffles
+  // squares enough that the "pass-through" semantic doesn't apply.
+  let enPassantTarget: SquareId | null = null;
+  if (
+    isPawnMove &&
+    move.from &&
+    move.to &&
+    state.topologyState === 'A' &&
+    move.from[0] === move.to[0]
+  ) {
+    const fromRank = Number(move.from[1]);
+    const toRank = Number(move.to[1]);
+    if (Math.abs(toRank - fromRank) === 2) {
+      const passedRank = (fromRank + toRank) / 2;
+      enPassantTarget = `${move.from[0]}${passedRank}` as SquareId;
+    }
+  }
+
   const withClocks: BoardState = {
     ...base,
     halfmoveClock,
     fullmoveNumber,
+    enPassantTarget,
     lastMoveWasRotation: false,
   };
   const sig = positionSignature(withClocks);

@@ -17,12 +17,11 @@ import {
   type Move,
 } from '../engine';
 import { applyMove } from '../engine/moves';
+import { applyRotationMove } from '../engine/auxetic';
 import { computeSAN } from '../recording/log';
 
 const OPPONENT_OFFLINE_WARN_MS = 60_000;
 const OPPONENT_OFFLINE_FORFEIT_MS = 90_000;
-
-export type OpponentPresence = 'online' | 'warning';
 
 export interface MultiplayerSyncHandle {
   matchState: MatchDoc;
@@ -33,7 +32,9 @@ export interface MultiplayerSyncHandle {
   opponentDisplayName: string;
   isMyTurn: boolean;
   isHost: boolean;
-  opponentPresence: OpponentPresence;
+  /** Stage T1: warning shown to the player who's ON the clock and idle.
+   *  The opponent (waiting peer) still runs the silent forfeit watchdog. */
+  selfAfkWarning: boolean;
   busy: boolean;
   error: string | null;
   clearError: () => void;
@@ -43,12 +44,15 @@ export interface MultiplayerSyncHandle {
   writeOutcomeIfFirst: (outcome: MatchOutcome) => Promise<void>;
 }
 
-/** Rebuild the canonical board from the log. MVP PvP skips topology
- *  rotation, so toggle moves are defensively ignored. */
+/** Rebuild the canonical board from the log. Topology toggles (Rotate)
+ *  flow through here just like any other move (Stage T1). */
 export function rebuildBoardFromMatch(match: MatchDoc): BoardState {
   let state = createPositionFromBackRankKey(match.chess960Id);
   for (const entry of match.log.moves) {
-    if (entry.move.kind === 'topologyToggle') continue;
+    if (entry.move.kind === 'topologyToggle') {
+      state = applyRotationMove(state);
+      continue;
+    }
     if (!entry.move.from || !entry.move.to) continue;
     state = applyMove(state, entry.move);
   }
@@ -74,14 +78,13 @@ export function useMultiplayerSync(
   const [matchState, setMatchState] = useState<MatchDoc | null>(activeMatch);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [opponentPresence, setOpponentPresence] =
-    useState<OpponentPresence>('online');
+  const [selfAfkWarning, setSelfAfkWarning] = useState(false);
 
   // Reset internal state when the parent swaps matches (or clears).
   useEffect(() => {
     setMatchState(activeMatch);
     setError(null);
-    setOpponentPresence('online');
+    setSelfAfkWarning(false);
   }, [activeMatch?.code]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const code = activeMatch?.code ?? null;
@@ -101,46 +104,59 @@ export function useMultiplayerSync(
     return unsub;
   }, [code]);
 
-  // Opponent-offline watchdog. Only the WAITING peer (not on move) measures
-  // and auto-forfeits, so the disconnected side never has to race itself.
+  // Stage T1: warning shown to the player WHO IS ON THE CLOCK and idle.
+  // Helps the active peer notice they need to move; the waiting peer
+  // shouldn't be nagged about themselves (they're already not on turn).
   useEffect(() => {
     if (!matchState || !myUid) return;
     if (matchState.status !== 'active' || matchState.outcome) return;
-    if (matchState.currentTurn === myUid) {
-      setOpponentPresence('online');
+    if (matchState.currentTurn !== myUid) {
+      setSelfAfkWarning(false);
       return;
     }
     const interval = setInterval(() => {
       const last = matchState.lastActivity?.toMillis?.();
       if (typeof last !== 'number') return;
       const elapsed = Date.now() - last;
-      if (elapsed >= OPPONENT_OFFLINE_FORFEIT_MS) {
-        const outcome: MatchOutcome =
-          matchState.host.uid === myUid ? 'guest-resign' : 'host-resign';
-        const ref = doc(db, 'matches', matchState.code);
-        void runTransaction(db, async (tx) => {
-          const snap = await tx.get(ref);
-          if (!snap.exists()) return;
-          const data = snap.data() as MatchDoc;
-          if (data.outcome) return;
-          const txLast = data.lastActivity?.toMillis?.();
-          if (
-            typeof txLast === 'number' &&
-            Date.now() - txLast < OPPONENT_OFFLINE_FORFEIT_MS
-          ) {
-            return;
-          }
-          tx.update(ref, {
-            status: 'completed',
-            outcome,
-            lastActivity: serverTimestamp(),
-          });
-        }).catch((err) => console.error('[mp] forfeit write failed', err));
-      } else if (elapsed >= OPPONENT_OFFLINE_WARN_MS) {
-        setOpponentPresence('warning');
-      } else {
-        setOpponentPresence('online');
-      }
+      setSelfAfkWarning(elapsed >= OPPONENT_OFFLINE_WARN_MS);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [matchState, myUid]);
+
+  // Auto-forfeit watchdog. Only the WAITING peer (NOT on move) measures
+  // and writes the forfeit, so the on-turn / possibly-disconnected side
+  // never has to race itself. The silent forfeit is intentional —
+  // backgrounded tabs can't render banners anyway.
+  useEffect(() => {
+    if (!matchState || !myUid) return;
+    if (matchState.status !== 'active' || matchState.outcome) return;
+    if (matchState.currentTurn === myUid) return;
+    const interval = setInterval(() => {
+      const last = matchState.lastActivity?.toMillis?.();
+      if (typeof last !== 'number') return;
+      const elapsed = Date.now() - last;
+      if (elapsed < OPPONENT_OFFLINE_FORFEIT_MS) return;
+      const outcome: MatchOutcome =
+        matchState.host.uid === myUid ? 'guest-resign' : 'host-resign';
+      const ref = doc(db, 'matches', matchState.code);
+      void runTransaction(db, async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists()) return;
+        const data = snap.data() as MatchDoc;
+        if (data.outcome) return;
+        const txLast = data.lastActivity?.toMillis?.();
+        if (
+          typeof txLast === 'number' &&
+          Date.now() - txLast < OPPONENT_OFFLINE_FORFEIT_MS
+        ) {
+          return;
+        }
+        tx.update(ref, {
+          status: 'completed',
+          outcome,
+          lastActivity: serverTimestamp(),
+        });
+      }).catch((err) => console.error('[mp] forfeit write failed', err));
     }, 4000);
     return () => clearInterval(interval);
   }, [matchState, myUid]);
@@ -259,7 +275,7 @@ export function useMultiplayerSync(
     opponentDisplayName,
     isMyTurn,
     isHost,
-    opponentPresence,
+    selfAfkWarning,
     busy,
     error,
     clearError: () => setError(null),

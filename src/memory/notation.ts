@@ -24,8 +24,22 @@ const PROMO_MAP: Record<string, PieceType> = {
   Q: 'queen', R: 'rook', B: 'bishop', N: 'knight',
 };
 
+/** Strip annotation markers our renderer appends to SAN: checkmate '#',
+ *  brilliant '!!', blunder '??', mistake '?', best '⭐'. The parser only
+ *  cares about the move itself, not the qualitative tag. */
+function stripMarkers(token: string): string {
+  return token
+    // Drop the entire "← Better: ... (−123 cp)" suggestion tail. Matches
+    // any arrow-prefixed annotation (handles both Stage M's "Better:" and
+    // pre-Stage-M Ukrainian "краще:" wording for back-compat).
+    .replace(/\s*←\s.*$/u, '')
+    .replace(/\s*\(−\d+\s*cp\)\s*$/u, '')
+    .replace(/[!?#+★⭐]+$/u, '')
+    .trim();
+}
+
 function parseMoveToken(tokenRaw: string): ParsedToken {
-  const token = tokenRaw.trim();
+  const token = stripMarkers(tokenRaw.trim());
   if (!token) throw new NotationParseError('Empty move token.');
 
   // Topology toggle: "A→B" or "B→A"
@@ -33,12 +47,15 @@ function parseMoveToken(tokenRaw: string): ParsedToken {
     return { move: { kind: 'topologyToggle' } };
   }
 
-  // Castling: O-O-O or O-O, with optional @A/@B suffix
-  const castleMatch = token.match(/^(O-O-O|O-O)(?:@([AB]))?$/);
+  // Castling: O-O-O or O-O (also accept 0-0-0 / 0-0 numeric form), with
+  // optional @A/@B topology suffix.
+  const castleMatch = token.match(/^(O-O-O|O-O|0-0-0|0-0)(?:@([AB]))?$/);
   if (castleMatch) {
+    const tag = castleMatch[1];
+    const side = tag === 'O-O-O' || tag === '0-0-0' ? 'queen' : 'king';
     return {
       move: { kind: 'castle' },
-      castleSide: castleMatch[1] === 'O-O-O' ? 'queen' : 'king',
+      castleSide: side,
       requiredTopology: castleMatch[2] as TopologyState | undefined,
     };
   }

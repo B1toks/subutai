@@ -370,6 +370,10 @@ function App() {
   // First 3 spins of a game weight pawn slightly higher so beginners ease in
   // with familiar piece moves instead of front-loaded knight chaos.
   const [rouletteSpinCount, setRouletteSpinCount] = useState(0);
+  // Stage T1: square that just had a pawn taken via en passant — paints a
+  // brief explosion overlay so the off-target capture is visually obvious.
+  const [enPassantExplosionSquare, setEnPassantExplosionSquare] =
+    useState<SquareId | null>(null);
 
   // -------- Q.B.2: read-side aliases for multiplayer mode -----------------
   // When isMultiplayer the board / log / legal-moves come from the live
@@ -406,9 +410,13 @@ function App() {
   // Set when the search found a forced mate from the post-move position.
   const [searchMateInPlies, setSearchMateInPlies] = useState<number | null>(null);
   const currentEval = useMemo(() => {
+    // PvP has no classifier and shouldn't bleed the AI-game gradient into
+    // a fresh match — neutral 0 paints the default wood tone instead of
+    // staying red/teal from the previous solo session.
+    if (isMultiplayer) return 0;
     if (searchEvalFromWhite !== null) return searchEvalFromWhite;
     return evaluateFromWhite(state);
-  }, [searchEvalFromWhite, state]);
+  }, [isMultiplayer, searchEvalFromWhite, state]);
   // Previous eval — kept for delta comparisons used by the classifier.
   const prevEvalRef = useRef<number>(currentEval);
   // The element whose CSS variables drive the gradient. Setting via ref
@@ -1249,9 +1257,38 @@ function App() {
 
   function handleRotate() {
     if (watchingGame) return;
-    if (gameStatus !== 'active') return;
     if (currentPlayer !== 'human') return;
     if (state.lastMoveWasRotation) return;
+
+    // Multiplayer: send a topologyToggle move through Firestore — the
+    // opponent's listener re-derives the board (rebuildBoardFromMatch
+    // skips toggle entries today; T1 unblocks them once Q.B.2 picks them
+    // up via the same applyRotationMove path). King-safety check first
+    // so we don't push an illegal rotation across the wire.
+    if (isMultiplayer && mpSync) {
+      if (mpSync.matchState.status !== 'active') return;
+      if (!mpSync.isMyTurn) return;
+      const toggledMp = toggleTopology(state);
+      const ourKingMp = findKing(toggledMp, state.sideToMove);
+      if (!ourKingMp) return;
+      const oppMp = state.sideToMove === 'white' ? 'black' : 'white';
+      if (
+        isSquareAttacked(
+          toggledMp,
+          ourKingMp,
+          oppMp as 'white' | 'black',
+          toggledMp.topologyState,
+        )
+      ) {
+        return;
+      }
+      void mpSync.sendMove({ kind: 'topologyToggle' });
+      setPreviewTopology(null);
+      setSelected(null);
+      return;
+    }
+
+    if (gameStatus !== 'active') return;
 
     const toggled = toggleTopology(state);
 
@@ -1804,6 +1841,20 @@ function App() {
     isMultiplayer,
   ]);
 
+  // Stage T1: trigger the en-passant explosion overlay whenever a new
+  // EP move lands in the log — works for both solo + MP because the log
+  // alias covers both. Captured pawn sits at (file of `to`, rank of `from`).
+  useEffect(() => {
+    const last = log.moves[log.moves.length - 1];
+    if (!last) return;
+    const mv = last.move;
+    if (mv.kind !== 'enPassant' || !mv.from || !mv.to) return;
+    const captureSq = (mv.to[0] + mv.from[1]) as SquareId;
+    setEnPassantExplosionSquare(captureSq);
+    const t = setTimeout(() => setEnPassantExplosionSquare(null), 700);
+    return () => clearTimeout(t);
+  }, [log.moves.length]);
+
   const highlightedTargets = useMemo(() => {
     if (!selected) return new Set<string>();
     const targets = new Set<string>();
@@ -1817,6 +1868,18 @@ function App() {
       }
     }
     return targets;
+  }, [legalMoves, selected]);
+
+  // Stage T1: en-passant target squares get a distinct pulse so the player
+  // notices the rare opportunity. Disjoint from the regular green dots.
+  const enPassantTargets = useMemo(() => {
+    if (!selected) return new Set<string>();
+    const ep = new Set<string>();
+    for (const move of legalMoves) {
+      if (move.from !== selected) continue;
+      if (move.kind === 'enPassant' && move.to) ep.add(move.to);
+    }
+    return ep;
   }, [legalMoves, selected]);
 
   const checkSquares = useMemo(() => {
@@ -2741,10 +2804,10 @@ function App() {
 
       {isMultiplayer &&
         mpSync &&
-        mpSync.opponentPresence === 'warning' &&
+        mpSync.selfAfkWarning &&
         mpSync.matchState.status === 'active' && (
           <div className="mp-banner mp-banner-warn">
-            Opponent appears to be offline. Auto-forfeit in ~30s if no move.
+            ⏰ Your turn — make a move or auto-forfeit in ~30s.
           </div>
         )}
 
@@ -2782,6 +2845,8 @@ function App() {
             1;
           const isSelected = selected === sq;
           const isTarget = highlightedTargets.has(sq);
+          const isEnPassantTarget = enPassantTargets.has(sq);
+          const isEnPassantExplosion = enPassantExplosionSquare === sq;
           // Classic uses the single lastMove state; roulette derives the
           // last two piece-plies from the log so both AI sub-moves show.
           const isLastFrom =
@@ -2818,7 +2883,8 @@ function App() {
                 'tile',
                 isDark ? 'dark' : 'light',
                 isSelected ? 'selected' : '',
-                isTarget ? 'target' : '',
+                isEnPassantTarget ? 'target-enpassant' : isTarget ? 'target' : '',
+                isEnPassantExplosion ? 'enpassant-explosion' : '',
                 isLastFrom ? 'last-from' : '',
                 isLastTo ? 'last-to' : '',
                 olderHighlight ? 'last-older' : '',
@@ -3057,16 +3123,14 @@ function App() {
           >
             {'\u{1F441}'}
           </button>
-          {!isMultiplayer && (
-            <button
-              type="button"
-              className="rotate-btn"
-              onClick={handleRotate}
-              disabled={!canRotate}
-            >
-              Rotate &middot; {state.topologyState === 'A' ? 'A \u2192 B' : 'B \u2192 A'}
-            </button>
-          )}
+          <button
+            type="button"
+            className="rotate-btn"
+            onClick={handleRotate}
+            disabled={!canRotate}
+          >
+            Rotate &middot; {state.topologyState === 'A' ? 'A \u2192 B' : 'B \u2192 A'}
+          </button>
         </div>
         <div
           className="material-score-wrap"
