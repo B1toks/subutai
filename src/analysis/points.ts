@@ -58,10 +58,16 @@ export function computeGamePoints(
   log: GameLog,
   outcome: GameOutcome,
   humanColor: Color,
+  gameMode: 'classic' | 'roulette' = 'classic',
 ): GamePoints {
   const moveCount = countAllMoves(log);
 
-  if (moveCount < MIN_COUNTED_MOVES) {
+  // Stage O: roulette games skip the anti-farming length floor — even a
+  // 3-move stomp counts because the RNG-driven format produces wildly
+  // variable game lengths and a 10-move minimum was excluding legitimate
+  // wins. Classic mode still keeps MIN_COUNTED_MOVES as a farming guard.
+  const minMoves = gameMode === 'roulette' ? 0 : MIN_COUNTED_MOVES;
+  if (moveCount < minMoves) {
     return zeroResult(moveCount);
   }
 

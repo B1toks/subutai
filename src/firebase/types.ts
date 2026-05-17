@@ -15,6 +15,7 @@ export interface UserProfile {
   createdAt: Timestamp;
   lastActive: Timestamp;
   // Stage B / C — written by saveCompletedGame; absent for fresh accounts.
+  // Classic-mode aggregates (legacy field names — kept for back-compat).
   gamesPlayed?: number;
   gamesWon?: number;
   gamesDrawn?: number;
@@ -23,6 +24,13 @@ export interface UserProfile {
   bestGameSnapshot?: BestGameSnapshot;
   longestSurvivalMoves?: number;
   lastGameAt?: Timestamp;
+  // Stage O — roulette-mode aggregates live alongside in a separate field
+  // group so the two leaderboards never cross-contaminate. Absent until the
+  // player completes their first roulette game.
+  rouletteGamesPlayed?: number;
+  rouletteBestPoints?: number;
+  rouletteBestGameId?: string;
+  rouletteBestSnapshot?: BestGameSnapshot;
 }
 
 export interface DisplayNameEntry {

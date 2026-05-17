@@ -63,8 +63,22 @@ export async function saveCompletedGame(args: {
   chess960Id: string;
   seed: number;
   humanColor: 'white' | 'black';
+  // Stage O: roulette runs update a separate field group on the user doc
+  // (rouletteBestPoints, rouletteBestGameId, ...) so the two leaderboards
+  // can be queried independently. Defaults to 'classic' for back-compat.
+  gameMode?: 'classic' | 'roulette';
 }): Promise<SaveGameResult> {
-  const { uid, displayName, log, outcome, points, chess960Id, seed, humanColor } = args;
+  const {
+    uid,
+    displayName,
+    log,
+    outcome,
+    points,
+    chess960Id,
+    seed,
+    humanColor,
+  } = args;
+  const gameMode = args.gameMode ?? 'classic';
 
   const gameRef = await addDoc(collection(db, 'games'), {
     playerId: uid,
@@ -76,6 +90,7 @@ export async function saveCompletedGame(args: {
     outcome,
     moveCount: points.moveCount,
     points,
+    gameMode,
     vsAI: true,
     createdAt: serverTimestamp(),
   });
@@ -86,33 +101,53 @@ export async function saveCompletedGame(args: {
     await runTransaction(db, async (tx) => {
       const snap = await tx.get(userRef);
       const cur = (snap.exists() ? snap.data() : {}) as Record<string, unknown>;
-      const oldBest = (cur.bestGamePoints as number | undefined) ?? 0;
-      isNewBest = points.total > oldBest;
 
       const patch: Record<string, unknown> = {
-        gamesPlayed: ((cur.gamesPlayed as number | undefined) ?? 0) + 1,
-        gamesWon:
-          ((cur.gamesWon as number | undefined) ?? 0) +
-          (outcome === 'human-win' ? 1 : 0),
-        gamesDrawn:
-          ((cur.gamesDrawn as number | undefined) ?? 0) +
-          (outcome === 'draw' ? 1 : 0),
-        longestSurvivalMoves: Math.max(
-          (cur.longestSurvivalMoves as number | undefined) ?? 0,
-          points.moveCount,
-        ),
         lastGameAt: serverTimestamp(),
         lastActive: serverTimestamp(),
       };
-      if (isNewBest) {
-        patch.bestGamePoints = points.total;
-        patch.bestGameId = gameRef.id;
-        patch.bestGameSnapshot = {
-          chess960Id,
-          moveCount: points.moveCount,
-          outcome,
-          createdAt: serverTimestamp(),
-        };
+
+      if (gameMode === 'roulette') {
+        // Separate roulette aggregates — never touch the classic fields so
+        // the classic leaderboard stays comparable across pre/post Stage O.
+        const oldBest = (cur.rouletteBestPoints as number | undefined) ?? 0;
+        isNewBest = points.total > oldBest;
+        patch.rouletteGamesPlayed =
+          ((cur.rouletteGamesPlayed as number | undefined) ?? 0) + 1;
+        if (isNewBest) {
+          patch.rouletteBestPoints = points.total;
+          patch.rouletteBestGameId = gameRef.id;
+          patch.rouletteBestSnapshot = {
+            chess960Id,
+            moveCount: points.moveCount,
+            outcome,
+            createdAt: serverTimestamp(),
+          };
+        }
+      } else {
+        const oldBest = (cur.bestGamePoints as number | undefined) ?? 0;
+        isNewBest = points.total > oldBest;
+        patch.gamesPlayed = ((cur.gamesPlayed as number | undefined) ?? 0) + 1;
+        patch.gamesWon =
+          ((cur.gamesWon as number | undefined) ?? 0) +
+          (outcome === 'human-win' ? 1 : 0);
+        patch.gamesDrawn =
+          ((cur.gamesDrawn as number | undefined) ?? 0) +
+          (outcome === 'draw' ? 1 : 0);
+        patch.longestSurvivalMoves = Math.max(
+          (cur.longestSurvivalMoves as number | undefined) ?? 0,
+          points.moveCount,
+        );
+        if (isNewBest) {
+          patch.bestGamePoints = points.total;
+          patch.bestGameId = gameRef.id;
+          patch.bestGameSnapshot = {
+            chess960Id,
+            moveCount: points.moveCount,
+            outcome,
+            createdAt: serverTimestamp(),
+          };
+        }
       }
       tx.update(userRef, patch);
     });
@@ -121,7 +156,7 @@ export async function saveCompletedGame(args: {
   let newRank: number | null = null;
   if (points.counted) {
     try {
-      newRank = await computeRank(uid);
+      newRank = await computeRank(uid, gameMode);
     } catch (err) {
       console.error('[games] computeRank failed', err);
     }
@@ -130,20 +165,25 @@ export async function saveCompletedGame(args: {
   return { gameId: gameRef.id, isNewBest, newRank };
 }
 
-export async function getPersonalBest(uid: string): Promise<number | null> {
+export async function getPersonalBest(
+  uid: string,
+  gameMode: 'classic' | 'roulette' = 'classic',
+): Promise<number | null> {
   const snap = await getDoc(doc(db, 'users', uid));
-  const best = snap.data()?.bestGamePoints as number | undefined;
+  const field = gameMode === 'roulette' ? 'rouletteBestPoints' : 'bestGamePoints';
+  const best = snap.data()?.[field] as number | undefined;
   return typeof best === 'number' ? best : null;
 }
 
-async function computeRank(uid: string): Promise<number> {
+async function computeRank(
+  uid: string,
+  gameMode: 'classic' | 'roulette' = 'classic',
+): Promise<number> {
+  const field = gameMode === 'roulette' ? 'rouletteBestPoints' : 'bestGamePoints';
   const userSnap = await getDoc(doc(db, 'users', uid));
-  const myBest = (userSnap.data()?.bestGamePoints as number | undefined) ?? 0;
+  const myBest = (userSnap.data()?.[field] as number | undefined) ?? 0;
 
-  const q = query(
-    collection(db, 'users'),
-    where('bestGamePoints', '>', myBest),
-  );
+  const q = query(collection(db, 'users'), where(field, '>', myBest));
   const count = await getCountFromServer(q);
   return count.data().count + 1;
 }

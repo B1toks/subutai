@@ -144,14 +144,11 @@ export function GameReview({ log, onBack }: Props) {
               const side = idx % 2 === 0 ? 'White' : 'Black';
               const showCpl = cls === 'blunder' || cls === 'mistake';
               const showBetter = cls === 'blunder' && (a.bestPvSan || a.bestMoveSan);
-              const betterText = (() => {
-                if (!showBetter) return null;
-                if (a.bestPvSan && a.bestPvSan.length > 0) {
-                  const head = a.bestPvSan.slice(0, 4).join(' ');
-                  return a.bestPvSan.length > 4 ? `${head} …` : head;
-                }
-                return a.bestMoveSan ?? null;
-              })();
+              // Stage O: single-move suggestion — chain was noisy. Prefer the
+              // engine-named bestMoveSan when present.
+              const betterText = showBetter
+                ? (a.bestMoveSan ?? a.bestPvSan?.[0] ?? null)
+                : null;
               return (
                 <li key={idx} className={`review-row review-row-${cls}`}>
                   <span className="review-num">

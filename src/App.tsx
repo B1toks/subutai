@@ -80,11 +80,21 @@ function getActivePieceTypes(state: BoardState, color: Color): PieceType[] {
   return Array.from(types);
 }
 
-function spinRoulette(activeTypes: PieceType[]): PieceType[] {
+function spinRoulette(
+  activeTypes: PieceType[],
+  pawnBoost: boolean = false,
+): PieceType[] {
   if (activeTypes.length === 0) return [];
+  // Pawn-bias for the first 3 spins of a game (Stage O): we add 'pawn' to the
+  // pool one extra time, lifting its per-slot probability from 1/n to 2/(n+1)
+  // — roughly a +50-65% boost depending on how many piece types remain.
+  const pool: PieceType[] =
+    pawnBoost && activeTypes.includes('pawn')
+      ? [...activeTypes, 'pawn']
+      : activeTypes;
   const out: PieceType[] = [];
   for (let i = 0; i < ROULETTE_SLOT_COUNT; i++) {
-    out.push(activeTypes[Math.floor(Math.random() * activeTypes.length)]);
+    out.push(pool[Math.floor(Math.random() * pool.length)]);
   }
   return out;
 }
@@ -271,12 +281,17 @@ function App() {
   const [isRouletteSpinning, setIsRouletteSpinning] = useState<boolean>(false);
   const [rouletteActionsLeft, setRouletteActionsLeft] = useState<number>(0);
   const [usedRouletteSlots, setUsedRouletteSlots] = useState<number[]>([]);
-  // First AI roulette-rotation per game gets a one-shot info toast so the
-  // player learns the mechanic before the board flips. Subsequent rotations
-  // run automatically without delay (Stage K).
-  const [firstRouletteRotationDone, setFirstRouletteRotationDone] = useState(false);
-  const [rouletteRotationToast, setRouletteRotationToast] = useState(false);
-  const rouletteToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Stage O: first roulette spin per game requires a manual click on a
+  // confirm banner. Subsequent spins (human via button, AI via scheduler)
+  // proceed automatically. pendingRouletteSpin holds the deferred spin
+  // execution; non-null = banner is showing.
+  const [firstRouletteSpinDone, setFirstRouletteSpinDone] = useState(false);
+  const [pendingRouletteSpin, setPendingRouletteSpin] = useState<
+    (() => void) | null
+  >(null);
+  // First 3 spins of a game weight pawn slightly higher so beginners ease in
+  // with familiar piece moves instead of front-loaded knight chaos.
+  const [rouletteSpinCount, setRouletteSpinCount] = useState(0);
   const formationInputRef = useRef<HTMLInputElement>(null);
   const aiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedForLogIdRef = useRef<string | null>(null);
@@ -385,7 +400,7 @@ function App() {
   }, [gameStatus, log.id, log.moves.length, isAutoMode]);
 
   async function finishGame(outcome: GameOutcome) {
-    const points = computeGamePoints(log, outcome, HUMAN_COLOR);
+    const points = computeGamePoints(log, outcome, HUMAN_COLOR, gameMode);
     setGameOutcome(outcome);
     setLastGamePoints(points);
     setSummaryOpen(true);
@@ -401,7 +416,7 @@ function App() {
     setSavingGame(true);
     try {
       // Snapshot the pre-write best so the modal can show "old" alongside new.
-      const oldBest = await getPersonalBest(user.uid);
+      const oldBest = await getPersonalBest(user.uid, gameMode);
       setPersonalBest(oldBest);
 
       const { gameId, isNewBest: nb, newRank } = await saveCompletedGame({
@@ -413,6 +428,7 @@ function App() {
         chess960Id: positionLabel,
         seed,
         humanColor: HUMAN_COLOR,
+        gameMode,
       });
       setLastGameId(gameId);
       setIsNewBest(nb);
@@ -949,16 +965,39 @@ function App() {
     );
   }
 
+  // Stage O: gate the very first spin per game behind the confirm banner.
+  // Subsequent spins (both human button and AI scheduler) run immediately.
+  // React unwraps function-typed state setters once, so we wrap the callback
+  // in an outer arrow that *returns* the confirm closure.
+  function requestRouletteSpin(execute: () => void) {
+    if (firstRouletteSpinDone) {
+      execute();
+      return;
+    }
+    setPendingRouletteSpin(() => () => {
+      setFirstRouletteSpinDone(true);
+      setPendingRouletteSpin(null);
+      execute();
+    });
+  }
+
   function handleSpinRoulette() {
     if (gameMode !== 'roulette') return;
     if (gameStatus !== 'active') return;
     if (allowedPieceTypes !== null) return;
+    if (pendingRouletteSpin) return; // banner is up — ignore button clicks
 
+    requestRouletteSpin(() => doSpinRouletteNow());
+  }
+
+  function doSpinRouletteNow() {
     setIsRouletteSpinning(true);
     setTimeout(() => {
       // Roll only from pieces the current player actually has on the board.
       const activeTypes = getActivePieceTypes(state, state.sideToMove);
-      const rolled = spinRoulette(activeTypes);
+      const pawnBoost = rouletteSpinCount < 3;
+      const rolled = spinRoulette(activeTypes, pawnBoost);
+      setRouletteSpinCount((n) => n + 1);
       const pseudo = generatePseudoLegalMoves(state);
       const playable = pseudo.filter((m) => {
         if (!m.from) return false;
@@ -1032,12 +1071,9 @@ function App() {
     setIsRouletteSpinning(false);
     setRouletteActionsLeft(0);
     setUsedRouletteSlots([]);
-    setFirstRouletteRotationDone(false);
-    setRouletteRotationToast(false);
-    if (rouletteToastTimerRef.current) {
-      clearTimeout(rouletteToastTimerRef.current);
-      rouletteToastTimerRef.current = null;
-    }
+    setFirstRouletteSpinDone(false);
+    setPendingRouletteSpin(null);
+    setRouletteSpinCount(0);
     setSearchEvalFromWhite(null);
     setSearchMateInPlies(null);
     setSummaryOpen(false);
@@ -1184,7 +1220,9 @@ function App() {
   // exits — the main effect picks up Phase 2 on the next render.
   function applyAiSpin(bs: BoardState) {
     const activeTypes = getActivePieceTypes(bs, bs.sideToMove);
-    const rolled = spinRoulette(activeTypes);
+    const pawnBoost = rouletteSpinCount < 3;
+    const rolled = spinRoulette(activeTypes, pawnBoost);
+    setRouletteSpinCount((n) => n + 1);
     setAllowedPieceTypes(rolled);
     setUsedRouletteSlots([]);
     setRouletteActionsLeft(ROULETTE_MAX_ACTIONS);
@@ -1192,9 +1230,7 @@ function App() {
   }
 
   // Apply an AI rotation as one action. Same semantics as handleRotate's
-  // roulette branch, but self-contained for the AI driver. The first
-  // rotation per game is gated behind a 2s toast in executeAiRouletteAction
-  // (Stage K) so the player can see what's about to happen.
+  // roulette branch, but self-contained for the AI driver.
   function executeAiRouletteRotation(
     bs: BoardState,
     rolled: PieceType[],
@@ -1255,27 +1291,6 @@ function App() {
         const rotatedPreview = toggleTopology(bs);
         const postRotPlayable = playableRouletteMoves(rotatedPreview, rolled, used);
         if (postRotPlayable.length > 0) {
-          // First time the AI rotates in this game: surface a brief toast so
-          // the player learns the mechanic, then run the rotation. After that
-          // every subsequent rotation fires instantly. Splitting one AI phase
-          // across two timer ticks is acceptable here because (a) it happens
-          // at most once per game, and (b) the toast→rotation order matches
-          // what a tutorial-style hint would show.
-          if (!firstRouletteRotationDone) {
-            setFirstRouletteRotationDone(true);
-            setRouletteRotationToast(true);
-            if (rouletteToastTimerRef.current) {
-              clearTimeout(rouletteToastTimerRef.current);
-            }
-            const t = setTimeout(() => {
-              setRouletteRotationToast(false);
-              rouletteToastTimerRef.current = null;
-              executeAiRouletteRotation(bs, rolled, used, actionsLeft);
-            }, 2000);
-            rouletteToastTimerRef.current = t;
-            aiTimerRef.current = t;
-            return;
-          }
           executeAiRouletteRotation(bs, rolled, used, actionsLeft);
           return;
         }
@@ -1554,7 +1569,17 @@ function App() {
     //  so the human can see the fresh roll.)
 
     if (allowedPieceTypes === null) {
-      // Phase 1 — spin after a short pause so the UI can settle.
+      // Phase 1 — spin. The very first spin per game is gated behind the
+      // confirm banner (Stage O); for subsequent spins we just wait for the
+      // standard short pause and fire.
+      if (!firstRouletteSpinDone) {
+        setPendingRouletteSpin(() => () => {
+          setFirstRouletteSpinDone(true);
+          setPendingRouletteSpin(null);
+          applyAiSpin(state);
+        });
+        return;
+      }
       const t = setTimeout(() => {
         applyAiSpin(state);
       }, 500);
@@ -2080,13 +2105,12 @@ function App() {
           const marker = MOVE_CLASS_MARKER[a.classification];
           if (marker) san += marker;
           if (a.classification === 'blunder') {
-            const pv = a.bestPvSan;
-            if (pv && pv.length > 0) {
-              const head = pv.slice(0, 4).join(' ');
-              const tail = pv.length > 4 ? ' \u2026' : '';
-              san += ` \u2190 Better: ${head}${tail}`;
-            } else if (a.bestMoveSan) {
-              san += ` \u2190 Better: ${a.bestMoveSan}`;
+            // Stage O: collapse the PV to a single move \u2014 the chain was hard
+            // to parse mid-list. Prefer bestMoveSan when present (it's the
+            // first PV move with explicit naming).
+            const first = a.bestMoveSan ?? a.bestPvSan?.[0];
+            if (first) {
+              san += ` \u2190 Better: ${first}`;
             }
             // Append the centipawn loss so the player can gauge how marginal
             // the suggestion is. cpl 50-100 = borderline, 300+ = real blunder.
@@ -2419,7 +2443,8 @@ function App() {
             disabled={
               allowedPieceTypes !== null ||
               isRouletteSpinning ||
-              currentPlayer !== 'human'
+              currentPlayer !== 'human' ||
+              pendingRouletteSpin !== null
             }
           >
             Spin Roulette
@@ -2427,10 +2452,19 @@ function App() {
         </div>
       )}
 
-      {rouletteRotationToast && (
-        <div className="roulette-rotation-toast" role="status">
-          <span className="roulette-rotation-toast-glyph">{'\u{1F4AB}'}</span>
-          <span>Roulette is rotating the board</span>
+      {pendingRouletteSpin && (
+        <div className="roulette-confirm-banner" role="status">
+          <span className="roulette-confirm-glyph">{'\u{1F3B0}'}</span>
+          <span className="roulette-confirm-text">
+            Spin the roulette wheel?
+          </span>
+          <button
+            type="button"
+            className="roulette-confirm-btn"
+            onClick={pendingRouletteSpin}
+          >
+            Spin
+          </button>
         </div>
       )}
 

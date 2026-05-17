@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   fetchLeaderboardPage,
+  type BoardType,
   type LeaderboardCursor,
   type LeaderboardEntry,
 } from '../firebase/leaderboard';
@@ -26,6 +27,7 @@ function outcomeIcon(outcome: GameOutcome): { glyph: string; label: string; tone
 }
 
 export function Leaderboard({ currentUid, onBack, onWatchGame }: LeaderboardProps) {
+  const [boardType, setBoardType] = useState<BoardType>('classic');
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [cursor, setCursor] = useState<LeaderboardCursor>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -37,7 +39,10 @@ export function Leaderboard({ currentUid, onBack, onWatchGame }: LeaderboardProp
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetchLeaderboardPage()
+    setEntries([]);
+    setCursor(null);
+    setHasMore(false);
+    fetchLeaderboardPage(undefined, boardType)
       .then((page) => {
         if (cancelled) return;
         setEntries(page.entries);
@@ -55,13 +60,13 @@ export function Leaderboard({ currentUid, onBack, onWatchGame }: LeaderboardProp
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [boardType]);
 
   async function loadMore() {
     if (!cursor || loadingMore) return;
     setLoadingMore(true);
     try {
-      const page = await fetchLeaderboardPage(cursor);
+      const page = await fetchLeaderboardPage(cursor, boardType);
       setEntries((prev) => [...prev, ...page.entries]);
       setCursor(page.cursor);
       setHasMore(page.hasMore);
@@ -83,6 +88,27 @@ export function Leaderboard({ currentUid, onBack, onWatchGame }: LeaderboardProp
           {'\u{1F3C6}'} Leaderboard
         </h2>
         <span className="leaderboard-spacer" />
+      </div>
+
+      <div className="leaderboard-tabs" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={boardType === 'classic'}
+          className={`leaderboard-tab${boardType === 'classic' ? ' is-active' : ''}`}
+          onClick={() => setBoardType('classic')}
+        >
+          Classic
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={boardType === 'roulette'}
+          className={`leaderboard-tab${boardType === 'roulette' ? ' is-active' : ''}`}
+          onClick={() => setBoardType('roulette')}
+        >
+          {'\u{1F3B0}'} Roulette
+        </button>
       </div>
 
       {loading ? (

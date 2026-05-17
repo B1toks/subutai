@@ -2482,14 +2482,14 @@
   justify-content: center;
 }
 
-/* --- Roulette rotation toast (first-rotation-per-game hint) ------------ */
+/* --- Roulette first-spin confirm banner (Stage O) ---------------------- */
 
-.roulette-rotation-toast {
+.roulette-confirm-banner {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   margin: 0 auto 10px;
-  padding: 8px 14px;
+  padding: 8px 8px 8px 14px;
   background: rgba(20, 20, 36, 0.92);
   border: 1px solid var(--accent-gold);
   border-radius: 999px;
@@ -2498,16 +2498,71 @@
   font-weight: 600;
   letter-spacing: 0.2px;
   align-self: center;
-  animation: roulette-toast-pop 0.25s ease-out;
+  animation: roulette-confirm-pop 0.25s ease-out;
 }
 
-.roulette-rotation-toast-glyph {
+.roulette-confirm-glyph {
   font-size: 16px;
 }
 
-@keyframes roulette-toast-pop {
+.roulette-confirm-text {
+  white-space: nowrap;
+}
+
+.roulette-confirm-btn {
+  padding: 4px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--accent-gold);
+  color: #1a1612;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  letter-spacing: 0.3px;
+}
+
+.roulette-confirm-btn:hover {
+  filter: brightness(1.1);
+}
+
+@keyframes roulette-confirm-pop {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+/* --- Leaderboard tabs (Stage O: Classic / Roulette switcher) ----------- */
+
+.leaderboard-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin: 4px auto 14px;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 999px;
+  width: fit-content;
+}
+
+.leaderboard-tab {
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  background: transparent;
+  color: var(--text-muted);
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.leaderboard-tab:hover {
+  color: var(--text);
+}
+
+.leaderboard-tab.is-active {
+  background: var(--accent-gold);
+  color: #1a1612;
 }
 
 /* --- Internal stats page (?stats=1) ------------------------------------ */
