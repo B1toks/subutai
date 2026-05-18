@@ -56,6 +56,10 @@ export interface MatchDoc {
   /** Per-player spin counter for the first-spin-manual gate
    *  (subsequent spins auto-fire after a short delay). */
   rouletteSpinsByPlayer?: Record<string, number>;
+  /** Total spin count across both players. Drives the pawn-bias window
+   *  (first 3 spins per match weight pawn slightly higher) so MP roulette
+   *  matches the solo ease-in behaviour. */
+  rouletteSpinCount?: number;
 }
 
 /** Crockford-ish alphabet: removed 0/O/I/1 to keep typed codes unambiguous. */
@@ -118,6 +122,7 @@ export async function createMatch(
     gameMode,
     currentRoulettePiece: null,
     rouletteSpinsByPlayer: {},
+    rouletteSpinCount: 0,
     createdAt: serverTimestamp(),
     lastActivity: serverTimestamp(),
   });

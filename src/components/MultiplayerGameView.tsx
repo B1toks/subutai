@@ -30,18 +30,24 @@ const ROULETTE_PIECE_BAG: PieceType[] = [
   'king',
 ];
 
-/** Pick a random piece type from the active player's remaining pieces. */
+/** Pick a random piece type from the active player's remaining pieces.
+ *  Mirrors the solo `spinRoulette` pawn-bias: for the first three spins
+ *  per match we add 'pawn' to the pool once, giving the player a softer
+ *  ramp before queens/rooks dominate. */
 function rollRoulettePiece(
   state: BoardState,
   side: 'white' | 'black',
+  pawnBoost: boolean,
 ): PieceType | null {
   const present = new Set<PieceType>();
   for (const sq of Object.keys(state.pieces) as Array<keyof typeof state.pieces>) {
     const p = state.pieces[sq];
     if (p && p.color === side) present.add(p.type);
   }
-  const pool = ROULETTE_PIECE_BAG.filter((t) => present.has(t));
-  if (pool.length === 0) return null;
+  const active = ROULETTE_PIECE_BAG.filter((t) => present.has(t));
+  if (active.length === 0) return null;
+  const pool: PieceType[] =
+    pawnBoost && active.includes('pawn') ? [...active, 'pawn'] : active;
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
@@ -305,7 +311,9 @@ export function useMultiplayerSync(
     setBusy(true);
     setError(null);
     try {
-      const rolled = rollRoulettePiece(liveBoard, myColor);
+      const totalSpins = liveMatch.rouletteSpinCount ?? 0;
+      const pawnBoost = totalSpins < 3;
+      const rolled = rollRoulettePiece(liveBoard, myColor, pawnBoost);
       if (!rolled) {
         setError('No pieces left to spin — game ending.');
         return;
@@ -323,6 +331,7 @@ export function useMultiplayerSync(
         tx.update(ref, {
           currentRoulettePiece: rolled,
           rouletteSpinsByPlayer: spins,
+          rouletteSpinCount: (data.rouletteSpinCount ?? 0) + 1,
           lastActivity: serverTimestamp(),
         });
       });
