@@ -1184,6 +1184,21 @@
   border-radius: 8px;
 }
 
+/* Q.D.5: in-check override banner — signals to the player that the
+   roulette slot restriction is lifted while they're in check. */
+.roulette-check-override-banner {
+  margin: 8px auto 0;
+  padding: 8px 14px;
+  max-width: var(--board-size);
+  background: linear-gradient(90deg, #5c1a1a 0%, #7a2820 100%);
+  border: 1px solid #b04a3a;
+  border-radius: 8px;
+  color: #ffd9c8;
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
 .roulette-display {
   display: flex;
   gap: 8px;

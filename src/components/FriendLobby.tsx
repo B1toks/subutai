@@ -188,7 +188,7 @@ export function FriendLobby({
                   {'\u{1F3B0}'} Roulette
                 </span>
                 <span className="friend-lobby-mode-sub">
-                  Random piece each turn. No rotation.
+                  Spin a 4-slot bag. 2 actions per turn: move or rotate.
                 </span>
               </label>
             </div>

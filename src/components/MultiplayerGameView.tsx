@@ -17,7 +17,7 @@ import {
   type Move,
   type PieceType,
 } from '../engine';
-import { applyMove } from '../engine/moves';
+import { applyMove, isInCheck } from '../engine/moves';
 import { applyRotationMove } from '../engine/auxetic';
 import { computeSAN } from '../recording/log';
 
@@ -276,6 +276,9 @@ export function useMultiplayerSync(
     if (busy) return;
     // Q.D.3: roulette MP — must have a bag spun, and the piece type must
     // match an unused slot.
+    // Q.D.4: when the side-to-move is in check, the slot match is skipped
+    // — the player MUST be able to escape with any piece. Action still
+    // gets spent; no slot consumed.
     let slotIndex = -1;
     if (isRouletteMode) {
       if (rouletteSlots === null) {
@@ -293,14 +296,17 @@ export function useMultiplayerSync(
       }
       const movingPiece = move.from ? liveBoard.pieces[move.from] : undefined;
       if (!movingPiece) return;
-      slotIndex = consumeSlotIndex(
-        rouletteSlots,
-        usedRouletteSlots,
-        movingPiece.type,
-      );
-      if (slotIndex < 0) {
-        setError(`No matching ${movingPiece.type} slot left.`);
-        return;
+      const inCheck = isInCheck(liveBoard);
+      if (!inCheck) {
+        slotIndex = consumeSlotIndex(
+          rouletteSlots,
+          usedRouletteSlots,
+          movingPiece.type,
+        );
+        if (slotIndex < 0) {
+          setError(`No matching ${movingPiece.type} slot left.`);
+          return;
+        }
       }
     }
     setBusy(true);
@@ -326,7 +332,12 @@ export function useMultiplayerSync(
         };
         if (data.gameMode === 'roulette') {
           const newActions = (data.rouletteActionsLeft ?? 0) - 1;
-          const newUsed = [...(data.usedRouletteSlots ?? []), slotIndex];
+          // Q.D.4: when in check, slotIndex stays -1 (no slot consumed).
+          // Action still ticks down so multi-action turns terminate cleanly.
+          const newUsed =
+            slotIndex >= 0
+              ? [...(data.usedRouletteSlots ?? []), slotIndex]
+              : (data.usedRouletteSlots ?? []);
           if (newActions <= 0) {
             // Turn over — hand the clock to opponent with a fresh bag-less
             // slate (they'll spin on their side).

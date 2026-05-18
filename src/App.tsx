@@ -5,7 +5,6 @@ import { allSquares } from './engine/board';
 import {
   applyMove,
   generateLegalMoves,
-  generatePseudoLegalMoves,
   isCheckmate,
   checkDrawConditions,
   isInCheck,
@@ -78,6 +77,31 @@ const ROULETTE_SLOT_COUNT = 4;
 const ROULETTE_MAX_ACTIONS = 2;
 const AI_ROULETTE_REVEAL_MS = 1200;
 const AI_ROULETTE_BETWEEN_ACTIONS_MS = 900;
+
+/**
+ * Q.D.5: SINGLE source of truth for "may this piece move under roulette
+ * constraints?". Every selection / move / highlight gate goes through this
+ * helper so the in-check override is guaranteed to apply uniformly.
+ *
+ *   - Classic mode → always true (no roulette restriction).
+ *   - Pre-spin (allowed === null) → false (board is locked).
+ *   - In check → true (player MUST be able to escape, slot restriction is lifted).
+ *   - Otherwise → piece type must match an unused slot in the bag.
+ *
+ * Callers are responsible for the side check (`piece.color === state.sideToMove`).
+ */
+function isPieceMovableInRoulette(
+  pieceType: PieceType,
+  state: BoardState,
+  gameMode: GameMode,
+  allowed: PieceType[] | null,
+  used: number[],
+): boolean {
+  if (gameMode !== 'roulette') return true;
+  if (allowed === null) return false;
+  if (isInCheck(state)) return true;
+  return allowed.some((t, i) => t === pieceType && !used.includes(i));
+}
 
 /** Only piece types currently alive for `color` — no "dead" slots. */
 function getActivePieceTypes(state: BoardState, color: Color): PieceType[] {
@@ -1220,19 +1244,18 @@ function App() {
     return false;
   }
 
-  // Moves playable given a spin + already-used slots: a piece type is still
-  // available if at least one slot of that type hasn't been consumed yet.
+  // Moves playable given a spin + already-used slots. Q.D.5: delegates to
+  // isPieceMovableInRoulette so the in-check override is automatic.
   function playableRouletteMoves(
     boardState: BoardState,
     allowed: PieceType[],
     used: number[],
   ): Move[] {
-    const remaining = allowed.filter((_, idx) => !used.includes(idx));
-    if (remaining.length === 0) return [];
-    return generatePseudoLegalMoves(boardState).filter((m) => {
+    return generateLegalMoves(boardState).filter((m) => {
       if (!m.from) return false;
       const p = boardState.pieces[m.from];
-      return Boolean(p && remaining.includes(p.type));
+      if (!p) return false;
+      return isPieceMovableInRoulette(p.type, boardState, 'roulette', allowed, used);
     });
   }
 
@@ -1276,12 +1299,9 @@ function App() {
       const pawnBoost = rouletteSpinCount < 3;
       const rolled = spinRoulette(activeTypes, pawnBoost);
       setRouletteSpinCount((n) => n + 1);
-      const pseudo = generatePseudoLegalMoves(state);
-      const playable = pseudo.filter((m) => {
-        if (!m.from) return false;
-        const p = state.pieces[m.from];
-        return p && rolled.includes(p.type);
-      });
+      // Q.D.5: route through the central gate so in-check override applies.
+      // Note: usedRouletteSlots is [] here — we just spun, nothing consumed.
+      const playable = playableRouletteMoves(state, rolled, []);
 
       // Auto-pass only if the player has NO way to act — no piece move AND
       // rotation is blocked (back-to-back guard). If they can rotate they
@@ -1310,10 +1330,11 @@ function App() {
   }
 
   function checkGameOver(nextState: BoardState, lastMoveWasRotation: boolean = false) {
-    if (gameMode === 'roulette') {
-      checkKingCaptured(nextState);
-      return;
-    }
+    // Q.D.4: roulette now respects real chess game-over rules. Engine
+    // filters illegal moves (incl. king captures), so checkmate is the
+    // proper terminal — checkKingCaptured remains only as a defensive
+    // backstop in case a future regression slips a king-take through.
+    if (checkKingCaptured(nextState)) return;
     if (isCheckmate(nextState, lastMoveWasRotation)) {
       setGameStatus('checkmate');
       return;
@@ -2122,17 +2143,33 @@ function App() {
       // unused can be selected.
       const isMpRoulette = mpSync.isRouletteMode;
       if (isMpRoulette && mpSync.rouletteSlots === null) return;
-      const canSelectType = (type: PieceType): boolean => {
-        if (!isMpRoulette || !mpSync.rouletteSlots) return true;
-        return mpSync.rouletteSlots.some(
-          (t, i) => t === type && !mpSync.usedRouletteSlots.includes(i),
+      // Q.D.5: single centralized gate. Logs a diagnostic when a
+      // selection would be blocked so we can pinpoint the reason live.
+      const canSelect = (type: PieceType): boolean => {
+        if (!isMpRoulette) return true;
+        const ok = isPieceMovableInRoulette(
+          type,
+          state,
+          'roulette',
+          mpSync.rouletteSlots,
+          mpSync.usedRouletteSlots,
         );
+        if (!ok) {
+          console.log('[rolt] selection blocked (mp)', {
+            type,
+            slots: mpSync.rouletteSlots,
+            used: mpSync.usedRouletteSlots,
+            inCheck: isInCheck(state),
+            sideToMove: state.sideToMove,
+          });
+        }
+        return ok;
       };
       if (!selected) {
         if (
           piece &&
           piece.color === mpSync.myColor &&
-          canSelectType(piece.type)
+          canSelect(piece.type)
         ) {
           setSelected(square);
         }
@@ -2150,7 +2187,7 @@ function App() {
         if (
           piece &&
           piece.color === mpSync.myColor &&
-          canSelectType(piece.type)
+          canSelect(piece.type)
         ) {
           setSelected(square);
         } else {
@@ -2176,26 +2213,49 @@ function App() {
     // In roulette mode, each sub-move needs an action point.
     if (gameMode === 'roulette' && rouletteActionsLeft <= 0) return;
 
-    // Active move pool differs per mode: roulette uses pseudo-legal (king
-    // safety disabled) filtered to *unused* slot types.
-    const remainingTypes: PieceType[] =
-      gameMode === 'roulette'
-        ? allowedPieceTypes!.filter((_, idx) => !usedRouletteSlots.includes(idx))
-        : [];
+    // Q.D.5: route every piece-type gate through isPieceMovableInRoulette
+    // so the in-check override applies uniformly to selection, legal-move
+    // computation, and re-selection on miss-click.
     const activeMoves: Move[] =
       gameMode === 'roulette'
-        ? generatePseudoLegalMoves(state).filter((m) => {
+        ? generateLegalMoves(state).filter((m) => {
             if (!m.from) return false;
             const p = state.pieces[m.from];
-            return Boolean(p && remainingTypes.includes(p.type));
+            if (!p) return false;
+            return isPieceMovableInRoulette(
+              p.type,
+              state,
+              gameMode,
+              allowedPieceTypes,
+              usedRouletteSlots,
+            );
           })
         : legalMoves;
+    const canSelectSolo = (type: PieceType): boolean => {
+      const ok = isPieceMovableInRoulette(
+        type,
+        state,
+        gameMode,
+        allowedPieceTypes,
+        usedRouletteSlots,
+      );
+      if (!ok && gameMode === 'roulette') {
+        console.log('[rolt] selection blocked (solo)', {
+          type,
+          allowed: allowedPieceTypes,
+          used: usedRouletteSlots,
+          inCheck: isInCheck(state),
+          sideToMove: state.sideToMove,
+        });
+      }
+      return ok;
+    };
 
     if (!selected) {
       if (gameMode === 'roulette') {
         const p = state.pieces[square as SquareId];
         if (!p || p.color !== state.sideToMove) return;
-        if (!remainingTypes.includes(p.type)) return;
+        if (!canSelectSolo(p.type)) return;
       }
       setSelected(square);
       return;
@@ -2219,7 +2279,7 @@ function App() {
       if (gameMode === 'roulette') {
         const p = state.pieces[square as SquareId];
         if (!p || p.color !== state.sideToMove) return;
-        if (!remainingTypes.includes(p.type)) return;
+        if (!canSelectSolo(p.type)) return;
       }
       setSelected(square);
       return;
@@ -2868,7 +2928,7 @@ function App() {
             type="button"
             className={`mode-btn${gameMode === 'roulette' ? ' mode-btn-active' : ''}`}
             disabled={modeToggleLocked}
-            title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Kill the king — spin the roulette each turn'}
+            title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Spin a 4-slot bag · 2 actions/turn (move or rotate)'}
             onClick={() => {
               if (gameMode === 'roulette') return;
               setGameMode('roulette');
@@ -2938,6 +2998,18 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* Q.D.5: surface the in-check override so the player knows the slot
+        restriction is lifted. Only show on MY clock — opponents' checks
+        aren't actionable from this side of the screen. */}
+      {gameMode === 'roulette' &&
+        gameStatus === 'active' &&
+        (isMultiplayer ? !!mpSync?.isMyTurn : currentPlayer === 'human') &&
+        isInCheck(state) && (
+          <div className="roulette-check-override-banner" role="status">
+            {'⚠'} You're in check — roulette restriction lifted, move any piece to escape.
+          </div>
+        )}
 
       {gameMode === 'roulette' && gameStatus === 'active' && (
         <div className="roulette-panel">
@@ -3724,6 +3796,9 @@ function App() {
               <li><em>Threat map</em> (warning button): tints squares the opponent attacks. Hover a threatened square to highlight the threatening pieces.</li>
               <li>The starting position is a random Chess960 arrangement.</li>
               <li>Standard chess rules apply: you cannot move into check, checkmate ends the game.</li>
+              <li><strong>Roulette mode:</strong> each turn you spin a 4-slot bag of random piece types and get
+                <strong> 2 actions</strong>. Each action is either a move (using one of the slot's piece types) or a Rotate.
+                If you're in check, you may use <strong>any</strong> piece to escape.</li>
             </ul>
             <p>
               <a href="https://en.wikipedia.org/wiki/Fischer_random_chess" target="_blank" rel="noopener noreferrer">
