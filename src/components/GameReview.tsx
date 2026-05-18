@@ -29,6 +29,9 @@ interface Props {
   /** Optional metadata for shared games / PvP review. Plain solo flow
    *  omits this and falls back to the existing "Game Review" title. */
   readonly meta?: GameReviewMeta;
+  /** /games/{id} reference. When present, the header renders a Share
+   *  button that copies a `?game=<id>` URL. */
+  readonly gameId?: string | null;
 }
 
 const CLASS_MARKER: Record<MoveClass, string> = {
@@ -114,38 +117,38 @@ const PIECE_GLYPH: Record<string, string> = {
   king: '♚',
 };
 
-const REVIEW_BOARD_SIZE = 320;
-
 /** Read-only board snapshot for the Review screen. Reuses the same
  *  .board / .tile / .piece classes as App.tsx and routes tile positions
  *  through tilePixelCenter, so topology B (auxetic rotation) renders the
- *  same way it did during live play. Stage T3. */
+ *  same way it did during live play. Stage T3. T6: responsive size. */
 function ReviewBoard({
   state,
   lastFrom,
   lastTo,
+  boardSize,
 }: {
   state: BoardState;
   lastFrom: SquareId | null;
   lastTo: SquareId | null;
+  boardSize: number;
 }) {
   const layout = useMemo(
-    () => computeBoardLayout(state.topologyState, REVIEW_BOARD_SIZE),
-    [state.topologyState],
+    () => computeBoardLayout(state.topologyState, boardSize),
+    [state.topologyState, boardSize],
   );
-  const tileBase = REVIEW_BOARD_SIZE / 8;
+  const tileBase = boardSize / 8;
   const scale = layout.tileSize / tileBase;
   return (
     <div
       className="board"
       style={
         {
-          width: REVIEW_BOARD_SIZE,
-          height: REVIEW_BOARD_SIZE,
+          width: boardSize,
+          height: boardSize,
           // T4: .piece font-size is calc(var(--board-size) / 9). Without
           // an ancestor that defines the var, glyphs collapse to inherited
           // body-text size and the pieces look like tiny dark dots.
-          '--board-size': `${REVIEW_BOARD_SIZE}px`,
+          '--board-size': `${boardSize}px`,
         } as React.CSSProperties
       }
     >
@@ -195,7 +198,17 @@ function ReviewBoard({
   );
 }
 
-export function GameReview({ log, onBack, meta }: Props) {
+export function GameReview({ log, onBack, meta, gameId }: Props) {
+  const [shareCopied, setShareCopied] = useState(false);
+  function handleShare() {
+    if (!gameId) return;
+    const url = `${window.location.origin}${window.location.pathname}?game=${gameId}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2500);
+    });
+  }
+
   const [result, setResult] = useState<GameReviewResult | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [progress, setProgress] = useState<{ done: number; total: number }>({
@@ -206,6 +219,19 @@ export function GameReview({ log, onBack, meta }: Props) {
   // sees the final position on entry (matches the AI-game "Review" CTA).
   const [reviewIdx, setReviewIdx] = useState<number>(log.moves.length);
   const moveListRef = useRef<HTMLOListElement | null>(null);
+  // T6: responsive review board. Caps at 560px so the side panel keeps
+  // breathing room on wide screens; on mobile the layout stacks and
+  // the board uses up to (viewport - 32px).
+  const [boardSize, setBoardSize] = useState(() =>
+    Math.min(window.innerWidth - 32, 560),
+  );
+  useEffect(() => {
+    function onResize() {
+      setBoardSize(Math.min(window.innerWidth - 32, 560));
+    }
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const qualityBonus = useMemo(
     () => (result ? humanQualityBonus(log, result.moves) : 0),
@@ -298,6 +324,18 @@ export function GameReview({ log, onBack, meta }: Props) {
           ← Back
         </button>
         <h2>{title}</h2>
+        {gameId ? (
+          <button
+            type="button"
+            className="game-review-share"
+            onClick={handleShare}
+            title="Copy share link"
+          >
+            {shareCopied ? '✓ Copied' : '🔗 Share'}
+          </button>
+        ) : (
+          <span className="game-review-header-spacer" />
+        )}
       </header>
 
       {meta?.outcome && (
@@ -318,6 +356,7 @@ export function GameReview({ log, onBack, meta }: Props) {
             state={boardSnapshot}
             lastFrom={lastMoveForIdx.from}
             lastTo={lastMoveForIdx.to}
+            boardSize={boardSize}
           />
           <div className="game-review-controls">
             <button

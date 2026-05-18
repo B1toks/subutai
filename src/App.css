@@ -1287,7 +1287,7 @@
 /* ─── Game Review ────────────────────────────────────────────────────── */
 
 .game-review {
-  width: min(720px, 100% - 32px);
+  width: min(1100px, 100% - 32px);
   margin: 0 auto;
   padding: 24px 16px;
   display: flex;
@@ -1297,7 +1297,8 @@
 }
 
 .game-review-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 12px;
 }
@@ -1305,6 +1306,7 @@
 .game-review-header h2 {
   margin: 0;
   font-size: 24px;
+  text-align: center;
 }
 
 .game-review-back {
@@ -1319,6 +1321,31 @@
 
 .game-review-back:hover {
   background: #3a3a55;
+}
+
+/* T6.1: share button matches the GameSummary share styling so the action
+   reads the same anywhere it appears. */
+.game-review-share {
+  background: transparent;
+  color: var(--accent-gold);
+  border: 1px solid var(--accent-gold);
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+.game-review-share:hover {
+  background: rgba(255, 200, 80, 0.08);
+}
+
+.game-review-header-spacer {
+  /* Matches the share-button width so the centered title stays put when
+     the button is absent (e.g. MP review pre-/games-write). */
+  width: 88px;
 }
 
 .game-review-loading {
@@ -1471,12 +1498,14 @@
 
 .game-review-layout {
   display: grid;
-  grid-template-columns: minmax(280px, 360px) 1fr;
-  gap: 18px;
+  /* T6: give the board the lion's share, cap the side panel so the move
+     list doesn't stretch across the screen on wide viewports. */
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+  gap: 24px;
   align-items: start;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 880px) {
   .game-review-layout {
     grid-template-columns: 1fr;
   }

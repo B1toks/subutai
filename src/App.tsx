@@ -2600,6 +2600,7 @@ function App() {
         <GameReview
           log={activeReviewLog ?? log}
           meta={activeReviewMeta ?? undefined}
+          gameId={sharedGameId ?? lastGameId ?? null}
           onBack={() => {
             setView('game');
             // Drop the snapshot so the next plain Review opens the live log.
