@@ -30,6 +30,9 @@ interface SearchContext {
   /** killers[ply] = [primary, secondary] — quiet moves that produced a
    *  beta-cutoff at this ply. */
   killers: (Move | null)[][];
+  /** Q.D.8: when true, the engine treats moves leaving the side-to-move's
+   *  king in check as legal — roulette is capture-the-king, not chess. */
+  allowSelfCheck: boolean;
 }
 
 // History heuristic — persists across moves so quiet moves that historically
@@ -171,7 +174,7 @@ function negamax(
     return { score: quiescence(state, alpha, beta, 4, ctx), bestMove: null, pv: [] };
   }
 
-  const moves = generateLegalMoves(state);
+  const moves = generateLegalMoves(state, { allowSelfCheck: ctx.allowSelfCheck });
   const candidates = [...moves];
 
   const rotationBlocked = state.lastMoveWasRotation || lastMoveWasRotation;
@@ -267,7 +270,7 @@ function quiescence(
   if (standPat > alpha) alpha = standPat;
   if (depthLeft <= 0) return alpha;
 
-  const allMoves = generateLegalMoves(state);
+  const allMoves = generateLegalMoves(state, { allowSelfCheck: ctx.allowSelfCheck });
   if (allMoves.length === 0) {
     return isInCheck(state) ? -(MATE_SCORE) : 0;
   }
@@ -331,11 +334,13 @@ export function iterativeDeepen(
   state: BoardState,
   timeBudgetMs: number,
   lastMoveWasRotation: boolean = false,
+  allowSelfCheck: boolean = false,
 ): Move | null {
   return searchPosition(state, {
     budgetMs: timeBudgetMs,
     maxDepth: 6,
     lastMoveWasRotation,
+    allowSelfCheck,
   }).bestMove;
 }
 
@@ -343,6 +348,10 @@ export interface SearchOptions {
   readonly budgetMs: number;
   readonly maxDepth: number;
   readonly lastMoveWasRotation?: boolean;
+  /** Q.D.8: roulette mode — let the engine "play into self-check" since
+   *  the win condition is king capture, not mate. Defaults to false
+   *  (strict chess rules) so classic play is unaffected. */
+  readonly allowSelfCheck?: boolean;
 }
 
 export interface SearchResult {
@@ -380,6 +389,7 @@ export function searchPosition(
       nodes: 0,
       cancelled: false,
       killers,
+      allowSelfCheck: options.allowSelfCheck ?? false,
     };
     const result = negamax(
       state,

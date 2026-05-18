@@ -45,6 +45,10 @@ export async function analyzeGame(
 ): Promise<GameReviewResult> {
   const budgetMs = opts?.budgetMs ?? 2000;
   const maxDepth = opts?.maxDepth ?? 8;
+  // Q.D.8: replay-side analysis must match the rules the game was played
+  // under. Roulette games have no check enforcement; passing the option
+  // keeps the worker's internal search consistent.
+  const allowSelfCheck = log.gameMode === 'roulette';
 
   // Pre-compute all positions synchronously — cheap, no search.
   const states: BoardState[] = [log.initialState];
@@ -74,7 +78,7 @@ export async function analyzeGame(
         searchScoreFromWhite: 0,
       });
     }
-    return classifyAsync(states[i], move, states[i + 1], { budgetMs, maxDepth }).then(
+    return classifyAsync(states[i], move, states[i + 1], { budgetMs, maxDepth, allowSelfCheck }).then(
       (a) => {
         done++;
         opts?.onProgress?.(done, total);

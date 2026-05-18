@@ -53,6 +53,10 @@ const DEFAULT_MAX_DEPTH = 5;
 export interface ClassifyOptions {
   budgetMs?: number;
   maxDepth?: number;
+  /** Q.D.8: roulette mode — drop the standard chess check filter so the
+   *  classifier's internal search matches the rules the players actually
+   *  play under. Default false preserves classic-mode behaviour. */
+  allowSelfCheck?: boolean;
 }
 
 const MAJOR_PIECE_THRESHOLD = 500; // rook+
@@ -228,15 +232,19 @@ export function classifyMove(
 ): MoveAnalysis {
   const budgetMs = opts.budgetMs ?? DEFAULT_BUDGET_MS;
   const maxDepth = opts.maxDepth ?? DEFAULT_MAX_DEPTH;
+  const allowSelfCheck = opts.allowSelfCheck ?? false;
   const mover = moverColor(stateBefore);
   const movedTo: SquareId | null = move.to ?? null;
 
   // 1. Checkmate is terminal — short-circuit before search work.
   // stateAfter.sideToMove is the opponent; if they have no legal reply and
-  // are in check, mover delivered checkmate.
+  // are in check, mover delivered checkmate. Q.D.8: roulette doesn't have
+  // a checkmate concept (the king is just captured outright), so skip the
+  // mate short-circuit when self-check is allowed.
   if (
-    isCheckmate(stateAfter, move.kind === 'topologyToggle') ||
-    generateLegalMoves(stateAfter).length === 0
+    !allowSelfCheck &&
+    (isCheckmate(stateAfter, move.kind === 'topologyToggle') ||
+      generateLegalMoves(stateAfter).length === 0)
   ) {
     if (isCheckmate(stateAfter, move.kind === 'topologyToggle')) {
       // Mover delivered mate. Score is +∞ for the mover; from White's POV
@@ -254,8 +262,8 @@ export function classifyMove(
 
   // 2. Search runs first — both the discovered-attack and CPL paths need
   // searchScoreFromWhite to populate the eval bar consistently.
-  const bestSearch = searchPosition(stateBefore, { budgetMs, maxDepth });
-  const afterSearch = searchPosition(stateAfter, { budgetMs, maxDepth });
+  const bestSearch = searchPosition(stateBefore, { budgetMs, maxDepth, allowSelfCheck });
+  const afterSearch = searchPosition(stateAfter, { budgetMs, maxDepth, allowSelfCheck });
   // afterSearch.score is from stateAfter.sideToMove's perspective (opponent).
   // Flip to mover's perspective to compare apples-to-apples with bestSearch.score.
   const actualEvalForMover = -afterSearch.score;

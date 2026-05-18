@@ -1184,54 +1184,6 @@
   border-radius: 8px;
 }
 
-/* Q.D.5: in-check override banner — signals to the player that the
-   roulette slot restriction is lifted while they're in check. */
-.roulette-check-override-banner {
-  margin: 8px auto 0;
-  padding: 8px 14px;
-  max-width: var(--board-size);
-  background: linear-gradient(90deg, #5c1a1a 0%, #7a2820 100%);
-  border: 1px solid #b04a3a;
-  border-radius: 8px;
-  color: #ffd9c8;
-  font-weight: 600;
-  font-size: 0.9rem;
-  text-align: center;
-}
-
-/* Q.D.7: pulse a green border around each piece that can ACTUALLY escape
-   the current check — the override lets any piece be selected, but only a
-   subset have a legal escape move. The pulse points the player at them. */
-@keyframes check-escape-pulse {
-  0%, 100% { box-shadow: inset 0 0 0 3px rgba(80, 220, 100, 0.55); }
-  50%      { box-shadow: inset 0 0 0 5px rgba(80, 220, 100, 1.0); }
-}
-.tile.check-escape-available {
-  animation: check-escape-pulse 1.2s ease-in-out infinite;
-}
-
-/* Q.D.7: ephemeral toast shown when the player clicks a non-viable piece
-   while in check. Fades in, sits for ~2.5s, disappears. */
-@keyframes check-blocked-hint-in {
-  from { opacity: 0; transform: translate(-50%, 8px); }
-  to   { opacity: 1; transform: translate(-50%, 0); }
-}
-.check-blocked-hint {
-  position: fixed;
-  bottom: 80px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(220, 40, 40, 0.95);
-  color: #fff;
-  padding: 12px 20px;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 0.95rem;
-  z-index: 100;
-  animation: check-blocked-hint-in 0.25s ease-out;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  pointer-events: none;
-}
 
 .roulette-display {
   display: flex;

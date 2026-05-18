@@ -30,7 +30,19 @@ function formatDuration(ms: number): string {
   return min === 0 ? `${sec}s` : `${min}m ${sec}s`;
 }
 
-function headline(outcome: GameOutcome, moveCount: number): string {
+function headline(
+  outcome: GameOutcome,
+  moveCount: number,
+  isRoulette: boolean,
+): string {
+  // Q.D.8: roulette is capture-the-king — there's no checkmate, so a
+  // win/loss always means a king was actually taken off the board.
+  if (isRoulette && outcome === 'human-win') {
+    return `King captured — you won in ${moveCount} moves`;
+  }
+  if (isRoulette && outcome === 'ai-win') {
+    return `King captured — you lost in ${moveCount} moves`;
+  }
   switch (outcome) {
     case 'human-win':
       return `You won in ${moveCount} moves`;
@@ -70,7 +82,7 @@ export function GameSummary({
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-dialog summary-dialog" onClick={(e) => e.stopPropagation()}>
         <h2 className="modal-title">Game over</h2>
-        <p className="modal-subtitle">{headline(outcome, points.moveCount)}</p>
+        <p className="modal-subtitle">{headline(outcome, points.moveCount, isRoulette)}</p>
         {typeof durationMs === 'number' && (
           <p className="modal-subtitle summary-duration">
             Game time: {formatDuration(durationMs)}

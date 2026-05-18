@@ -92,14 +92,17 @@ const AI_ROULETTE_BETWEEN_ACTIONS_MS = 900;
  */
 function isPieceMovableInRoulette(
   pieceType: PieceType,
-  state: BoardState,
+  _state: BoardState,
   gameMode: GameMode,
   allowed: PieceType[] | null,
   used: number[],
 ): boolean {
   if (gameMode !== 'roulette') return true;
   if (allowed === null) return false;
-  if (isInCheck(state)) return true;
+  // Q.D.8: no in-check override — roulette is capture-the-king, so being
+  // in check is just "the king is attacked"; player still plays under
+  // the normal slot restriction. If they ignore the threat, opponent
+  // can capture the king on the next move and win.
   return allowed.some((t, i) => t === pieceType && !used.includes(i));
 }
 
@@ -310,10 +313,6 @@ function App() {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [milestoneShown, setMilestoneShown] = useState(false);
   const [showMilestoneModal, setShowMilestoneModal] = useState(false);
-  // Q.D.7: ephemeral toast surfaced when the player clicks a piece that
-  // cannot escape the current check. Auto-clears after a short timeout.
-  const [blockedHint, setBlockedHint] = useState<string | null>(null);
-  const blockedHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const completedLogIdRef = useRef<string | null>(null);
   const [view, setView] = useState<
     'game' | 'review' | 'leaderboard' | 'friend-lobby'
@@ -406,6 +405,13 @@ function App() {
       ? 'roulette'
       : 'classic'
     : gameModeLocal;
+  // Q.D.8: roulette is now a capture-the-king variant — no check enforcement.
+  // Every legal-move query routes through this wrapper so the option flips
+  // automatically based on mode. Classic mode always returns the strict
+  // check-respecting set; roulette returns pseudo-legal verbatim.
+  function getLegalMoves(s: BoardState): Move[] {
+    return generateLegalMoves(s, { allowSelfCheck: gameMode === 'roulette' });
+  }
   const [allowedPieceTypesLocal, setAllowedPieceTypes] = useState<PieceType[] | null>(null);
   const [isRouletteSpinning, setIsRouletteSpinning] = useState<boolean>(false);
   const [rouletteActionsLeftLocal, setRouletteActionsLeft] = useState<number>(0);
@@ -451,7 +457,7 @@ function App() {
     ? deriveMpLog(mpSync!.matchState)
     : logLocal;
   const legalMoves: Move[] = isMultiplayer
-    ? generateLegalMoves(state)
+    ? getLegalMoves(state)
     : legalMovesLocal;
   const lastMove: { from?: SquareId; to?: SquareId } | null = isMultiplayer
     ? deriveMpLastMove(mpSync!.matchState)
@@ -625,10 +631,19 @@ function App() {
     if (mpWroteOutcomeRef.current === match.code) return;
     const board = mpSync.boardState;
     let outcome: MatchOutcome | null = null;
-    if (isCheckmate(board)) {
-      outcome = board.sideToMove === 'white' ? 'black-win' : 'white-win';
-    } else if (checkDrawConditions(board) !== null) {
-      outcome = 'draw';
+    if (mpSync.isRouletteMode) {
+      // Q.D.8: roulette is capture-the-king. Whichever king is missing,
+      // the OTHER side wins. No checkmate / stalemate / draw rules apply
+      // here — the variant deliberately collapses every termination path
+      // to "king on the board → game continues; king gone → game over".
+      if (!findKing(board, 'white')) outcome = 'black-win';
+      else if (!findKing(board, 'black')) outcome = 'white-win';
+    } else {
+      if (isCheckmate(board)) {
+        outcome = board.sideToMove === 'white' ? 'black-win' : 'white-win';
+      } else if (checkDrawConditions(board) !== null) {
+        outcome = 'draw';
+      }
     }
     if (!outcome) return;
     mpWroteOutcomeRef.current = match.code;
@@ -891,7 +906,7 @@ function App() {
       setState(projected);
       setInitialState(replayLog.initialState);
       setSeed(replayLog.randomSeed);
-      setLegalMoves(generateLegalMoves(projected));
+      setLegalMoves(getLegalMoves(projected));
       setLog({ ...replayLog, moves: [] });
       setSelected(null);
       setGameStatus('active');
@@ -922,7 +937,7 @@ function App() {
       const projected = replayBoardAt(cur.log, clamped);
       setState(projected);
       setLog({ ...cur.log, moves: cur.log.moves.slice(0, clamped) });
-      setLegalMoves(generateLegalMoves(projected));
+      setLegalMoves(getLegalMoves(projected));
       setSelected(null);
       const lastEntry = clamped > 0 ? cur.log.moves[clamped - 1] : null;
       if (lastEntry && lastEntry.move.from && lastEntry.move.to) {
@@ -1183,6 +1198,7 @@ function App() {
           const a = await classifyAsync(states[i], entry.move, states[i + 1], {
             budgetMs: 1000,
             maxDepth: 7,
+            allowSelfCheck: loadedLog.gameMode === 'roulette',
           });
           setLog((prev) =>
             prev.id === capturedId ? updateMoveAnalysisAt(prev, i, a) : prev,
@@ -1211,7 +1227,7 @@ function App() {
     setState(initial);
     setInitialState(initial);
     setSelected(null);
-    setLegalMoves(generateLegalMoves(initial));
+    setLegalMoves(getLegalMoves(initial));
     setLog(createGameLog(`game-${Date.now()}`, initial, Date.now()));
     setGameStatus('active');
     setPreviewTopology(null);
@@ -1255,7 +1271,7 @@ function App() {
     allowed: PieceType[],
     used: number[],
   ): Move[] {
-    return generateLegalMoves(boardState).filter((m) => {
+    return getLegalMoves(boardState).filter((m) => {
       if (!m.from) return false;
       const p = boardState.pieces[m.from];
       if (!p) return false;
@@ -1318,7 +1334,7 @@ function App() {
         setSelected(null);
         setIsRouletteSpinning(false);
         setLastMove(null);
-        setLegalMoves(generateLegalMoves(next));
+        setLegalMoves(getLegalMoves(next));
         setRouletteActionsLeft(0);
         setUsedRouletteSlots([]);
       } else {
@@ -1334,11 +1350,15 @@ function App() {
   }
 
   function checkGameOver(nextState: BoardState, lastMoveWasRotation: boolean = false) {
-    // Q.D.4: roulette now respects real chess game-over rules. Engine
-    // filters illegal moves (incl. king captures), so checkmate is the
-    // proper terminal — checkKingCaptured remains only as a defensive
-    // backstop in case a future regression slips a king-take through.
-    if (checkKingCaptured(nextState)) return;
+    // Q.D.8: roulette is capture-the-king — the ONLY terminal is a missing
+    // king. No checkmate, no stalemate, no draws (the variant deliberately
+    // skips them so play continues until a king is actually taken).
+    if (gameMode === 'roulette') {
+      checkKingCaptured(nextState);
+      return;
+    }
+    // Classic mode: standard chess termination — checkmate, stalemate,
+    // draw by repetition / 50-move / insufficient material.
     if (isCheckmate(nextState, lastMoveWasRotation)) {
       setGameStatus('checkmate');
       return;
@@ -1364,7 +1384,7 @@ function App() {
     setState(initial);
     setInitialState(initial);
     setSelected(null);
-    setLegalMoves(generateLegalMoves(initial));
+    setLegalMoves(getLegalMoves(initial));
     setLog(createGameLog(`game-${newSeed}`, initial, newSeed));
     savedForLogIdRef.current = null;
     setGameStatus('active');
@@ -1455,7 +1475,7 @@ function App() {
 
       const next = applyRotationMove(state);
       setState(next);
-      setLegalMoves(generateLegalMoves(next));
+      setLegalMoves(getLegalMoves(next));
       setSelected(null);
       setPreviewTopology(null);
 
@@ -1489,7 +1509,7 @@ function App() {
       setIsRouletteSpinning(false);
       setRouletteActionsLeft(0);
       setUsedRouletteSlots([]);
-      setLegalMoves(generateLegalMoves(rotated));
+      setLegalMoves(getLegalMoves(rotated));
       checkGameOver(rotated, true);
       return;
     }
@@ -1511,7 +1531,7 @@ function App() {
       setIsRouletteSpinning(false);
       setRouletteActionsLeft(0);
       setUsedRouletteSlots([]);
-      setLegalMoves(generateLegalMoves(rotated));
+      setLegalMoves(getLegalMoves(rotated));
       checkGameOver(rotated, true);
       return;
     }
@@ -1654,7 +1674,7 @@ function App() {
       setAllowedPieceTypes(null);
       setUsedRouletteSlots([]);
       setRouletteActionsLeft(0);
-      setLegalMoves(generateLegalMoves(rotated));
+      setLegalMoves(getLegalMoves(rotated));
       return;
     }
 
@@ -1667,7 +1687,7 @@ function App() {
       setAllowedPieceTypes(null);
       setUsedRouletteSlots([]);
       setRouletteActionsLeft(0);
-      setLegalMoves(generateLegalMoves(rotated));
+      setLegalMoves(getLegalMoves(rotated));
       return;
     }
 
@@ -1705,7 +1725,7 @@ function App() {
       setAllowedPieceTypes(null);
       setUsedRouletteSlots([]);
       setRouletteActionsLeft(0);
-      setLegalMoves(generateLegalMoves(passed));
+      setLegalMoves(getLegalMoves(passed));
       setLastMove(null);
       return;
     }
@@ -1756,7 +1776,7 @@ function App() {
       setAllowedPieceTypes(null);
       setUsedRouletteSlots([]);
       setRouletteActionsLeft(0);
-      setLegalMoves(generateLegalMoves(afterMove));
+      setLegalMoves(getLegalMoves(afterMove));
       return;
     }
 
@@ -1777,6 +1797,7 @@ function App() {
       aiTimerRef.current = setTimeout(async () => {
         const move = await SubutaiAgent.chooseMove(boardState, moves, {
           lastMoveWasRotation,
+          allowSelfCheck: gameMode === 'roulette',
         });
         if (!move) return;
         if (move.kind === 'topologyToggle' && boardState.lastMoveWasRotation) {
@@ -1790,7 +1811,7 @@ function App() {
             : applyMove(boardState, move);
 
         setState(next);
-        const nextMoves = generateLegalMoves(next);
+        const nextMoves = getLegalMoves(next);
         setLegalMoves(nextMoves);
         setSelected(null);
         const aiSan = computeSAN(boardState, move);
@@ -1817,6 +1838,7 @@ function App() {
           const aiAnalysis = await classifyAsync(boardState, move, next, {
             budgetMs: 1000,
             maxDepth: 7,
+            allowSelfCheck: gameMode === 'roulette',
           });
           setLog((prev) => updateMoveAnalysisAt(prev, moveIdx, aiAnalysis));
           applyClassifyVisuals(moveIdx, aiAnalysis, move.to);
@@ -1836,6 +1858,7 @@ function App() {
       autoTimerRef.current = setTimeout(async () => {
         const move = await SubutaiAgent.chooseMove(boardState, moves, {
           lastMoveWasRotation: wasRotation,
+          allowSelfCheck: gameMode === 'roulette',
         });
         if (!move) return;
         if (move.kind === 'topologyToggle' && boardState.lastMoveWasRotation) return;
@@ -1847,7 +1870,7 @@ function App() {
 
         const san = computeSAN(boardState, move);
         setState(next);
-        setLegalMoves(generateLegalMoves(next));
+        setLegalMoves(getLegalMoves(next));
         setSelected(null);
         setLog((prev) => appendMove(prev, move, san, boardState.topologyState));
         setLastMove(
@@ -2058,30 +2081,6 @@ function App() {
     return targets;
   }, [legalMoves, selected]);
 
-  // Q.D.7: in roulette + in-check the slot restriction is lifted, but only
-  // a small subset of pieces can ACTUALLY escape. Surface that set so the
-  // board can pulse a green border around each viable piece.
-  const movablePiecesInCheck = useMemo(() => {
-    if (gameMode !== 'roulette') return new Set<SquareId>();
-    if (!isInCheck(state)) return new Set<SquareId>();
-    const movable = new Set<SquareId>();
-    for (const move of legalMoves) {
-      if (move.from) movable.add(move.from);
-    }
-    return movable;
-  }, [gameMode, state, legalMoves]);
-
-  function maybeFlashCheckHint(square: SquareId) {
-    if (gameMode !== 'roulette') return;
-    if (!isInCheck(state)) return;
-    if (movablePiecesInCheck.has(square)) return;
-    if (blockedHintTimerRef.current) clearTimeout(blockedHintTimerRef.current);
-    setBlockedHint("This piece can't escape check");
-    blockedHintTimerRef.current = setTimeout(() => {
-      setBlockedHint(null);
-      blockedHintTimerRef.current = null;
-    }, 2500);
-  }
 
   // Stage T1: en-passant target squares get a distinct pulse so the player
   // notices the rare opportunity. Disjoint from the regular green dots.
@@ -2187,7 +2186,6 @@ function App() {
           piece.color === mpSync.myColor &&
           canSelect(piece.type)
         ) {
-          maybeFlashCheckHint(square as SquareId);
           setSelected(square);
         }
         return;
@@ -2206,7 +2204,6 @@ function App() {
           piece.color === mpSync.myColor &&
           canSelect(piece.type)
         ) {
-          maybeFlashCheckHint(square as SquareId);
           setSelected(square);
         } else {
           setSelected(null);
@@ -2236,7 +2233,7 @@ function App() {
     // computation, and re-selection on miss-click.
     const activeMoves: Move[] =
       gameMode === 'roulette'
-        ? generateLegalMoves(state).filter((m) => {
+        ? getLegalMoves(state).filter((m) => {
             if (!m.from) return false;
             const p = state.pieces[m.from];
             if (!p) return false;
@@ -2264,7 +2261,6 @@ function App() {
         if (!p || p.color !== state.sideToMove) return;
         if (!canSelectSolo(p.type)) return;
       }
-      maybeFlashCheckHint(square as SquareId);
       setSelected(square);
       return;
     }
@@ -2289,7 +2285,6 @@ function App() {
         if (!p || p.color !== state.sideToMove) return;
         if (!canSelectSolo(p.type)) return;
       }
-      maybeFlashCheckHint(square as SquareId);
       setSelected(square);
       return;
     }
@@ -2322,7 +2317,11 @@ function App() {
     setSearchEvalFromWhite(null);
     setSearchMateInPlies(null);
     const moveIdx = log.moves.length;
-    classifyAsync(state, resolvedMove, afterMove, { budgetMs: 1000, maxDepth: 7 })
+    classifyAsync(state, resolvedMove, afterMove, {
+      budgetMs: 1000,
+      maxDepth: 7,
+      allowSelfCheck: gameMode === 'roulette',
+    })
       .then((analysis) => {
         setLog((prev) => updateMoveAnalysisAt(prev, moveIdx, analysis));
         applyClassifyVisuals(moveIdx, analysis, resolvedMove.to);
@@ -2330,7 +2329,7 @@ function App() {
 
     if (gameMode !== 'roulette') {
       setState(afterMove);
-      setLegalMoves(generateLegalMoves(afterMove));
+      setLegalMoves(getLegalMoves(afterMove));
       setSelected(null);
       checkGameOver(afterMove);
       return;
@@ -2370,7 +2369,7 @@ function App() {
       setUsedRouletteSlots([]);
       setRouletteActionsLeft(0);
       setAllowedPieceTypes(null);
-      setLegalMoves(generateLegalMoves(afterMove));
+      setLegalMoves(getLegalMoves(afterMove));
       setSelected(null);
     }
     checkGameOver(afterMove);
@@ -2389,7 +2388,7 @@ function App() {
     const san = computeSAN(state, move);
     const next = applyMove(state, move);
     setState(next);
-    const nextMoves = generateLegalMoves(next);
+    const nextMoves = getLegalMoves(next);
     setLegalMoves(nextMoves);
     setSelected(null);
     setPendingPromotion(null);
@@ -2400,7 +2399,11 @@ function App() {
     setSearchEvalFromWhite(null);
     setSearchMateInPlies(null);
     const moveIdx = log.moves.length;
-    classifyAsync(state, move, next, { budgetMs: 1000, maxDepth: 7 }).then(
+    classifyAsync(state, move, next, {
+      budgetMs: 1000,
+      maxDepth: 7,
+      allowSelfCheck: gameMode === 'roulette',
+    }).then(
       (analysis) => {
         setLog((prev) => updateMoveAnalysisAt(prev, moveIdx, analysis));
         applyClassifyVisuals(moveIdx, analysis, move.to);
@@ -2493,7 +2496,7 @@ function App() {
     setState(current);
     setInitialState(initial);
     setSelected(null);
-    setLegalMoves(generateLegalMoves(current));
+    setLegalMoves(getLegalMoves(current));
     setLog(nextLog);
     setGameStatus('active');
     setPreviewTopology(null);
@@ -2538,7 +2541,7 @@ function App() {
           replayLog = appendMove(replayLog, mv, san, topoBefore);
         } else if (mv.kind === 'castle') {
           // Resolve castle from legal moves
-          const legal = generateLegalMoves(current);
+          const legal = getLegalMoves(current);
           const targetFile = token.castleSide === 'queen' ? 'c' : 'g';
           const castleMove = legal.find(
             (m) => m.kind === 'castle' && m.to && m.to[0] === targetFile,
@@ -2555,7 +2558,7 @@ function App() {
             throw new NotationParseError(`Illegal move: no piece on ${mv.from}.`);
           }
           // Match against legal moves to get correct kind (capture vs normal)
-          const legal = generateLegalMoves(current);
+          const legal = getLegalMoves(current);
           const matched = legal.find(
             (m) =>
               m.from === mv.from &&
@@ -2580,7 +2583,7 @@ function App() {
       setInitialState(initial);
       setState(current);
       setSelected(null);
-      setLegalMoves(generateLegalMoves(current));
+      setLegalMoves(getLegalMoves(current));
       setLog(replayLog);
       setGameStatus('active');
       setPreviewTopology(null);
@@ -3008,21 +3011,6 @@ function App() {
         </div>
       )}
 
-      {/* Q.D.5/Q.D.7: surface the in-check override so the player knows the
-        slot restriction is lifted, and tell them exactly how many legal
-        escape moves are available. Pieces that can escape pulse on the
-        board. Only shown on MY clock — opponents' checks aren't actionable
-        from this side of the screen. */}
-      {gameMode === 'roulette' &&
-        gameStatus === 'active' &&
-        (isMultiplayer ? !!mpSync?.isMyTurn : currentPlayer === 'human') &&
-        isInCheck(state) && (
-          <div className="roulette-check-override-banner" role="status">
-            {'⚠'} You're in check — {legalMoves.length} legal escape move
-            {legalMoves.length === 1 ? '' : 's'}. Look for the pulsing green pieces.
-          </div>
-        )}
-
       {gameMode === 'roulette' && gameStatus === 'active' && (
         <div className="roulette-panel">
           <div className="roulette-display">
@@ -3184,7 +3172,6 @@ function App() {
               recentPlyHighlights.to.get(sq) === 1);
           const isCheckedKing = checkSquares.king === sq;
           const isCheckingPiece = checkSquares.checkers.has(sq);
-          const isCheckEscapeAvailable = movablePiecesInCheck.has(sq as SquareId);
           const threatCount = threatenedSquares.get(sq) ?? 0;
           const isThreateningPiece = threateningPieceSquares.has(sq);
 
@@ -3219,7 +3206,6 @@ function App() {
                 olderHighlight ? 'last-older' : '',
                 isCheckedKing ? (gameStatus === 'checkmate' ? 'mated-king' : 'checked-king') : '',
                 isCheckingPiece ? (gameStatus === 'checkmate' ? 'mating-piece' : 'checking-piece') : '',
-                isCheckEscapeAvailable ? 'check-escape-available' : '',
                 threatCount > 0 ? 'threatened' : '',
                 isThreateningPiece ? 'threatening-piece' : '',
                 classifiedSquare?.square === sq
@@ -3809,10 +3795,11 @@ function App() {
               <li><em>Support map</em> (arrow button): shows which of your pieces are backed up by others (arrows from supporter to supported).</li>
               <li><em>Threat map</em> (warning button): tints squares the opponent attacks. Hover a threatened square to highlight the threatening pieces.</li>
               <li>The starting position is a random Chess960 arrangement.</li>
-              <li>Standard chess rules apply: you cannot move into check, checkmate ends the game.</li>
-              <li><strong>Roulette mode:</strong> each turn you spin a 4-slot bag of random piece types and get
-                <strong> 2 actions</strong>. Each action is either a move (using one of the slot's piece types) or a Rotate.
-                If you're in check, you may use <strong>any</strong> piece to escape.</li>
+              <li><strong>Classic mode:</strong> standard chess rules — you cannot move into check, checkmate ends the game.</li>
+              <li><strong>Roulette mode:</strong> capture-the-king variant. Each turn you spin a 4-slot bag of random
+                piece types and get <strong>2 actions</strong>. Each action is either a move (using one of the slot's
+                piece types) or a Rotate. There's no check rule — leaving your king attacked is legal, but the
+                opponent can capture it on their next move to win.</li>
             </ul>
             <p>
               <a href="https://en.wikipedia.org/wiki/Fischer_random_chess" target="_blank" rel="noopener noreferrer">
@@ -3826,11 +3813,6 @@ function App() {
         </div>
       )}
 
-      {blockedHint && (
-        <div className="check-blocked-hint" role="status">
-          {'⚠'} {blockedHint}
-        </div>
-      )}
     </div>
     </div>
   );

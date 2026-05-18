@@ -40,6 +40,9 @@ export async function saveMultiplayerGameToGames(
     points: zeroPoints(moveCount),
     matchCode: match.code,
     vsAI: false,
+    // Q.D.8: persist the rules the match was played under so retro-analysis
+    // matches reality (roulette → no-check classifier).
+    gameMode: match.gameMode ?? 'classic',
     createdAt: serverTimestamp(),
   });
 }

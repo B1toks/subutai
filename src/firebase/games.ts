@@ -42,6 +42,10 @@ export interface SavedGameDoc {
   points: GamePoints;
   vsAI: true;
   createdAt: Timestamp;
+  /** Q.D.8: surfaced on retro-analysis so the classifier matches the
+   *  rules the game was played under. Optional for back-compat with
+   *  pre-Q.D.8 docs (treated as 'classic' when absent). */
+  gameMode?: 'classic' | 'roulette';
 }
 
 export interface SaveGameResult {
@@ -238,6 +242,7 @@ export function deserializeGameLog(saved: SavedGameDoc): GameLog {
       topology: m.topology,
       timestamp: m.timestamp,
     })),
+    gameMode: saved.gameMode,
   };
 }
 

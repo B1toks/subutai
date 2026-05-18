@@ -20,6 +20,10 @@ export interface GameLog {
   readonly initialTopology: TopologyState;
   readonly initialState: BoardState;
   readonly moves: readonly LoggedMove[];
+  /** Q.D.8: replay-side rule selector. Saved games carry the mode they
+   *  were played under so retro-analysis and classifier searches stay
+   *  consistent with the original rules (esp. roulette's no-check). */
+  readonly gameMode?: 'classic' | 'roulette';
 }
 
 const SAN_PIECE: Record<PieceType, string> = {

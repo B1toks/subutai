@@ -457,8 +457,26 @@ function generateCastlingMoves(
   trySide(queenSideRook, 'c', 'd');
 }
 
-export function generateLegalMoves(state: BoardState): Move[] {
+export interface GenerateLegalMovesOptions {
+  /**
+   * Stage Q.D.8: roulette mode is a capture-the-king variant — there's no
+   * check rule. Setting this flag returns pseudo-legal moves verbatim so
+   * the side-to-move may "leave their own king under attack", and the
+   * opponent may then actually capture it (which ends the game).
+   *
+   * Default (false) preserves standard chess: moves leaving the mover's
+   * king in check are filtered out. Classic mode must NEVER pass `true`.
+   */
+  allowSelfCheck?: boolean;
+}
+
+export function generateLegalMoves(
+  state: BoardState,
+  options: GenerateLegalMovesOptions = {},
+): Move[] {
   const pseudo = generatePseudoLegalMoves(state);
+  if (options.allowSelfCheck) return pseudo;
+
   const side = state.sideToMove;
   const opponent = enemyColor(side);
 
