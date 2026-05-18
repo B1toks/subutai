@@ -30,6 +30,7 @@ import { MilestoneModal } from './components/MilestoneModal';
 import { AutoPlayView } from './components/AutoPlayView';
 import { StatsPage } from './components/StatsPage';
 import { FriendLobby } from './components/FriendLobby';
+import type { GameReviewMeta } from './components/GameReview';
 import { useMultiplayerSync } from './components/MultiplayerGameView';
 import type { MatchDoc, MatchOutcome } from './firebase/matches';
 import {
@@ -245,6 +246,12 @@ function App() {
     () => new URLSearchParams(window.location.search).get('stats') === '1',
     [],
   );
+  // T2: ?game=<id> loads a saved /games doc into the Review screen on
+  // mount, so a copied share-link opens directly into playback.
+  const sharedGameId = useMemo(
+    () => new URLSearchParams(window.location.search).get('game'),
+    [],
+  );
 
   const [autoGamesCompleted, setAutoGamesCompleted] = useState(0);
   const [autoLastOutcome, setAutoLastOutcome] = useState<GameOutcome | null>(null);
@@ -297,6 +304,14 @@ function App() {
   const [mpEndOutcome, setMpEndOutcome] = useState<MatchOutcome | null>(null);
   const mpSavedGameIdRef = useRef<string | null>(null);
   const mpWroteOutcomeRef = useRef<string | null>(null);
+  // T2: review can be entered for the LIVE game (default — reads the `log`
+  // alias) OR with a snapshot loaded via the MP completion modal or the
+  // ?game=<id> URL. activeReviewLog overrides when set; meta gives the
+  // review header context ("Alex vs AI", "won/lost/drew").
+  const [activeReviewLog, setActiveReviewLog] = useState<GameLog | null>(null);
+  const [activeReviewMeta, setActiveReviewMeta] =
+    useState<GameReviewMeta | null>(null);
+  const [sharedGameError, setSharedGameError] = useState<string | null>(null);
   // Q.B.2: PvP sync. Hook is always called (with null match before any
   // game starts) so React's hook-order rules are respected. Returns null
   // when no match — every consumer guards on isMultiplayer below.
@@ -409,14 +424,26 @@ function App() {
   const [searchEvalFromWhite, setSearchEvalFromWhite] = useState<number | null>(null);
   // Set when the search found a forced mate from the post-move position.
   const [searchMateInPlies, setSearchMateInPlies] = useState<number | null>(null);
+  // currentEval is the canonical WHITE-perspective centipawn score. The
+  // engine, classifier, prev-eval delta tracking and any future
+  // server-side persistence all want this monotonic shape.
   const currentEval = useMemo(() => {
-    // PvP has no classifier and shouldn't bleed the AI-game gradient into
-    // a fresh match — neutral 0 paints the default wood tone instead of
-    // staying red/teal from the previous solo session.
-    if (isMultiplayer) return 0;
+    if (isMultiplayer) return evaluateFromWhite(state);
     if (searchEvalFromWhite !== null) return searchEvalFromWhite;
     return evaluateFromWhite(state);
   }, [isMultiplayer, searchEvalFromWhite, state]);
+
+  // T5: viewer-perspective eval — positive = "I'm winning". Drives the
+  // background gradient AND the eval-bar fill so the player who's behind
+  // sees a cool/crimson room and a near-empty bar, while their opponent
+  // simultaneously sees gold + a near-full bar. Single-player path is
+  // myColor='white' so this is a no-op there.
+  const myColor: 'white' | 'black' =
+    isMultiplayer && mpSync ? mpSync.myColor : 'white';
+  const myPerspectiveEval = useMemo(
+    () => (myColor === 'black' ? -currentEval : currentEval),
+    [currentEval, myColor],
+  );
   // Previous eval — kept for delta comparisons used by the classifier.
   const prevEvalRef = useRef<number>(currentEval);
   // The element whose CSS variables drive the gradient. Setting via ref
@@ -548,6 +575,42 @@ function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMultiplayer, mpSync?.matchState.status, mpSync?.matchState.outcome]);
+
+  // T2: load a shared game on mount when ?game=<id> is in the URL. Bypasses
+  // every game/match flow — drops directly into the Review screen with
+  // metadata derived from the doc. Shared games are read-only; the back
+  // button strips the param so a refresh returns to the normal app.
+  useEffect(() => {
+    if (!sharedGameId) return;
+    let cancelled = false;
+    void fetchSavedGame(sharedGameId)
+      .then((saved) => {
+        if (cancelled || !saved) {
+          if (!cancelled) setSharedGameError('Game not found.');
+          return;
+        }
+        const loadedLog = deserializeGameLog(saved);
+        const playerLabel = saved.playerName || 'Player';
+        const opponentLabel = saved.vsAI
+          ? 'AI'
+          : ((saved as unknown as { opponentName?: string }).opponentName ??
+            'Opponent');
+        setActiveReviewLog(loadedLog);
+        setActiveReviewMeta({
+          playerName: playerLabel,
+          opponentName: opponentLabel,
+          outcome: saved.outcome,
+        });
+        setView('review');
+      })
+      .catch((err) => {
+        console.error('[shared-game] fetch failed', err);
+        if (!cancelled) setSharedGameError('Could not load shared game.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sharedGameId]);
 
   async function finishGame(outcome: GameOutcome) {
     const points = computeGamePoints(log, outcome, HUMAN_COLOR, gameMode);
@@ -857,16 +920,20 @@ function App() {
 
   // Drive the gradient via CSS custom properties. setProperty (rather than
   // inline style) lets the @property-registered transition interpolate
-  // colour-to-colour smoothly. prevEvalRef is updated here too so the
-  // classifier can read it.
+  // colour-to-colour smoothly. prevEvalRef tracks the white-POV value
+  // (classifier delta still expects white-POV).
+  //
+  // T5: paint from the viewer's perspective so each peer in a PvP match
+  // sees their OWN winning/losing state — the player who's ahead gets
+  // gold/warm, the player who's behind gets crimson/cool, simultaneously.
   useEffect(() => {
     const shell = shellRef.current;
     if (!shell) return;
-    const { c1, c2 } = evalToColors(currentEval);
+    const { c1, c2 } = evalToColors(myPerspectiveEval);
     shell.style.setProperty('--eval-c1', c1);
     shell.style.setProperty('--eval-c2', c2);
     prevEvalRef.current = currentEval;
-  }, [currentEval]);
+  }, [myPerspectiveEval, currentEval, view, activeMatch]);
 
   // Keep logLengthRef in sync with committed log state — used by classify
   // .then handlers to decide if their analysis is still the latest.
@@ -1754,7 +1821,12 @@ function App() {
     };
   }, [state.pieces]);
 
-  const materialScore = materialBreakdown.score;
+  // materialBreakdown.score is white-perspective (whiteTotal - blackTotal).
+  // T5.1: flip for the black seat in PvP so the counter follows the same
+  // viewer-perspective convention as the eval bar and gradient — green
+  // when I'm up material, red when down.
+  const materialScore =
+    myColor === 'black' ? -materialBreakdown.score : materialBreakdown.score;
 
   useEffect(() => {
     if (isMultiplayer) return; // PvP: no engine drives the opponent
@@ -2264,12 +2336,15 @@ function App() {
       for (const token of parsed.moves) {
         const mv = token.move;
 
-        // Auto-switch topology if @B/@A suffix requires it
+        // Auto-switch topology if @B/@A suffix requires it.
+        // T1.2: use the pure `toggleTopology` (doesn't flip sideToMove or
+        // record a move). Previously this called applyRotationMove which
+        // burned a turn — and then castles by the (now wrong) side failed
+        // with "No legal castle". The @B suffix is informational; if the
+        // game really included a rotation, the log carries it as its own
+        // entry and the toggleTopology no-ops when topology already matches.
         if (token.requiredTopology && current.topologyState !== token.requiredTopology) {
-          const topoBefore = current.topologyState;
-          const toggleSan = computeSAN(current, { kind: 'topologyToggle' });
-          current = applyRotationMove(current);
-          replayLog = appendMove(replayLog, { kind: 'topologyToggle' }, toggleSan, topoBefore);
+          current = toggleTopology(current);
         }
 
         if (mv.kind === 'topologyToggle') {
@@ -2522,7 +2597,25 @@ function App() {
   if (view === 'review') {
     return (
       <div className="app-shell" ref={shellRef}>
-        <GameReview log={log} onBack={() => setView('game')} />
+        <GameReview
+          log={activeReviewLog ?? log}
+          meta={activeReviewMeta ?? undefined}
+          onBack={() => {
+            setView('game');
+            // Drop the snapshot so the next plain Review opens the live log.
+            setActiveReviewLog(null);
+            setActiveReviewMeta(null);
+            // Strip ?game= so a refresh won't re-open the shared review.
+            if (
+              typeof window !== 'undefined' &&
+              new URLSearchParams(window.location.search).get('game')
+            ) {
+              const url = new URL(window.location.href);
+              url.searchParams.delete('game');
+              window.history.replaceState(null, '', url.toString());
+            }
+          }}
+        />
       </div>
     );
   }
@@ -2787,6 +2880,20 @@ function App() {
         </div>
       )}
 
+      {sharedGameError && (
+        <div className="mp-banner mp-banner-error" role="status">
+          {sharedGameError}{' '}
+          <button
+            type="button"
+            className="mp-back-btn"
+            style={{ marginLeft: 8 }}
+            onClick={() => setSharedGameError(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {isMultiplayer && mpSync && mpSync.matchState.status === 'active' && (
         <div
           className={`mp-banner${mpSync.isMyTurn ? ' mp-banner-active' : ' mp-banner-wait'}`}
@@ -2816,13 +2923,11 @@ function App() {
       )}
 
       <div className="board-with-eval">
-        {!isMultiplayer && (
-          <EvalBar
-            evalCp={currentEval}
-            mateInPlies={searchMateInPlies}
-            isPending={searchEvalFromWhite === null}
-          />
-        )}
+        <EvalBar
+          evalCp={myPerspectiveEval}
+          mateInPlies={searchMateInPlies}
+          isPending={!isMultiplayer && searchEvalFromWhite === null}
+        />
       <div className="board-with-coords" style={{ width: boardSize }}>
       <div className="board-ranks" style={{ height: boardSize }}>
         {(isMultiplayer && mpSync?.myColor === 'black'
@@ -2833,7 +2938,7 @@ function App() {
         ))}
       </div>
       <div
-        className={`board${previewTopology || previewLocked ? ' previewing' : ''}${recentRotation ? ' is-rotated' : ''}${isMultiplayer && mpSync?.myColor === 'black' ? ' board-flipped' : ''}`}
+        className={`board${previewTopology || previewLocked ? ' previewing' : ''}${recentRotation ? ' is-rotated' : ''}`}
         style={{ width: boardSize, height: boardSize }}
       >
         {squares.map((sq) => {
@@ -2872,8 +2977,15 @@ function App() {
             layout,
           );
 
-          const tx = cx - tileBase / 2;
-          const ty = cy - tileBase / 2;
+          // T3: orient via coord mirroring rather than CSS rotate(180deg).
+          // The parent .board stays unrotated so piece glyphs render right-
+          // way-up for both colors; we just flip the per-tile position so
+          // the black player sees their own back rank at the bottom.
+          const flip = isMultiplayer && mpSync?.myColor === 'black';
+          const cxView = flip ? boardSize - cx : cx;
+          const cyView = flip ? boardSize - cy : cy;
+          const tx = cxView - tileBase / 2;
+          const ty = cyView - tileBase / 2;
 
           return (
             <button
@@ -3360,6 +3472,21 @@ function App() {
           mpWroteOutcomeRef.current = null;
           setView('friend-lobby');
         }
+        function reviewMatch() {
+          if (!mpSync) return;
+          // Snapshot the match log so leaving the live match doesn't pull
+          // the data out from under the review screen. classifyAsync will
+          // populate per-move analysis on the fly inside GameReview.
+          setActiveReviewLog(deriveMpLog(mpSync.matchState));
+          setActiveReviewMeta({
+            playerName: displayName ?? 'You',
+            opponentName: mpSync.opponentDisplayName,
+            outcome: myView,
+          });
+          setMpEndOutcome(null);
+          setActiveMatch(null);
+          setView('review');
+        }
         return (
           <div className="mp-completion-backdrop" onClick={dismiss}>
             <div
@@ -3372,6 +3499,13 @@ function App() {
               <div className="mp-completion-actions">
                 <button
                   type="button"
+                  className="mp-btn mp-btn-primary"
+                  onClick={reviewMatch}
+                >
+                  📊 Review this game
+                </button>
+                <button
+                  type="button"
                   className="mp-btn mp-btn-secondary"
                   onClick={dismiss}
                 >
@@ -3379,10 +3513,10 @@ function App() {
                 </button>
                 <button
                   type="button"
-                  className="mp-btn mp-btn-primary"
+                  className="mp-btn mp-btn-secondary"
                   onClick={backToLobby}
                 >
-                  Find new opponent
+                  Find opponent
                 </button>
               </div>
               <p className="mp-completion-footnote">
@@ -3480,18 +3614,21 @@ function EvalBar({
   mateInPlies,
   isPending,
 }: {
+  /** VIEWER-perspective centipawn score. Positive = "I'm winning". App
+   *  inverts this for the black seat before passing it in (T5) — keeps
+   *  this component dumb: always fill the bottom (my-side) of the bar. */
   evalCp: number;
   mateInPlies: number | null;
   /** True while we're showing the static-eval fallback waiting on the worker. */
   isPending: boolean;
 }) {
   const isMate = mateInPlies !== null;
-  let whitePercent: number;
+  let mySidePercent: number;
   let display: string;
   if (isMate) {
     // Snap to the winning edge so the bar visually screams "the game is
     // ending" — bypass the smooth tanh curve.
-    whitePercent = evalCp > 0 ? 95 : 5;
+    mySidePercent = evalCp > 0 ? 95 : 5;
     const sign = evalCp > 0 ? '' : '−';
     const moves = Math.ceil((mateInPlies as number) / 2);
     display = moves <= 0 ? `${sign}#` : `${sign}M${moves}`;
@@ -3500,18 +3637,17 @@ function EvalBar({
     // to 0/100 and tiny ones still register. Clamp so the loser always
     // shows a sliver — fully empty looks broken.
     const t = Math.tanh(evalCp / 400);
-    whitePercent = Math.max(5, Math.min(95, 50 + t * 45));
+    mySidePercent = Math.max(5, Math.min(95, 50 + t * 45));
     display = `${evalCp >= 0 ? '+' : '−'}${(Math.abs(evalCp) / 100).toFixed(1)}`;
   }
-  // Position the number on the dominant side. Near zero we leave it on top
-  // (black side) so the layout doesn't twitch.
-  const textOnBottom = evalCp > 50;
+  // Text sits on the side opposite to my fill so it stays legible.
+  const textOnBottom = mySidePercent < 50;
   return (
     <div
       className={`eval-bar${isMate ? ' is-mate' : ''}${isPending ? ' is-pending' : ''}`}
       aria-label={`Evaluation ${display}`}
     >
-      <div className="eval-bar-white" style={{ height: `${whitePercent}%` }} />
+      <div className="eval-bar-white" style={{ height: `${mySidePercent}%` }} />
       <span
         className={`eval-bar-text${textOnBottom ? ' eval-bar-text-bottom' : ' eval-bar-text-top'}`}
       >

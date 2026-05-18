@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { GameOutcome, GamePoints, MoveQualityCounts } from '../analysis/points';
 import { FeedbackPrompt } from './FeedbackPrompt';
 
@@ -144,6 +145,8 @@ export function GameSummary({
 
         {saveError && <div className="modal-error">{saveError}</div>}
 
+        {gameId && <ShareGameButton gameId={gameId} />}
+
         {playerId && playerName && (
           <FeedbackPrompt
             playerId={playerId}
@@ -175,6 +178,29 @@ export function GameSummary({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ShareGameButton({ gameId }: { gameId: string }) {
+  const [copied, setCopied] = useState(false);
+  function handleShare() {
+    const url = `${window.location.origin}${window.location.pathname}?game=${gameId}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+  return (
+    <div className="summary-share-row">
+      <button
+        type="button"
+        className="summary-share-btn"
+        onClick={handleShare}
+      >
+        {'\u{1F517}'} Share this game
+      </button>
+      {copied && <span className="summary-share-feedback">{'✓'} Copied!</span>}
     </div>
   );
 }

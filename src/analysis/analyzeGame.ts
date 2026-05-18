@@ -16,7 +16,17 @@ export interface GameReviewResult {
     readonly checkmate: number;
     readonly averageCpl: number;
     readonly bestCount: number;
+    /** 0-100 accuracy derived from averageCpl via chess.com-style
+     *  exponential curve. Clamped — never negative, never above 100. */
+    readonly accuracy: number;
   };
+}
+
+/** Chess.com's curve, rounded. 0 cpl ≈ 100%, 25 cpl ≈ 80%, 50 cpl ≈ 65%,
+ *  100 cpl ≈ 40%, 200+ cpl → 0%. */
+function computeAccuracy(avgCpl: number): number {
+  const raw = 103.1668 * Math.exp(-0.04354 * avgCpl) - 3.1668;
+  return Math.max(0, Math.min(100, Math.round(raw)));
 }
 
 /**
@@ -93,9 +103,18 @@ export async function analyzeGame(
     }
   }
   const averageCpl = cplDivisor > 0 ? Math.round(cplSum / cplDivisor) : 0;
+  const accuracy = computeAccuracy(averageCpl);
 
   return {
     moves: analyses,
-    stats: { blunders, mistakes, brilliants, checkmate, averageCpl, bestCount },
+    stats: {
+      blunders,
+      mistakes,
+      brilliants,
+      checkmate,
+      averageCpl,
+      bestCount,
+      accuracy,
+    },
   };
 }
