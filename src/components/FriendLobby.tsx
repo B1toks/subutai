@@ -5,6 +5,7 @@ import {
   normalizeMatchCode,
   subscribeMatch,
   type MatchDoc,
+  type MatchGameMode,
 } from '../firebase/matches';
 
 interface FriendLobbyProps {
@@ -33,6 +34,7 @@ export function FriendLobby({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [createMode, setCreateMode] = useState<MatchGameMode>('classic');
   // onMatchReady changes identity on every parent render; storing in a ref
   // keeps the subscribe-effect deps minimal.
   const onMatchReadyRef = useRef(onMatchReady);
@@ -61,7 +63,10 @@ export function FriendLobby({
     setBusy(true);
     setError(null);
     try {
-      const code = await createMatch({ uid: uid!, displayName: displayName! });
+      const code = await createMatch(
+        { uid: uid!, displayName: displayName! },
+        createMode,
+      );
       setView({ kind: 'hosted', code, status: 'waiting' });
     } catch (err) {
       console.error('[lobby] createMatch failed', err);
@@ -147,6 +152,46 @@ export function FriendLobby({
               Shareable 6-character code. Random chess960 position. Random
               side assignment.
             </p>
+            <div
+              className="friend-lobby-mode-row"
+              role="radiogroup"
+              aria-label="Game mode"
+            >
+              <label
+                className={`friend-lobby-mode${createMode === 'classic' ? ' is-selected' : ''}`}
+              >
+                <input
+                  type="radio"
+                  name="lobby-mode"
+                  value="classic"
+                  checked={createMode === 'classic'}
+                  onChange={() => setCreateMode('classic')}
+                  disabled={busy}
+                />
+                <span className="friend-lobby-mode-title">Classic</span>
+                <span className="friend-lobby-mode-sub">
+                  Full chess960. Rotate allowed.
+                </span>
+              </label>
+              <label
+                className={`friend-lobby-mode${createMode === 'roulette' ? ' is-selected' : ''}`}
+              >
+                <input
+                  type="radio"
+                  name="lobby-mode"
+                  value="roulette"
+                  checked={createMode === 'roulette'}
+                  onChange={() => setCreateMode('roulette')}
+                  disabled={busy}
+                />
+                <span className="friend-lobby-mode-title">
+                  {'\u{1F3B0}'} Roulette
+                </span>
+                <span className="friend-lobby-mode-sub">
+                  Random piece each turn. No rotation.
+                </span>
+              </label>
+            </div>
             <button
               type="button"
               className="friend-lobby-primary-btn"

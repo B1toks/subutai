@@ -15,10 +15,35 @@ import {
   createPositionFromBackRankKey,
   type BoardState,
   type Move,
+  type PieceType,
 } from '../engine';
 import { applyMove } from '../engine/moves';
 import { applyRotationMove } from '../engine/auxetic';
 import { computeSAN } from '../recording/log';
+
+const ROULETTE_PIECE_BAG: PieceType[] = [
+  'pawn',
+  'knight',
+  'bishop',
+  'rook',
+  'queen',
+  'king',
+];
+
+/** Pick a random piece type from the active player's remaining pieces. */
+function rollRoulettePiece(
+  state: BoardState,
+  side: 'white' | 'black',
+): PieceType | null {
+  const present = new Set<PieceType>();
+  for (const sq of Object.keys(state.pieces) as Array<keyof typeof state.pieces>) {
+    const p = state.pieces[sq];
+    if (p && p.color === side) present.add(p.type);
+  }
+  const pool = ROULETTE_PIECE_BAG.filter((t) => present.has(t));
+  if (pool.length === 0) return null;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
 
 const OPPONENT_OFFLINE_WARN_MS = 60_000;
 const OPPONENT_OFFLINE_FORFEIT_MS = 90_000;
@@ -42,6 +67,17 @@ export interface MultiplayerSyncHandle {
   resign: () => Promise<void>;
   /** Race-safe terminal-outcome write (mate/draw detected locally). */
   writeOutcomeIfFirst: (outcome: MatchOutcome) => Promise<void>;
+  // Stage Q.D — roulette MP. Classic matches keep these inert
+  // (isRouletteMode=false, currentRoulettePiece=null, mySpinCount=0).
+  isRouletteMode: boolean;
+  /** The piece-type the on-clock player must move this turn. null when
+   *  the spin hasn't happened yet or the mode is classic. */
+  currentRoulettePiece: PieceType | null;
+  /** How many spins I've completed this match. The first one is gated
+   *  behind a manual button; subsequent fire automatically via timer. */
+  mySpinCount: number;
+  /** Random a piece from my live pieces and write it to the match doc. */
+  spinRoulette: () => Promise<void>;
 }
 
 /** Rebuild the canonical board from the log. Topology toggles (Rotate)
@@ -184,10 +220,35 @@ export function useMultiplayerSync(
   const isMyTurn =
     liveMatch.status === 'active' && liveMatch.currentTurn === liveMyUid;
 
+  // Q.D — roulette MP. Old matches without gameMode default to classic;
+  // currentRoulettePiece + rouletteSpinsByPlayer default to null/empty.
+  const isRouletteMode = liveMatch.gameMode === 'roulette';
+  const currentRoulettePiece = liveMatch.currentRoulettePiece ?? null;
+  const mySpinCount = liveMatch.rouletteSpinsByPlayer?.[liveMyUid] ?? 0;
+
   async function sendMove(move: Move): Promise<void> {
     if (liveMatch.status !== 'active') return;
     if (liveMatch.currentTurn !== liveMyUid) return;
     if (busy) return;
+    // Q.D: in roulette MP, only moves of the spun piece type are legal.
+    // Topology toggles are also blocked — they don't have an obvious
+    // "piece type" mapping and MP-roulette MVP keeps things simple.
+    if (isRouletteMode) {
+      if (currentRoulettePiece === null) {
+        setError('Spin the roulette first.');
+        return;
+      }
+      if (move.kind === 'topologyToggle') {
+        setError('Rotation is disabled in roulette mode.');
+        return;
+      }
+      const movingPiece = move.from ? liveBoard.pieces[move.from] : undefined;
+      if (!movingPiece) return;
+      if (movingPiece.type !== currentRoulettePiece) {
+        setError(`You must move your ${currentRoulettePiece}.`);
+        return;
+      }
+    }
     setBusy(true);
     setError(null);
     try {
@@ -208,11 +269,17 @@ export function useMultiplayerSync(
         const data = snap.data() as MatchDoc;
         if (data.currentTurn !== liveMyUid) throw new Error('NOT_YOUR_TURN');
         if (data.status !== 'active') throw new Error('MATCH_NOT_ACTIVE');
-        tx.update(ref, {
+        const patch: Record<string, unknown> = {
           'log.moves': [...data.log.moves, savedMove],
           currentTurn: opponentUid,
           lastActivity: serverTimestamp(),
-        });
+        };
+        // Clear the roulette piece after a successful move so the next
+        // player's turn starts in the "spin first" state.
+        if (data.gameMode === 'roulette') {
+          patch.currentRoulettePiece = null;
+        }
+        tx.update(ref, patch);
       });
     } catch (err) {
       console.error('[mp] move failed', err);
@@ -224,6 +291,44 @@ export function useMultiplayerSync(
             ? 'Match is no longer active.'
             : 'Move failed. Check your connection.',
       );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function spinRoulette(): Promise<void> {
+    if (!isRouletteMode) return;
+    if (liveMatch.status !== 'active') return;
+    if (liveMatch.currentTurn !== liveMyUid) return;
+    if (currentRoulettePiece !== null) return;
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const rolled = rollRoulettePiece(liveBoard, myColor);
+      if (!rolled) {
+        setError('No pieces left to spin — game ending.');
+        return;
+      }
+      await runTransaction(db, async (tx) => {
+        const ref = doc(db, 'matches', liveMatch.code);
+        const snap = await tx.get(ref);
+        if (!snap.exists()) throw new Error('MATCH_GONE');
+        const data = snap.data() as MatchDoc;
+        if (data.currentTurn !== liveMyUid) throw new Error('NOT_YOUR_TURN');
+        if (data.status !== 'active') throw new Error('MATCH_NOT_ACTIVE');
+        if (data.currentRoulettePiece) return; // already spun (race)
+        const spins = { ...(data.rouletteSpinsByPlayer ?? {}) };
+        spins[liveMyUid] = (spins[liveMyUid] ?? 0) + 1;
+        tx.update(ref, {
+          currentRoulettePiece: rolled,
+          rouletteSpinsByPlayer: spins,
+          lastActivity: serverTimestamp(),
+        });
+      });
+    } catch (err) {
+      console.error('[mp] spin failed', err);
+      setError('Spin failed — try again.');
     } finally {
       setBusy(false);
     }
@@ -276,6 +381,10 @@ export function useMultiplayerSync(
     isMyTurn,
     isHost,
     selfAfkWarning,
+    isRouletteMode,
+    currentRoulettePiece,
+    mySpinCount,
+    spinRoulette,
     busy,
     error,
     clearError: () => setError(null),

@@ -1454,6 +1454,7 @@ function App() {
   // game still in progress, watcher not engaged. 500ms delay keeps the
   // turn boundary visible.
   useEffect(() => {
+    if (isMultiplayer) return; // MP has its own auto-spin effect below
     if (gameMode !== 'roulette') return;
     if (!firstRouletteSpinDone) return;
     if (gameStatus !== 'active') return;
@@ -1477,6 +1478,33 @@ function App() {
     currentPlayer,
     allowedPieceTypes,
     isRouletteSpinning,
+    isMultiplayer,
+  ]);
+
+  // Q.D: MP roulette auto-spin. After I've completed my first manual spin
+  // (mySpinCount > 0) every subsequent turn fires the spin automatically
+  // 500ms after my turn begins. First spin per player stays manual so the
+  // mechanic is introduced clearly.
+  useEffect(() => {
+    if (!isMultiplayer || !mpSync) return;
+    if (!mpSync.isRouletteMode) return;
+    if (!mpSync.isMyTurn) return;
+    if (mpSync.matchState.status !== 'active') return;
+    if (mpSync.currentRoulettePiece !== null) return;
+    if (mpSync.mySpinCount === 0) return; // first spin is manual
+    const t = setTimeout(() => {
+      void mpSync.spinRoulette();
+    }, 500);
+    return () => clearTimeout(t);
+    // spinRoulette identity changes each render; same pattern as solo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isMultiplayer,
+    mpSync?.isRouletteMode,
+    mpSync?.isMyTurn,
+    mpSync?.matchState.status,
+    mpSync?.currentRoulettePiece,
+    mpSync?.mySpinCount,
   ]);
 
   // Mode can only be switched before the first move — otherwise rules would
@@ -2026,8 +2054,18 @@ function App() {
       if (mpSync.matchState.status !== 'active') return;
       const sq = square as SquareId;
       const piece = state.pieces[sq];
+      // Q.D — MP roulette: board is dead until the on-clock player spins.
+      // After spin, only the rolled piece type can be selected.
+      if (mpSync.isRouletteMode && mpSync.currentRoulettePiece === null) return;
+      const rouletteType = mpSync.currentRoulettePiece;
       if (!selected) {
-        if (piece && piece.color === mpSync.myColor) setSelected(square);
+        if (
+          piece &&
+          piece.color === mpSync.myColor &&
+          (!rouletteType || piece.type === rouletteType)
+        ) {
+          setSelected(square);
+        }
         return;
       }
       if (selected === square) {
@@ -2039,8 +2077,15 @@ function App() {
       );
       if (!move) {
         // Click on another own piece → switch; else clear.
-        if (piece && piece.color === mpSync.myColor) setSelected(square);
-        else setSelected(null);
+        if (
+          piece &&
+          piece.color === mpSync.myColor &&
+          (!rouletteType || piece.type === rouletteType)
+        ) {
+          setSelected(square);
+        } else {
+          setSelected(null);
+        }
         return;
       }
       const resolved: Move =
@@ -2900,7 +2945,33 @@ function App() {
           className={`mp-banner${mpSync.isMyTurn ? ' mp-banner-active' : ' mp-banner-wait'}`}
         >
           {mpSync.isMyTurn ? (
-            'Your turn'
+            mpSync.isRouletteMode && mpSync.currentRoulettePiece === null ? (
+              mpSync.mySpinCount === 0 ? (
+                <button
+                  type="button"
+                  className="mp-roulette-spin-btn"
+                  onClick={() => void mpSync.spinRoulette()}
+                  disabled={mpSync.busy}
+                >
+                  {'\u{1F3B0}'} Spin Roulette
+                </button>
+              ) : (
+                <>
+                  <span className="mp-spinner" aria-hidden />
+                  Spinning…
+                </>
+              )
+            ) : mpSync.isRouletteMode && mpSync.currentRoulettePiece ? (
+              <>Your turn — move a {mpSync.currentRoulettePiece}</>
+            ) : (
+              'Your turn'
+            )
+          ) : mpSync.isRouletteMode && mpSync.currentRoulettePiece ? (
+            <>
+              <span className="mp-spinner" aria-hidden />
+              {mpSync.opponentDisplayName} moves their{' '}
+              {mpSync.currentRoulettePiece}…
+            </>
           ) : (
             <>
               <span className="mp-spinner" aria-hidden />

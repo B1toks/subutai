@@ -10,7 +10,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './client';
 import { createStartingPosition, type Move, type SquareId } from '../engine';
-import type { TopologyState } from '../engine/types';
+import type { PieceType, TopologyState } from '../engine/types';
 
 export type MatchStatus = 'waiting' | 'active' | 'completed' | 'abandoned';
 export type MatchOutcome =
@@ -19,6 +19,8 @@ export type MatchOutcome =
   | 'draw'
   | 'host-resign'
   | 'guest-resign';
+
+export type MatchGameMode = 'classic' | 'roulette';
 
 export interface MatchParticipant {
   uid: string;
@@ -45,6 +47,15 @@ export interface MatchDoc {
   outcome: MatchOutcome | null;
   createdAt: Timestamp;
   lastActivity: Timestamp;
+  // Stage Q.D — optional so old docs keep working. Treated as 'classic'
+  // / null / {} when absent.
+  gameMode?: MatchGameMode;
+  /** Non-null when the on-clock player has spun and must now move that
+   *  piece type. Cleared back to null after the move is committed. */
+  currentRoulettePiece?: PieceType | null;
+  /** Per-player spin counter for the first-spin-manual gate
+   *  (subsequent spins auto-fire after a short delay). */
+  rouletteSpinsByPlayer?: Record<string, number>;
 }
 
 /** Crockford-ish alphabet: removed 0/O/I/1 to keep typed codes unambiguous. */
@@ -71,10 +82,10 @@ export function normalizeMatchCode(raw: string): string {
  * random chess960 position, and randomly assigns the host's color. Returns
  * the chosen code so the host can share it.
  */
-export async function createMatch(host: {
-  uid: string;
-  displayName: string;
-}): Promise<string> {
+export async function createMatch(
+  host: { uid: string; displayName: string },
+  gameMode: MatchGameMode = 'classic',
+): Promise<string> {
   // Vanishingly rare for 32^6 (~10^9) codes, but bound the loop just in case
   // someone runs a botnet flooding /matches.
   let code = '';
@@ -104,6 +115,9 @@ export async function createMatch(host: {
     currentTurn: '',
     log: { initialTopology: 'A', moves: [] },
     outcome: null,
+    gameMode,
+    currentRoulettePiece: null,
+    rouletteSpinsByPlayer: {},
     createdAt: serverTimestamp(),
     lastActivity: serverTimestamp(),
   });
