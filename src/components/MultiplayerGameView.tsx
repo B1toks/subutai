@@ -29,16 +29,18 @@ const ROULETTE_PIECE_BAG: PieceType[] = [
   'queen',
   'king',
 ];
+/** Match solo App.tsx constants: 4 slots per spin, 2 actions per turn. */
+const ROULETTE_SLOT_COUNT = 4;
+const ROULETTE_MAX_ACTIONS = 2;
 
-/** Pick a random piece type from the active player's remaining pieces.
- *  Mirrors the solo `spinRoulette` pawn-bias: for the first three spins
- *  per match we add 'pawn' to the pool once, giving the player a softer
- *  ramp before queens/rooks dominate. */
-function rollRoulettePiece(
+/** Roll a 4-element slot bag from the active player's remaining piece
+ *  types, mirroring solo App.tsx spinRoulette() including the early-game
+ *  pawn bias. Returns null when the player has no pieces (game over). */
+function rollRouletteBag(
   state: BoardState,
   side: 'white' | 'black',
   pawnBoost: boolean,
-): PieceType | null {
+): PieceType[] | null {
   const present = new Set<PieceType>();
   for (const sq of Object.keys(state.pieces) as Array<keyof typeof state.pieces>) {
     const p = state.pieces[sq];
@@ -48,7 +50,25 @@ function rollRoulettePiece(
   if (active.length === 0) return null;
   const pool: PieceType[] =
     pawnBoost && active.includes('pawn') ? [...active, 'pawn'] : active;
-  return pool[Math.floor(Math.random() * pool.length)];
+  const out: PieceType[] = [];
+  for (let i = 0; i < ROULETTE_SLOT_COUNT; i++) {
+    out.push(pool[Math.floor(Math.random() * pool.length)]);
+  }
+  return out;
+}
+
+/** Find the first slot index whose type matches `moverType` AND isn't
+ *  already in `used`. Returns -1 if none available — mirrors solo
+ *  consumeSlotIndex semantics. */
+function consumeSlotIndex(
+  bag: PieceType[],
+  used: number[],
+  moverType: PieceType,
+): number {
+  for (let i = 0; i < bag.length; i++) {
+    if (bag[i] === moverType && !used.includes(i)) return i;
+  }
+  return -1;
 }
 
 const OPPONENT_OFFLINE_WARN_MS = 60_000;
@@ -70,19 +90,23 @@ export interface MultiplayerSyncHandle {
   error: string | null;
   clearError: () => void;
   sendMove: (move: Move) => Promise<void>;
+  /** Q.D.3: rotate as a roulette action. Topology toggle costs an
+   *  action but doesn't consume a slot. */
+  sendRotate: () => Promise<void>;
   resign: () => Promise<void>;
   /** Race-safe terminal-outcome write (mate/draw detected locally). */
   writeOutcomeIfFirst: (outcome: MatchOutcome) => Promise<void>;
-  // Stage Q.D — roulette MP. Classic matches keep these inert
-  // (isRouletteMode=false, currentRoulettePiece=null, mySpinCount=0).
+  // Q.D.3: full solo-roulette parity. The bag, action count and used
+  // slot indices live on the match doc so both peers can render the
+  // SAME chip strip + Spin button + slot-consumption UI as solo.
   isRouletteMode: boolean;
-  /** The piece-type the on-clock player must move this turn. null when
-   *  the spin hasn't happened yet or the mode is classic. */
-  currentRoulettePiece: PieceType | null;
-  /** How many spins I've completed this match. The first one is gated
-   *  behind a manual button; subsequent fire automatically via timer. */
+  rouletteSlots: PieceType[] | null;
+  rouletteActionsLeft: number;
+  usedRouletteSlots: number[];
+  /** How many spins I've personally completed in this match. Used to
+   *  gate the first one behind a manual click (subsequent auto-fire). */
   mySpinCount: number;
-  /** Random a piece from my live pieces and write it to the match doc. */
+  /** Spin a new 4-slot bag from my remaining piece types. */
   spinRoulette: () => Promise<void>;
 }
 
@@ -226,32 +250,56 @@ export function useMultiplayerSync(
   const isMyTurn =
     liveMatch.status === 'active' && liveMatch.currentTurn === liveMyUid;
 
-  // Q.D — roulette MP. Old matches without gameMode default to classic;
-  // currentRoulettePiece + rouletteSpinsByPlayer default to null/empty.
+  // Q.D.3: full solo-roulette parity. Read straight off the live doc;
+  // old matches without these fields default to classic-style defaults.
   const isRouletteMode = liveMatch.gameMode === 'roulette';
-  const currentRoulettePiece = liveMatch.currentRoulettePiece ?? null;
+  const rouletteSlots = liveMatch.rouletteSlots ?? null;
+  const rouletteActionsLeft = liveMatch.rouletteActionsLeft ?? 0;
+  const usedRouletteSlots = liveMatch.usedRouletteSlots ?? [];
   const mySpinCount = liveMatch.rouletteSpinsByPlayer?.[liveMyUid] ?? 0;
+  const opponentUid = isHost ? liveMatch.guest!.uid : liveMatch.host.uid;
+
+  /** Build the patch that ends my turn (resets roulette state, hands the
+   *  clock to my opponent with a fresh 2-action allotment). */
+  function buildTurnEndPatch(): Record<string, unknown> {
+    return {
+      currentTurn: opponentUid,
+      rouletteSlots: null,
+      rouletteActionsLeft: 0,
+      usedRouletteSlots: [],
+    };
+  }
 
   async function sendMove(move: Move): Promise<void> {
     if (liveMatch.status !== 'active') return;
     if (liveMatch.currentTurn !== liveMyUid) return;
     if (busy) return;
-    // Q.D: in roulette MP, only moves of the spun piece type are legal.
-    // Topology toggles are also blocked — they don't have an obvious
-    // "piece type" mapping and MP-roulette MVP keeps things simple.
+    // Q.D.3: roulette MP — must have a bag spun, and the piece type must
+    // match an unused slot.
+    let slotIndex = -1;
     if (isRouletteMode) {
-      if (currentRoulettePiece === null) {
+      if (rouletteSlots === null) {
         setError('Spin the roulette first.');
         return;
       }
+      if (rouletteActionsLeft <= 0) {
+        setError('No actions left this turn.');
+        return;
+      }
       if (move.kind === 'topologyToggle') {
-        setError('Rotation is disabled in roulette mode.');
+        // Use sendRotate() — it bookkeeps actions without touching slots.
+        setError('Use the Rotate button.');
         return;
       }
       const movingPiece = move.from ? liveBoard.pieces[move.from] : undefined;
       if (!movingPiece) return;
-      if (movingPiece.type !== currentRoulettePiece) {
-        setError(`You must move your ${currentRoulettePiece}.`);
+      slotIndex = consumeSlotIndex(
+        rouletteSlots,
+        usedRouletteSlots,
+        movingPiece.type,
+      );
+      if (slotIndex < 0) {
+        setError(`No matching ${movingPiece.type} slot left.`);
         return;
       }
     }
@@ -265,9 +313,6 @@ export function useMultiplayerSync(
         topology: liveBoard.topologyState,
         timestamp: Date.now(),
       };
-      const opponentUid = isHost
-        ? liveMatch.guest!.uid
-        : liveMatch.host.uid;
       await runTransaction(db, async (tx) => {
         const ref = doc(db, 'matches', liveMatch.code);
         const snap = await tx.get(ref);
@@ -277,13 +322,24 @@ export function useMultiplayerSync(
         if (data.status !== 'active') throw new Error('MATCH_NOT_ACTIVE');
         const patch: Record<string, unknown> = {
           'log.moves': [...data.log.moves, savedMove],
-          currentTurn: opponentUid,
           lastActivity: serverTimestamp(),
         };
-        // Clear the roulette piece after a successful move so the next
-        // player's turn starts in the "spin first" state.
         if (data.gameMode === 'roulette') {
-          patch.currentRoulettePiece = null;
+          const newActions = (data.rouletteActionsLeft ?? 0) - 1;
+          const newUsed = [...(data.usedRouletteSlots ?? []), slotIndex];
+          if (newActions <= 0) {
+            // Turn over — hand the clock to opponent with a fresh bag-less
+            // slate (they'll spin on their side).
+            Object.assign(patch, buildTurnEndPatch());
+          } else {
+            // Still my turn for one more action. Slot bag stays; bookkeep
+            // the consumed slot + decremented action count.
+            patch.rouletteActionsLeft = newActions;
+            patch.usedRouletteSlots = newUsed;
+          }
+        } else {
+          // Classic MP: every move ends the turn.
+          patch.currentTurn = opponentUid;
         }
         tx.update(ref, patch);
       });
@@ -302,18 +358,71 @@ export function useMultiplayerSync(
     }
   }
 
+  async function sendRotate(): Promise<void> {
+    if (liveMatch.status !== 'active') return;
+    if (liveMatch.currentTurn !== liveMyUid) return;
+    if (busy) return;
+    if (!isRouletteMode) {
+      // Classic MP rotate: goes through sendMove as a topologyToggle
+      // (a normal turn-ending move).
+      void sendMove({ kind: 'topologyToggle' });
+      return;
+    }
+    if (rouletteActionsLeft <= 0) {
+      setError('No actions left this turn.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const toggleMove: Move = { kind: 'topologyToggle' };
+      const san = computeSAN(liveBoard, toggleMove);
+      const savedMove = {
+        move: toggleMove,
+        san,
+        topology: liveBoard.topologyState,
+        timestamp: Date.now(),
+      };
+      await runTransaction(db, async (tx) => {
+        const ref = doc(db, 'matches', liveMatch.code);
+        const snap = await tx.get(ref);
+        if (!snap.exists()) throw new Error('MATCH_GONE');
+        const data = snap.data() as MatchDoc;
+        if (data.currentTurn !== liveMyUid) throw new Error('NOT_YOUR_TURN');
+        if (data.status !== 'active') throw new Error('MATCH_NOT_ACTIVE');
+        const newActions = (data.rouletteActionsLeft ?? 0) - 1;
+        const patch: Record<string, unknown> = {
+          'log.moves': [...data.log.moves, savedMove],
+          lastActivity: serverTimestamp(),
+        };
+        // Rotate uses an action but doesn't consume a slot.
+        if (newActions <= 0) {
+          Object.assign(patch, buildTurnEndPatch());
+        } else {
+          patch.rouletteActionsLeft = newActions;
+        }
+        tx.update(ref, patch);
+      });
+    } catch (err) {
+      console.error('[mp] rotate failed', err);
+      setError('Rotate failed. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function spinRoulette(): Promise<void> {
     if (!isRouletteMode) return;
     if (liveMatch.status !== 'active') return;
     if (liveMatch.currentTurn !== liveMyUid) return;
-    if (currentRoulettePiece !== null) return;
+    if (rouletteSlots !== null) return; // already spun this turn
     if (busy) return;
     setBusy(true);
     setError(null);
     try {
       const totalSpins = liveMatch.rouletteSpinCount ?? 0;
       const pawnBoost = totalSpins < 3;
-      const rolled = rollRoulettePiece(liveBoard, myColor, pawnBoost);
+      const rolled = rollRouletteBag(liveBoard, myColor, pawnBoost);
       if (!rolled) {
         setError('No pieces left to spin — game ending.');
         return;
@@ -325,11 +434,13 @@ export function useMultiplayerSync(
         const data = snap.data() as MatchDoc;
         if (data.currentTurn !== liveMyUid) throw new Error('NOT_YOUR_TURN');
         if (data.status !== 'active') throw new Error('MATCH_NOT_ACTIVE');
-        if (data.currentRoulettePiece) return; // already spun (race)
+        if (data.rouletteSlots) return; // race — another tab spun
         const spins = { ...(data.rouletteSpinsByPlayer ?? {}) };
         spins[liveMyUid] = (spins[liveMyUid] ?? 0) + 1;
         tx.update(ref, {
-          currentRoulettePiece: rolled,
+          rouletteSlots: rolled,
+          rouletteActionsLeft: ROULETTE_MAX_ACTIONS,
+          usedRouletteSlots: [],
           rouletteSpinsByPlayer: spins,
           rouletteSpinCount: (data.rouletteSpinCount ?? 0) + 1,
           lastActivity: serverTimestamp(),
@@ -391,9 +502,12 @@ export function useMultiplayerSync(
     isHost,
     selfAfkWarning,
     isRouletteMode,
-    currentRoulettePiece,
+    rouletteSlots,
+    rouletteActionsLeft,
+    usedRouletteSlots,
     mySpinCount,
     spinRoulette,
+    sendRotate,
     busy,
     error,
     clearError: () => setError(null),

@@ -401,7 +401,24 @@ function App() {
   // local state — they're effectively dead writes in MP because the
   // aliases below ignore them, and every write path is guarded by
   // isMultiplayer anyway.
-  const state: BoardState = isMultiplayer ? mpSync!.boardState : stateLocal;
+  // Q.D.3: in MP roulette an action mid-turn flips boardState.sideToMove
+  // (the engine doesn't know we're keeping the same player on the clock
+  // for a second action). Solo solves this by clamping; here we clamp at
+  // alias time so generateLegalMoves below produces MY pieces' moves
+  // for action 2 instead of the opponent's.
+  const state: BoardState = (() => {
+    if (!isMultiplayer) return stateLocal;
+    const base = mpSync!.boardState;
+    if (
+      mpSync!.isRouletteMode &&
+      mpSync!.isMyTurn &&
+      mpSync!.rouletteActionsLeft > 0 &&
+      base.sideToMove !== mpSync!.myColor
+    ) {
+      return { ...base, sideToMove: mpSync!.myColor };
+    }
+    return base;
+  })();
   const log: GameLog = isMultiplayer
     ? deriveMpLog(mpSync!.matchState)
     : logLocal;
@@ -411,27 +428,22 @@ function App() {
   const lastMove: { from?: SquareId; to?: SquareId } | null = isMultiplayer
     ? deriveMpLastMove(mpSync!.matchState)
     : lastMoveLocal;
-  // Q.D.2: roulette state aliases for MP. The live match doc carries
-  // currentRoulettePiece (single piece type the on-clock player must move)
-  // — we surface it through the same `allowedPieceTypes` array shape the
-  // solo UI already reads, so the existing Spin Roulette button, banner,
-  // and onSquareClick restriction render verbatim in PvP roulette.
+  // Q.D.3: roulette state aliases for MP. The live match doc carries the
+  // full 4-slot bag, action counter, and used-slot indices — so the same
+  // solo UI (Spin button, slot chips, "Move a knight" hint) renders
+  // verbatim in PvP roulette without any new components.
   const allowedPieceTypes: PieceType[] | null =
     isMultiplayer && mpSync?.isRouletteMode
-      ? mpSync.currentRoulettePiece
-        ? [mpSync.currentRoulettePiece]
-        : null
+      ? mpSync.rouletteSlots
       : allowedPieceTypesLocal;
-  // In MP roulette each spin = exactly one action (no multi-slot turns).
   const rouletteActionsLeft: number =
     isMultiplayer && mpSync?.isRouletteMode
-      ? mpSync.currentRoulettePiece
-        ? 1
-        : 0
+      ? mpSync.rouletteActionsLeft
       : rouletteActionsLeftLocal;
-  const usedRouletteSlots: number[] = isMultiplayer
-    ? []
-    : usedRouletteSlotsLocal;
+  const usedRouletteSlots: number[] =
+    isMultiplayer && mpSync?.isRouletteMode
+      ? mpSync.usedRouletteSlots
+      : usedRouletteSlotsLocal;
   // Per-player gate: solo uses a local boolean reset in startNewGame; MP
   // reads my spin count off the match doc so both players track
   // independently across reloads.
@@ -1238,13 +1250,13 @@ function App() {
 
   function handleSpinRoulette() {
     if (gameMode !== 'roulette') return;
-    // Q.D.2: MP roulette routes through the hook so the random piece +
-    // pawn-bias + spin counters all stay synced via Firestore. Both
-    // peers see the same rolled piece type as soon as the doc updates.
+    // Q.D.3: MP roulette routes through the hook so the 4-slot bag,
+    // pawn-bias, and action allotment all sync via Firestore. Both peers
+    // see the same slots as soon as the doc updates.
     if (isMultiplayer) {
       if (!mpSync || !mpSync.isMyTurn) return;
       if (mpSync.matchState.status !== 'active') return;
-      if (mpSync.currentRoulettePiece !== null) return;
+      if (mpSync.rouletteSlots !== null) return;
       void mpSync.spinRoulette();
       return;
     }
@@ -1396,7 +1408,10 @@ function App() {
       ) {
         return;
       }
-      void mpSync.sendMove({ kind: 'topologyToggle' });
+      // Q.D.3: in MP roulette rotate burns an action without consuming a
+      // slot — handled by sendRotate. In classic MP rotate is a whole
+      // turn — also routes through sendRotate which delegates to sendMove.
+      void mpSync.sendRotate();
       setPreviewTopology(null);
       setSelected(null);
       return;
@@ -1528,16 +1543,17 @@ function App() {
     isMultiplayer,
   ]);
 
-  // Q.D: MP roulette auto-spin. After I've completed my first manual spin
-  // (mySpinCount > 0) every subsequent turn fires the spin automatically
-  // 500ms after my turn begins. First spin per player stays manual so the
-  // mechanic is introduced clearly.
+  // Q.D.3: MP roulette auto-spin. Fires only when I need a fresh bag AND
+  // I've already done at least one manual spin in this match. Pre-spin
+  // means rouletteSlots===null. mid-turn (action 2) ALSO has slots set
+  // — so the trigger condition is rouletteSlots===null while my turn is
+  // active.
   useEffect(() => {
     if (!isMultiplayer || !mpSync) return;
     if (!mpSync.isRouletteMode) return;
     if (!mpSync.isMyTurn) return;
     if (mpSync.matchState.status !== 'active') return;
-    if (mpSync.currentRoulettePiece !== null) return;
+    if (mpSync.rouletteSlots !== null) return;
     if (mpSync.mySpinCount === 0) return; // first spin is manual
     const t = setTimeout(() => {
       void mpSync.spinRoulette();
@@ -1550,7 +1566,7 @@ function App() {
     mpSync?.isRouletteMode,
     mpSync?.isMyTurn,
     mpSync?.matchState.status,
-    mpSync?.currentRoulettePiece,
+    mpSync?.rouletteSlots,
     mpSync?.mySpinCount,
   ]);
 
@@ -2101,15 +2117,22 @@ function App() {
       if (mpSync.matchState.status !== 'active') return;
       const sq = square as SquareId;
       const piece = state.pieces[sq];
-      // Q.D — MP roulette: board is dead until the on-clock player spins.
-      // After spin, only the rolled piece type can be selected.
-      if (mpSync.isRouletteMode && mpSync.currentRoulettePiece === null) return;
-      const rouletteType = mpSync.currentRoulettePiece;
+      // Q.D.3: MP roulette — board is dead until the on-clock player
+      // spins. After spin only piece types whose slot index is still
+      // unused can be selected.
+      const isMpRoulette = mpSync.isRouletteMode;
+      if (isMpRoulette && mpSync.rouletteSlots === null) return;
+      const canSelectType = (type: PieceType): boolean => {
+        if (!isMpRoulette || !mpSync.rouletteSlots) return true;
+        return mpSync.rouletteSlots.some(
+          (t, i) => t === type && !mpSync.usedRouletteSlots.includes(i),
+        );
+      };
       if (!selected) {
         if (
           piece &&
           piece.color === mpSync.myColor &&
-          (!rouletteType || piece.type === rouletteType)
+          canSelectType(piece.type)
         ) {
           setSelected(square);
         }
@@ -2127,7 +2150,7 @@ function App() {
         if (
           piece &&
           piece.color === mpSync.myColor &&
-          (!rouletteType || piece.type === rouletteType)
+          canSelectType(piece.type)
         ) {
           setSelected(square);
         } else {
@@ -2993,19 +3016,21 @@ function App() {
         >
           {mpSync.isMyTurn ? (
             // Roulette UI is rendered by the shared solo panel below
-            // (Spin Roulette button + slot chips + "Your turn — move a X"
-            //  banner). Here we just show the generic "Your turn" hint;
-            // when a piece has been rolled, surface it inline for clarity.
-            mpSync.isRouletteMode && mpSync.currentRoulettePiece ? (
-              <>Your turn — move a {mpSync.currentRoulettePiece}</>
+            // (Spin Roulette button + slot chips). Surface a compact
+            // action counter when we're mid-turn so the player knows
+            // they still have moves left.
+            mpSync.isRouletteMode && mpSync.rouletteSlots ? (
+              <>
+                Your turn — {mpSync.rouletteActionsLeft} action
+                {mpSync.rouletteActionsLeft === 1 ? '' : 's'} left
+              </>
             ) : (
               'Your turn'
             )
-          ) : mpSync.isRouletteMode && mpSync.currentRoulettePiece ? (
+          ) : mpSync.isRouletteMode && mpSync.rouletteSlots ? (
             <>
               <span className="mp-spinner" aria-hidden />
-              {mpSync.opponentDisplayName} moves their{' '}
-              {mpSync.currentRoulettePiece}…
+              {mpSync.opponentDisplayName} is acting…
             </>
           ) : (
             <>

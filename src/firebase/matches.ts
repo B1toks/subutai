@@ -50,9 +50,15 @@ export interface MatchDoc {
   // Stage Q.D — optional so old docs keep working. Treated as 'classic'
   // / null / {} when absent.
   gameMode?: MatchGameMode;
-  /** Non-null when the on-clock player has spun and must now move that
-   *  piece type. Cleared back to null after the move is committed. */
-  currentRoulettePiece?: PieceType | null;
+  /** Stage Q.D.3: full solo parity — one spin yields a slot bag of
+   *  ROULETTE_SLOT_COUNT piece types and the on-clock player gets
+   *  ROULETTE_MAX_ACTIONS actions to spend. Each move consumes a
+   *  matching slot; rotates spend an action without consuming a slot. */
+  rouletteSlots?: PieceType[] | null;
+  /** Actions remaining this turn. 0 between turns / pre-spin. */
+  rouletteActionsLeft?: number;
+  /** Indices into rouletteSlots already consumed by moves this turn. */
+  usedRouletteSlots?: number[];
   /** Per-player spin counter for the first-spin-manual gate
    *  (subsequent spins auto-fire after a short delay). */
   rouletteSpinsByPlayer?: Record<string, number>;
@@ -120,7 +126,9 @@ export async function createMatch(
     log: { initialTopology: 'A', moves: [] },
     outcome: null,
     gameMode,
-    currentRoulettePiece: null,
+    rouletteSlots: null,
+    rouletteActionsLeft: 0,
+    usedRouletteSlots: [],
     rouletteSpinsByPlayer: {},
     rouletteSpinCount: 0,
     createdAt: serverTimestamp(),
