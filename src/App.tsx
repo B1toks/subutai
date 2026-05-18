@@ -310,6 +310,10 @@ function App() {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [milestoneShown, setMilestoneShown] = useState(false);
   const [showMilestoneModal, setShowMilestoneModal] = useState(false);
+  // Q.D.7: ephemeral toast surfaced when the player clicks a piece that
+  // cannot escape the current check. Auto-clears after a short timeout.
+  const [blockedHint, setBlockedHint] = useState<string | null>(null);
+  const blockedHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const completedLogIdRef = useRef<string | null>(null);
   const [view, setView] = useState<
     'game' | 'review' | 'leaderboard' | 'friend-lobby'
@@ -2054,6 +2058,31 @@ function App() {
     return targets;
   }, [legalMoves, selected]);
 
+  // Q.D.7: in roulette + in-check the slot restriction is lifted, but only
+  // a small subset of pieces can ACTUALLY escape. Surface that set so the
+  // board can pulse a green border around each viable piece.
+  const movablePiecesInCheck = useMemo(() => {
+    if (gameMode !== 'roulette') return new Set<SquareId>();
+    if (!isInCheck(state)) return new Set<SquareId>();
+    const movable = new Set<SquareId>();
+    for (const move of legalMoves) {
+      if (move.from) movable.add(move.from);
+    }
+    return movable;
+  }, [gameMode, state, legalMoves]);
+
+  function maybeFlashCheckHint(square: SquareId) {
+    if (gameMode !== 'roulette') return;
+    if (!isInCheck(state)) return;
+    if (movablePiecesInCheck.has(square)) return;
+    if (blockedHintTimerRef.current) clearTimeout(blockedHintTimerRef.current);
+    setBlockedHint("This piece can't escape check");
+    blockedHintTimerRef.current = setTimeout(() => {
+      setBlockedHint(null);
+      blockedHintTimerRef.current = null;
+    }, 2500);
+  }
+
   // Stage T1: en-passant target squares get a distinct pulse so the player
   // notices the rare opportunity. Disjoint from the regular green dots.
   const enPassantTargets = useMemo(() => {
@@ -2143,34 +2172,22 @@ function App() {
       // unused can be selected.
       const isMpRoulette = mpSync.isRouletteMode;
       if (isMpRoulette && mpSync.rouletteSlots === null) return;
-      // Q.D.5: single centralized gate. Logs a diagnostic when a
-      // selection would be blocked so we can pinpoint the reason live.
-      const canSelect = (type: PieceType): boolean => {
-        if (!isMpRoulette) return true;
-        const ok = isPieceMovableInRoulette(
+      const canSelect = (type: PieceType): boolean =>
+        !isMpRoulette ||
+        isPieceMovableInRoulette(
           type,
           state,
           'roulette',
           mpSync.rouletteSlots,
           mpSync.usedRouletteSlots,
         );
-        if (!ok) {
-          console.log('[rolt] selection blocked (mp)', {
-            type,
-            slots: mpSync.rouletteSlots,
-            used: mpSync.usedRouletteSlots,
-            inCheck: isInCheck(state),
-            sideToMove: state.sideToMove,
-          });
-        }
-        return ok;
-      };
       if (!selected) {
         if (
           piece &&
           piece.color === mpSync.myColor &&
           canSelect(piece.type)
         ) {
+          maybeFlashCheckHint(square as SquareId);
           setSelected(square);
         }
         return;
@@ -2189,6 +2206,7 @@ function App() {
           piece.color === mpSync.myColor &&
           canSelect(piece.type)
         ) {
+          maybeFlashCheckHint(square as SquareId);
           setSelected(square);
         } else {
           setSelected(null);
@@ -2231,25 +2249,14 @@ function App() {
             );
           })
         : legalMoves;
-    const canSelectSolo = (type: PieceType): boolean => {
-      const ok = isPieceMovableInRoulette(
+    const canSelectSolo = (type: PieceType): boolean =>
+      isPieceMovableInRoulette(
         type,
         state,
         gameMode,
         allowedPieceTypes,
         usedRouletteSlots,
       );
-      if (!ok && gameMode === 'roulette') {
-        console.log('[rolt] selection blocked (solo)', {
-          type,
-          allowed: allowedPieceTypes,
-          used: usedRouletteSlots,
-          inCheck: isInCheck(state),
-          sideToMove: state.sideToMove,
-        });
-      }
-      return ok;
-    };
 
     if (!selected) {
       if (gameMode === 'roulette') {
@@ -2257,6 +2264,7 @@ function App() {
         if (!p || p.color !== state.sideToMove) return;
         if (!canSelectSolo(p.type)) return;
       }
+      maybeFlashCheckHint(square as SquareId);
       setSelected(square);
       return;
     }
@@ -2281,6 +2289,7 @@ function App() {
         if (!p || p.color !== state.sideToMove) return;
         if (!canSelectSolo(p.type)) return;
       }
+      maybeFlashCheckHint(square as SquareId);
       setSelected(square);
       return;
     }
@@ -2999,15 +3008,18 @@ function App() {
         </div>
       )}
 
-      {/* Q.D.5: surface the in-check override so the player knows the slot
-        restriction is lifted. Only show on MY clock — opponents' checks
-        aren't actionable from this side of the screen. */}
+      {/* Q.D.5/Q.D.7: surface the in-check override so the player knows the
+        slot restriction is lifted, and tell them exactly how many legal
+        escape moves are available. Pieces that can escape pulse on the
+        board. Only shown on MY clock — opponents' checks aren't actionable
+        from this side of the screen. */}
       {gameMode === 'roulette' &&
         gameStatus === 'active' &&
         (isMultiplayer ? !!mpSync?.isMyTurn : currentPlayer === 'human') &&
         isInCheck(state) && (
           <div className="roulette-check-override-banner" role="status">
-            {'⚠'} You're in check — roulette restriction lifted, move any piece to escape.
+            {'⚠'} You're in check — {legalMoves.length} legal escape move
+            {legalMoves.length === 1 ? '' : 's'}. Look for the pulsing green pieces.
           </div>
         )}
 
@@ -3172,6 +3184,7 @@ function App() {
               recentPlyHighlights.to.get(sq) === 1);
           const isCheckedKing = checkSquares.king === sq;
           const isCheckingPiece = checkSquares.checkers.has(sq);
+          const isCheckEscapeAvailable = movablePiecesInCheck.has(sq as SquareId);
           const threatCount = threatenedSquares.get(sq) ?? 0;
           const isThreateningPiece = threateningPieceSquares.has(sq);
 
@@ -3206,6 +3219,7 @@ function App() {
                 olderHighlight ? 'last-older' : '',
                 isCheckedKing ? (gameStatus === 'checkmate' ? 'mated-king' : 'checked-king') : '',
                 isCheckingPiece ? (gameStatus === 'checkmate' ? 'mating-piece' : 'checking-piece') : '',
+                isCheckEscapeAvailable ? 'check-escape-available' : '',
                 threatCount > 0 ? 'threatened' : '',
                 isThreateningPiece ? 'threatening-piece' : '',
                 classifiedSquare?.square === sq
@@ -3809,6 +3823,12 @@ function App() {
               Close
             </button>
           </div>
+        </div>
+      )}
+
+      {blockedHint && (
+        <div className="check-blocked-hint" role="status">
+          {'⚠'} {blockedHint}
         </div>
       )}
     </div>
