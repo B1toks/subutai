@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { ArrowLeft, Dices, Users } from 'lucide-react';
+import { Icon } from './Icon';
 import {
   createMatch,
   joinMatch,
@@ -129,10 +131,10 @@ export function FriendLobby({
           onClick={onBack}
           disabled={busy}
         >
-          {'←'} Back
+          <Icon icon={ArrowLeft} size="sm" aria-hidden /> Back
         </button>
         <h2 className="friend-lobby-title">
-          {'\u{1F465}'} Play vs Friend{' '}
+          <Icon icon={Users} size="lg" aria-hidden /> Play vs Friend{' '}
           <span className="beta-tag">BETA</span>
         </h2>
         <span className="friend-lobby-spacer" />
@@ -185,7 +187,7 @@ export function FriendLobby({
                   disabled={busy}
                 />
                 <span className="friend-lobby-mode-title">
-                  {'\u{1F3B0}'} Roulette
+                  <Icon icon={Dices} size="sm" aria-hidden /> Roulette
                 </span>
                 <span className="friend-lobby-mode-sub">
                   Spin a 4-slot bag. 2 actions per turn: move or rotate.

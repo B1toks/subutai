@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import type { LucideIcon } from 'lucide-react';
+import { Frown, Heart, Meh, Smile, Sparkles } from 'lucide-react';
+import { Icon } from './Icon';
 import {
   hasAnyContent,
   submitFeedback,
@@ -16,11 +19,11 @@ interface FeedbackPromptProps {
   onSubmitted?: () => void;
 }
 
-const RATINGS: Array<{ value: FeedbackRating; glyph: string; label: string }> = [
-  { value: 'love', glyph: '\u{1F60D}', label: 'love' },
-  { value: 'good', glyph: '\u{1F60A}', label: 'good' },
-  { value: 'meh', glyph: '\u{1F610}', label: 'meh' },
-  { value: 'bad', glyph: '\u{1F61E}', label: 'bad' },
+const RATINGS: Array<{ value: FeedbackRating; icon: LucideIcon; label: string }> = [
+  { value: 'love', icon: Heart, label: 'love' },
+  { value: 'good', icon: Smile, label: 'good' },
+  { value: 'meh', icon: Meh, label: 'meh' },
+  { value: 'bad', icon: Frown, label: 'bad' },
 ];
 
 export function FeedbackPrompt({
@@ -83,7 +86,11 @@ export function FeedbackPrompt({
   }
 
   if (submitted) {
-    return <div className="feedback-thanks">Thanks! {'\u{1F64F}'}</div>;
+    return (
+      <div className="feedback-thanks">
+        Thanks! <Icon icon={Sparkles} size="sm" aria-hidden />
+      </div>
+    );
   }
 
   return (
@@ -101,7 +108,9 @@ export function FeedbackPrompt({
             aria-pressed={rating === r.value}
             title={r.label}
           >
-            <span className="feedback-smiley-glyph">{r.glyph}</span>
+            <span className="feedback-smiley-glyph">
+              <Icon icon={r.icon} size="lg" strokeWidth={1.75} aria-hidden />
+            </span>
             <span className="feedback-smiley-label">{r.label}</span>
           </button>
         ))}

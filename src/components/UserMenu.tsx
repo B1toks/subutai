@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { ChevronDown, Pencil, User } from 'lucide-react';
+import { Icon } from './Icon';
 
 export interface UserMenuProps {
   displayName: string;
@@ -10,6 +12,7 @@ export interface UserMenuProps {
  * profile-level action ("Change name"). Leaderboard / Feedback / Help
  * are exposed as standalone buttons in the header — putting them in a
  * dropdown buried them.
+ * Sprint 3.1: emoji glyphs swapped for Lucide icons.
  */
 export function UserMenu({ displayName, onChangeName }: UserMenuProps) {
   const [open, setOpen] = useState(false);
@@ -49,9 +52,13 @@ export function UserMenu({ displayName, onChangeName }: UserMenuProps) {
         aria-expanded={open}
         title="User menu"
       >
-        <span className="user-menu-item-icon">{'\u{1F464}'}</span>
+        <span className="user-menu-item-icon">
+          <Icon icon={User} size="md" aria-hidden />
+        </span>
         <span>{displayName}</span>
-        <span className="user-menu-trigger-caret">{'▼'}</span>
+        <span className="user-menu-trigger-caret">
+          <Icon icon={ChevronDown} size="sm" aria-hidden />
+        </span>
       </button>
       {open && (
         <div className="user-menu-panel" role="menu">
@@ -61,7 +68,9 @@ export function UserMenu({ displayName, onChangeName }: UserMenuProps) {
             role="menuitem"
             onClick={() => run(onChangeName)}
           >
-            <span className="user-menu-item-icon">{'✏️'}</span>
+            <span className="user-menu-item-icon">
+              <Icon icon={Pencil} size="sm" aria-hidden />
+            </span>
             Change name
           </button>
         </div>

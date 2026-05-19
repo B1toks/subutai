@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, Check, Link2 } from 'lucide-react';
+import { Icon } from './Icon';
 import type { GameLog } from '../recording/log';
 import { analyzeGame, type GameReviewResult } from '../analysis/analyzeGame';
 import type { MoveClass, MoveAnalysis } from '../analysis/classify';
@@ -321,7 +323,7 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
     <div className="game-review">
       <header className="game-review-header">
         <button type="button" className="game-review-back" onClick={onBack}>
-          ← Back
+          <Icon icon={ArrowLeft} size="sm" aria-hidden /> Back
         </button>
         <h2>
           {title}
@@ -334,7 +336,15 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
             onClick={handleShare}
             title="Copy share link"
           >
-            {shareCopied ? '✓ Copied' : '🔗 Share'}
+            {shareCopied ? (
+              <>
+                <Icon icon={Check} size="sm" aria-hidden /> Copied
+              </>
+            ) : (
+              <>
+                <Icon icon={Link2} size="sm" aria-hidden /> Share
+              </>
+            )}
           </button>
         ) : (
           <span className="game-review-header-spacer" />

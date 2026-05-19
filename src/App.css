@@ -521,7 +521,13 @@
 }
 
 .mode-card-icon {
-  font-size: 30px;
+  /* Sprint 3.1 — was a 30px emoji; the wrapper now hosts a Lucide SVG.
+     The SVG strokes pick up `color: var(--accent-primary)` via
+     currentColor so the icon matches the surrounding glow. */
+  color: var(--accent-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   line-height: 1;
   filter: drop-shadow(0 0 6px var(--accent-primary));
@@ -752,7 +758,8 @@
 }
 
 .user-menu-trigger-caret {
-  font-size: 9px;
+  display: inline-flex;
+  align-items: center;
   opacity: 0.7;
   margin-left: 2px;
 }
@@ -803,9 +810,10 @@
 }
 
 .user-menu-item-icon {
-  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 18px;
-  text-align: center;
   flex-shrink: 0;
 }
 
@@ -863,8 +871,9 @@
   .mode-card {
     padding: var(--space-2) var(--space-3);
   }
-  .mode-card-icon {
-    font-size: 24px;
+  .mode-card-icon svg {
+    width: 24px;
+    height: 24px;
   }
   .mode-card-title {
     font-size: 16px;
@@ -3257,6 +3266,9 @@
 
 .lb-me-badge {
   color: var(--accent-gold);
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
 }
 
 .lb-points {
@@ -3278,6 +3290,9 @@
 
 .lb-outcome-glyph {
   margin-right: 4px;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
 }
 
 .lb-outcome-win .lb-outcome-label {
@@ -3430,8 +3445,15 @@
 }
 
 .feedback-smiley-glyph {
-  font-size: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   line-height: 1;
+  color: var(--text);
+}
+
+.feedback-smiley.is-selected .feedback-smiley-glyph {
+  color: var(--accent-primary);
 }
 
 .feedback-smiley-label {
@@ -3634,10 +3656,19 @@
 }
 
 .milestone-celebration {
-  font-size: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-primary);
   line-height: 1;
   margin-bottom: 6px;
   animation: milestone-bounce 3s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px var(--accent-primary));
+}
+
+.milestone-celebration svg {
+  width: 56px;
+  height: 56px;
 }
 
 @keyframes milestone-bounce {
@@ -3705,6 +3736,9 @@
 }
 
 .auto-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.5px;

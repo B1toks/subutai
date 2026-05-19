@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
+import type { LucideIcon } from 'lucide-react';
+import { MoonStar, Sun, TreePine } from 'lucide-react';
+import { Icon } from './Icon';
 
 type Theme = 'wood' | 'wood-light' | 'cyberpunk';
 
 const STORAGE_KEY = 'subutai_theme';
 const THEMES: readonly Theme[] = ['wood', 'wood-light', 'cyberpunk'] as const;
 
-const ICONS: Record<Theme, string> = {
-  wood: '\u{1FAB5}',
-  'wood-light': '\u{2600}\u{FE0F}',
-  cyberpunk: '\u{1F303}',
+const ICONS: Record<Theme, LucideIcon> = {
+  wood: TreePine,
+  'wood-light': Sun,
+  cyberpunk: MoonStar,
 };
 
 const LABELS: Record<Theme, string> = {
@@ -50,7 +53,7 @@ export function ThemeToggle() {
       title={`Theme: ${LABELS[theme]} — click for ${nextLabel}`}
       aria-label={`Theme: ${LABELS[theme]}. Click to switch to ${nextLabel}.`}
     >
-      {ICONS[theme]}
+      <Icon icon={ICONS[theme]} size="md" aria-hidden />
     </button>
   );
 }

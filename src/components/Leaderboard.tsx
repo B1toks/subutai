@@ -1,4 +1,14 @@
 import { useEffect, useState } from 'react';
+import type { LucideIcon } from 'lucide-react';
+import {
+  ArrowLeft,
+  Crown,
+  Dices,
+  Flag,
+  Handshake,
+  Trophy,
+  XCircle,
+} from 'lucide-react';
 import {
   fetchLeaderboardPage,
   type BoardType,
@@ -6,6 +16,7 @@ import {
   type LeaderboardEntry,
 } from '../firebase/leaderboard';
 import type { GameOutcome } from '../analysis/points';
+import { Icon } from './Icon';
 
 interface LeaderboardProps {
   currentUid: string | null;
@@ -13,16 +24,16 @@ interface LeaderboardProps {
   onWatchGame: (gameId: string, playerName: string) => void;
 }
 
-function outcomeIcon(outcome: GameOutcome): { glyph: string; label: string; tone: string } {
+function outcomeIcon(outcome: GameOutcome): { icon: LucideIcon; label: string; tone: string } {
   switch (outcome) {
     case 'human-win':
-      return { glyph: '\u{1F3C6}', label: 'Won', tone: 'win' };
+      return { icon: Trophy, label: 'Won', tone: 'win' };
     case 'draw':
-      return { glyph: '\u{1F91D}', label: 'Draw', tone: 'draw' };
+      return { icon: Handshake, label: 'Draw', tone: 'draw' };
     case 'ai-win':
-      return { glyph: '❌', label: 'Lost', tone: 'loss' };
+      return { icon: XCircle, label: 'Lost', tone: 'loss' };
     case 'human-resign':
-      return { glyph: '\u{1F3F3}', label: 'Resigned', tone: 'loss' };
+      return { icon: Flag, label: 'Resigned', tone: 'loss' };
   }
 }
 
@@ -89,10 +100,10 @@ export function Leaderboard({ currentUid, onBack, onWatchGame }: LeaderboardProp
     <div className="leaderboard">
       <div className="leaderboard-header">
         <button type="button" className="leaderboard-back" onClick={onBack}>
-          {'←'} Back
+          <Icon icon={ArrowLeft} size="sm" aria-hidden /> Back
         </button>
         <h2 className="leaderboard-title">
-          {'\u{1F3C6}'} Leaderboard
+          <Icon icon={Trophy} size="lg" aria-hidden /> Leaderboard
         </h2>
         <span className="leaderboard-spacer" />
       </div>
@@ -114,7 +125,7 @@ export function Leaderboard({ currentUid, onBack, onWatchGame }: LeaderboardProp
           className={`leaderboard-tab${boardType === 'roulette' ? ' is-active' : ''}`}
           onClick={() => setBoardType('roulette')}
         >
-          {'\u{1F3B0}'} Roulette
+          <Icon icon={Dices} size="sm" aria-hidden /> Roulette
         </button>
       </div>
 
@@ -162,7 +173,8 @@ export function Leaderboard({ currentUid, onBack, onWatchGame }: LeaderboardProp
                   {e.displayName}
                   {isMe && (
                     <span className="lb-me-badge" title="That’s you">
-                      {' '}{'\u{1F451}'}
+                      {' '}
+                      <Icon icon={Crown} size="sm" aria-hidden />
                     </span>
                   )}
                   {isVictor && (
@@ -170,7 +182,7 @@ export function Leaderboard({ currentUid, onBack, onWatchGame }: LeaderboardProp
                       className={`victor-badge${isMe ? ' my-victor' : ''}`}
                       title="Defeated the AI!"
                     >
-                      {'\u{1F451}'} Bot Slayer
+                      <Icon icon={Crown} size="sm" aria-hidden /> Bot Slayer
                     </span>
                   )}
                 </span>
@@ -181,7 +193,9 @@ export function Leaderboard({ currentUid, onBack, onWatchGame }: LeaderboardProp
                 <span className={`lb-outcome lb-outcome-${outcome?.tone ?? 'none'}`}>
                   {outcome ? (
                     <>
-                      <span className="lb-outcome-glyph">{outcome.glyph}</span>{' '}
+                      <span className="lb-outcome-glyph">
+                        <Icon icon={outcome.icon} size="sm" aria-hidden />
+                      </span>{' '}
                       <span className="lb-outcome-label">{outcome.label}</span>
                     </>
                   ) : (

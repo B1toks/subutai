@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import type { LucideIcon } from 'lucide-react';
+import { Frown, Heart, Meh, Smile, Sparkles } from 'lucide-react';
+import { Icon } from './Icon';
 import {
   hasAnyContent,
   submitFeedback,
@@ -11,11 +14,11 @@ interface FeedbackModalProps {
   onClose: () => void;
 }
 
-const RATINGS: Array<{ value: FeedbackRating; glyph: string; label: string }> = [
-  { value: 'love', glyph: '\u{1F60D}', label: 'love' },
-  { value: 'good', glyph: '\u{1F60A}', label: 'good' },
-  { value: 'meh', glyph: '\u{1F610}', label: 'meh' },
-  { value: 'bad', glyph: '\u{1F61E}', label: 'bad' },
+const RATINGS: Array<{ value: FeedbackRating; icon: LucideIcon; label: string }> = [
+  { value: 'love', icon: Heart, label: 'love' },
+  { value: 'good', icon: Smile, label: 'good' },
+  { value: 'meh', icon: Meh, label: 'meh' },
+  { value: 'bad', icon: Frown, label: 'bad' },
 ];
 
 export function FeedbackModal({ playerId, playerName, onClose }: FeedbackModalProps) {
@@ -101,7 +104,7 @@ export function FeedbackModal({ playerId, playerName, onClose }: FeedbackModalPr
 
         {submitted ? (
           <div className="feedback-thanks feedback-thanks-large">
-            Thanks! {'\u{1F64F}'}
+            Thanks! <Icon icon={Sparkles} size="md" aria-hidden />
           </div>
         ) : (
           <>
@@ -120,7 +123,9 @@ export function FeedbackModal({ playerId, playerName, onClose }: FeedbackModalPr
                     aria-pressed={rating === r.value}
                     title={r.label}
                   >
-                    <span className="feedback-smiley-glyph">{r.glyph}</span>
+                    <span className="feedback-smiley-glyph">
+                      <Icon icon={r.icon} size="lg" strokeWidth={1.75} aria-hidden />
+                    </span>
                     <span className="feedback-smiley-label">{r.label}</span>
                   </button>
                 ))}

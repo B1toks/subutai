@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { Check, Link2 } from 'lucide-react';
+import { Icon } from './Icon';
 import type { GameOutcome, GamePoints, MoveQualityCounts } from '../analysis/points';
 import { FeedbackPrompt } from './FeedbackPrompt';
 
@@ -210,9 +212,13 @@ function ShareGameButton({ gameId }: { gameId: string }) {
         className="summary-share-btn"
         onClick={handleShare}
       >
-        {'\u{1F517}'} Share this game
+        <Icon icon={Link2} size="sm" aria-hidden /> Share this game
       </button>
-      {copied && <span className="summary-share-feedback">{'✓'} Copied!</span>}
+      {copied && (
+        <span className="summary-share-feedback">
+          <Icon icon={Check} size="sm" aria-hidden /> Copied!
+        </span>
+      )}
     </div>
   );
 }

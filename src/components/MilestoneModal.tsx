@@ -1,3 +1,6 @@
+import { PartyPopper } from 'lucide-react';
+import { Icon } from './Icon';
+
 interface MilestoneModalProps {
   fullMoves: number;
   currentScoreEstimate: number;
@@ -18,7 +21,7 @@ export function MilestoneModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="milestone-celebration" aria-hidden>
-          {'\u{1F389}'}
+          <Icon icon={PartyPopper} size="xl" strokeWidth={1.75} />
         </div>
         <h2 className="modal-title milestone-title">{fullMoves} Moves!</h2>
         <p className="milestone-message">

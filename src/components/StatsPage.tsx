@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { BarChart3 } from 'lucide-react';
+import { Icon } from './Icon';
 import {
   collection,
   getCountFromServer,
@@ -175,7 +177,9 @@ export function StatsPage() {
   if (stats.error) {
     return (
       <div className="stats-page">
-        <h1>{'\u{1F4CA}'} Training Data Stats</h1>
+        <h1>
+          <Icon icon={BarChart3} size="lg" aria-hidden /> Training Data Stats
+        </h1>
         <div className="stats-error">{stats.error}</div>
       </div>
     );
@@ -191,7 +195,9 @@ export function StatsPage() {
 
   return (
     <div className="stats-page">
-      <h1>{'\u{1F4CA}'} Training Data Stats</h1>
+      <h1>
+        <Icon icon={BarChart3} size="lg" aria-hidden /> Training Data Stats
+      </h1>
 
       <section className="stats-hero">
         <div className="stat-big">{stats.totalGames.toLocaleString()}</div>

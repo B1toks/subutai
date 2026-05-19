@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import { Bot } from 'lucide-react';
+import { Icon } from './Icon';
 import type { GameOutcome } from '../analysis/points';
 
 interface AutoPlayViewProps {
@@ -42,7 +44,9 @@ export function AutoPlayView({
     <div className="auto-shell">
       <div className="auto-panel">
         <div className="auto-panel-header">
-          <span className="auto-badge">{'\u{1F916}'} AUTO MODE</span>
+          <span className="auto-badge">
+            <Icon icon={Bot} size="sm" aria-hidden /> AUTO MODE
+          </span>
           {!stopped && (
             <button type="button" className="auto-stop-btn" onClick={onStop}>
               Stop

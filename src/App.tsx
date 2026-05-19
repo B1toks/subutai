@@ -31,6 +31,24 @@ import { StatsPage } from './components/StatsPage';
 import { FriendLobby } from './components/FriendLobby';
 import { ThemeToggle } from './components/ThemeToggle';
 import { UserMenu } from './components/UserMenu';
+import { Icon } from './components/Icon';
+import {
+  AlarmClock,
+  AlertTriangle,
+  ArrowRight,
+  BarChart3,
+  Bot,
+  Crosshair,
+  Dices,
+  Eye,
+  Flag,
+  HelpCircle,
+  Lock,
+  MessageSquare,
+  RotateCw,
+  Trophy,
+  Users,
+} from 'lucide-react';
 import type { GameReviewMeta } from './components/GameReview';
 import { useMultiplayerSync } from './components/MultiplayerGameView';
 import type { MatchDoc, MatchOutcome } from './firebase/matches';
@@ -2921,7 +2939,7 @@ function App() {
     <div className="app-shell" ref={shellRef}>
     {showAfkAlert && currentPlayer === 'human' && gameStatus === 'active' && (
       <div className="afk-alert" role="status" aria-live="polite">
-        ⏰ Your move!
+        <Icon icon={AlarmClock} size="md" aria-hidden /> Your move!
       </div>
     )}
     <div className="app-root" style={{ '--board-size': `${boardSize}px` } as React.CSSProperties}>
@@ -2949,7 +2967,7 @@ function App() {
             title="Leaderboard"
             aria-label="Leaderboard"
           >
-            {'\u{1F3C6}'}
+            <Icon icon={Trophy} size="md" aria-hidden />
           </button>
           <button
             type="button"
@@ -2959,7 +2977,7 @@ function App() {
             title={user && displayName ? 'Send feedback' : 'Sign in and pick a name to send feedback'}
             aria-label="Send feedback"
           >
-            {'\u{1F4AC}'}
+            <Icon icon={MessageSquare} size="md" aria-hidden />
           </button>
           <button
             type="button"
@@ -2968,7 +2986,7 @@ function App() {
             title="Rules & info"
             aria-label="Rules & info"
           >
-            ?
+            <Icon icon={HelpCircle} size="md" aria-hidden />
           </button>
           <ThemeToggle />
           {displayName && (
@@ -2983,7 +3001,7 @@ function App() {
       {watchingGame && (
         <div className="watch-banner">
           <span className="watch-banner-label">
-            {'\u{1F441}'} Watching <strong>{watchingGame.playerName}</strong>’s game ·
+            <Icon icon={Eye} size="sm" aria-hidden /> Watching <strong>{watchingGame.playerName}</strong>’s game ·
             move {Math.floor((watchingGame.currentMoveIdx + 1) / 2)}/
             {Math.floor(watchingGame.log.moves.length / 2)}
           </span>
@@ -3077,7 +3095,7 @@ function App() {
         mpSync.selfAfkWarning &&
         mpSync.matchState.status === 'active' && (
           <div className="mp-banner mp-banner-warn">
-            ⏰ Your turn — make a move or auto-forfeit in ~30s.
+            <Icon icon={AlarmClock} size="sm" aria-hidden /> Your turn — make a move or auto-forfeit in ~30s.
           </div>
         )}
 
@@ -3102,7 +3120,9 @@ function App() {
             setUsedRouletteSlots([]);
           }}
         >
-          <span className="mode-card-icon" aria-hidden>{'\u{1F3AF}'}</span>
+          <span className="mode-card-icon" aria-hidden>
+            <Icon icon={Crosshair} size="xl" strokeWidth={1.75} />
+          </span>
           <span className="mode-card-content">
             <span className="mode-card-title">Classic</span>
             <span className="mode-card-subtitle">
@@ -3124,7 +3144,9 @@ function App() {
             setUsedRouletteSlots([]);
           }}
         >
-          <span className="mode-card-icon" aria-hidden>{'\u{1F3B0}'}</span>
+          <span className="mode-card-icon" aria-hidden>
+            <Icon icon={Dices} size="xl" strokeWidth={1.75} />
+          </span>
           <span className="mode-card-content">
             <span className="mode-card-title">Roulette</span>
             <span className="mode-card-subtitle">
@@ -3424,7 +3446,7 @@ function App() {
             onClick={startNewGame}
             title="New game"
           >
-            {'\u21BB'}
+            <Icon icon={RotateCw} size="md" aria-hidden />
           </button>
           <button
             type="button"
@@ -3432,7 +3454,7 @@ function App() {
             onClick={toggleFormationLock}
             title={formationLocked ? 'Unlock formation (new games will be random)' : 'Lock formation (new game keeps this 960)'}
           >
-            {'\u{1F512}'}
+            <Icon icon={Lock} size="md" aria-hidden />
           </button>
           <button
             type="button"
@@ -3441,7 +3463,7 @@ function App() {
             disabled={!!watchingGame || gameStatus !== 'active' || log.moves.length === 0}
             title="Resign \u2014 half move points, no bonus"
           >
-            {'\u{1F3F3}'}
+            <Icon icon={Flag} size="md" aria-hidden />
           </button>
         </div>
 
@@ -3461,7 +3483,7 @@ function App() {
               onClick={handleSpinRoulette}
               title="Spin the roulette for this turn"
             >
-              {'\u{1F3B0}'} Spin
+              <Icon icon={Dices} size="md" aria-hidden /> Spin
             </button>
           </div>
         )}
@@ -3474,7 +3496,7 @@ function App() {
               title="Toggle support map (who backs up whom)"
               onClick={() => setShowSupport((v) => !v)}
             >
-              {'\u27A1'}
+              <Icon icon={ArrowRight} size="md" aria-hidden />
             </button>
             <button
               type="button"
@@ -3482,7 +3504,7 @@ function App() {
               title="Toggle threat map"
               onClick={() => setShowThreats((v) => !v)}
             >
-              {'\u26A0'}
+              <Icon icon={AlertTriangle} size="md" aria-hidden />
             </button>
           </div>
           <button
@@ -3509,7 +3531,7 @@ function App() {
               if (!previewLocked) setPreviewTopology(null);
             }}
           >
-            {'\u{1F441}'}
+            <Icon icon={Eye} size="md" aria-hidden />
           </button>
           <button
             type="button"
@@ -3579,7 +3601,7 @@ function App() {
           disabled={log.moves.length === 0}
           title="Review the game move-by-move"
         >
-          📊 Review
+          <Icon icon={BarChart3} size="md" aria-hidden /> Review
         </button>
       </div>
 
@@ -3641,7 +3663,7 @@ function App() {
               onClick={() => setOpponentMode('ai')}
               title="Play vs the engine"
             >
-              <span aria-hidden>{'\u{1F916}'}</span>
+              <Icon icon={Bot} size="md" aria-hidden />
               <span>vs AI</span>
             </button>
             <button
@@ -3654,7 +3676,7 @@ function App() {
               title="Private match by code"
               disabled={!user || !displayName}
             >
-              <span aria-hidden>{'\u{1F465}'}</span>
+              <Icon icon={Users} size="md" aria-hidden />
               <span>vs Friend</span>
               <span className="beta-tag-small">BETA</span>
             </button>
@@ -3873,7 +3895,7 @@ function App() {
                   className="mp-btn mp-btn-primary"
                   onClick={reviewMatch}
                 >
-                  📊 Review this game
+                  <Icon icon={BarChart3} size="md" aria-hidden /> Review this game
                 </button>
                 <button
                   type="button"
