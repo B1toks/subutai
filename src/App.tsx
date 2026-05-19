@@ -1124,6 +1124,12 @@ function App() {
   // from an ordinary tactical brilliancy.
   const [sacrificeSquare, setSacrificeSquare] = useState<SquareId | null>(null);
   const sacrificeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Sprint 3.2 — short-lived burst on the destination square when the
+  // latest move was a capture (regular take or en passant). 600ms keyed
+  // to the .tile.is-capture animation length.
+  const [captureSquare, setCaptureSquare] = useState<SquareId | null>(null);
+  const captureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastLogLengthRef = useRef<number>(0);
 
   // Push the search-backed eval from an analysis into the bar/gradient state.
   // Used by every classify callsite (live moves, AI, imported-log completion).
@@ -1641,6 +1647,44 @@ function App() {
     }, 5_000);
     return () => clearInterval(t);
   }, [currentPlayer, gameStatus]);
+
+  // Sprint 3.2 — checkmate flash: brief radial whiteout via a body
+  // class. Triggers whenever gameStatus transitions to 'checkmate'.
+  // CSS animation handles cleanup; we still strip the class after the
+  // animation length so the class doesn't sit on body indefinitely.
+  useEffect(() => {
+    if (gameStatus !== 'checkmate') return;
+    document.body.classList.add('checkmate-flash');
+    const t = setTimeout(() => {
+      document.body.classList.remove('checkmate-flash');
+    }, 1500);
+    return () => {
+      clearTimeout(t);
+      document.body.classList.remove('checkmate-flash');
+    };
+  }, [gameStatus]);
+
+  // Sprint 3.2 — fire a capture burst on the destination tile whenever
+  // log length grows AND the new top entry is a capture/en-passant.
+  // Watching log.moves.length (not log itself) keeps the effect cheap;
+  // we also bail on length-decrease so undo/replay-rewind doesn't
+  // mis-fire on an old entry.
+  useEffect(() => {
+    const prev = lastLogLengthRef.current;
+    const cur = log.moves.length;
+    lastLogLengthRef.current = cur;
+    if (cur <= prev) return;
+    const last = log.moves[cur - 1];
+    if (!last) return;
+    if (last.move.kind !== 'capture' && last.move.kind !== 'enPassant') return;
+    if (!last.move.to) return;
+    if (captureTimerRef.current) clearTimeout(captureTimerRef.current);
+    setCaptureSquare(last.move.to);
+    captureTimerRef.current = setTimeout(() => {
+      setCaptureSquare(null);
+      captureTimerRef.current = null;
+    }, 600);
+  }, [log.moves]);
 
   // Auto-trigger the human's roulette spin after the first manual click of
   // the game. Conditions mirror the Spin Roulette button's enabled-state:
@@ -3263,6 +3307,33 @@ function App() {
           const tx = cxView - tileBase / 2;
           const ty = cyView - tileBase / 2;
 
+          // Sprint 3.2 — piece slide-in. When this tile is lastMove.to in
+          // classic mode and both endpoints have angle 0 (no per-tile
+          // rotation), compute the offset from the lastMove.from tile so
+          // the piece starts at the "from" position and animates back to
+          // its real center. Rotated-tile cases (topology B) skip the
+          // slide rather than fight the local-frame transform math.
+          let slideDx = 0;
+          let slideDy = 0;
+          let isSliding = false;
+          if (
+            piece &&
+            gameMode === 'classic' &&
+            lastMove?.to === sq &&
+            lastMove.from &&
+            lastMove.from !== lastMove.to &&
+            angle === 0
+          ) {
+            const fromTile = tilePixelCenter(lastMove.from, displayTopology, layout);
+            if (fromTile.angle === 0) {
+              const fromCxView = flip ? boardSize - fromTile.cx : fromTile.cx;
+              const fromCyView = flip ? boardSize - fromTile.cy : fromTile.cy;
+              slideDx = fromCxView - cxView;
+              slideDy = fromCyView - cyView;
+              isSliding = true;
+            }
+          }
+
           return (
             <button
               key={sq}
@@ -3284,6 +3355,7 @@ function App() {
                   ? `classified-${classifiedSquare.classification}`
                   : '',
                 sacrificeSquare === sq ? 'is-sacrifice' : '',
+                captureSquare === sq ? 'is-capture' : '',
               ]
                 .filter(Boolean)
                 .join(' ')}
@@ -3299,15 +3371,23 @@ function App() {
             >
               {piece ? (
                 <span
-                  className={[
-                    'piece',
-                    piece.color === 'white'
-                      ? 'piece-white'
-                      : 'piece-black',
-                  ].join(' ')}
-                  style={angle ? { transform: `rotate(${-angle}deg)` } : undefined}
+                  className={`piece-slide-wrap${isSliding ? ' is-sliding-in' : ''}`}
+                  style={isSliding ? ({
+                    '--slide-dx': `${slideDx}px`,
+                    '--slide-dy': `${slideDy}px`,
+                  } as React.CSSProperties) : undefined}
                 >
-                  {glyphForPiece(piece.color, piece.type)}
+                  <span
+                    className={[
+                      'piece',
+                      piece.color === 'white'
+                        ? 'piece-white'
+                        : 'piece-black',
+                    ].join(' ')}
+                    style={angle ? { transform: `rotate(${-angle}deg)` } : undefined}
+                  >
+                    {glyphForPiece(piece.color, piece.type)}
+                  </span>
                 </span>
               ) : null}
             </button>
@@ -3468,14 +3548,21 @@ function App() {
         </div>
 
         {/* Sprint 2.7.1 \u2014 compact spin button replaces the old wide
-            roulette banner. Lives inline among the board-actions row;
-            only renders when we're actually waiting on a spin for this
-            human turn (roulette mode, not yet spun, not mid-roll). */}
+            roulette banner. Lives inline among the board-actions row.
+            Sprint 3.2 \u2014 the auto-spin effects (solo + MP) take over
+            after the first manual spin, so before that the button is
+            briefly visible every turn and immediately unmounted by
+            auto-spin ~500ms later, producing a flicker + layout shift.
+            Gating on `!firstRouletteSpinDone` means the button is only
+            rendered for the literal first turn of the game (where it
+            actually needs to be clicked); afterwards auto-spin handles
+            every subsequent turn without the button mounting at all. */}
         {gameMode === 'roulette' &&
           gameStatus === 'active' &&
           allowedPieceTypes === null &&
           !isRouletteSpinning &&
-          currentPlayer === 'human' && (
+          currentPlayer === 'human' &&
+          !firstRouletteSpinDone && (
           <div className="action-group">
             <button
               type="button"

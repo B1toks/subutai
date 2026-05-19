@@ -400,6 +400,16 @@
   transition:
     --eval-c1 0.6s ease,
     --eval-c2 0.6s ease;
+  /* Sprint 3.2 — soft enter fade on view switch / first load. Fires
+     on mount; React may reuse the .app-shell DOM across view changes
+     (game / review / leaderboard / friend-lobby) so this is at least
+     a first-impression polish. */
+  animation: view-enter 280ms ease-out;
+}
+
+@keyframes view-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .app-shell::after {
@@ -1053,6 +1063,71 @@
   z-index: 2;
 }
 
+/* Sprint 3.2 — capture burst. Fires a short scale + crimson ring on
+   the destination tile whenever the latest log entry is a capture or
+   en-passant. Theme-coloured via --accent-danger so it doesn't clash
+   with the brilliant gold pulse or the sacrifice violet flash. The
+   ::after sparkle radiates outward as a quick particle burst. */
+@keyframes capture-burst {
+  0% {
+    box-shadow:
+      inset 0 0 0 0 var(--accent-danger),
+      0 0 0 0 var(--accent-danger);
+    transform: scale(1);
+  }
+  28% {
+    box-shadow:
+      inset 0 0 0 3px var(--accent-danger),
+      0 0 24px 6px var(--accent-danger);
+    transform: scale(1.08);
+  }
+  72% {
+    box-shadow:
+      inset 0 0 0 2px var(--accent-danger),
+      0 0 18px 8px var(--accent-danger);
+    transform: scale(1);
+  }
+  100% {
+    box-shadow:
+      inset 0 0 0 0 transparent,
+      0 0 0 0 transparent;
+    transform: scale(1);
+  }
+}
+
+@keyframes capture-particle-pop {
+  0%   { transform: translate(-50%, -50%) scale(0.2); opacity: 0; }
+  20%  { opacity: 1; }
+  100% {
+    transform:
+      translate(calc(-50% + var(--cap-dx, 32px)), calc(-50% + var(--cap-dy, -32px)))
+      scale(0.4);
+    opacity: 0;
+  }
+}
+
+.tile.is-capture::before {
+  animation: capture-burst 600ms ease-out;
+  z-index: 2;
+}
+
+.tile.is-capture::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-danger);
+  box-shadow: 0 0 8px var(--accent-danger);
+  pointer-events: none;
+  animation: capture-particle-pop 550ms ease-out;
+  --cap-dx: 26px;
+  --cap-dy: -22px;
+  z-index: 3;
+}
+
 .tile.is-sacrifice::after {
   content: '\2726';
   position: absolute;
@@ -1190,8 +1265,16 @@
   box-shadow: inset 0 0 0 2px rgba(140, 180, 255, 0.6);
 }
 
+/* Sprint 3.2 — pulse the king's tile while it's in check so the warning
+   reads as live rather than a static ring. mated-king keeps the static
+   ring since the checkmate-flash overlay on body handles the punch. */
+@keyframes king-check-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 4px var(--danger), 0 0 16px rgba(220, 38, 38, 0.6); }
+  50%      { box-shadow: inset 0 0 0 5px var(--danger), 0 0 28px rgba(220, 38, 38, 0.9); }
+}
+
 .tile.checked-king::before {
-  box-shadow: inset 0 0 0 4px var(--danger), 0 0 16px rgba(220, 38, 38, 0.6);
+  animation: king-check-pulse 0.9s ease-in-out infinite;
 }
 
 .tile.checking-piece::before {
@@ -1199,11 +1282,32 @@
 }
 
 .tile.mated-king::before {
-  box-shadow: inset 0 0 0 4px var(--danger), 0 0 16px rgba(220, 38, 38, 0.6);
+  box-shadow: inset 0 0 0 4px var(--danger), 0 0 24px rgba(220, 38, 38, 0.8);
 }
 
 .tile.mating-piece::before {
   box-shadow: inset 0 0 0 4px var(--danger), 0 0 16px rgba(220, 38, 38, 0.6);
+}
+
+/* Full-screen white-out flash when the game ends in checkmate. Added
+   by App.tsx via a body class with a 1.5s lifetime; auto-removed. */
+@keyframes checkmate-flash {
+  0%   { opacity: 0; }
+  18%  { opacity: 0.55; }
+  100% { opacity: 0; }
+}
+
+body.checkmate-flash::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: radial-gradient(circle at center,
+    rgba(255, 200, 80, 0.5) 0%,
+    rgba(220, 40, 40, 0.18) 60%,
+    transparent 100%);
+  animation: checkmate-flash 1.4s ease-out forwards;
 }
 
 .tile.threatened::before {
@@ -1242,6 +1346,28 @@
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.7));
   pointer-events: none;
   transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Sprint 3.2 — piece slide-in wrapper. The wrapper handles the per-move
+   slide animation; the inner .piece keeps its own counter-rotation
+   transform for topology B (these don't conflict because they're on
+   separate elements). --slide-dx / --slide-dy are set by App.tsx to the
+   pixel offset of the previous square; the keyframe interpolates back
+   to translate(0,0). Only applied for classic-mode regular moves with
+   no per-tile rotation — see the App.tsx guard. */
+.piece-slide-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@keyframes piece-slide-in {
+  from { transform: translate(var(--slide-dx, 0), var(--slide-dy, 0)); }
+  to   { transform: translate(0, 0); }
+}
+
+.piece-slide-wrap.is-sliding-in {
+  animation: piece-slide-in 240ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .piece-white {
@@ -4413,6 +4539,24 @@
     victor-shimmer 3s ease-in-out infinite,
     victor-pulse 2s ease-in-out infinite;
   white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* Sprint 3.2 — crown SVG inside the badge sized to match badge text
+   (10px font); without the override Lucide defaults to 18px and shoves
+   the badge taller than the surrounding row. */
+.victor-badge svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+/* Same fix for the inline ".lb-me-badge" crown (your-row indicator) —
+   it sits inline with the player's display name, so size it to match
+   that text rather than the icon default. */
+.lb-me-badge svg {
+  width: 14px;
+  height: 14px;
 }
 
 .victor-badge.my-victor {
@@ -4723,4 +4867,40 @@
   font-family: var(--font-display);
   font-weight: 500;
   letter-spacing: 0.04em;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   PREFERS-REDUCED-MOTION
+   Disable the punchy animations added in Sprint 3.2 for users who've
+   asked the OS / browser to reduce motion. Transitions and infinite
+   pulses are kept short (where present) but one-shot bursts /
+   slide-ins / view fades are turned off entirely. The eval-gradient
+   transition on .app-shell is fine — it's a slow ambient colour blend.
+   ═══════════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  .app-shell {
+    animation: none;
+  }
+  .tile {
+    transition: none;
+  }
+  .piece {
+    transition: none;
+  }
+  .piece-slide-wrap.is-sliding-in,
+  .tile.is-capture::before,
+  .tile.is-capture::after,
+  .tile.is-sacrifice::before,
+  .tile.is-sacrifice::after,
+  .tile.checked-king::before,
+  .tile.classified-blunder::before,
+  .tile.classified-brilliant::before,
+  .board.is-rotated::after,
+  .spin-roulette-btn-compact,
+  .afk-alert,
+  .milestone-celebration,
+  .victor-badge,
+  body.checkmate-flash::after {
+    animation: none;
+  }
 }
