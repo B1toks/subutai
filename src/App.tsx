@@ -30,6 +30,7 @@ import { AutoPlayView } from './components/AutoPlayView';
 import { StatsPage } from './components/StatsPage';
 import { FriendLobby } from './components/FriendLobby';
 import { ThemeToggle } from './components/ThemeToggle';
+import { UserMenu } from './components/UserMenu';
 import type { GameReviewMeta } from './components/GameReview';
 import { useMultiplayerSync } from './components/MultiplayerGameView';
 import type { MatchDoc, MatchOutcome } from './firebase/matches';
@@ -2869,34 +2870,19 @@ function App() {
           )}
         </div>
         <div className="header-controls">
-        {displayName && (
-          <button
-            type="button"
-            className="header-username-btn"
-            onClick={() => setShowNameModal(true)}
-            title="Change name"
-          >
-            {displayName}
-          </button>
-        )}
-        <button
-          type="button"
-          className="header-leaderboard-btn"
-          onClick={() => setView('leaderboard')}
-          title="Leaderboard"
-        >
-          {'\u{1F3C6}'}
-        </button>
-        <button
-          type="button"
-          className="header-feedback-btn"
-          onClick={() => setShowFeedbackModal(true)}
-          disabled={!user || !displayName}
-          title="Share feedback"
-          aria-label="Share feedback"
-        >
-          {'\u{1F4AC}'}
-        </button>
+          <ThemeToggle />
+          <UserMenu
+            displayName={displayName}
+            canFeedback={!!user && !!displayName}
+            onChangeName={() => setShowNameModal(true)}
+            onOpenLeaderboard={() => setView('leaderboard')}
+            onOpenFeedback={() => setShowFeedbackModal(true)}
+            onOpenHelp={() => setShowHelp(true)}
+          />
+        </div>
+      </header>
+
+      <div className="app-mode-tabs">
         <div className="opponent-mode-switcher">
           <button
             type="button"
@@ -2920,6 +2906,7 @@ function App() {
             <span className="beta-tag">BETA</span>
           </button>
         </div>
+        <span className="mode-separator" aria-hidden>·</span>
         <div className="mode-toggle">
           <button
             type="button"
@@ -2954,17 +2941,7 @@ function App() {
             Roulette
           </button>
         </div>
-        <ThemeToggle />
-        <button
-          type="button"
-          className="header-help-btn"
-          onClick={() => setShowHelp(true)}
-          title="Rules & info"
-        >
-          ?
-        </button>
-        </div>
-      </header>
+      </div>
 
       {watchingGame && (
         <div className="watch-banner">
@@ -3128,6 +3105,8 @@ function App() {
         <div className="mp-banner mp-banner-error">{mpSync.error}</div>
       )}
 
+      <div className="app-body">
+      <div className="board-area">
       <div className="board-with-eval">
         <EvalBar
           evalCp={myPerspectiveEval}
@@ -3560,6 +3539,65 @@ function App() {
           </span>
         )}
       </div>
+      </div>
+      <aside className="right-sidebar">
+        <section className="sidebar-panel sidebar-moves">
+          <h3 className="sidebar-panel-title">
+            Moves ({Math.ceil(log.moves.length / 2)})
+          </h3>
+          {log.moves.length === 0 ? (
+            <div className="move-log-empty">No moves yet.</div>
+          ) : (
+            <pre className="move-log-text">{notationString}</pre>
+          )}
+          <button
+            type="button"
+            className="copy-btn"
+            onClick={copyNotation}
+            disabled={log.moves.length === 0}
+          >
+            {copied ? 'Copied!' : 'Copy to clipboard'}
+          </button>
+        </section>
+
+        <section className="sidebar-panel sidebar-analysis">
+          <h3 className="sidebar-panel-title">Analysis</h3>
+          {(() => {
+            if (searchMateInPlies != null) {
+              const movesToMate = Math.ceil(Math.abs(searchMateInPlies) / 2);
+              const fromMy =
+                myColor === 'white' ? searchMateInPlies : -searchMateInPlies;
+              const cls = fromMy > 0 ? 'positive' : 'negative';
+              return (
+                <div className={`analysis-eval ${cls}`}>
+                  {fromMy > 0 ? '+' : '-'}M{movesToMate}
+                </div>
+              );
+            }
+            if (!isMultiplayer && searchEvalFromWhite === null) {
+              return <div className="analysis-eval">…</div>;
+            }
+            const cp = myPerspectiveEval;
+            const cls = cp > 30 ? 'positive' : cp < -30 ? 'negative' : '';
+            return (
+              <div className={`analysis-eval ${cls}`}>
+                {cp >= 0 ? '+' : ''}
+                {(cp / 100).toFixed(2)}
+              </div>
+            );
+          })()}
+          {log.moves.length > 0 && (
+            <div className="analysis-last">
+              Last move:&nbsp;
+              <span style={{ fontFamily: 'var(--font-mono, ui-monospace, monospace)' }}>
+                {log.moves[log.moves.length - 1]?.san ??
+                  `${log.moves[log.moves.length - 1]?.move.from ?? ''}→${log.moves[log.moves.length - 1]?.move.to ?? ''}`}
+              </span>
+            </div>
+          )}
+        </section>
+      </aside>
+      </div>
 
       {showReplayDialog && (
         <div className="help-backdrop" onClick={() => setShowReplayDialog(false)}>
@@ -3590,18 +3628,27 @@ function App() {
         </div>
       )}
 
-      <details className="move-log-details">
-        {/* ceil so the count matches the highest move number actually visible
-            in the notation (after White's reply, "3." is on screen so we
-            show 3, not 2). */}
-        <summary>Moves ({Math.ceil(log.moves.length / 2)})</summary>
-        <div className="move-log-content">
-          <pre className="move-log-text">{notationString}</pre>
-          <button type="button" className="copy-btn" onClick={copyNotation}>
-            {copied ? 'Copied!' : 'Copy to clipboard'}
-          </button>
-        </div>
-      </details>
+      <footer className="app-status-bar">
+        <span className={`status-turn${currentPlayer === 'human' ? ' status-turn-mine' : ''}`}>
+          {currentPlayer === 'human'
+            ? gameStatus === 'active'
+              ? '⚡ Your turn'
+              : 'Game over'
+            : isMultiplayer && mpSync
+              ? `⏳ Waiting for ${mpSync.opponentDisplayName}`
+              : '⏳ AI is thinking…'}
+          {gameMode === 'roulette' &&
+            gameStatus === 'active' &&
+            allowedPieceTypes !== null &&
+            ` · ${rouletteActionsLeft} action${rouletteActionsLeft === 1 ? '' : 's'} left`}
+        </span>
+        <span className="status-last-move">
+          {log.moves.length > 0
+            ? `Last: ${log.moves[log.moves.length - 1]?.san ??
+                `${log.moves[log.moves.length - 1]?.move.from ?? ''}→${log.moves[log.moves.length - 1]?.move.to ?? ''}`}`
+            : '—'}
+        </span>
+      </footer>
 
       {!isMultiplayer && (
         <MemoryPanel onGameActivate={onMemoryGameActivate} />

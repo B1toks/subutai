@@ -139,6 +139,20 @@
   --font-body: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Consolas', monospace;
 
+  /* Spacing scale (4px base) — shared across all themes */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 40px;
+  --space-6: 64px;
+
+  /* Radius — shared across all themes */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 9999px;
+
   color-scheme: dark;
 }
 
@@ -386,13 +400,260 @@
 }
 
 .app-root {
-  width: var(--board-size);
+  width: 100%;
+  max-width: 1100px;
   margin: 0 auto;
-  padding: 16px 0 32px;
+  padding: var(--space-3) var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SPRINT 2 LAYOUT — Lichess-style grid scaffolding.
+   The actual game logic and styling lives in earlier sections; this
+   block only provides the new structural skeleton (subheader tabs,
+   2-column body, sidebar panels, status bar). Existing in-game
+   buttons (Rotate, Resign, etc.) stay where they are under the board.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Mode-tabs subheader — opponent + game mode pill rows */
+.app-mode-tabs {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-1) 0;
+}
+
+.app-mode-tabs .mode-separator {
+  color: var(--text-muted);
+  font-size: 14px;
+  user-select: none;
+}
+
+/* 2-column body: board (centered) | sidebar */
+.app-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.board-area {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-2);
+  min-width: 0;
+  /* Cap to the board's natural width so the action / position rows
+     stay aligned with the board edges rather than stretching to fill
+     the grid column on wide viewports. */
+  max-width: calc(var(--board-size) + 32px);
+  width: 100%;
+  margin: 0 auto;
+}
+
+.right-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.sidebar-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--btn-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sidebar-panel-title {
+  margin: 0 0 var(--space-1);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+.sidebar-moves .move-log-text {
+  margin: 0;
+  padding: var(--space-2);
+  max-height: 280px;
+  overflow-y: auto;
+  font-size: 12px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.6;
+}
+
+.sidebar-moves .move-log-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: var(--space-2);
+}
+
+.sidebar-moves .copy-btn {
+  align-self: flex-start;
+  margin-top: 0;
+}
+
+.sidebar-analysis .analysis-eval {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.sidebar-analysis .analysis-eval.positive { color: var(--success-light); }
+.sidebar-analysis .analysis-eval.negative { color: var(--danger-light); }
+
+.sidebar-analysis .analysis-last {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Status bar — pinned at bottom of app-root, simple flex strip */
+.app-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  font-size: 13px;
+  color: var(--text-muted);
+  background: var(--bg-card);
+  border: 1px solid var(--btn-border);
+  border-radius: var(--radius-md);
+  flex-wrap: wrap;
+}
+
+.app-status-bar .status-turn {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.app-status-bar .status-turn-mine {
+  color: var(--accent-primary);
+}
+
+.app-status-bar .status-last-move {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+/* ─── User menu (dropdown) ─────────────────────────────────────── */
+.user-menu {
+  position: relative;
+}
+
+.user-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  height: 30px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.user-menu-trigger:hover {
+  background: var(--bg-elevated-hover);
+  border-color: var(--accent-primary);
+}
+
+.user-menu-trigger-caret {
+  font-size: 9px;
+  opacity: 0.7;
+  margin-left: 2px;
+}
+
+.user-menu-anon {
+  color: var(--text-muted);
+}
+
+.user-menu-panel {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  z-index: 80;
+  min-width: 200px;
+  background: var(--bg-card);
+  border: 1px solid var(--btn-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-elevated);
+  padding: var(--space-1);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.user-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2);
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s ease;
+  font-family: inherit;
+}
+
+.user-menu-item:hover:not(:disabled) {
+  background: var(--bg-elevated-hover);
+}
+
+.user-menu-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.user-menu-item-icon {
+  font-size: 14px;
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.user-menu-divider {
+  height: 1px;
+  background: var(--btn-border);
+  margin: var(--space-1) 0;
+}
+
+/* Mobile: stack sidebar below board */
+@media (max-width: 880px) {
+  .app-body {
+    grid-template-columns: 1fr;
+  }
+  .right-sidebar {
+    order: 2;
+  }
+  .board-area {
+    order: 1;
+  }
 }
 
 /* Header */
