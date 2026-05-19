@@ -171,9 +171,8 @@ export function Leaderboard({ currentUid, onBack, onWatchGame }: LeaderboardProp
                 <span className="lb-rank">#{rank}</span>
                 <span className="lb-name">
                   {e.displayName}
-                  {isMe && (
+                  {isMe && !isVictor && (
                     <span className="lb-me-badge" title="That’s you">
-                      {' '}
                       <Icon icon={Crown} size="sm" aria-hidden />
                     </span>
                   )}
@@ -182,7 +181,8 @@ export function Leaderboard({ currentUid, onBack, onWatchGame }: LeaderboardProp
                       className={`victor-badge${isMe ? ' my-victor' : ''}`}
                       title="Defeated the AI!"
                     >
-                      <Icon icon={Crown} size="sm" aria-hidden /> Bot Slayer
+                      <Icon icon={Crown} size={13} strokeWidth={2.4} aria-hidden />
+                      <span>Bot Slayer</span>
                     </span>
                   )}
                 </span>

@@ -46,6 +46,7 @@ import {
   Lock,
   MessageSquare,
   RotateCw,
+  Sparkles,
   Trophy,
   Users,
 } from 'lucide-react';
@@ -1130,6 +1131,12 @@ function App() {
   const [captureSquare, setCaptureSquare] = useState<SquareId | null>(null);
   const captureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastLogLengthRef = useRef<number>(0);
+  // Sprint 3.2.1 — distinctive screen-wide effect on blunder / brilliant
+  // classifications. The existing generic flash overlay (--flash-opacity
+  // on .app-shell::after) is kept; this adds shake + vignette for ??
+  // and a gold pulse + floating sparkles for !!.
+  const [flashEffect, setFlashEffect] = useState<'blunder' | 'brilliant' | null>(null);
+  const flashEffectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Push the search-backed eval from an analysis into the bar/gradient state.
   // Used by every classify callsite (live moves, AI, imported-log completion).
@@ -1180,7 +1187,41 @@ function App() {
     setTimeout(() => {
       shell.style.setProperty('--flash-opacity', '0');
     }, 50);
+
+    // Sprint 3.2.1 — additional distinctive overlay/effect for ?? / !!.
+    // Checkmate flash is handled separately by the gameStatus useEffect
+    // (body.checkmate-flash radial whiteout).
+    let effectKind: 'blunder' | 'brilliant' | null = null;
+    let effectDuration = 0;
+    if (cls === 'blunder') {
+      effectKind = 'blunder';
+      effectDuration = 800;
+    } else if (cls === 'brilliant') {
+      effectKind = 'brilliant';
+      effectDuration = 1500;
+    }
+    if (effectKind) {
+      if (flashEffectTimerRef.current) clearTimeout(flashEffectTimerRef.current);
+      setFlashEffect(effectKind);
+      flashEffectTimerRef.current = setTimeout(() => {
+        setFlashEffect(null);
+        flashEffectTimerRef.current = null;
+      }, effectDuration);
+    }
   }, []);
+
+  // Sprint 3.2.1 — sparkle positions for the brilliant overlay.
+  // Regenerated whenever flashEffect transitions to 'brilliant' so each
+  // !! gets fresh randomised positions. Empty list otherwise.
+  const sparklePositions = useMemo(() => {
+    if (flashEffect !== 'brilliant') return [] as Array<{ x: number; y: number; delay: number; rot: number }>;
+    return Array.from({ length: 6 }, () => ({
+      x: 15 + Math.random() * 70,
+      y: 15 + Math.random() * 70,
+      delay: Math.floor(Math.random() * 200),
+      rot: Math.floor(Math.random() * 360),
+    }));
+  }, [flashEffect]);
 
   // Apply per-move visual side-effects, but only if no newer move has been
   // played since the analysis was queued. With the Worker-backed classifier
@@ -2980,7 +3021,34 @@ function App() {
   }
 
   return (
-    <div className="app-shell" ref={shellRef}>
+    <div
+      className={`app-shell${flashEffect ? ` is-${flashEffect}-flash` : ''}`}
+      ref={shellRef}
+    >
+    {flashEffect && (
+      <div
+        className={`screen-flash-effect screen-flash-${flashEffect}`}
+        aria-hidden
+      />
+    )}
+    {flashEffect === 'brilliant' && (
+      <div className="brilliant-sparkles" aria-hidden>
+        {sparklePositions.map((s, i) => (
+          <span
+            key={i}
+            className="brilliant-sparkle"
+            style={{
+              left: `${s.x}vw`,
+              top: `${s.y}vh`,
+              animationDelay: `${s.delay}ms`,
+              ['--sparkle-rot' as string]: `${s.rot}deg`,
+            } as React.CSSProperties}
+          >
+            <Icon icon={Sparkles} size="md" aria-hidden />
+          </span>
+        ))}
+      </div>
+    )}
     {showAfkAlert && currentPlayer === 'human' && gameStatus === 'active' && (
       <div className="afk-alert" role="status" aria-live="polite">
         <Icon icon={AlarmClock} size="md" aria-hidden /> Your move!
@@ -3519,7 +3587,12 @@ function App() {
       )}
 
       <div className="board-actions">
-        <div className="action-group action-group-reset-lock">
+        {/* Sprint 3.2.1 \u2014 six icon buttons consolidated into one
+            cohesive bar with a single divider between the meta-controls
+            (Reset / Lock / Resign) and the in-game toggles (Support /
+            Threat / Preview). Lock no longer reads as a stray button \u2014
+            it's middle-of-the-row inside the same container. */}
+        <div className="action-buttons-group">
           <button
             type="button"
             className="action-btn"
@@ -3544,6 +3617,49 @@ function App() {
             title="Resign \u2014 half move points, no bonus"
           >
             <Icon icon={Flag} size="md" aria-hidden />
+          </button>
+          <span className="action-group-divider" aria-hidden />
+          <button
+            type="button"
+            className={`action-btn${showSupport ? ' active' : ''}`}
+            title="Toggle support map (who backs up whom)"
+            onClick={() => setShowSupport((v) => !v)}
+          >
+            <Icon icon={ArrowRight} size="md" aria-hidden />
+          </button>
+          <button
+            type="button"
+            className={`action-btn${showThreats ? ' active' : ''}`}
+            title="Toggle threat map"
+            onClick={() => setShowThreats((v) => !v)}
+          >
+            <Icon icon={AlertTriangle} size="md" aria-hidden />
+          </button>
+          <button
+            type="button"
+            className={`action-btn preview-btn${previewLocked ? ' active' : ''}`}
+            title={previewLocked ? 'Unlock rotation preview' : 'Preview rotation (click to lock)'}
+            disabled={currentPlayer !== 'human'}
+            onClick={() => {
+              if (currentPlayer !== 'human') return;
+              if (previewLocked) {
+                setPreviewLocked(false);
+                setLockedPreviewTopology(null);
+              } else {
+                setPreviewLocked(true);
+                setLockedPreviewTopology(state.topologyState === 'A' ? 'B' : 'A');
+              }
+            }}
+            onPointerEnter={() => {
+              if (currentPlayer === 'human' && !previewLocked) {
+                setPreviewTopology(state.topologyState === 'A' ? 'B' : 'A');
+              }
+            }}
+            onPointerLeave={() => {
+              if (!previewLocked) setPreviewTopology(null);
+            }}
+          >
+            <Icon icon={Eye} size="md" aria-hidden />
           </button>
         </div>
 
@@ -3575,60 +3691,14 @@ function App() {
           </div>
         )}
 
-        <div className="action-group action-group-center">
-          <div className="action-group action-group-support-threat">
-            <button
-              type="button"
-              className={`action-btn${showSupport ? ' active' : ''}`}
-              title="Toggle support map (who backs up whom)"
-              onClick={() => setShowSupport((v) => !v)}
-            >
-              <Icon icon={ArrowRight} size="md" aria-hidden />
-            </button>
-            <button
-              type="button"
-              className={`action-btn${showThreats ? ' active' : ''}`}
-              title="Toggle threat map"
-              onClick={() => setShowThreats((v) => !v)}
-            >
-              <Icon icon={AlertTriangle} size="md" aria-hidden />
-            </button>
-          </div>
-          <button
-            type="button"
-            className={`action-btn preview-btn${previewLocked ? ' active' : ''}`}
-            title={previewLocked ? 'Unlock rotation preview' : 'Preview rotation (click to lock)'}
-            disabled={currentPlayer !== 'human'}
-            onClick={() => {
-              if (currentPlayer !== 'human') return;
-              if (previewLocked) {
-                setPreviewLocked(false);
-                setLockedPreviewTopology(null);
-              } else {
-                setPreviewLocked(true);
-                setLockedPreviewTopology(state.topologyState === 'A' ? 'B' : 'A');
-              }
-            }}
-            onPointerEnter={() => {
-              if (currentPlayer === 'human' && !previewLocked) {
-                setPreviewTopology(state.topologyState === 'A' ? 'B' : 'A');
-              }
-            }}
-            onPointerLeave={() => {
-              if (!previewLocked) setPreviewTopology(null);
-            }}
-          >
-            <Icon icon={Eye} size="md" aria-hidden />
-          </button>
-          <button
-            type="button"
-            className="rotate-btn"
-            onClick={handleRotate}
-            disabled={!canRotate}
-          >
-            Rotate &middot; {state.topologyState === 'A' ? 'A \u2192 B' : 'B \u2192 A'}
-          </button>
-        </div>
+        <button
+          type="button"
+          className="rotate-btn"
+          onClick={handleRotate}
+          disabled={!canRotate}
+        >
+          Rotate &middot; {state.topologyState === 'A' ? 'A \u2192 B' : 'B \u2192 A'}
+        </button>
         <div
           className="material-score-wrap"
           onMouseEnter={() => setShowMaterialPopup(true)}

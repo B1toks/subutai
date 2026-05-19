@@ -1310,6 +1310,87 @@ body.checkmate-flash::after {
   animation: checkmate-flash 1.4s ease-out forwards;
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   SPRINT 3.2.1 — distinctive screen effects for ?? / !!
+   The existing generic flash on .app-shell::after (--flash-opacity)
+   stays; this layer adds shake + crimson vignette for blunders and
+   a gold pulse + drifting sparkles for brilliancies.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Shake the inner .app-root on a blunder — never the whole .app-shell
+   so it doesn't fight the view-enter animation rule. */
+@keyframes blunder-shake {
+  0%, 100% { transform: translateX(0); }
+  20%      { transform: translateX(-4px); }
+  40%      { transform: translateX(4px); }
+  60%      { transform: translateX(-3px); }
+  80%      { transform: translateX(2px); }
+}
+
+.app-shell.is-blunder-flash .app-root {
+  animation: blunder-shake 350ms ease-out;
+}
+
+@keyframes blunder-vignette {
+  0%   { box-shadow: inset 0 0 0 0 rgba(220, 40, 40, 0); }
+  25%  { box-shadow: inset 0 0 100px 20px rgba(220, 40, 40, 0.4); }
+  100% { box-shadow: inset 0 0 0 0 rgba(220, 40, 40, 0); }
+}
+
+@keyframes brilliant-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 0 rgba(255, 215, 0, 0); }
+  30%      { box-shadow: inset 0 0 120px 30px rgba(255, 215, 0, 0.35); }
+}
+
+.screen-flash-effect {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9998;
+}
+
+.screen-flash-effect.screen-flash-blunder {
+  animation: blunder-vignette 800ms ease-out;
+}
+
+.screen-flash-effect.screen-flash-brilliant {
+  animation: brilliant-pulse 1.2s ease-out;
+}
+
+.brilliant-sparkles {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.brilliant-sparkle {
+  position: absolute;
+  color: rgba(255, 215, 0, 0.95);
+  filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.85));
+  animation: sparkle-float 1.4s ease-out forwards;
+  display: inline-flex;
+  transform-origin: center;
+}
+
+@keyframes sparkle-float {
+  0% {
+    transform: scale(0) rotate(0deg);
+    opacity: 0;
+  }
+  20% {
+    transform: scale(1) rotate(var(--sparkle-rot, 45deg));
+    opacity: 1;
+  }
+  100% {
+    transform:
+      translateY(-80px)
+      scale(0.7)
+      rotate(calc(var(--sparkle-rot, 45deg) + 180deg));
+    opacity: 0;
+  }
+}
+
 .tile.threatened::before {
   background: rgba(220, 38, 38, calc(0.08 * var(--threat-n, 1)));
 }
@@ -1412,6 +1493,61 @@ body.checkmate-flash::after {
   align-items: center;
   justify-content: space-between;
   gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Sprint 3.2.1 — unified icon-button bar. Reset / Lock / Resign +
+   Support / Threat / Preview now share one rounded container with a
+   single vertical divider between the meta-control trio and the
+   in-game-toggle trio. Individual buttons drop their own border and
+   pick up a hover wash instead. */
+.action-buttons-group {
+  display: inline-flex;
+  align-items: stretch;
+  background: var(--bg-elevated);
+  border: 1px solid var(--btn-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-elevated);
+}
+
+.action-buttons-group .action-btn {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  width: 38px;
+  height: 38px;
+  color: var(--text);
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.action-buttons-group .action-btn:hover:not(:disabled) {
+  background: var(--bg-elevated-hover);
+  transform: none;
+}
+
+.action-buttons-group .action-btn:active:not(:disabled) {
+  transform: none;
+}
+
+.action-buttons-group .action-btn.active {
+  background: var(--bg-mid);
+  color: var(--accent-primary);
+  box-shadow: inset 0 -2px 0 var(--accent-primary);
+}
+
+/* The resign-btn keeps its danger tint when hovered (existing CSS
+   already handles .resign-btn:hover); reset its inherited padding so
+   it doesn't break the row height. */
+.action-buttons-group .action-btn.resign-btn {
+  padding: 0;
+}
+
+.action-group-divider {
+  width: 1px;
+  background: var(--border-strong);
+  margin: 8px 4px;
+  flex-shrink: 0;
 }
 
 .action-group {
@@ -3388,13 +3524,20 @@ body.checkmate-flash::after {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Sprint 3.2.1 — make the name + badge cluster behave as a flex row
+     so the crown / Bot Slayer pill align to the text baseline instead
+     of sitting half a line above it. */
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 .lb-me-badge {
   color: var(--accent-gold);
   display: inline-flex;
   align-items: center;
-  vertical-align: middle;
+  line-height: 1;
 }
 
 .lb-points {
@@ -4900,7 +5043,17 @@ body.checkmate-flash::after {
   .afk-alert,
   .milestone-celebration,
   .victor-badge,
-  body.checkmate-flash::after {
+  body.checkmate-flash::after,
+  .app-shell.is-blunder-flash .app-root,
+  .screen-flash-effect.screen-flash-blunder,
+  .screen-flash-effect.screen-flash-brilliant,
+  .brilliant-sparkle {
     animation: none;
+  }
+  /* Sparkles depend on the float animation entirely — hide them
+     instead of leaving frozen lucide glyphs scattered across the
+     viewport when motion is reduced. */
+  .brilliant-sparkles {
+    display: none;
   }
 }
