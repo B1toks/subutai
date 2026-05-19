@@ -2980,53 +2980,6 @@ function App() {
         </div>
       </header>
 
-      <div className="game-mode-cards">
-        <button
-          type="button"
-          className={`mode-card${gameMode === 'classic' ? ' is-active' : ''}`}
-          disabled={modeToggleLocked}
-          title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Classic chess rules'}
-          onClick={() => {
-            if (gameMode === 'classic') return;
-            setGameMode('classic');
-            setAllowedPieceTypes(null);
-            setIsRouletteSpinning(false);
-            setRouletteActionsLeft(0);
-            setUsedRouletteSlots([]);
-          }}
-        >
-          <span className="mode-card-icon" aria-hidden>{'\u{1F3AF}'}</span>
-          <span className="mode-card-content">
-            <span className="mode-card-title">Classic</span>
-            <span className="mode-card-subtitle">
-              Standard chess960 + topology rotation
-            </span>
-          </span>
-        </button>
-        <button
-          type="button"
-          className={`mode-card${gameMode === 'roulette' ? ' is-active' : ''}`}
-          disabled={modeToggleLocked}
-          title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Spin a 4-slot bag · 2 actions/turn (move or rotate)'}
-          onClick={() => {
-            if (gameMode === 'roulette') return;
-            setGameMode('roulette');
-            setAllowedPieceTypes(null);
-            setIsRouletteSpinning(false);
-            setRouletteActionsLeft(0);
-            setUsedRouletteSlots([]);
-          }}
-        >
-          <span className="mode-card-icon" aria-hidden>{'\u{1F3B0}'}</span>
-          <span className="mode-card-content">
-            <span className="mode-card-title">Roulette</span>
-            <span className="mode-card-subtitle">
-              Capture-the-king · spin the wheel
-            </span>
-          </span>
-        </button>
-      </div>
-
       {watchingGame && (
         <div className="watch-banner">
           <span className="watch-banner-label">
@@ -3134,7 +3087,59 @@ function App() {
 
       <div className="app-body">
       <div className="board-area">
-      {gameMode === 'roulette' && gameStatus === 'active' && (
+      <div className="game-mode-cards">
+        <button
+          type="button"
+          className={`mode-card${gameMode === 'classic' ? ' is-active' : ''}`}
+          disabled={modeToggleLocked}
+          title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Classic chess rules'}
+          onClick={() => {
+            if (gameMode === 'classic') return;
+            setGameMode('classic');
+            setAllowedPieceTypes(null);
+            setIsRouletteSpinning(false);
+            setRouletteActionsLeft(0);
+            setUsedRouletteSlots([]);
+          }}
+        >
+          <span className="mode-card-icon" aria-hidden>{'\u{1F3AF}'}</span>
+          <span className="mode-card-content">
+            <span className="mode-card-title">Classic</span>
+            <span className="mode-card-subtitle">
+              Standard chess960 + topology rotation
+            </span>
+          </span>
+        </button>
+        <button
+          type="button"
+          className={`mode-card${gameMode === 'roulette' ? ' is-active' : ''}`}
+          disabled={modeToggleLocked}
+          title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Spin a 4-slot bag · 2 actions/turn (move or rotate)'}
+          onClick={() => {
+            if (gameMode === 'roulette') return;
+            setGameMode('roulette');
+            setAllowedPieceTypes(null);
+            setIsRouletteSpinning(false);
+            setRouletteActionsLeft(0);
+            setUsedRouletteSlots([]);
+          }}
+        >
+          <span className="mode-card-icon" aria-hidden>{'\u{1F3B0}'}</span>
+          <span className="mode-card-content">
+            <span className="mode-card-title">Roulette</span>
+            <span className="mode-card-subtitle">
+              Capture-the-king · spin the wheel
+            </span>
+          </span>
+        </button>
+      </div>
+      {/* Sprint 2.7.1 — the roulette panel now only renders when there
+          is actual slot or spinning state to show. Pre-spin attention
+          is handled by the compact .spin-roulette-btn-compact in the
+          board-actions row, so the wide banner is gone. */}
+      {gameMode === 'roulette' &&
+        gameStatus === 'active' &&
+        (allowedPieceTypes || isRouletteSpinning) && (
         <div className="roulette-panel">
           <div className="roulette-display">
             {allowedPieceTypes ? (
@@ -3151,16 +3156,10 @@ function App() {
                   </span>
                 );
               })
-            ) : isRouletteSpinning ? (
+            ) : (
               Array.from({ length: ROULETTE_SLOT_COUNT }, (_, i) => (
                 <span key={i} className="roulette-face roulette-face-rolling">?</span>
               ))
-            ) : (
-              <span className="roulette-label">
-                {currentPlayer === 'human'
-                  ? 'Your turn — spin the roulette'
-                  : 'AI is about to spin...'}
-              </span>
             )}
           </div>
 
@@ -3175,19 +3174,6 @@ function App() {
               ))}
             </div>
           )}
-
-          <button
-            type="button"
-            className="roulette-spin-btn"
-            onClick={handleSpinRoulette}
-            disabled={
-              allowedPieceTypes !== null ||
-              isRouletteSpinning ||
-              currentPlayer !== 'human'
-            }
-          >
-            Spin Roulette
-          </button>
         </div>
       )}
       <div className="board-with-eval">
@@ -3458,6 +3444,27 @@ function App() {
             {'\u{1F3F3}'}
           </button>
         </div>
+
+        {/* Sprint 2.7.1 \u2014 compact spin button replaces the old wide
+            roulette banner. Lives inline among the board-actions row;
+            only renders when we're actually waiting on a spin for this
+            human turn (roulette mode, not yet spun, not mid-roll). */}
+        {gameMode === 'roulette' &&
+          gameStatus === 'active' &&
+          allowedPieceTypes === null &&
+          !isRouletteSpinning &&
+          currentPlayer === 'human' && (
+          <div className="action-group">
+            <button
+              type="button"
+              className="spin-roulette-btn-compact"
+              onClick={handleSpinRoulette}
+              title="Spin the roulette for this turn"
+            >
+              {'\u{1F3B0}'} Spin
+            </button>
+          </div>
+        )}
 
         <div className="action-group action-group-center">
           <div className="action-group action-group-support-threat">
