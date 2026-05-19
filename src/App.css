@@ -389,6 +389,124 @@
   color-scheme: dark;
 }
 
+/* ─── Fantasy: gothic bronze/gold chess set ─────────────────────── */
+[data-theme="fantasy"] {
+  /* Backgrounds — near-black with warm bronze undertone */
+  --bg: #0a0805;
+  --bg-deep: #0a0805;
+  --bg-mid: #1a1408;
+  --bg-elevated: #2a2010;
+  --bg-elevated-hover: #3a2c18;
+  --bg-panel: #221a0c;
+  --bg-panel-deep: #150f06;
+  --bg-card: #1a1408;
+  --bg-card-alt: #221a0c;
+  --bg-overlay-dark: #0a0805;
+  --bg-popup: #2a2010;
+  --bg-deeper: #0a0805;
+  --bg-danger-tint: #2a1410;
+
+  /* Tiles — warm bronze light vs deep black-brown dark */
+  --tile-light: #4a3520;
+  --tile-dark: #1a1208;
+  --tile-light-alt: #5a4530;
+  --tile-dark-alt: #221810;
+  --tile-promo-light: #5a4530;
+  --tile-promo-dark: #1a1208;
+  --tile-promo-light-text: #e8d5a0;
+  --tile-promo-dark-text: #e8d5a0;
+
+  /* Pieces — royal gold vs dark bronze */
+  --piece-white: #d4af37;
+  --piece-black: #2a1f10;
+  --piece-text-on-bright: #0a0805;
+  --piece-white-flat: #d4af37;
+  --piece-black-flat: #2a1f10;
+  --piece-white-shadow:
+    0 0 4px rgba(0, 0, 0, 0.8),
+    0 0 8px rgba(212, 175, 55, 0.5);
+  --piece-black-shadow:
+    0 0 3px rgba(232, 213, 160, 0.6),
+    0 0 6px rgba(232, 213, 160, 0.3);
+
+  /* Accents — aged gold primary */
+  --accent-primary: #c9a062;
+  --accent-gold: #c9a062;
+  --accent-gold-bright: #e8c878;
+  --accent-gold-orange: #b8862a;
+  --accent-gold-light: #d4b070;
+  --accent-amber-mid: #c9821f;
+  --accent-amber-bright: #d4a040;
+  --accent-amber-warm: #c9821f;
+  --accent-peach: #c98a5a;
+  --text-on-bright-gold: #0a0805;
+
+  /* Secondary */
+  --accent-teal: #6b8e23;
+  --accent-teal-bright: #7ba037;
+  --accent-info: #b8862a;
+  --accent-orange: #c9821f;
+
+  /* Status — oxblood red, moss green */
+  --accent-danger: #8b3a3a;
+  --danger: #8b3a3a;
+  --danger-bright: #a04848;
+  --danger-coral: #8b3a3a;
+  --danger-coral-light: #a85a5a;
+  --danger-mid: #7a2f2f;
+  --danger-dark: #5e2424;
+  --danger-light: #a85a5a;
+  --danger-very-light: #c98080;
+  --danger-pale: #d8a8a8;
+  --danger-short: #a85a5a;
+
+  --accent-success: #6b8e23;
+  --success: #6b8e23;
+  --success-light: #8aa840;
+  --success-mint: #7ba037;
+
+  /* Text — warm cream */
+  --text: #e8d5a0;
+  --text-primary: #e8d5a0;
+  --text-secondary: rgba(232, 213, 160, 0.7);
+  --text-muted: rgba(232, 213, 160, 0.4);
+  --text-muted-warm: rgba(232, 213, 160, 0.6);
+  --text-white: #f5e8c0;
+  --text-on-light: #0a0805;
+  --text-grey-mid: rgba(232, 213, 160, 0.35);
+  --text-grey-light: rgba(232, 213, 160, 0.45);
+  --text-grey-lighter: rgba(232, 213, 160, 0.55);
+
+  /* Buttons */
+  --btn-bg: #2a2010;
+  --btn-border: rgba(201, 160, 98, 0.22);
+
+  /* Borders */
+  --border-subtle: rgba(201, 160, 98, 0.15);
+  --border-strong: rgba(201, 160, 98, 0.45);
+
+  /* Glows — heavier than wood, single-coloured gold */
+  --glow-accent: 0 0 16px rgba(201, 160, 98, 0.5), 0 0 4px rgba(201, 160, 98, 0.8);
+  --glow-danger: 0 0 16px rgba(139, 58, 58, 0.5);
+  --glow-success: 0 0 12px rgba(107, 142, 35, 0.4);
+  --shadow-elevated:
+    0 8px 24px rgba(0, 0, 0, 0.7),
+    0 0 1px rgba(201, 160, 98, 0.4);
+
+  /* Seam: warm gold */
+  --seam-color: rgba(201, 160, 98, 0.2);
+
+  /* Sacrifice: royal gold */
+  --sacrifice-color: 218, 165, 32;
+
+  /* Typography — gothic display */
+  --font-display: 'Cinzel Decorative', 'Cinzel', 'Times New Roman', serif;
+  --font-body: 'Cormorant Garamond', 'Inter', serif;
+  --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+
+  color-scheme: dark;
+}
+
 .app-shell {
   position: relative;
   width: 100%;
@@ -5056,4 +5174,136 @@ body.checkmate-flash::after {
   .brilliant-sparkles {
     display: none;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   FANTASY THEME — gothic chess-set enhancements
+   Only loaded when [data-theme="fantasy"] is set on <html>. Adds an
+   ambient bronze/red mist gradient on .app-shell, decorative gold
+   corner accents on the board, an engraved Cinzel Decorative title,
+   and a per-piece gold/bronze drop-shadow so the set reads as
+   "polished metal" rather than the wood-stained default.
+   ═══════════════════════════════════════════════════════════════════ */
+
+[data-theme="fantasy"] .app-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(circle at 30% 0%, rgba(201, 160, 98, 0.08), transparent 60%),
+    radial-gradient(circle at 70% 100%, rgba(139, 58, 58, 0.06), transparent 60%),
+    radial-gradient(circle at 50% 50%, rgba(20, 15, 8, 0.4), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+[data-theme="fantasy"] .app-root {
+  position: relative;
+  z-index: 1;
+}
+
+/* Engraved-style title — Cinzel Decorative + warm gold ink shadow */
+[data-theme="fantasy"] .app-header h1 {
+  font-family: 'Cinzel Decorative', 'Cinzel', serif;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--accent-primary);
+  text-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.8),
+    0 0 8px rgba(201, 160, 98, 0.4);
+}
+
+/* Board — ornate gold frame + deep inset shadow */
+[data-theme="fantasy"] .board-with-coords {
+  border: 1px solid var(--accent-primary);
+  box-shadow:
+    0 0 24px rgba(201, 160, 98, 0.18),
+    inset 0 0 40px rgba(10, 8, 5, 0.7),
+    0 12px 28px rgba(0, 0, 0, 0.55);
+  border-radius: var(--radius-md);
+}
+
+/* Decorative corner accents on the board wrapper */
+[data-theme="fantasy"] .board-with-coords::before,
+[data-theme="fantasy"] .board-with-coords::after {
+  content: '';
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--accent-primary);
+  pointer-events: none;
+  z-index: 5;
+}
+
+[data-theme="fantasy"] .board-with-coords::before {
+  top: -7px;
+  left: -7px;
+  border-right: none;
+  border-bottom: none;
+}
+
+[data-theme="fantasy"] .board-with-coords::after {
+  bottom: -7px;
+  right: -7px;
+  border-left: none;
+  border-top: none;
+}
+
+/* Pieces — per-colour drop-shadow so gold/bronze glow on their own */
+[data-theme="fantasy"] .piece-white {
+  filter:
+    drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7))
+    drop-shadow(0 0 6px rgba(212, 175, 55, 0.55));
+}
+
+[data-theme="fantasy"] .piece-black {
+  filter:
+    drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7))
+    drop-shadow(0 0 4px rgba(232, 213, 160, 0.45));
+}
+
+/* Last-move tile washes — warm gold instead of cool blue */
+[data-theme="fantasy"] .tile.last-from::before {
+  background: rgba(201, 160, 98, 0.18);
+}
+
+[data-theme="fantasy"] .tile.last-to::before {
+  background: rgba(201, 160, 98, 0.32);
+  box-shadow: inset 0 0 0 1px rgba(201, 160, 98, 0.55);
+}
+
+/* Active mode card / pill / hover halo — keep it premium-gold */
+[data-theme="fantasy"] .mode-card.is-active {
+  background: linear-gradient(135deg,
+    var(--bg-elevated) 0%,
+    rgba(201, 160, 98, 0.12) 100%);
+  border-color: var(--accent-primary);
+  box-shadow: var(--glow-accent);
+}
+
+[data-theme="fantasy"] .action-btn:hover:not(:disabled),
+[data-theme="fantasy"] .header-action-btn:hover:not(:disabled),
+[data-theme="fantasy"] .mode-card:hover:not(:disabled) {
+  box-shadow:
+    var(--glow-accent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* 2x2 block pulse when the board rotates */
+[data-theme="fantasy"] .board.is-rotated {
+  box-shadow:
+    0 0 0 2px rgba(201, 160, 98, 0.5),
+    0 0 30px rgba(201, 160, 98, 0.3),
+    inset 0 0 50px rgba(10, 8, 5, 0.6);
+}
+
+/* Sidebar moves panel — warm cream text on a darker gradient */
+[data-theme="fantasy"] .sidebar-moves {
+  background: linear-gradient(180deg,
+    var(--bg-mid) 0%,
+    var(--bg-deep) 100%);
+}
+
+[data-theme="fantasy"] .sidebar-moves .move-log-text {
+  color: var(--text-secondary);
 }

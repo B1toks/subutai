@@ -1,23 +1,25 @@
 import { useEffect, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { MoonStar, Sun, TreePine } from 'lucide-react';
+import { MoonStar, Sparkles, Sun, TreePine } from 'lucide-react';
 import { Icon } from './Icon';
 
-type Theme = 'wood' | 'wood-light' | 'cyberpunk';
+type Theme = 'wood' | 'wood-light' | 'cyberpunk' | 'fantasy';
 
 const STORAGE_KEY = 'subutai_theme';
-const THEMES: readonly Theme[] = ['wood', 'wood-light', 'cyberpunk'] as const;
+const THEMES: readonly Theme[] = ['wood', 'wood-light', 'cyberpunk', 'fantasy'] as const;
 
 const ICONS: Record<Theme, LucideIcon> = {
   wood: TreePine,
   'wood-light': Sun,
   cyberpunk: MoonStar,
+  fantasy: Sparkles,
 };
 
 const LABELS: Record<Theme, string> = {
   wood: 'Wood',
   'wood-light': 'Wood Light',
   cyberpunk: 'Cyberpunk',
+  fantasy: 'Fantasy',
 };
 
 function readInitialTheme(): Theme {
