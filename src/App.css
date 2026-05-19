@@ -610,10 +610,12 @@
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
-  /* Cap to the board's natural width so the action / position rows
-     stay aligned with the board edges rather than stretching to fill
-     the grid column on wide viewports. */
-  max-width: calc(var(--board-size) + 32px);
+  /* Sprint 2.7.2: cap exactly to the board width — children
+     (mode-cards, roulette-panel, board-with-eval, board-actions,
+     position-label-wrap) all set width:100% and so all share the
+     same left/right edges as the board itself. The eval bar still
+     overflows to the left via its own absolute positioning. */
+  max-width: var(--board-size);
   width: 100%;
   margin: 0 auto;
 }
@@ -3530,38 +3532,45 @@
    width/height (boardSize px) — the wrapper just adds a rank column on
    the left and a file row underneath. */
 
+/* Sprint 2.7.2 — board-with-coords is now exactly board-size on both
+   axes. The rank / file labels render as absolute overlays inside the
+   leftmost / bottom-most edge, so they no longer add width to the
+   layout and the board's left/right edges align with the mode-cards
+   and board-actions above and below it. */
 .board-with-coords {
-  display: grid;
-  grid-template-columns: 22px auto;
-  grid-template-rows: auto 22px;
-  grid-template-areas:
-    "ranks board"
-    ".     files";
-  align-items: stretch;
-  width: fit-content;
+  position: relative;
+  width: var(--board-size);
+  height: var(--board-size);
   margin: 0 auto;
 }
 
-.board-with-coords > .board-ranks {
-  grid-area: ranks;
+.board-with-coords > .board {
+  position: absolute;
+  inset: 0;
 }
 
-.board-with-coords > .board {
-  grid-area: board;
+.board-with-coords > .board-ranks {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 14px;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+  z-index: 4;
 }
 
 .board-with-coords > .board-files {
-  grid-area: files;
-}
-
-.board-ranks {
-  display: flex;
-  flex-direction: column;
-}
-
-.board-files {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 3px;
+  height: 14px;
   display: flex;
   flex-direction: row;
+  pointer-events: none;
+  z-index: 4;
 }
 
 .board-rank,
@@ -3570,9 +3579,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.5);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-shadow: 0 0 3px var(--bg-deep), 0 0 2px var(--bg-deep);
   user-select: none;
   font-variant-numeric: tabular-nums;
 }
