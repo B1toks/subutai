@@ -2918,77 +2918,89 @@ function App() {
           )}
         </div>
         <div className="header-controls">
+          <button
+            type="button"
+            className="header-action-btn"
+            onClick={() => setView('leaderboard')}
+            title="Leaderboard"
+            aria-label="Leaderboard"
+          >
+            {'\u{1F3C6}'}
+          </button>
+          <button
+            type="button"
+            className="header-action-btn"
+            onClick={() => setShowFeedbackModal(true)}
+            disabled={!user || !displayName}
+            title={user && displayName ? 'Send feedback' : 'Sign in and pick a name to send feedback'}
+            aria-label="Send feedback"
+          >
+            {'\u{1F4AC}'}
+          </button>
+          <button
+            type="button"
+            className="header-action-btn"
+            onClick={() => setShowHelp(true)}
+            title="Rules & info"
+            aria-label="Rules & info"
+          >
+            ?
+          </button>
           <ThemeToggle />
-          <UserMenu
-            displayName={displayName}
-            canFeedback={!!user && !!displayName}
-            onChangeName={() => setShowNameModal(true)}
-            onOpenLeaderboard={() => setView('leaderboard')}
-            onOpenFeedback={() => setShowFeedbackModal(true)}
-            onOpenHelp={() => setShowHelp(true)}
-          />
+          {displayName && (
+            <UserMenu
+              displayName={displayName}
+              onChangeName={() => setShowNameModal(true)}
+            />
+          )}
         </div>
       </header>
 
-      <div className="app-mode-tabs">
-        <div className="opponent-mode-switcher">
-          <button
-            type="button"
-            className={`opponent-mode-btn${opponentMode === 'ai' ? ' is-active' : ''}`}
-            onClick={() => setOpponentMode('ai')}
-            title="Play vs the engine"
-          >
-            {'\u{1F916}'} vs AI
-          </button>
-          <button
-            type="button"
-            className={`opponent-mode-btn${opponentMode === 'friend' ? ' is-active' : ''}`}
-            onClick={() => {
-              setOpponentMode('friend');
-              setView('friend-lobby');
-            }}
-            title="Private match by code"
-            disabled={!user || !displayName}
-          >
-            {'\u{1F465}'} vs Friend
-            <span className="beta-tag">BETA</span>
-          </button>
-        </div>
-        <span className="mode-separator" aria-hidden>·</span>
-        <div className="mode-toggle">
-          <button
-            type="button"
-            className={`mode-btn${gameMode === 'classic' ? ' mode-btn-active' : ''}`}
-            disabled={modeToggleLocked}
-            title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Classic chess rules'}
-            onClick={() => {
-              if (gameMode === 'classic') return;
-              setGameMode('classic');
-              setAllowedPieceTypes(null);
-              setIsRouletteSpinning(false);
-              setRouletteActionsLeft(0);
-              setUsedRouletteSlots([]);
-            }}
-          >
-            Classic
-          </button>
-          <button
-            type="button"
-            className={`mode-btn${gameMode === 'roulette' ? ' mode-btn-active' : ''}`}
-            disabled={modeToggleLocked}
-            title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Spin a 4-slot bag · 2 actions/turn (move or rotate)'}
-            onClick={() => {
-              if (gameMode === 'roulette') return;
-              setGameMode('roulette');
-              setAllowedPieceTypes(null);
-              setIsRouletteSpinning(false);
-              setRouletteActionsLeft(0);
-              setUsedRouletteSlots([]);
-            }}
-          >
-            Roulette
-          </button>
-        </div>
+      <div className="game-mode-cards">
+        <button
+          type="button"
+          className={`mode-card${gameMode === 'classic' ? ' is-active' : ''}`}
+          disabled={modeToggleLocked}
+          title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Classic chess rules'}
+          onClick={() => {
+            if (gameMode === 'classic') return;
+            setGameMode('classic');
+            setAllowedPieceTypes(null);
+            setIsRouletteSpinning(false);
+            setRouletteActionsLeft(0);
+            setUsedRouletteSlots([]);
+          }}
+        >
+          <span className="mode-card-icon" aria-hidden>{'\u{1F3AF}'}</span>
+          <span className="mode-card-content">
+            <span className="mode-card-title">Classic</span>
+            <span className="mode-card-subtitle">
+              Standard chess960 + topology rotation
+            </span>
+          </span>
+        </button>
+        <button
+          type="button"
+          className={`mode-card${gameMode === 'roulette' ? ' is-active' : ''}`}
+          disabled={modeToggleLocked}
+          title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Spin a 4-slot bag · 2 actions/turn (move or rotate)'}
+          onClick={() => {
+            if (gameMode === 'roulette') return;
+            setGameMode('roulette');
+            setAllowedPieceTypes(null);
+            setIsRouletteSpinning(false);
+            setRouletteActionsLeft(0);
+            setUsedRouletteSlots([]);
+          }}
+        >
+          <span className="mode-card-icon" aria-hidden>{'\u{1F3B0}'}</span>
+          <span className="mode-card-content">
+            <span className="mode-card-title">Roulette</span>
+            <span className="mode-card-subtitle">
+              Capture-the-king · spin the wheel
+            </span>
+          </span>
+        </button>
       </div>
 
       {watchingGame && (
@@ -3589,6 +3601,35 @@ function App() {
       </div>
       </div>
       <aside className="right-sidebar">
+        <section className="sidebar-panel sidebar-opponent">
+          <h3 className="sidebar-panel-title">Opponent</h3>
+          <div className="opponent-tabs-vertical">
+            <button
+              type="button"
+              className={`opp-tab${opponentMode === 'ai' ? ' is-active' : ''}`}
+              onClick={() => setOpponentMode('ai')}
+              title="Play vs the engine"
+            >
+              <span aria-hidden>{'\u{1F916}'}</span>
+              <span>vs AI</span>
+            </button>
+            <button
+              type="button"
+              className={`opp-tab${opponentMode === 'friend' ? ' is-active' : ''}`}
+              onClick={() => {
+                setOpponentMode('friend');
+                setView('friend-lobby');
+              }}
+              title="Private match by code"
+              disabled={!user || !displayName}
+            >
+              <span aria-hidden>{'\u{1F465}'}</span>
+              <span>vs Friend</span>
+              <span className="beta-tag-small">BETA</span>
+            </button>
+          </div>
+        </section>
+
         <section className="sidebar-panel sidebar-moves">
           <h3 className="sidebar-panel-title">
             Moves ({Math.ceil(log.moves.length / 2)})

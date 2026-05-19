@@ -35,20 +35,22 @@
 
 :root,
 [data-theme="wood"] {
-  /* Backgrounds */
-  --bg: #0c0c18;
-  --bg-deep: #0c0c18;
-  --bg-mid: #161626;
-  --bg-elevated: #2a2a40;
-  --bg-elevated-hover: #3a3a55;
-  --bg-panel: #1f1a35;
-  --bg-panel-deep: #1a1530;
-  --bg-card: #161626;
-  --bg-card-alt: #1a1626;
-  --bg-overlay-dark: #0f0f1c;
-  --bg-popup: #2a2a35;
-  --bg-deeper: #1a1a1a;
-  --bg-danger-tint: #2a1a1a;
+  /* Backgrounds — Sprint 2.6: warm-black with a touch of brown undertone
+     (not pure #000, which reads as cheap on OLED). Previously a bluish
+     gray; this is the "wood-room at night" feel. */
+  --bg: #0e0a06;
+  --bg-deep: #0e0a06;
+  --bg-mid: #1a1612;
+  --bg-elevated: #2a2520;
+  --bg-elevated-hover: #3a3530;
+  --bg-panel: #1f1a14;
+  --bg-panel-deep: #15110b;
+  --bg-card: #1a1612;
+  --bg-card-alt: #1f1a14;
+  --bg-overlay-dark: #0e0a06;
+  --bg-popup: #2a2520;
+  --bg-deeper: #15110b;
+  --bg-danger-tint: #2a1612;
 
   /* Tiles */
   --tile-light: #c8b98a;
@@ -267,28 +269,31 @@
 
 /* ─── Cyberpunk: subtle frosted-glass minimal ───────────────────── */
 [data-theme="cyberpunk"] {
-  /* Backgrounds — dark navy with hint of blue undertone */
-  --bg: #0a1020;
-  --bg-deep: #0a1020;
-  --bg-mid: #131b30;
-  --bg-elevated: #1d2640;
-  --bg-elevated-hover: #283355;
-  --bg-panel: #1a2440;
-  --bg-panel-deep: #131b30;
-  --bg-card: #131b30;
-  --bg-card-alt: #1a2238;
-  --bg-overlay-dark: #0a1020;
-  --bg-popup: #1d2640;
-  --bg-deeper: #0a1020;
-  --bg-danger-tint: #2a1525;
+  /* Backgrounds — Sprint 2.6: pulled toward true black with only a 1%
+     blue hint. Previously read as "navy"; now reads as "deep matte
+     black, lit from beneath". Tiles dropped one stop too so the board
+     still separates from the page. */
+  --bg: #050608;
+  --bg-deep: #050608;
+  --bg-mid: #0c0e14;
+  --bg-elevated: #14171f;
+  --bg-elevated-hover: #1c2030;
+  --bg-panel: #14171f;
+  --bg-panel-deep: #0c0e14;
+  --bg-card: #0c0e14;
+  --bg-card-alt: #14171f;
+  --bg-overlay-dark: #050608;
+  --bg-popup: #14171f;
+  --bg-deeper: #050608;
+  --bg-danger-tint: #1a0e16;
 
   /* Tiles — close-brightness, low contrast */
-  --tile-light: #2a3550;
-  --tile-dark: #1a2238;
-  --tile-light-alt: #34406a;
-  --tile-dark-alt: #25304a;
-  --tile-promo-light: #34406a;
-  --tile-promo-dark: #1a2238;
+  --tile-light: #1d2335;
+  --tile-dark: #0e1220;
+  --tile-light-alt: #2a3458;
+  --tile-dark-alt: #161c2e;
+  --tile-promo-light: #2a3458;
+  --tile-promo-dark: #0e1220;
   --tile-promo-light-text: #d8e8f5;
   --tile-promo-dark-text: #d8e8f5;
 
@@ -418,70 +423,167 @@
    buttons (Rotate, Resign, etc.) stay where they are under the board.
    ═══════════════════════════════════════════════════════════════════ */
 
-/* Mode-tabs subheader — opponent + game mode pill rows.
-   Sprint 2.5: enlarged so this strip reads as the entry point, not
-   an afterthought tucked in the header. Buttons inherit base styles
-   from .opponent-mode-btn / .mode-btn; here we just upsize them
-   inside the subheader scope and group them in matching pill rails. */
-.app-mode-tabs {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-  padding: var(--space-2) 0;
-}
-
-.app-mode-tabs .mode-separator {
-  color: var(--text-muted);
-  font-size: 18px;
-  user-select: none;
-  line-height: 1;
-}
-
-.app-mode-tabs .opponent-mode-switcher,
-.app-mode-tabs .mode-toggle {
-  padding: 4px;
-  gap: 4px;
-  background: rgba(0, 0, 0, 0.18);
-  border-radius: var(--radius-full);
-  margin: 0;
-}
-
-.app-mode-tabs .opponent-mode-btn,
-.app-mode-tabs .mode-btn {
-  padding: 8px 18px;
+/* Sprint 2.6 — header action buttons: square icon tiles that surface
+   key actions (Leaderboard / Feedback / Help) directly in the header
+   instead of hiding them in a dropdown. Sized to align with
+   .theme-toggle (30px) so the row reads as a single cluster. */
+.header-action-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--text);
   font-size: 14px;
-  font-weight: 600;
-  border-radius: var(--radius-full);
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.2s ease, transform 0.15s ease;
 }
 
-.app-mode-tabs .opponent-mode-btn:hover:not(:disabled),
-.app-mode-tabs .mode-btn:hover:not(:disabled) {
+.header-action-btn:hover:not(:disabled) {
+  background: var(--bg-elevated-hover);
+  border-color: var(--accent-primary);
+  box-shadow: var(--glow-accent);
+  transform: translateY(-1px);
+}
+
+.header-action-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.header-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Sprint 2.6 — game-mode hero cards above the board. Two horizontal
+   cards replace the old pill-tab subheader; the active card lifts and
+   glows so the choice reads at a glance. */
+.game-mode-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.mode-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-mid);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  text-align: left;
+  position: relative;
+  overflow: hidden;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
   color: var(--text);
-  background: rgba(255, 255, 255, 0.04);
+  font-family: inherit;
 }
 
-.app-mode-tabs .opponent-mode-btn.is-active,
-.app-mode-tabs .mode-btn.mode-btn-active {
-  background: var(--accent-primary);
-  color: var(--piece-text-on-bright);
+.mode-card:hover:not(:disabled) {
+  border-color: var(--accent-primary);
+  box-shadow: var(--glow-accent);
+  transform: translateY(-2px);
+}
+
+.mode-card.is-active {
+  border-color: var(--accent-primary);
+  background: linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-mid) 100%);
   box-shadow: var(--glow-accent);
 }
 
-@media (max-width: 640px) {
-  .app-mode-tabs .opponent-mode-btn,
-  .app-mode-tabs .mode-btn {
-    padding: 6px 12px;
-    font-size: 12px;
-  }
+.mode-card:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.mode-card-icon {
+  font-size: 30px;
+  flex-shrink: 0;
+  line-height: 1;
+  filter: drop-shadow(0 0 6px var(--accent-primary));
+}
+
+.mode-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mode-card-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.mode-card-subtitle {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+/* Sprint 2.6 — Opponent selector lives in the right sidebar above the
+   Moves panel, stacked as two full-width pills. Mirrors the visual
+   weight of the in-sidebar action panels. */
+.sidebar-opponent .opponent-tabs-vertical {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.opp-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-mid);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.2s ease;
+}
+
+.opp-tab:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-elevated-hover);
+}
+
+.opp-tab.is-active {
+  border-color: var(--accent-primary);
+  background: var(--bg-elevated);
+  box-shadow: var(--glow-accent);
+}
+
+.opp-tab:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.opp-tab .beta-tag-small {
+  margin-left: auto;
+  padding: 1px 6px;
+  background: linear-gradient(135deg, var(--danger-coral-light), var(--danger-coral));
+  color: var(--text-white);
+  border-radius: var(--radius-sm);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
 }
 
 /* 2-column body: board (centered) | sidebar */
@@ -721,7 +823,7 @@
   50%      { transform: translateX(-50%) scale(1.05); opacity: 1; }
 }
 
-/* Mobile: stack sidebar below board */
+/* Mobile: stack sidebar below board and collapse mode-card grid */
 @media (max-width: 880px) {
   .app-root {
     padding: var(--space-2) var(--space-2) var(--space-3);
@@ -730,6 +832,19 @@
   .app-body {
     grid-template-columns: 1fr;
     gap: var(--space-2);
+  }
+  .game-mode-cards {
+    grid-template-columns: 1fr;
+    gap: var(--space-2);
+  }
+  .mode-card {
+    padding: var(--space-2) var(--space-3);
+  }
+  .mode-card-icon {
+    font-size: 24px;
+  }
+  .mode-card-title {
+    font-size: 16px;
   }
   .right-sidebar {
     order: 2;
@@ -753,12 +868,6 @@
   .app-header h1 {
     font-size: 26px;
     letter-spacing: 0;
-  }
-  .app-mode-tabs {
-    gap: var(--space-1);
-  }
-  .app-mode-tabs .mode-separator {
-    display: none;
   }
   .board-area {
     max-width: 100%;
