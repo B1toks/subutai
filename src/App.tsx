@@ -29,6 +29,7 @@ import { MilestoneModal } from './components/MilestoneModal';
 import { AutoPlayView } from './components/AutoPlayView';
 import { StatsPage } from './components/StatsPage';
 import { FriendLobby } from './components/FriendLobby';
+import { ThemeToggle } from './components/ThemeToggle';
 import type { GameReviewMeta } from './components/GameReview';
 import { useMultiplayerSync } from './components/MultiplayerGameView';
 import type { MatchDoc, MatchOutcome } from './firebase/matches';
@@ -2953,6 +2954,7 @@ function App() {
             Roulette
           </button>
         </div>
+        <ThemeToggle />
         <button
           type="button"
           className="header-help-btn"
