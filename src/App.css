@@ -422,7 +422,11 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: var(--space-3);
+  /* Sprint 2.7.3 — bumped from space-3 to space-4 so header / mode
+     cards / body / status bar feel less crowded. Inner gaps
+     (sidebar, cards, action row) stay at space-3 / space-2 to keep
+     local groupings tight. Mobile rule below clamps this back down. */
+  gap: var(--space-4);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -600,7 +604,8 @@
 .app-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
-  gap: var(--space-3);
+  /* Sprint 2.7.3 — wider column gap matches the new app-root gap. */
+  gap: var(--space-4);
   align-items: start;
 }
 
@@ -608,7 +613,10 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-2);
+  /* Sprint 2.7.3 — bumped from space-2 to space-4 so mode cards /
+     board / action row read as separately-paced sections instead of
+     stacked-flush. */
+  gap: var(--space-4);
   min-width: 0;
   /* Sprint 2.7.2: cap exactly to the board width — children
      (mode-cards, roulette-panel, board-with-eval, board-actions,
@@ -813,7 +821,10 @@
    affect layout. */
 .afk-alert {
   position: fixed;
-  top: 80px;
+  /* Sprint 2.7.3 — moved closer to the viewport top so the nudge
+     reads as a status notification, not an overlay sitting over the
+     board. Still clears the header row on standard viewports. */
+  top: var(--space-2);
   left: 50%;
   transform: translateX(-50%);
   background: var(--accent-danger);
