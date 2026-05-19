@@ -315,6 +315,12 @@ function App() {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [milestoneShown, setMilestoneShown] = useState(false);
   const [showMilestoneModal, setShowMilestoneModal] = useState(false);
+  // Sprint 2.5 — local AFK detector. Independent of the MP afk-watchdog
+  // (mpSync.selfAfkWarning) which forfeits the match after 30s; this one
+  // is a UX nag that surfaces a pulsing banner when the player's been
+  // idle on their own turn for 20s. Resets on any pointer / key activity.
+  const [showAfkAlert, setShowAfkAlert] = useState(false);
+  const lastActivityRef = useRef<number>(Date.now());
   const completedLogIdRef = useRef<string | null>(null);
   const [view, setView] = useState<
     'game' | 'review' | 'leaderboard' | 'friend-lobby'
@@ -1556,6 +1562,43 @@ function App() {
     : state.sideToMove === 'white'
       ? 'human'
       : 'ai';
+
+  // Sprint 2.5 — local AFK nag. Pointer / keyboard activity refreshes
+  // the timestamp and clears any existing alert; if we're idle for 20s
+  // on our own turn while the game is still active, surface a pulsing
+  // attention banner. Distinct from mpSync.selfAfkWarning which is the
+  // server-driven 30s forfeit timer.
+  useEffect(() => {
+    function bump() {
+      lastActivityRef.current = Date.now();
+      setShowAfkAlert(false);
+    }
+    document.addEventListener('pointerdown', bump, { passive: true });
+    document.addEventListener('pointermove', bump, { passive: true });
+    document.addEventListener('keydown', bump, { passive: true });
+    return () => {
+      document.removeEventListener('pointerdown', bump);
+      document.removeEventListener('pointermove', bump);
+      document.removeEventListener('keydown', bump);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (currentPlayer !== 'human' || gameStatus !== 'active') {
+      setShowAfkAlert(false);
+      return;
+    }
+    // Reset the timestamp whenever it becomes our turn — we don't want to
+    // count idle time from before the opponent moved.
+    lastActivityRef.current = Date.now();
+    setShowAfkAlert(false);
+    const t = setInterval(() => {
+      if (Date.now() - lastActivityRef.current > 20_000) {
+        setShowAfkAlert(true);
+      }
+    }, 5_000);
+    return () => clearInterval(t);
+  }, [currentPlayer, gameStatus]);
 
   // Auto-trigger the human's roulette spin after the first manual click of
   // the game. Conditions mirror the Spin Roulette button's enabled-state:
@@ -2852,6 +2895,11 @@ function App() {
 
   return (
     <div className="app-shell" ref={shellRef}>
+    {showAfkAlert && currentPlayer === 'human' && gameStatus === 'active' && (
+      <div className="afk-alert" role="status" aria-live="polite">
+        ⏰ Your move!
+      </div>
+    )}
     <div className="app-root" style={{ '--board-size': `${boardSize}px` } as React.CSSProperties}>
       <header className="app-header">
         <div className="app-brand">

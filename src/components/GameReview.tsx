@@ -323,7 +323,10 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
         <button type="button" className="game-review-back" onClick={onBack}>
           ← Back
         </button>
-        <h2>{title}</h2>
+        <h2>
+          {title}
+          <span className="beta-tag-inline">BETA</span>
+        </h2>
         {gameId ? (
           <button
             type="button"

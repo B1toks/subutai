@@ -22,10 +22,13 @@ export interface GameReviewResult {
   };
 }
 
-/** Chess.com's curve, rounded. 0 cpl ≈ 100%, 25 cpl ≈ 80%, 50 cpl ≈ 65%,
- *  100 cpl ≈ 40%, 200+ cpl → 0%. */
+/** Linear forgiving curve (Sprint 2.5). Friendlier than the chess.com
+ *  exponential for casual play — a typical hobbyist game (~50 cpl) lands
+ *  near 72%, a tough one (~150 cpl) still scores ~47%, and only truly
+ *  broken games (300+ cpl) bottom out at 0. Sub-10 cpl flatlines at 100. */
 function computeAccuracy(avgCpl: number): number {
-  const raw = 103.1668 * Math.exp(-0.04354 * avgCpl) - 3.1668;
+  if (avgCpl < 10) return 100;
+  const raw = 85 - avgCpl * 0.25;
   return Math.max(0, Math.min(100, Math.round(raw)));
 }
 

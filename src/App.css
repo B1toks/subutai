@@ -418,20 +418,70 @@
    buttons (Rotate, Resign, etc.) stay where they are under the board.
    ═══════════════════════════════════════════════════════════════════ */
 
-/* Mode-tabs subheader — opponent + game mode pill rows */
+/* Mode-tabs subheader — opponent + game mode pill rows.
+   Sprint 2.5: enlarged so this strip reads as the entry point, not
+   an afterthought tucked in the header. Buttons inherit base styles
+   from .opponent-mode-btn / .mode-btn; here we just upsize them
+   inside the subheader scope and group them in matching pill rails. */
 .app-mode-tabs {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-3);
   flex-wrap: wrap;
-  padding: var(--space-1) 0;
+  padding: var(--space-2) 0;
 }
 
 .app-mode-tabs .mode-separator {
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: 18px;
   user-select: none;
+  line-height: 1;
+}
+
+.app-mode-tabs .opponent-mode-switcher,
+.app-mode-tabs .mode-toggle {
+  padding: 4px;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: var(--radius-full);
+  margin: 0;
+}
+
+.app-mode-tabs .opponent-mode-btn,
+.app-mode-tabs .mode-btn {
+  padding: 8px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: var(--radius-full);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+
+.app-mode-tabs .opponent-mode-btn:hover:not(:disabled),
+.app-mode-tabs .mode-btn:hover:not(:disabled) {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.app-mode-tabs .opponent-mode-btn.is-active,
+.app-mode-tabs .mode-btn.mode-btn-active {
+  background: var(--accent-primary);
+  color: var(--piece-text-on-bright);
+  box-shadow: var(--glow-accent);
+}
+
+@media (max-width: 640px) {
+  .app-mode-tabs .opponent-mode-btn,
+  .app-mode-tabs .mode-btn {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
 }
 
 /* 2-column body: board (centered) | sidebar */
@@ -643,16 +693,90 @@
   margin: var(--space-1) 0;
 }
 
+/* Sprint 2.5 — AFK attention banner. Fixed-position pulsing pill that
+   appears when the player has been idle on their own turn for >20s.
+   Renders inside the .app-shell but as position:fixed it doesn't
+   affect layout. */
+.afk-alert {
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--accent-danger);
+  color: var(--text-white);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-full);
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: var(--glow-danger), var(--shadow-elevated);
+  animation: afk-pulse 1.2s ease-in-out infinite;
+  z-index: 1000;
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+}
+
+@keyframes afk-pulse {
+  0%, 100% { transform: translateX(-50%) scale(1); opacity: 0.92; }
+  50%      { transform: translateX(-50%) scale(1.05); opacity: 1; }
+}
+
 /* Mobile: stack sidebar below board */
 @media (max-width: 880px) {
+  .app-root {
+    padding: var(--space-2) var(--space-2) var(--space-3);
+    gap: var(--space-2);
+  }
   .app-body {
     grid-template-columns: 1fr;
+    gap: var(--space-2);
   }
   .right-sidebar {
     order: 2;
+    width: 100%;
   }
   .board-area {
     order: 1;
+  }
+  /* Cap panel heights so the move log can't dominate the viewport;
+     the panel becomes internally scrollable instead. */
+  .sidebar-moves {
+    max-height: 240px;
+  }
+  .sidebar-moves .move-log-text {
+    max-height: 160px;
+  }
+}
+
+/* Tight mobile: shrink header, hide eval bar (board needs the room) */
+@media (max-width: 640px) {
+  .app-header h1 {
+    font-size: 26px;
+    letter-spacing: 0;
+  }
+  .app-mode-tabs {
+    gap: var(--space-1);
+  }
+  .app-mode-tabs .mode-separator {
+    display: none;
+  }
+  .board-area {
+    max-width: 100%;
+    overflow: hidden;
+  }
+  /* The eval-bar lives absolutely inside .board-with-eval; hiding it
+     reclaims a few pixels of horizontal space on very narrow screens.
+     The numeric eval is still shown in the Analysis sidebar panel. */
+  .eval-bar {
+    display: none;
+  }
+  .app-status-bar {
+    font-size: 12px;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+  }
+  .app-status-bar .status-last-move {
+    font-size: 11px;
   }
 }
 
@@ -1976,6 +2100,21 @@
   text-align: center;
 }
 
+/* Sprint 2.5 — BETA badge sits inline with the Review title, marking
+   the analysis pipeline as still-in-development. */
+.beta-tag-inline {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 2px 8px;
+  background: linear-gradient(135deg, var(--danger-coral-light), var(--danger-coral));
+  color: var(--text-white);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  vertical-align: middle;
+}
+
 .game-review-back {
   background: var(--btn-bg);
   color: var(--text);
@@ -2080,9 +2219,13 @@
 
 .review-row {
   display: grid;
-  grid-template-columns: 60px 100px 32px 90px 90px 1fr;
+  /* Sprint 2.5 — drop the squeezed 6-col layout in favour of a stacked
+     2-row grid. Row 1 holds num · SAN · marker · label · cpl; the
+     optional "Better: …" hint flows onto row 2 spanning everything so
+     long suggestions never get truncated. */
+  grid-template-columns: 56px minmax(80px, auto) 24px minmax(0, 1fr) auto;
   align-items: baseline;
-  gap: 8px;
+  gap: 4px 8px;
   padding: 6px 10px;
   border-radius: 4px;
   font-size: 14px;
@@ -2113,12 +2256,19 @@
 .review-cpl {
   font-size: 12px;
   color: var(--text-muted);
+  justify-self: end;
+  font-variant-numeric: tabular-nums;
 }
 
 .review-better {
+  grid-column: 1 / -1;
+  padding-left: 64px;
   font-size: 12px;
   color: var(--accent-amber-bright);
   font-style: italic;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.4;
 }
 
 .review-row-blunder {
