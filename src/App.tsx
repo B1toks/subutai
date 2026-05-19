@@ -1099,6 +1099,13 @@ function App() {
     classification: 'blunder' | 'brilliant';
   } | null>(null);
   const classifyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Sprint 2.7 — separate "sacrifice" highlight, fires in parallel with
+  // the brilliant flag when analysis flags the move as a true sacrifice
+  // (piece walked onto attacked square + position still holds). Distinct
+  // visual (violet burst + sparkles) so a sacrifice reads differently
+  // from an ordinary tactical brilliancy.
+  const [sacrificeSquare, setSacrificeSquare] = useState<SquareId | null>(null);
+  const sacrificeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Push the search-backed eval from an analysis into the bar/gradient state.
   // Used by every classify callsite (live moves, AI, imported-log completion).
@@ -1165,6 +1172,21 @@ function App() {
         (analysis.classification === 'blunder' || analysis.classification === 'brilliant')
       ) {
         flagClassifiedSquare(moveTo, analysis.classification);
+      }
+      // Sprint 2.7 — additive sacrifice highlight; runs alongside the
+      // brilliant pulse on the same tile when the analysis flagged the
+      // move as a real sacrifice. 2.5s matches the brilliant pulse.
+      if (
+        moveTo &&
+        analysis.classification === 'brilliant' &&
+        analysis.isSacrifice
+      ) {
+        if (sacrificeTimerRef.current) clearTimeout(sacrificeTimerRef.current);
+        setSacrificeSquare(moveTo);
+        sacrificeTimerRef.current = setTimeout(() => {
+          setSacrificeSquare(null);
+          sacrificeTimerRef.current = null;
+        }, 2500);
       }
     },
     [pushSearchEval, triggerFlash, flagClassifiedSquare],
@@ -1593,7 +1615,9 @@ function App() {
     lastActivityRef.current = Date.now();
     setShowAfkAlert(false);
     const t = setInterval(() => {
-      if (Date.now() - lastActivityRef.current > 20_000) {
+      // Sprint 2.7: bumped from 20s → 40s after a round of playtesting —
+      // the original threshold tripped during normal thinking pauses.
+      if (Date.now() - lastActivityRef.current > 40_000) {
         setShowAfkAlert(true);
       }
     }, 5_000);
@@ -3050,63 +3074,6 @@ function App() {
         </div>
       )}
 
-      {gameMode === 'roulette' && gameStatus === 'active' && (
-        <div className="roulette-panel">
-          <div className="roulette-display">
-            {allowedPieceTypes ? (
-              allowedPieceTypes.map((t, i) => {
-                const isUsed = usedRouletteSlots.includes(i);
-                return (
-                  <span
-                    key={i}
-                    className={`roulette-face roulette-face-${t}${isUsed ? ' slot-used' : ''}`}
-                  >
-                    <span className={`piece piece-${state.sideToMove}`}>
-                      {glyphForPiece(state.sideToMove, t)}
-                    </span>
-                  </span>
-                );
-              })
-            ) : isRouletteSpinning ? (
-              Array.from({ length: ROULETTE_SLOT_COUNT }, (_, i) => (
-                <span key={i} className="roulette-face roulette-face-rolling">?</span>
-              ))
-            ) : (
-              <span className="roulette-label">
-                {currentPlayer === 'human'
-                  ? 'Your turn — spin the roulette'
-                  : 'AI is about to spin...'}
-              </span>
-            )}
-          </div>
-
-          {allowedPieceTypes && (
-            <div className="roulette-actions" aria-label="Actions remaining">
-              <span className="roulette-actions-label">Actions:</span>
-              {Array.from({ length: ROULETTE_MAX_ACTIONS }, (_, i) => (
-                <span
-                  key={i}
-                  className={`roulette-action-dot${i < rouletteActionsLeft ? ' active' : ' spent'}`}
-                />
-              ))}
-            </div>
-          )}
-
-          <button
-            type="button"
-            className="roulette-spin-btn"
-            onClick={handleSpinRoulette}
-            disabled={
-              allowedPieceTypes !== null ||
-              isRouletteSpinning ||
-              currentPlayer !== 'human'
-            }
-          >
-            Spin Roulette
-          </button>
-        </div>
-      )}
-
       {sharedGameError && (
         <div className="mp-banner mp-banner-error" role="status">
           {sharedGameError}{' '}
@@ -3167,6 +3134,62 @@ function App() {
 
       <div className="app-body">
       <div className="board-area">
+      {gameMode === 'roulette' && gameStatus === 'active' && (
+        <div className="roulette-panel">
+          <div className="roulette-display">
+            {allowedPieceTypes ? (
+              allowedPieceTypes.map((t, i) => {
+                const isUsed = usedRouletteSlots.includes(i);
+                return (
+                  <span
+                    key={i}
+                    className={`roulette-face roulette-face-${t}${isUsed ? ' slot-used' : ''}`}
+                  >
+                    <span className={`piece piece-${state.sideToMove}`}>
+                      {glyphForPiece(state.sideToMove, t)}
+                    </span>
+                  </span>
+                );
+              })
+            ) : isRouletteSpinning ? (
+              Array.from({ length: ROULETTE_SLOT_COUNT }, (_, i) => (
+                <span key={i} className="roulette-face roulette-face-rolling">?</span>
+              ))
+            ) : (
+              <span className="roulette-label">
+                {currentPlayer === 'human'
+                  ? 'Your turn — spin the roulette'
+                  : 'AI is about to spin...'}
+              </span>
+            )}
+          </div>
+
+          {allowedPieceTypes && (
+            <div className="roulette-actions" aria-label="Actions remaining">
+              <span className="roulette-actions-label">Actions:</span>
+              {Array.from({ length: ROULETTE_MAX_ACTIONS }, (_, i) => (
+                <span
+                  key={i}
+                  className={`roulette-action-dot${i < rouletteActionsLeft ? ' active' : ' spent'}`}
+                />
+              ))}
+            </div>
+          )}
+
+          <button
+            type="button"
+            className="roulette-spin-btn"
+            onClick={handleSpinRoulette}
+            disabled={
+              allowedPieceTypes !== null ||
+              isRouletteSpinning ||
+              currentPlayer !== 'human'
+            }
+          >
+            Spin Roulette
+          </button>
+        </div>
+      )}
       <div className="board-with-eval">
         <EvalBar
           evalCp={myPerspectiveEval}
@@ -3252,6 +3275,7 @@ function App() {
                 classifiedSquare?.square === sq
                   ? `classified-${classifiedSquare.classification}`
                   : '',
+                sacrificeSquare === sq ? 'is-sacrifice' : '',
               ]
                 .filter(Boolean)
                 .join(' ')}
@@ -3718,18 +3742,16 @@ function App() {
       )}
 
       <footer className="app-status-bar">
-        <span className={`status-turn${currentPlayer === 'human' ? ' status-turn-mine' : ''}`}>
-          {currentPlayer === 'human'
-            ? gameStatus === 'active'
-              ? '⚡ Your turn'
-              : 'Game over'
-            : isMultiplayer && mpSync
-              ? `⏳ Waiting for ${mpSync.opponentDisplayName}`
-              : '⏳ AI is thinking…'}
-          {gameMode === 'roulette' &&
-            gameStatus === 'active' &&
-            allowedPieceTypes !== null &&
-            ` · ${rouletteActionsLeft} action${rouletteActionsLeft === 1 ? '' : 's'} left`}
+        {/* Sprint 2.7 — dropped the persistent "Your turn / Waiting"
+            indicator. The AFK alert covers the attention case; whose
+            turn it is can be read from the board + sidebar opponent
+            panel. Status bar now just shows last move + game state. */}
+        <span className="status-game-state">
+          {gameStatus !== 'active'
+            ? gameOverMessage ?? 'Game over'
+            : log.moves.length > 0
+              ? 'In play'
+              : 'Ready'}
         </span>
         <span className="status-last-move">
           {log.moves.length > 0

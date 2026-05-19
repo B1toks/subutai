@@ -136,6 +136,10 @@
   /* Subutai signature: 2×2 block seam-line color */
   --seam-color: rgba(212, 175, 55, 0.15);
 
+  /* Sprint 2.7 — sacrifice highlight tone (R, G, B as bare numbers so
+     animation rules can compose rgba(var(--sacrifice-color), alpha)). */
+  --sacrifice-color: 168, 85, 247;
+
   /* Typography */
   --font-display: 'Cinzel', 'Times New Roman', serif;
   --font-body: 'Inter', system-ui, sans-serif;
@@ -259,6 +263,9 @@
   /* Seam: faint dark hint */
   --seam-color: rgba(42, 24, 16, 0.1);
 
+  /* Sacrifice: deeper violet for contrast on the off-white page. */
+  --sacrifice-color: 124, 58, 237;
+
   /* Typography */
   --font-display: 'Cinzel', 'Times New Roman', serif;
   --font-body: 'Inter', system-ui, sans-serif;
@@ -370,6 +377,9 @@
 
   /* Seam: faint cyan */
   --seam-color: rgba(93, 200, 214, 0.22);
+
+  /* Sacrifice: brighter neon violet on the matte-black page. */
+  --sacrifice-color: 200, 100, 255;
 
   /* Monospace UI font */
   --font-display: 'JetBrains Mono', 'Consolas', monospace;
@@ -972,6 +982,70 @@
 
 .tile.classified-brilliant::before {
   animation: brilliant-pulse 0.6s ease-in-out 4;
+}
+
+/* Sprint 2.7 — sacrifice burst. Fires alongside the brilliant pulse on
+   moves classified as true sacrifices (piece walked onto attacked
+   square, position still holds). Theme-coloured via --sacrifice-color.
+   The animation hits the ::before pseudo (tile body) for the violet
+   shell, then ::after carries a single sparkle that floats up-right. */
+@keyframes sacrifice-burst {
+  0% {
+    box-shadow:
+      inset 0 0 0 0 rgba(var(--sacrifice-color), 0),
+      0 0 0 0 rgba(var(--sacrifice-color), 0);
+  }
+  18% {
+    box-shadow:
+      inset 0 0 0 4px rgba(var(--sacrifice-color), 1),
+      0 0 24px 6px rgba(var(--sacrifice-color), 0.7);
+  }
+  60% {
+    box-shadow:
+      inset 0 0 0 3px rgba(var(--sacrifice-color), 0.55),
+      0 0 28px 10px rgba(var(--sacrifice-color), 0.32);
+  }
+  100% {
+    box-shadow:
+      inset 0 0 0 0 rgba(var(--sacrifice-color), 0),
+      0 0 0 0 rgba(var(--sacrifice-color), 0);
+  }
+}
+
+@keyframes sacrifice-sparkle {
+  0% {
+    transform: translate(-50%, -50%) scale(0.2);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(calc(-50% + var(--sparkle-dx, 32px)), calc(-50% + var(--sparkle-dy, -32px))) scale(1);
+    opacity: 0;
+  }
+}
+
+.tile.is-sacrifice::before {
+  animation: sacrifice-burst 2.5s ease-out;
+  z-index: 2;
+}
+
+.tile.is-sacrifice::after {
+  content: '\2726';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 18px;
+  font-weight: 700;
+  color: rgba(var(--sacrifice-color), 0.95);
+  text-shadow: 0 0 6px rgba(var(--sacrifice-color), 0.8);
+  pointer-events: none;
+  animation: sacrifice-sparkle 1.8s ease-out;
+  --sparkle-dx: 36px;
+  --sparkle-dy: -36px;
+  z-index: 3;
 }
 
 /* Board */
@@ -2070,17 +2144,25 @@
   border-color: var(--accent-gold);
 }
 
+/* Sprint 2.7 — moved inside .board-area, so it inherits board centring
+   and width-cap from the parent. Width 100% of board-area (which itself
+   tops out at calc(var(--board-size) + 32px)); no own margin since the
+   board-area gap handles spacing. Wraps on narrow widths so the spin
+   button doesn't push outside the board column. */
 .roulette-panel {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin: 8px auto;
   padding: 10px 14px;
+  width: 100%;
   max-width: var(--board-size);
+  margin: 0 auto;
   background: var(--bg-card);
   border: 1px solid var(--btn-border);
   border-radius: 8px;
+  box-sizing: border-box;
+  flex-wrap: wrap;
 }
 
 
