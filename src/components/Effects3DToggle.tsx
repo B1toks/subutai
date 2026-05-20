@@ -3,6 +3,7 @@ import { Box, Square } from 'lucide-react';
 import { Icon } from './Icon';
 import { Tooltip } from './Tooltip';
 import { useToast } from './Toast';
+import { audio } from '../audio/AudioController';
 
 const STORAGE_KEY = 'subutai_3d';
 
@@ -37,6 +38,7 @@ export function Effects3DToggle() {
   function toggle() {
     const next = !enabled;
     setEnabled(next);
+    audio.play('click');
     toast.show(
       next ? '3D effects enabled' : '3D effects disabled',
       'info',

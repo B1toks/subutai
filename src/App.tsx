@@ -32,6 +32,8 @@ import { FriendLobby } from './components/FriendLobby';
 import { ThemeToggle } from './components/ThemeToggle';
 import { UserMenu } from './components/UserMenu';
 import { Effects3DToggle } from './components/Effects3DToggle';
+import { AudioToggle } from './components/AudioToggle';
+import { audio } from './audio/AudioController';
 import { Icon } from './components/Icon';
 import { Tooltip } from './components/Tooltip';
 import {
@@ -1234,6 +1236,12 @@ function App() {
         flashEffectTimerRef.current = null;
       }, effectDuration);
     }
+    // Sprint 3.7 — classifier SFX. Runs *after* the move/capture SFX
+    // from the log-watching effect above (analysis lands async on the
+    // classifier worker, so a short delay puts the brilliant /
+    // blunder voice on top of the move thump rather than racing it).
+    if (cls === 'brilliant') audio.play('brilliant');
+    else if (cls === 'blunder') audio.play('blunder');
   }, []);
 
   // Sprint 3.2.1 — sparkle positions for the brilliant overlay.
@@ -1744,6 +1752,39 @@ function App() {
     setSquareAnnotations((prev) => (prev.size === 0 ? prev : new Map()));
     setArrowAnnotations((prev) => (prev.length === 0 ? prev : []));
   }, [log.moves.length]);
+
+  // Sprint 3.7 — move-driven SFX dispatch. Fires once per new top
+  // log entry; priority: checkmate > promotion > capture > move.
+  // Brilliant / blunder reactions live in triggerFlash below — they
+  // run on classifier callback, not on the synchronous move dispatch.
+  const lastSfxLogLengthRef = useRef(0);
+  useEffect(() => {
+    const len = log.moves.length;
+    if (len === 0) {
+      lastSfxLogLengthRef.current = 0;
+      return;
+    }
+    if (len <= lastSfxLogLengthRef.current) {
+      lastSfxLogLengthRef.current = len;
+      return;
+    }
+    lastSfxLogLengthRef.current = len;
+    if (gameStatus === 'checkmate') {
+      audio.play('checkmate');
+      return;
+    }
+    const last = log.moves[len - 1];
+    if (!last) return;
+    if (last.move.kind === 'promotion') {
+      audio.play('promotion');
+      return;
+    }
+    if (last.move.kind === 'capture' || last.move.kind === 'enPassant') {
+      audio.play('capture');
+      return;
+    }
+    audio.play('move');
+  }, [log.moves.length, gameStatus]);
 
   useEffect(() => {
     function onUp(e: MouseEvent) {
@@ -3211,6 +3252,7 @@ function App() {
               <Icon icon={HelpCircle} size="md" aria-hidden />
             </button>
           </Tooltip>
+          <AudioToggle />
           <Effects3DToggle />
           <ThemeToggle />
           {displayName && (

@@ -3,6 +3,7 @@ import type { LucideIcon } from 'lucide-react';
 import { MoonStar, Sparkles, Sun, TreePine } from 'lucide-react';
 import { Icon } from './Icon';
 import { useToast } from './Toast';
+import { audio } from '../audio/AudioController';
 
 type Theme = 'wood' | 'wood-light' | 'cyberpunk' | 'fantasy';
 
@@ -51,6 +52,7 @@ export function ThemeToggle() {
     const idx = THEMES.indexOf(theme);
     const next = THEMES[(idx + 1) % THEMES.length];
     setTheme(next);
+    audio.play('click');
     toast.show(`Theme: ${LABELS[next]}`, 'info', 1500);
   }
 
