@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -63,8 +64,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  // Sprint 3.4.1: memoise the context value. Without this the provider
+  // hands consumers a fresh object literal on every render (every time
+  // toasts state changes), which invalidates any consumer useEffect
+  // that lists `toast` in deps and re-fires the effect → re-fires the
+  // toast → adds another toast → re-renders → infinite spam loop.
+  const value = useMemo<ToastContextValue>(() => ({ show }), [show]);
+
   return (
-    <ToastContext.Provider value={{ show }}>
+    <ToastContext.Provider value={value}>
       {children}
       <div className="toast-container" aria-live="polite" aria-atomic="false">
         {toasts.map((t) => (

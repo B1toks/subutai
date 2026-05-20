@@ -1126,12 +1126,11 @@ function App() {
   // from an ordinary tactical brilliancy.
   const [sacrificeSquare, setSacrificeSquare] = useState<SquareId | null>(null);
   const sacrificeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Sprint 3.2 — short-lived burst on the destination square when the
-  // latest move was a capture (regular take or en passant). 600ms keyed
-  // to the .tile.is-capture animation length.
-  const [captureSquare, setCaptureSquare] = useState<SquareId | null>(null);
-  const captureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastLogLengthRef = useRef<number>(0);
+  // Sprint 3.4.1 — captures no longer trigger their own visual burst.
+  // The per-take flash from Sprint 3.2 fired too often and read as
+  // noise; only the classifier reactions (?? shake / !! sparkles) and
+  // the en-passant explosion remain. The captureSquare state and the
+  // log-length useEffect that drove it have been removed.
   // Sprint 3.2.1 — distinctive screen-wide effect on blunder / brilliant
   // classifications. The existing generic flash overlay (--flash-opacity
   // on .app-shell::after) is kept; this adds shake + vignette for ??
@@ -1706,27 +1705,10 @@ function App() {
     };
   }, [gameStatus]);
 
-  // Sprint 3.2 — fire a capture burst on the destination tile whenever
-  // log length grows AND the new top entry is a capture/en-passant.
-  // Watching log.moves.length (not log itself) keeps the effect cheap;
-  // we also bail on length-decrease so undo/replay-rewind doesn't
-  // mis-fire on an old entry.
-  useEffect(() => {
-    const prev = lastLogLengthRef.current;
-    const cur = log.moves.length;
-    lastLogLengthRef.current = cur;
-    if (cur <= prev) return;
-    const last = log.moves[cur - 1];
-    if (!last) return;
-    if (last.move.kind !== 'capture' && last.move.kind !== 'enPassant') return;
-    if (!last.move.to) return;
-    if (captureTimerRef.current) clearTimeout(captureTimerRef.current);
-    setCaptureSquare(last.move.to);
-    captureTimerRef.current = setTimeout(() => {
-      setCaptureSquare(null);
-      captureTimerRef.current = null;
-    }, 600);
-  }, [log.moves]);
+  // Sprint 3.4.1 — the per-capture burst useEffect that watched
+  // log.moves.length has been removed; captures no longer get their
+  // own visual flash (see state-declarations block above for the
+  // rationale).
 
   // Auto-trigger the human's roulette spin after the first manual click of
   // the game. Conditions mirror the Spin Roulette button's enabled-state:
@@ -3325,14 +3307,6 @@ function App() {
           isPending={!isMultiplayer && searchEvalFromWhite === null}
         />
       <div className="board-with-coords" style={{ width: boardSize }}>
-      <div className="board-ranks" style={{ height: boardSize }}>
-        {(isMultiplayer && mpSync?.myColor === 'black'
-          ? ['1', '2', '3', '4', '5', '6', '7', '8']
-          : ['8', '7', '6', '5', '4', '3', '2', '1']
-        ).map((r) => (
-          <div key={r} className="board-rank">{r}</div>
-        ))}
-      </div>
       <div
         className={`board${previewTopology || previewLocked ? ' previewing' : ''}${recentRotation ? ' is-rotated' : ''}`}
         style={{ width: boardSize, height: boardSize }}
@@ -3383,6 +3357,18 @@ function App() {
           const tx = cxView - tileBase / 2;
           const ty = cyView - tileBase / 2;
 
+          // Sprint 3.4.1 — coordinate labels live inside the corner tiles
+          // (Lichess pattern). Rank label on the player-side leftmost
+          // file; file label on the player-side bottom rank. The flip
+          // var already encodes the black-perspective orientation, so
+          // the leftmost-from-player file is 'h' under flip and 'a'
+          // otherwise; the bottom-most rank is '8' under flip and '1'
+          // otherwise.
+          const file = sq[0];
+          const rank = sq[1];
+          const showRankLabel = flip ? file === 'h' : file === 'a';
+          const showFileLabel = flip ? rank === '8' : rank === '1';
+
           // Sprint 3.2 — piece slide-in. When this tile is lastMove.to in
           // classic mode and both endpoints have angle 0 (no per-tile
           // rotation), compute the offset from the lastMove.from tile so
@@ -3431,7 +3417,6 @@ function App() {
                   ? `classified-${classifiedSquare.classification}`
                   : '',
                 sacrificeSquare === sq ? 'is-sacrifice' : '',
-                captureSquare === sq ? 'is-capture' : '',
               ]
                 .filter(Boolean)
                 .join(' ')}
@@ -3445,6 +3430,16 @@ function App() {
               onMouseEnter={() => setHoveredSquare(sq)}
               onMouseLeave={() => setHoveredSquare(null)}
             >
+              {showRankLabel && (
+                <span className="tile-coord tile-coord-rank" aria-hidden>
+                  {rank}
+                </span>
+              )}
+              {showFileLabel && (
+                <span className="tile-coord tile-coord-file" aria-hidden>
+                  {file}
+                </span>
+              )}
               {piece ? (
                 <span
                   className={`piece-slide-wrap${isSliding ? ' is-sliding-in' : ''}`}
@@ -3555,14 +3550,6 @@ function App() {
             })}
           </svg>
         )}
-      </div>
-      <div className="board-files">
-        {(isMultiplayer && mpSync?.myColor === 'black'
-          ? ['h', 'g', 'f', 'e', 'd', 'c', 'b', 'a']
-          : ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
-        ).map((f) => (
-          <div key={f} className="board-file">{f}</div>
-        ))}
       </div>
       </div>
       </div>
@@ -3719,14 +3706,24 @@ function App() {
           </div>
         )}
 
-        <button
-          type="button"
-          className="rotate-btn"
-          onClick={handleRotate}
+        <Tooltip
+          text={`Rotate to topology ${state.topologyState === 'A' ? 'B' : 'A'}`}
+          side="top"
           disabled={!canRotate}
         >
-          Rotate &middot; {state.topologyState === 'A' ? 'A \u2192 B' : 'B \u2192 A'}
-        </button>
+          <button
+            type="button"
+            className="rotate-btn-icon"
+            onClick={handleRotate}
+            disabled={!canRotate}
+            aria-label={`Rotate topology to ${state.topologyState === 'A' ? 'B' : 'A'}`}
+          >
+            <Icon icon={RotateCw} size="lg" aria-hidden />
+            <span className="rotate-target-label" aria-hidden>
+              {state.topologyState === 'A' ? 'B' : 'A'}
+            </span>
+          </button>
+        </Tooltip>
         <div
           className="material-score-wrap"
           onMouseEnter={() => setShowMaterialPopup(true)}
@@ -3779,15 +3776,6 @@ function App() {
             </div>
           )}
         </div>
-        <button
-          type="button"
-          className="review-trigger-btn"
-          onClick={() => setView('review')}
-          disabled={log.moves.length === 0}
-          title="Review the game move-by-move"
-        >
-          <Icon icon={BarChart3} size="md" aria-hidden /> Review
-        </button>
       </div>
 
       <div className="position-label-wrap">
@@ -3922,6 +3910,18 @@ function App() {
               </span>
             </div>
           )}
+          {/* Sprint 3.4.1 — Review CTA moved out of the board-actions
+              row into the Analysis panel, where it reads as the natural
+              next step after viewing the eval. */}
+          <button
+            type="button"
+            className="panel-action-btn"
+            onClick={() => setView('review')}
+            disabled={log.moves.length === 0}
+          >
+            <Icon icon={BarChart3} size="md" aria-hidden />
+            Review {log.moves.length > 0 ? 'this game' : '— no moves yet'}
+          </button>
         </section>
       </aside>
       </div>

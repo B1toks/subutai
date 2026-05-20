@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { MoonStar, Sparkles, Sun, TreePine } from 'lucide-react';
 import { Icon } from './Icon';
@@ -32,10 +32,12 @@ function readInitialTheme(): Theme {
 export function ThemeToggle() {
   const toast = useToast();
   const [theme, setTheme] = useState<Theme>(readInitialTheme);
-  // Suppress the toast for the very first effect run (initial mount); we
-  // only want it on user-initiated cycles, not page-load.
-  const firstRunRef = useRef(true);
 
+  // Sprint 3.4.1 — apply theme on mount AND every state change, but do
+  // NOT toast from this effect. The previous version called toast.show
+  // from inside the effect, which fired on hydration + every render
+  // where any context-value reference changed → toast spam loop. The
+  // user-initiated toast now lives in cycle() below.
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     try {
@@ -43,16 +45,13 @@ export function ThemeToggle() {
     } catch {
       /* localStorage may be unavailable (private mode, quota) — no-op */
     }
-    if (firstRunRef.current) {
-      firstRunRef.current = false;
-      return;
-    }
-    toast.show(`Theme: ${LABELS[theme]}`, 'info', 1500);
-  }, [theme, toast]);
+  }, [theme]);
 
   function cycle() {
     const idx = THEMES.indexOf(theme);
-    setTheme(THEMES[(idx + 1) % THEMES.length]);
+    const next = THEMES[(idx + 1) % THEMES.length];
+    setTheme(next);
+    toast.show(`Theme: ${LABELS[next]}`, 'info', 1500);
   }
 
   const nextLabel = LABELS[THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]];
