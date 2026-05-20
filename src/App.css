@@ -1638,6 +1638,66 @@ body.checkmate-flash::after {
   stroke: var(--support-hover-stroke, var(--accent-orange));
 }
 
+/* Sprint 3.6 — right-click annotation overlays. .tile-annotation is
+   a per-square colour wash; .annotation-overlay SVG renders the
+   drag-drawn arrows. Both inherit the active theme via flat rgba
+   colours (chess.com convention: green / red / yellow / blue). */
+.tile-annotation {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  border-radius: 3px;
+}
+
+.tile-annotation-green  { background: rgba(34, 197, 94, 0.45); }
+.tile-annotation-red    { background: rgba(220, 38, 38, 0.50); }
+.tile-annotation-yellow { background: rgba(234, 179, 8, 0.50); }
+.tile-annotation-blue   { background: rgba(59, 130, 246, 0.45); }
+
+.annotation-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.annotation-arrow {
+  stroke-width: 9;
+  stroke-linecap: round;
+  fill: none;
+  opacity: 0.78;
+}
+
+.annotation-color-green  { stroke: #22c55e; fill: #22c55e; }
+.annotation-color-red    { stroke: #dc2626; fill: #dc2626; }
+.annotation-color-yellow { stroke: #eab308; fill: #eab308; }
+.annotation-color-blue   { stroke: #3b82f6; fill: #3b82f6; }
+
+/* Sprint 3.6 — per-piece hover insights (replace the old Support /
+   Threat toggle pair). When the cursor is over one of the player's
+   own pieces, attacker squares pulse with a dashed red border and
+   defender squares with a dashed green border. Pseudo-element layer
+   so the existing ::before tile bg + piece-slide-wrap stay clean. */
+.tile.attacker-of-hovered::after,
+.tile.defender-of-hovered::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border: 2px dashed currentColor;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.tile.attacker-of-hovered::after {
+  color: rgba(220, 38, 38, 0.75);
+}
+
+.tile.defender-of-hovered::after {
+  color: rgba(34, 197, 94, 0.75);
+}
+
 /* Pieces */
 
 .piece {
@@ -1953,8 +2013,11 @@ body.checkmate-flash::after {
    on click. */
 .rotate-btn-icon {
   position: relative;
-  width: 48px;
-  height: 38px;
+  /* Sprint 3.6 — bumped from 48×38 to 64×42 so the button reads as a
+     primary action rather than an icon-tile and has room for the
+     target-topology badge to breathe in the corner. */
+  width: 64px;
+  height: 42px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
@@ -1984,14 +2047,14 @@ body.checkmate-flash::after {
 
 .rotate-target-label {
   position: absolute;
-  bottom: 2px;
-  right: 4px;
-  font-size: 10px;
+  bottom: 3px;
+  right: 5px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
   background: var(--bg-deep);
   border-radius: var(--radius-sm);
-  padding: 0 4px;
+  padding: 1px 5px;
   color: var(--accent-primary);
   line-height: 1.4;
   pointer-events: none;
@@ -5524,12 +5587,16 @@ body.checkmate-flash::after {
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ─── Toast notifications ──────────────────────────────────────── */
+/* Sprint 3.6 — pinned bottom-right so the stack never overlaps the
+   header action / theme / user-menu controls. flex-direction:
+   column-reverse keeps the newest toast at the bottom and stacks
+   older ones upward, which feels natural for a bottom-anchored row. */
 .toast-container {
   position: fixed;
-  top: var(--space-4);
+  bottom: var(--space-4);
   right: var(--space-4);
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   gap: var(--space-2);
   z-index: 10000;
   pointer-events: none;
@@ -5581,13 +5648,13 @@ body.checkmate-flash::after {
 }
 
 @keyframes toast-slide-in {
-  from { opacity: 0; transform: translateX(20px); }
-  to   { opacity: 1; transform: translateX(0); }
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 @media (max-width: 640px) {
   .toast-container {
-    top: var(--space-2);
+    bottom: var(--space-2);
     right: var(--space-2);
     left: var(--space-2);
   }

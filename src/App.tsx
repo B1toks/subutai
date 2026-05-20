@@ -36,8 +36,6 @@ import { Icon } from './components/Icon';
 import { Tooltip } from './components/Tooltip';
 import {
   AlarmClock,
-  AlertTriangle,
-  ArrowRight,
   BarChart3,
   Bot,
   Crosshair,
@@ -275,6 +273,16 @@ interface GameBackup {
   lockedFormationKey: string | null;
 }
 
+// Sprint 3.6 — right-click annotation primitives. Module-level so they
+// can be referenced from helper signatures inside App() without TS
+// scope juggling.
+type AnnotationColor = 'green' | 'red' | 'yellow' | 'blue';
+interface ArrowAnnotation {
+  from: SquareId;
+  to: SquareId;
+  color: AnnotationColor;
+}
+
 function App() {
   // Self-play / training data collection mode: ?auto=1 in the URL puts both
   // sides under AI control, hides the regular UI, and writes finished games
@@ -408,8 +416,12 @@ function App() {
   const [showHelp, setShowHelp] = useState(false);
   const [showMaterialPopup, setShowMaterialPopup] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [showThreats, setShowThreats] = useState(false);
-  const [showSupport, setShowSupport] = useState(false);
+  // Sprint 3.6 — Support / Threat manual toggles removed; the state
+  // setters are no longer needed but the read values stay (false) so
+  // the legacy supportPairs / threatenedSquares useMemos short-circuit
+  // and produce empty results. Hover insights take over the visualisation.
+  const [showThreats] = useState(false);
+  const [showSupport] = useState(false);
   const [previewLocked, setPreviewLocked] = useState(false);
   const [lockedPreviewTopology, setLockedPreviewTopology] = useState<TopologyState | null>(null);
   const [hoveredSquare, setHoveredSquare] = useState<string | null>(null);
@@ -1132,6 +1144,19 @@ function App() {
   // noise; only the classifier reactions (?? shake / !! sparkles) and
   // the en-passant explosion remain. The captureSquare state and the
   // log-length useEffect that drove it have been removed.
+
+  // Sprint 3.6 — right-click annotations (chess.com / lichess style).
+  // Right-click a square to highlight it (cycles colour by modifier:
+  // none=green, shift=red, alt=yellow, ctrl/meta=blue). Right-drag
+  // from one square to another draws an arrow in the same colour
+  // scheme. Repeat the same gesture with the same colour to clear.
+  // All annotations clear automatically when a move is played — they
+  // are a per-position scratch pad, not a persistent layer.
+  const [squareAnnotations, setSquareAnnotations] = useState<Map<SquareId, AnnotationColor>>(
+    () => new Map(),
+  );
+  const [arrowAnnotations, setArrowAnnotations] = useState<ArrowAnnotation[]>([]);
+  const annotationStartRef = useRef<SquareId | null>(null);
   // Sprint 3.2.1 — distinctive screen-wide effect on blunder / brilliant
   // classifications. The existing generic flash overlay (--flash-opacity
   // on .app-shell::after) is kept; this adds shake + vignette for ??
@@ -1710,6 +1735,29 @@ function App() {
   // log.moves.length has been removed; captures no longer get their
   // own visual flash (see state-declarations block above for the
   // rationale).
+
+  // Sprint 3.6 — clear annotations on every new move so the scratch
+  // pad doesn't leak into the next ply. Plus a document-level
+  // mouseup so a right-drag that's released off the board still
+  // resets annotationStartRef instead of leaving it stuck.
+  useEffect(() => {
+    setSquareAnnotations((prev) => (prev.size === 0 ? prev : new Map()));
+    setArrowAnnotations((prev) => (prev.length === 0 ? prev : []));
+  }, [log.moves.length]);
+
+  useEffect(() => {
+    function onUp(e: MouseEvent) {
+      if (e.button === 2) {
+        // Defer the reset by a tick so the synthetic tile-onMouseUp
+        // (which reads the ref to finalise the annotation) runs first.
+        queueMicrotask(() => {
+          annotationStartRef.current = null;
+        });
+      }
+    }
+    document.addEventListener('mouseup', onUp);
+    return () => document.removeEventListener('mouseup', onUp);
+  }, []);
 
   // Auto-trigger the human's roulette spin after the first manual click of
   // the game. Conditions mirror the Spin Roulette button's enabled-state:
@@ -2310,6 +2358,78 @@ function App() {
     if (!showSupport || !selected || !hoveredSquare) return [];
     return getAttackerSquares(state, hoveredSquare as SquareId, 'white', displayTopology);
   }, [showSupport, selected, hoveredSquare, state, displayTopology]);
+
+  // Sprint 3.6 — per-piece hover insights (Variant B of the threat/
+  // support rework). When the cursor is over one of MY pieces, surface
+  // a red dashed overlay on every opposing attacker of that square,
+  // and a green dashed overlay on every friendly defender. Replaces
+  // the always-on Threat / Support toggles (those buttons are now
+  // removed; the underlying showThreats / showSupport state stays at
+  // false default and gates its own computation paths to no-ops). */
+  const hoverInsights = useMemo<{ attackers: Set<SquareId>; defenders: Set<SquareId> }>(() => {
+    const empty = { attackers: new Set<SquareId>(), defenders: new Set<SquareId>() };
+    if (!hoveredSquare) return empty;
+    const piece = state.pieces[hoveredSquare as SquareId];
+    if (!piece) return empty;
+    if (piece.color !== myColor) return empty;
+    const opp: Color = myColor === 'white' ? 'black' : 'white';
+    const attackerList = getAttackerSquares(state, hoveredSquare as SquareId, opp, displayTopology);
+    const defenderList = getAttackerSquares(state, hoveredSquare as SquareId, myColor, displayTopology)
+      .filter((sq) => sq !== hoveredSquare);
+    return {
+      attackers: new Set(attackerList),
+      defenders: new Set(defenderList),
+    };
+  }, [hoveredSquare, state, myColor, displayTopology]);
+
+  // Sprint 3.6 — right-click annotation handlers. Bound on every tile
+   // alongside onClick. Left-click logic is untouched: button !== 2
+   // exits these helpers immediately.
+  function colorFromMouseEvent(e: React.MouseEvent): AnnotationColor {
+    if (e.shiftKey) return 'red';
+    if (e.altKey) return 'yellow';
+    if (e.ctrlKey || e.metaKey) return 'blue';
+    return 'green';
+  }
+
+  function handleTileContextMenu(e: React.MouseEvent) {
+    e.preventDefault();
+  }
+
+  function handleTileMouseDown(e: React.MouseEvent, sq: SquareId) {
+    if (e.button !== 2) return;
+    e.preventDefault();
+    annotationStartRef.current = sq;
+  }
+
+  function handleTileMouseUp(e: React.MouseEvent, sq: SquareId) {
+    if (e.button !== 2) return;
+    const start = annotationStartRef.current;
+    annotationStartRef.current = null;
+    if (!start) return;
+    const color = colorFromMouseEvent(e);
+    if (start === sq) {
+      setSquareAnnotations((prev) => {
+        const next = new Map(prev);
+        if (next.get(sq) === color) {
+          next.delete(sq);
+        } else {
+          next.set(sq, color);
+        }
+        return next;
+      });
+    } else {
+      setArrowAnnotations((prev) => {
+        const existing = prev.findIndex(
+          (a) => a.from === start && a.to === sq && a.color === color,
+        );
+        if (existing >= 0) {
+          return prev.filter((_, i) => i !== existing);
+        }
+        return [...prev, { from: start, to: sq, color }];
+      });
+    }
+  }
 
   function onSquareClick(square: string) {
     if (watchingGame) return; // replay mode is read-only.
@@ -3415,6 +3535,8 @@ function App() {
                 isCheckingPiece ? (gameStatus === 'checkmate' ? 'mating-piece' : 'checking-piece') : '',
                 threatCount > 0 ? 'threatened' : '',
                 isThreateningPiece ? 'threatening-piece' : '',
+                hoverInsights.attackers.has(sq as SquareId) ? 'attacker-of-hovered' : '',
+                hoverInsights.defenders.has(sq as SquareId) ? 'defender-of-hovered' : '',
                 classifiedSquare?.square === sq
                   ? `classified-${classifiedSquare.classification}`
                   : '',
@@ -3429,9 +3551,18 @@ function App() {
                 ...(threatCount > 0 ? { '--threat-n': threatCount } as React.CSSProperties : {}),
               }}
               onClick={() => onSquareClick(sq)}
+              onContextMenu={handleTileContextMenu}
+              onMouseDown={(e) => handleTileMouseDown(e, sq as SquareId)}
+              onMouseUp={(e) => handleTileMouseUp(e, sq as SquareId)}
               onMouseEnter={() => setHoveredSquare(sq)}
               onMouseLeave={() => setHoveredSquare(null)}
             >
+              {squareAnnotations.get(sq as SquareId) && (
+                <span
+                  className={`tile-annotation tile-annotation-${squareAnnotations.get(sq as SquareId)}`}
+                  aria-hidden
+                />
+              )}
               {showRankLabel && (
                 <span className="tile-coord tile-coord-rank" aria-hidden>
                   {rank}
@@ -3552,6 +3683,63 @@ function App() {
             })}
           </svg>
         )}
+        {arrowAnnotations.length > 0 && (
+          <svg
+            className="annotation-overlay"
+            width={boardSize}
+            height={boardSize}
+            viewBox={`0 0 ${boardSize} ${boardSize}`}
+            aria-hidden
+          >
+            <defs>
+              {(['green', 'red', 'yellow', 'blue'] as const).map((c) => (
+                <marker
+                  key={c}
+                  id={`annotation-arrowhead-${c}`}
+                  viewBox="0 0 10 10"
+                  refX="6"
+                  refY="5"
+                  markerWidth="4"
+                  markerHeight="4"
+                  orient="auto"
+                >
+                  <path
+                    d="M 0 0 L 10 5 L 0 10 z"
+                    className={`annotation-arrow-head annotation-color-${c}`}
+                  />
+                </marker>
+              ))}
+            </defs>
+            {arrowAnnotations.map((arrow, i) => {
+              const annFlip = isMultiplayer && mpSync?.myColor === 'black';
+              const fromC = tilePixelCenter(arrow.from, displayTopology, layout);
+              const toC = tilePixelCenter(arrow.to, displayTopology, layout);
+              const fromX = annFlip ? boardSize - fromC.cx : fromC.cx;
+              const fromY = annFlip ? boardSize - fromC.cy : fromC.cy;
+              const toX = annFlip ? boardSize - toC.cx : toC.cx;
+              const toY = annFlip ? boardSize - toC.cy : toC.cy;
+              // Pull the arrow tip in by ~30% of a tile so it doesn't
+              // bury itself in the destination piece.
+              const dx = toX - fromX;
+              const dy = toY - fromY;
+              const dist = Math.hypot(dx, dy) || 1;
+              const inset = tileBase * 0.3;
+              const endX = toX - (dx / dist) * inset;
+              const endY = toY - (dy / dist) * inset;
+              return (
+                <line
+                  key={`${arrow.from}-${arrow.to}-${arrow.color}-${i}`}
+                  x1={fromX}
+                  y1={fromY}
+                  x2={endX}
+                  y2={endY}
+                  className={`annotation-arrow annotation-color-${arrow.color}`}
+                  markerEnd={`url(#annotation-arrowhead-${arrow.color})`}
+                />
+              );
+            })}
+          </svg>
+        )}
       </div>
       </div>
       </div>
@@ -3625,28 +3813,13 @@ function App() {
             </button>
           </Tooltip>
           <span className="action-group-divider" aria-hidden />
-          <Tooltip text="Support map (who backs whom)" side="top">
-            <button
-              type="button"
-              className={`action-btn${showSupport ? ' active' : ''}`}
-              onClick={() => setShowSupport((v) => !v)}
-              aria-label="Toggle support map"
-              aria-pressed={showSupport}
-            >
-              <Icon icon={ArrowRight} size="md" aria-hidden />
-            </button>
-          </Tooltip>
-          <Tooltip text="Threat map" side="top">
-            <button
-              type="button"
-              className={`action-btn${showThreats ? ' active' : ''}`}
-              onClick={() => setShowThreats((v) => !v)}
-              aria-label="Toggle threat map"
-              aria-pressed={showThreats}
-            >
-              <Icon icon={AlertTriangle} size="md" aria-hidden />
-            </button>
-          </Tooltip>
+          {/* Sprint 3.6 — Support / Threat toggle buttons removed.
+              Replaced by automatic per-piece hover insights (red
+              dashed overlay on enemy attackers, green dashed overlay
+              on friendly defenders of the hovered own-piece square).
+              The underlying showSupport / showThreats state is kept
+              defaulted to false so the legacy threat / support map
+              computations short-circuit to no-ops. */}
           <Tooltip
             text={previewLocked ? 'Unlock rotation preview' : 'Preview rotation (click locks it)'}
             side="top"
