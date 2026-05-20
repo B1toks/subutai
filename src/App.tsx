@@ -89,8 +89,18 @@ import { NotationParseError, parseMemoryNotation } from './memory/notation';
 import { useBeatClock } from './hooks/useBeatClock';
 import { MusicPanel } from './components/MusicPanel';
 import { BeatPulseOverlay } from './components/BeatPulseOverlay';
+import { PerimeterEqualizer } from './components/PerimeterEqualizer';
 import { handleSpotifyCallback } from './spotify/auth';
 import { useToast } from './components/Toast';
+import {
+  getLastBands,
+  getVizSource,
+  onBands,
+  onSourceChange,
+  type VizSource,
+} from './audio/visualizerSource';
+
+const EMPTY_BANDS: number[] = Object.freeze(new Array(40).fill(0)) as number[];
 
 type GameStatus =
   | 'active'
@@ -369,6 +379,11 @@ function App() {
   );
   const beatPulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const perfectBeatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Sprint M.3 — perimeter equalizer state. Source-orchestrator owns
+  // the active source (off / spotify / mic) so we just subscribe here.
+  const [vizSource, setVizSourceLocal] = useState<VizSource>(() => getVizSource());
+  const [vizBands, setVizBands] = useState<number[]>(() => getLastBands());
   // Sprint 2.5 — local AFK detector. Independent of the MP afk-watchdog
   // (mpSync.selfAfkWarning) which forfeits the match after 30s; this one
   // is a UX nag that surfaces a pulsing banner when the player's been
@@ -668,6 +683,18 @@ function App() {
       setPerfectBeatSquare(null);
     }
   }, [beatIsRunning]);
+
+  // Sprint M.3 — subscribe to the visualizer orchestrator. Both
+  // callbacks fire synchronously with the current value on subscribe,
+  // so we don't need a separate initial-read.
+  useEffect(() => onSourceChange(setVizSourceLocal), []);
+  useEffect(() => {
+    if (vizSource === 'off') {
+      setVizBands(EMPTY_BANDS);
+      return;
+    }
+    return onBands(setVizBands);
+  }, [vizSource]);
 
   useEffect(() => {
     if (formationInputMode) formationInputRef.current?.focus();
@@ -3559,6 +3586,9 @@ function App() {
           isPending={!isMultiplayer && searchEvalFromWhite === null}
         />
       <div className="board-with-coords" style={{ width: boardSize }}>
+      {vizSource !== 'off' && (
+        <PerimeterEqualizer bands={vizBands} barsPerSide={10} />
+      )}
       <div
         className={`board${previewTopology || previewLocked ? ' previewing' : ''}${recentRotation ? ' is-rotated' : ''}${beatPulse ? ' is-beat-pulse' : ''}`}
         style={{ width: boardSize, height: boardSize }}

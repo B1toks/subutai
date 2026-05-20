@@ -17,11 +17,22 @@ export interface SpotifyBeat {
   confidence: number;
 }
 
+export interface SpotifySegment {
+  start: number;
+  duration: number;
+  loudness_start: number;
+  loudness_max: number;
+  loudness_max_time: number;
+  pitches: number[];   // 12 chroma values, 0..1
+  timbre: number[];    // 12 mel-frequency timbre coefficients
+}
+
 export interface AudioAnalysis {
   tempo: number;
   time_signature: number;
   beats: SpotifyBeat[];
   sections: Array<{ start: number; tempo: number }>;
+  segments: SpotifySegment[];
 }
 
 export type AnalysisError =
@@ -40,6 +51,7 @@ interface RawAnalysis {
   track?: { tempo?: number; time_signature?: number };
   beats?: SpotifyBeat[];
   sections?: Array<{ start: number; tempo: number }>;
+  segments?: SpotifySegment[];
 }
 
 export async function fetchAudioAnalysis(
@@ -98,6 +110,7 @@ export async function fetchAudioAnalysis(
       time_signature: raw.track?.time_signature ?? 4,
       beats: raw.beats ?? [],
       sections: raw.sections ?? [],
+      segments: raw.segments ?? [],
     },
   };
 }

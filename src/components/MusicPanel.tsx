@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Music, ExternalLink } from 'lucide-react';
+import { Music, ExternalLink, Mic, Radio } from 'lucide-react';
 import type { BeatClock } from '../hooks/useBeatClock';
 import { Icon } from './Icon';
 import { BeatCalibrator } from './BeatCalibrator';
@@ -16,6 +16,14 @@ import {
   type AudioAnalysis,
 } from '../spotify/analysis';
 import { useToast } from './Toast';
+import {
+  clearSpotifyAnalysis,
+  feedSpotifyAnalysis,
+  getVizSource,
+  onSourceChange,
+  setVizSource,
+  type VizSource,
+} from '../audio/visualizerSource';
 
 const URL_STORAGE_KEY = 'subutai_spotify_url';
 
@@ -62,6 +70,27 @@ export function MusicPanel({ clock }: Props) {
       window.removeEventListener('subutai:spotify-auth-changed', refreshToken);
   }, []);
 
+  // Sprint M.3 — visualizer source toggle. Mirrors the orchestrator's
+  // state so this component re-renders when another caller (or the
+  // orchestrator's own rollback on permission denial) changes it.
+  const [vizSource, setVizSourceState] = useState<VizSource>(() => getVizSource());
+  useEffect(() => onSourceChange(setVizSourceState), []);
+
+  async function selectVizSource(next: VizSource) {
+    const result = await setVizSource(next);
+    if (!('ok' in result) || result.ok) return;
+    // Mic start failed — translate the reason to a user-facing toast.
+    const msg =
+      result.reason === 'denied'
+        ? 'Microphone access denied.'
+        : result.reason === 'no-device'
+          ? 'No microphone found.'
+          : result.reason === 'insecure'
+            ? 'Microphone needs HTTPS or localhost.'
+            : result.message || 'Could not start microphone.';
+    toast.show(msg, 'error');
+  }
+
   function applyUrl() {
     const trimmed = trackUrl.trim();
     if (!trimmed) {
@@ -106,12 +135,22 @@ export function MusicPanel({ clock }: Props) {
   function startAnalysisSync() {
     if (!analysis) return;
     clock.startWithAnalysis(analysis, 0);
+    // Same timeline → equalizer follows the beat clock. If the user
+    // hasn't picked 'spotify' as visualizer source the orchestrator
+    // stashes this until they do.
+    feedSpotifyAnalysis(analysis, 0);
+  }
+
+  function stopAnalysisSync() {
+    clock.stop();
+    clearSpotifyAnalysis();
   }
 
   function disconnect() {
     logoutSpotify();
     setHasToken(false);
     setAnalysis(null);
+    clearSpotifyAnalysis();
     toast.show('Spotify disconnected.', 'info');
   }
 
@@ -235,13 +274,52 @@ export function MusicPanel({ clock }: Props) {
             <button
               type="button"
               className="analysis-stop-btn"
-              onClick={clock.stop}
+              onClick={stopAnalysisSync}
             >
               Stop sync
             </button>
           )}
         </div>
       )}
+
+      <div className="viz-source-select">
+        <span className="viz-source-label">Visualizer</span>
+        <div className="viz-source-buttons">
+          <button
+            type="button"
+            className={`viz-source-btn${vizSource === 'off' ? ' is-active' : ''}`}
+            onClick={() => void selectVizSource('off')}
+          >
+            Off
+          </button>
+          <button
+            type="button"
+            className={`viz-source-btn${vizSource === 'spotify' ? ' is-active' : ''}`}
+            onClick={() => void selectVizSource('spotify')}
+            disabled={!hasToken}
+            title={
+              hasToken
+                ? 'Spotify segments (pseudo-EQ, no DRM access)'
+                : 'Connect Spotify first'
+            }
+          >
+            <Icon icon={Radio} size="sm" aria-hidden /> Spotify
+          </button>
+          <button
+            type="button"
+            className={`viz-source-btn${vizSource === 'mic' ? ' is-active' : ''}`}
+            onClick={() => void selectVizSource('mic')}
+            title="Real-time FFT from your microphone"
+          >
+            <Icon icon={Mic} size="sm" aria-hidden /> Mic
+          </button>
+        </div>
+        {vizSource === 'mic' && (
+          <p className="music-hint">
+            Mic captures any audio nearby — speakers, phone, TV.
+          </p>
+        )}
+      </div>
 
       <details className="music-fallback">
         <summary>Manual TAP (fallback)</summary>
