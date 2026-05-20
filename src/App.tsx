@@ -33,6 +33,7 @@ import { ThemeToggle } from './components/ThemeToggle';
 import { UserMenu } from './components/UserMenu';
 import { Effects3DToggle } from './components/Effects3DToggle';
 import { AudioToggle } from './components/AudioToggle';
+import { MusicToggle } from './components/MusicToggle';
 import { audio } from './audio/AudioController';
 import { Icon } from './components/Icon';
 import { Tooltip } from './components/Tooltip';
@@ -1443,6 +1444,10 @@ function App() {
 
   function doSpinRouletteNow() {
     setIsRouletteSpinning(true);
+    // Sprint 3.8 — fire the roulette spin SFX at the same moment the
+    // visual roll starts; the synth's decelerating clicks + final
+    // chime line up with the spin animation.
+    audio.play('rouletteSpin');
     setTimeout(() => {
       // Roll only from pieces the current player actually has on the board.
       const activeTypes = getActivePieceTypes(state, state.sideToMove);
@@ -3236,6 +3241,7 @@ function App() {
               <Icon icon={HelpCircle} size="md" aria-hidden />
             </button>
           </Tooltip>
+          <MusicToggle />
           <AudioToggle />
           <Effects3DToggle />
           <ThemeToggle />

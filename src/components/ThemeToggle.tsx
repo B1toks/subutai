@@ -53,6 +53,10 @@ export function ThemeToggle() {
     const next = THEMES[(idx + 1) % THEMES.length];
     setTheme(next);
     audio.play('click');
+    // Sprint 3.8 — hand the new theme to the ambient music sub-system
+    // so the drone cross-fades to the matching stack (no-op if music
+    // is disabled).
+    audio.setMusicTheme(next);
     toast.show(`Theme: ${LABELS[next]}`, 'info', 1500);
   }
 

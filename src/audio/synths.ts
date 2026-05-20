@@ -10,45 +10,48 @@
    refactor inlines its own gain ramps so the move / capture voices
    can layer noise + tonal bodies with independent envelopes. */
 
-/** Sprint 3.7 (rev 2) — wooden tick. Noise burst into a low-pass
- *  filter + sine "body resonance" oscillator at ~200 Hz. Replaces the
- *  bare triangle tone that read as 8-bit. */
+/** Sprint 3.8 — felt-on-wood thud. Pink-noise burst (warmer than the
+ *  3.7 white noise) through a softer low-pass at 1.1 kHz, plus a very
+ *  quiet 360→240 Hz sine body resonance so the tick lands with a hint
+ *  of wooden colour but no crackle. Total ~60 ms. */
 export function playMove(ctx: AudioContext, out: GainNode) {
   const t = ctx.currentTime;
 
   const noise = ctx.createBufferSource();
-  const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.04), ctx.sampleRate);
+  const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.025), ctx.sampleRate);
   const data = buffer.getChannelData(0);
+  let lastPink = 0;
   for (let i = 0; i < data.length; i++) {
-    data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (data.length * 0.3));
+    const white = Math.random() * 2 - 1;
+    lastPink = (lastPink + 0.05 * white) / 1.05;
+    data[i] = lastPink * Math.exp(-i / (data.length * 0.18));
   }
   noise.buffer = buffer;
 
   const filter = ctx.createBiquadFilter();
   filter.type = 'lowpass';
-  filter.frequency.value = 1800;
-  filter.Q.value = 1.2;
+  filter.frequency.value = 1100;
+  filter.Q.value = 0.7;
 
   const bodyOsc = ctx.createOscillator();
   bodyOsc.type = 'sine';
-  bodyOsc.frequency.value = 220;
-  bodyOsc.frequency.exponentialRampToValueAtTime(180, t + 0.04);
+  bodyOsc.frequency.value = 360;
+  bodyOsc.frequency.exponentialRampToValueAtTime(240, t + 0.025);
 
   const noiseGain = ctx.createGain();
+  noiseGain.gain.setValueAtTime(0.5, t);
+  noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+
   const bodyGain = ctx.createGain();
-
-  noiseGain.gain.setValueAtTime(0.4, t);
-  noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
-
-  bodyGain.gain.setValueAtTime(0.15, t);
-  bodyGain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+  bodyGain.gain.setValueAtTime(0.06, t);
+  bodyGain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
 
   noise.connect(filter).connect(noiseGain).connect(out);
   bodyOsc.connect(bodyGain).connect(out);
 
   noise.start(t);
   bodyOsc.start(t);
-  bodyOsc.stop(t + 0.1);
+  bodyOsc.stop(t + 0.06);
 }
 
 /** Heavier wooden clash — sub-bass thump + band-pass noise at ~800 Hz
@@ -191,6 +194,57 @@ export function playPromotion(ctx: AudioContext, out: GainNode) {
     osc.connect(gain).connect(out);
     osc.start(t);
     osc.stop(t + 0.55);
+  });
+}
+
+/** Sprint 3.8 — roulette wheel. 16 decelerating square-wave clicks
+ *  through a tight band-pass + a resolving fifth-interval chime at
+ *  the end ("winner" tone). Total ~1.5s. */
+export function playRouletteSpin(ctx: AudioContext, out: GainNode) {
+  const t = ctx.currentTime;
+  const ticks = 16;
+  let cumulative = 0;
+
+  for (let i = 0; i < ticks; i++) {
+    const progress = i / ticks;
+    // Ease-out — interval grows quadratically so the wheel slows down.
+    const interval = 0.035 + progress * progress * 0.12;
+    cumulative += interval;
+
+    const click = ctx.createOscillator();
+    const clickGain = ctx.createGain();
+    const clickFilter = ctx.createBiquadFilter();
+
+    click.type = 'square';
+    click.frequency.value = 750 + Math.random() * 250;
+
+    clickFilter.type = 'bandpass';
+    clickFilter.frequency.value = 1200;
+    clickFilter.Q.value = 2;
+
+    const startAt = t + cumulative;
+    clickGain.gain.setValueAtTime(0, startAt);
+    clickGain.gain.linearRampToValueAtTime(0.06, startAt + 0.002);
+    clickGain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.025);
+
+    click.connect(clickFilter).connect(clickGain).connect(out);
+    click.start(startAt);
+    click.stop(startAt + 0.03);
+  }
+
+  const chimeStart = t + cumulative + 0.08;
+  [1320, 1980].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    const startAt = chimeStart + i * 0.04;
+    gain.gain.setValueAtTime(0, startAt);
+    gain.gain.linearRampToValueAtTime(0.1, startAt + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.6);
+    osc.connect(gain).connect(out);
+    osc.start(startAt);
+    osc.stop(startAt + 0.65);
   });
 }
 
