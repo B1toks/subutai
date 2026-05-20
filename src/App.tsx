@@ -31,6 +31,7 @@ import { StatsPage } from './components/StatsPage';
 import { FriendLobby } from './components/FriendLobby';
 import { ThemeToggle } from './components/ThemeToggle';
 import { UserMenu } from './components/UserMenu';
+import { Effects3DToggle } from './components/Effects3DToggle';
 import { Icon } from './components/Icon';
 import { Tooltip } from './components/Tooltip';
 import {
@@ -3090,6 +3091,7 @@ function App() {
               <Icon icon={HelpCircle} size="md" aria-hidden />
             </button>
           </Tooltip>
+          <Effects3DToggle />
           <ThemeToggle />
           {displayName && (
             <UserMenu

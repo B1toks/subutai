@@ -1334,10 +1334,20 @@
   height: var(--board-size);
   border-radius: 8px;
   overflow: visible;
-  /* Sprint 3.5 — subtle 6° forward tilt + 3D preservation so pieces
-     can lift off the surface on hover / select. Transition lets the
-     base tilt remain stable while the topology-flip keyframe layers
-     on top via .is-rotated. */
+}
+
+/* Sprint 3.5.1 — 3D pack moved behind [data-3d="on"] so users can
+   opt out via the Effects3DToggle in the header. Default is on
+   (the toggle initialises the html attribute on first render).
+   Perspective lives on the board-with-coords wrapper; the 6° tilt
+   + preserve-3d on .board lets descendants register translateZ for
+   the hover lift. */
+[data-3d="on"] .board-with-coords {
+  perspective: 1400px;
+  perspective-origin: center 110%;
+}
+
+[data-3d="on"] .board {
   transform: rotateX(6deg);
   transform-style: preserve-3d;
   transition: transform 600ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -1417,7 +1427,7 @@
   100% { transform: rotateX(6deg) rotateY(360deg); }
 }
 
-.board.is-rotated {
+[data-3d="on"] .board.is-rotated {
   animation: board-flip-to-b 700ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -1435,10 +1445,12 @@
   transform-origin: center center;
   transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 3px;
-  /* Sprint 3.5 — propagate the 3D context from .board down so the
-     piece-slide-wrap inside can use translateZ for hover lift. The
-     tile's own translate/rotate/scale stays planar (it's all Z-axis
-     rotation which keeps the tile flat against the board surface). */
+}
+
+/* Sprint 3.5.1 — propagate the 3D context from .board down to the
+   piece host so translateZ on .piece-slide-wrap can lift the piece.
+   Gated under [data-3d="on"] alongside the board's own tilt. */
+[data-3d="on"] .tile {
   transform-style: preserve-3d;
 }
 
@@ -1648,12 +1660,13 @@ body.checkmate-flash::after {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* Sprint 3.5 — 3D-aware piece host. Hover / selected lift go HERE
-     (not on .piece) because .piece carries an inline rotateZ for
-     topology-B counter-rotation that would override anything we set
-     on it via CSS. The wrapper has no base transform of its own
-     (the slide-in animation only runs for ~240ms then reverts), so
-     hover styles can drive translateZ without fighting anything. */
+  /* Sprint 3.5.1 — pointer-events: none on the wrapper so the hover
+     lift doesn't expand the wrapper's hit area outside the tile and
+     cause the well-known hover-flicker loop (cursor on enlarged
+     piece → outside tile → :hover lost → piece shrinks back → cursor
+     inside tile again → :hover → loop). All hover events bubble up
+     through the wrapper to the .tile button instead. */
+  pointer-events: none;
   transition:
     transform 220ms cubic-bezier(0.4, 0, 0.2, 1),
     filter 180ms ease;
@@ -1668,23 +1681,27 @@ body.checkmate-flash::after {
   animation: piece-slide-in 240ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Hover lift — only fires for an actual cursor; touch users get no
-   stuck-hover state via :hover. */
+/* Hover + selected lift — gated behind [data-3d="on"]. The translateZ
+   alone gets a tiny perspective-driven scale-up (Z=6 against
+   perspective 1400px ≈ 1.004) so there's no explicit scale to chew
+   the bounding box. Hover only fires for actual cursors via the
+   (hover: hover) media query — touch devices skip it. */
 @media (hover: hover) {
-  .tile:hover .piece-slide-wrap:not(.is-sliding-in) {
-    transform: translateZ(6px) scale(1.04);
+  [data-3d="on"] .tile:hover .piece-slide-wrap:not(.is-sliding-in) {
+    transform: translateZ(6px);
     filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5));
   }
 }
 
-.tile.selected .piece-slide-wrap:not(.is-sliding-in) {
+[data-3d="on"] .tile.selected .piece-slide-wrap:not(.is-sliding-in) {
   transform: translateZ(12px);
   filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.6));
 }
 
 /* Keep coordinate labels glued to the tile face — translateZ(0) gives
    them their own composite layer for crisper anti-aliasing in Chrome
-   without lifting them off the surface. */
+   without lifting them off the surface. Safe to leave un-gated; it's
+   a no-op without a 3D context. */
 .tile-coord {
   transform: translateZ(0);
 }
@@ -4131,12 +4148,6 @@ body.checkmate-flash::after {
   position: relative;
   width: var(--board-size);
   height: var(--board-size);
-  /* Sprint 3.5 — 3D viewing context for the board surface + piece
-     hover lift. Perspective sits well below the board (110% on Y)
-     so the tilt reads as "board on a table tilted toward viewer"
-     rather than a billboard floating in space. */
-  perspective: 1400px;
-  perspective-origin: center 110%;
   margin: 0 auto;
 }
 
@@ -5325,22 +5336,25 @@ body.checkmate-flash::after {
   .piece {
     transition: none;
   }
-  /* Sprint 3.5 — flatten the 3D pack. Board sits unrotated, pieces
-     don't lift on hover / selection, topology flip becomes an
-     instant state change. Important on all of these because the
-     base rules use specific transform values. */
+  /* Sprint 3.5.1 — flatten the 3D pack regardless of the user's
+     [data-3d] preference. Board un-tilted, pieces don't lift,
+     topology flip → instant. The OS-level reduce-motion setting
+     overrides the in-app toggle so motion-sensitive users always
+     get a flat board. */
+  [data-3d="on"] .board,
   .board {
     transform: none !important;
     transition: none !important;
   }
+  [data-3d="on"] .board.is-rotated,
   .board.is-rotated {
     animation: none !important;
   }
   .piece-slide-wrap {
     transition: none !important;
   }
-  .tile:hover .piece-slide-wrap,
-  .tile.selected .piece-slide-wrap {
+  [data-3d="on"] .tile:hover .piece-slide-wrap,
+  [data-3d="on"] .tile.selected .piece-slide-wrap {
     transform: none !important;
     filter: none !important;
   }
