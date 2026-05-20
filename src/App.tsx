@@ -86,6 +86,8 @@ import { localStorageAdapter } from './memory/storage';
 import { MemoryPanel } from './memory/MemoryPanel';
 import type { SavedGame } from './memory/types';
 import { NotationParseError, parseMemoryNotation } from './memory/notation';
+import { useBeatClock, scoreMoveAgainstBeat } from './hooks/useBeatClock';
+import { MusicPanel } from './components/MusicPanel';
 
 type GameStatus =
   | 'active'
@@ -349,6 +351,21 @@ function App() {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [milestoneShown, setMilestoneShown] = useState(false);
   const [showMilestoneModal, setShowMilestoneModal] = useState(false);
+
+  // Sprint M.0 — experimental beat-sync. Lives on music-beat-sync branch
+  // only; gives the board a visual pulse on each beat and rewards moves
+  // landed close to a beat with a streak counter + tile flash.
+  const beatClock = useBeatClock();
+  const [beatPulse, setBeatPulse] = useState(false);
+  const [onBeatStreak, setOnBeatStreak] = useState(0);
+  const [lastBeatScore, setLastBeatScore] = useState<
+    'perfect' | 'good' | 'off' | null
+  >(null);
+  const [perfectBeatSquare, setPerfectBeatSquare] = useState<SquareId | null>(
+    null,
+  );
+  const beatPulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const perfectBeatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Sprint 2.5 — local AFK detector. Independent of the MP afk-watchdog
   // (mpSync.selfAfkWarning) which forfeits the match after 30s; this one
   // is a UX nag that surfaces a pulsing banner when the player's been
@@ -594,6 +611,39 @@ function App() {
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  // Sprint M.0 — subscribe to the shared beat clock and trigger a short
+  // board-ring pulse on every beat. The subscription is recreated when
+  // the clock toggles run state so the listener is dropped cleanly.
+  const beatIsRunning = beatClock.isRunning;
+  const beatOnBeat = beatClock.onBeat;
+  useEffect(() => {
+    if (!beatIsRunning) {
+      setBeatPulse(false);
+      return;
+    }
+    const unsubscribe = beatOnBeat(() => {
+      setBeatPulse(true);
+      if (beatPulseTimerRef.current) clearTimeout(beatPulseTimerRef.current);
+      beatPulseTimerRef.current = setTimeout(() => setBeatPulse(false), 220);
+    });
+    return () => {
+      unsubscribe();
+      if (beatPulseTimerRef.current) {
+        clearTimeout(beatPulseTimerRef.current);
+        beatPulseTimerRef.current = null;
+      }
+    };
+  }, [beatIsRunning, beatOnBeat]);
+
+  // Drop streak when the clock stops so the badge doesn't linger stale.
+  useEffect(() => {
+    if (!beatIsRunning) {
+      setOnBeatStreak(0);
+      setLastBeatScore(null);
+      setPerfectBeatSquare(null);
+    }
+  }, [beatIsRunning]);
 
   useEffect(() => {
     if (formationInputMode) formationInputRef.current?.focus();
@@ -2610,6 +2660,33 @@ function App() {
     const afterMove = applyMove(state, resolvedMove);
     setLog((prev) => appendMove(prev, resolvedMove, san, state.topologyState));
     setLastMove({ from: resolvedMove.from, to: resolvedMove.to });
+
+    // Sprint M.0 — on-beat scoring (experimental). Compares move time
+    // to the nearest beat; perfect/good extend the streak, off resets.
+    if (beatClock.isRunning && beatClock.bpm > 0) {
+      const score = scoreMoveAgainstBeat(
+        performance.now(),
+        beatClock.getNextBeatAt(),
+        beatClock.bpm,
+      );
+      setLastBeatScore(score);
+      if (score === 'perfect') {
+        setOnBeatStreak((s) => s + 1);
+        audio.play('brilliant');
+        if (resolvedMove.to) {
+          setPerfectBeatSquare(resolvedMove.to);
+          if (perfectBeatTimerRef.current) clearTimeout(perfectBeatTimerRef.current);
+          perfectBeatTimerRef.current = setTimeout(
+            () => setPerfectBeatSquare(null),
+            700,
+          );
+        }
+      } else if (score === 'good') {
+        setOnBeatStreak((s) => s + 1);
+      } else {
+        setOnBeatStreak(0);
+      }
+    }
     // Defer classify so the click feels instant — main thread is still
     // single-threaded but the DOM paints first, then the analysis lands
     // ~300 ms later as if the engine is "thinking".
@@ -3462,7 +3539,7 @@ function App() {
         />
       <div className="board-with-coords" style={{ width: boardSize }}>
       <div
-        className={`board${previewTopology || previewLocked ? ' previewing' : ''}${recentRotation ? ' is-rotated' : ''}`}
+        className={`board${previewTopology || previewLocked ? ' previewing' : ''}${recentRotation ? ' is-rotated' : ''}${beatPulse ? ' is-beat-pulse' : ''}`}
         style={{ width: boardSize, height: boardSize }}
       >
         {squares.map((sq) => {
@@ -3571,6 +3648,7 @@ function App() {
                   ? `classified-${classifiedSquare.classification}`
                   : '',
                 sacrificeSquare === sq ? 'is-sacrifice' : '',
+                perfectBeatSquare === sq ? 'is-perfect-beat' : '',
               ]
                 .filter(Boolean)
                 .join(' ')}
@@ -4143,6 +4221,8 @@ function App() {
             Review {log.moves.length > 0 ? 'this game' : '— no moves yet'}
           </button>
         </section>
+
+        <MusicPanel clock={beatClock} />
       </aside>
       </div>
 
@@ -4197,6 +4277,17 @@ function App() {
 
       {!isMultiplayer && (
         <MemoryPanel onGameActivate={onMemoryGameActivate} />
+      )}
+
+      {beatClock.isRunning && onBeatStreak > 0 && (
+        <div
+          className={`beat-badge${
+            lastBeatScore === 'perfect' ? ' is-perfect' : ''
+          }${lastBeatScore === 'off' ? ' is-off' : ''}`}
+        >
+          <Icon icon={Sparkles} size="sm" aria-hidden />
+          On-Beat: {onBeatStreak}
+        </div>
       )}
 
       {!authLoading && user && !displayName && (

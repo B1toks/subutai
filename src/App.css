@@ -6010,3 +6010,238 @@ button:active:not(:disabled) {
     font-size: 16px;
   }
 }
+
+/* ========================================================================
+   Sprint M.0 — Beat Sync (Experimental, on music-beat-sync branch).
+   Spotify embed + tap-to-tempo beat clock + on-beat scoring visuals.
+   ======================================================================== */
+
+.music-panel {
+  border: 1px solid var(--accent-primary);
+  box-shadow: var(--glow-accent);
+}
+
+.music-panel .sidebar-panel-title .beta-tag-small {
+  margin-left: var(--space-1);
+  padding: 1px 6px;
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary, var(--accent-primary)));
+  color: var(--bg-deep);
+  border-radius: var(--radius-sm);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.music-url-input {
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+
+.music-url-input input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-deep);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: var(--space-2);
+  font-size: 12px;
+}
+
+.music-url-input button {
+  background: var(--accent-primary);
+  color: var(--bg-deep);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.music-url-input button:hover {
+  filter: brightness(1.1);
+}
+
+.music-url-error {
+  color: var(--danger-coral, #ff6b6b);
+  font-size: 11px;
+  margin-bottom: var(--space-2);
+}
+
+.spotify-embed {
+  border: 0;
+  border-radius: var(--radius-md);
+  margin-top: var(--space-2);
+  display: block;
+  width: 100%;
+}
+
+.beat-calibrator {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.bpm-display {
+  font-size: 13px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.bpm-display strong {
+  font-size: 18px;
+  color: var(--accent-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.beat-running-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  box-shadow: 0 0 8px var(--accent-primary);
+  animation: beat-running-pulse 1s ease-in-out infinite;
+}
+
+@keyframes beat-running-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.85); }
+  50%      { opacity: 1;   transform: scale(1.15); }
+}
+
+.beat-calibrator-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.beat-calibrator-actions button {
+  flex: 1;
+  min-width: 60px;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+}
+
+.beat-calibrator-actions button:hover {
+  background: var(--bg-elevated-hover);
+  border-color: var(--accent-primary);
+}
+
+.tap-btn {
+  letter-spacing: 0.08em;
+}
+
+.tap-btn:active {
+  background: var(--accent-primary) !important;
+  color: var(--bg-deep) !important;
+}
+
+.beat-start-btn {
+  background: var(--accent-primary) !important;
+  color: var(--bg-deep) !important;
+  border-color: var(--accent-primary) !important;
+}
+
+.beat-calibrator-hint {
+  font-size: 10px;
+  color: var(--text-primary);
+  opacity: 0.55;
+  font-style: italic;
+}
+
+/* Board ring pulse on each beat. */
+@keyframes beat-pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 var(--accent-primary), var(--shadow-elevated);
+  }
+  50% {
+    box-shadow:
+      0 0 0 6px transparent,
+      0 0 24px 4px color-mix(in srgb, var(--accent-primary) 50%, transparent),
+      var(--shadow-elevated);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent, var(--shadow-elevated);
+  }
+}
+
+.board.is-beat-pulse {
+  animation: beat-pulse-ring 220ms ease-out;
+}
+
+/* On-beat streak badge. */
+.beat-badge {
+  position: fixed;
+  top: calc(var(--space-4) + 56px);
+  right: var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-full);
+  color: var(--accent-primary);
+  font-weight: 700;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  box-shadow: var(--glow-accent);
+  z-index: 100;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.beat-badge.is-perfect {
+  animation: beat-badge-perfect 420ms ease-out;
+}
+
+.beat-badge.is-off {
+  opacity: 0.55;
+  border-color: var(--border-subtle);
+  color: var(--text-primary);
+}
+
+@keyframes beat-badge-perfect {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.22); box-shadow: 0 0 32px var(--accent-primary); }
+  100% { transform: scale(1); }
+}
+
+/* Perfect-beat tile flash. */
+@keyframes beat-tile-burst {
+  0% {
+    box-shadow: inset 0 0 0 0 transparent;
+  }
+  30% {
+    box-shadow:
+      inset 0 0 0 4px rgba(255, 215, 0, 0.95),
+      0 0 28px 6px rgba(255, 215, 0, 0.6);
+  }
+  100% {
+    box-shadow: inset 0 0 0 0 transparent;
+  }
+}
+
+.tile.is-perfect-beat {
+  animation: beat-tile-burst 700ms ease-out;
+  z-index: 4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board.is-beat-pulse,
+  .beat-badge.is-perfect,
+  .tile.is-perfect-beat,
+  .beat-running-dot {
+    animation: none;
+  }
+}
