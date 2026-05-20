@@ -511,6 +511,16 @@
   position: relative;
   width: 100%;
   min-height: 100vh;
+  /* Sprint 3.9 — dynamic viewport unit handles iOS Safari's address-
+     bar resize so the bottom of the layout doesn't get cropped when
+     the bar collapses. Falls back to 100vh on older browsers. */
+  min-height: 100dvh;
+  /* Notch / home-indicator safe-area padding. env() resolves to 0 on
+     non-notched devices so this is a no-op there. */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -5808,5 +5818,195 @@ body.checkmate-flash::after {
   }
   .tooltip {
     animation: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SPRINT 3.9 — mobile-first polish
+   Touch device + small-viewport adaptations. Consolidates the
+   header compact / body stack / mode-card stack / touch-target
+   sizing / 3D auto-disable / modal / toast / tap-feedback rules.
+   No new JS — every change is CSS- or meta-tag-only.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Global tap feedback + iOS double-tap-zoom suppression on board /
+   interactive controls. Light at 80ms so it reads as confirmation
+   without slowing the next interaction. */
+.tile,
+button,
+.user-menu-trigger {
+  touch-action: manipulation;
+}
+
+.tile:active,
+button:active:not(:disabled) {
+  transform: scale(0.97);
+  transition: transform 80ms ease-out;
+}
+
+/* hover: none — most touch devices. Strip the desktop-only hover
+   effects so they don't stick after a tap. Selected / active class-
+   based states still work via click, not hover. */
+@media (hover: none) {
+  .header-action-btn:hover,
+  .mode-card:hover,
+  .opp-tab:hover,
+  .action-buttons-group .action-btn:hover,
+  .rotate-btn-icon:hover,
+  .panel-action-btn:hover,
+  .review-trigger-btn:hover,
+  .user-menu-trigger:hover {
+    box-shadow: none;
+    transform: none;
+    background: var(--btn-bg);
+  }
+  /* 3D piece lift was already gated on hover: hover — explicit
+     reset here keeps it tidy. */
+  [data-3d="on"] .tile:hover .piece-slide-wrap {
+    transform: none;
+    filter: none;
+  }
+}
+
+/* 960px — tablet / large phone. Body grid collapses, sidebar stacks
+   under board, mode cards single column. */
+@media (max-width: 960px) {
+  .app-body {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+  .game-mode-cards {
+    grid-template-columns: 1fr;
+    gap: var(--space-2);
+  }
+  .mode-card {
+    padding: var(--space-3);
+    gap: var(--space-2);
+  }
+  .mode-card-icon svg {
+    width: 28px;
+    height: 28px;
+  }
+  .mode-card-title {
+    font-size: 16px;
+  }
+  .mode-card-subtitle {
+    font-size: 11px;
+  }
+  .right-sidebar {
+    width: 100%;
+    gap: var(--space-2);
+  }
+  .sidebar-panel {
+    max-height: 320px;
+    overflow-y: auto;
+  }
+  .sidebar-moves .move-log-text {
+    max-height: 200px;
+  }
+}
+
+/* 768px — phones and small tablets. Disable the 3D tilt + flip
+   animation; transitions on weak GPUs are jankier than the static
+   2D look. The data-3d toggle is preserved for desktop users. */
+@media (max-width: 768px) {
+  [data-3d="on"] .board {
+    transform: none;
+  }
+  [data-3d="on"] .board.is-rotated {
+    animation: none;
+  }
+  [data-3d="on"] .tile:hover .piece-slide-wrap,
+  [data-3d="on"] .tile.selected .piece-slide-wrap {
+    transform: none;
+    filter: none;
+  }
+}
+
+/* 600px — phone-portrait. Tightest layout. */
+@media (max-width: 600px) {
+  .app-root {
+    padding: var(--space-2);
+    gap: var(--space-2);
+  }
+  .app-header {
+    padding: 0;
+    gap: var(--space-2);
+  }
+  .app-header h1 {
+    font-size: 22px;
+    letter-spacing: 0.02em;
+  }
+  .app-tagline {
+    /* hidden via the 900px rule already; explicit here too in case
+       the tagline reappears in a future refactor. */
+    display: none;
+  }
+  .header-controls {
+    gap: 2px;
+  }
+  .header-action-btn {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+  }
+  .theme-toggle {
+    width: 40px;
+    height: 40px;
+  }
+  .user-menu-trigger {
+    height: 40px;
+    padding: 0 var(--space-2);
+    font-size: 13px;
+  }
+  .action-buttons-group .action-btn {
+    width: 42px;
+    height: 42px;
+  }
+  .rotate-btn-icon {
+    width: 88px;
+    height: 44px;
+  }
+  .tile {
+    min-width: 36px;
+    min-height: 36px;
+  }
+  /* Toast already moved bottom-right with full-width on 640px; tighten
+     a touch more at this breakpoint. */
+  .toast-container {
+    bottom: var(--space-2);
+    right: var(--space-2);
+    left: var(--space-2);
+  }
+  .toast {
+    min-width: 0;
+    max-width: 100%;
+    font-size: 13px;
+  }
+  /* Modal dialogs go edge-to-edge on small screens and lock to the
+     dynamic viewport so iOS Safari's bottom bar doesn't crop the CTA
+     row. Input font ≥16px prevents the iOS auto-zoom on focus. */
+  .modal-backdrop,
+  .help-backdrop,
+  .promotion-backdrop {
+    padding: var(--space-2);
+  }
+  .modal-dialog,
+  .help-dialog,
+  .promotion-dialog,
+  .feedback-modal-dialog,
+  .milestone-dialog {
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(100dvh - var(--space-4));
+    overflow-y: auto;
+    padding: var(--space-3);
+  }
+  .modal-input,
+  .replay-textarea,
+  .position-input,
+  textarea,
+  input[type='text'] {
+    font-size: 16px;
   }
 }
