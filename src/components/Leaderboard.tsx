@@ -17,6 +17,8 @@ import {
 } from '../firebase/leaderboard';
 import type { GameOutcome } from '../analysis/points';
 import { Icon } from './Icon';
+import { Skeleton } from './Skeleton';
+import { EmptyState } from './EmptyState';
 
 interface LeaderboardProps {
   currentUid: string | null;
@@ -130,13 +132,34 @@ export function Leaderboard({ currentUid, onBack, onWatchGame }: LeaderboardProp
       </div>
 
       {loading ? (
-        <div className="leaderboard-empty">Loading…</div>
+        <div className="leaderboard-loading">
+          <div className="leaderboard-row leaderboard-row-head">
+            <span className="lb-rank">#</span>
+            <span className="lb-name">Player</span>
+            <span className="lb-points">Best</span>
+            <span className="lb-survived">Survived</span>
+            <span className="lb-outcome">Outcome</span>
+            <span className="lb-action" />
+          </div>
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="leaderboard-row">
+              <Skeleton width={26} height={14} />
+              <Skeleton width="60%" height={14} />
+              <Skeleton width={36} height={14} />
+              <Skeleton width={56} height={14} />
+              <Skeleton width={72} height={14} />
+              <span className="lb-action" />
+            </div>
+          ))}
+        </div>
       ) : error ? (
         <div className="leaderboard-empty leaderboard-error">{error}</div>
       ) : entries.length === 0 ? (
-        <div className="leaderboard-empty">
-          No entries yet. Be the first to play a counted game!
-        </div>
+        <EmptyState
+          icon={Trophy}
+          title="No champions yet"
+          description="Be the first to survive 50 moves against the AI."
+        />
       ) : (
         <>
           <div className="leaderboard-row leaderboard-row-head">

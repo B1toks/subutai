@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Check, Link2 } from 'lucide-react';
 import { Icon } from './Icon';
+import { useToast } from './Toast';
 import type { GameLog } from '../recording/log';
 import { analyzeGame, type GameReviewResult } from '../analysis/analyzeGame';
 import type { MoveClass, MoveAnalysis } from '../analysis/classify';
@@ -201,14 +202,21 @@ function ReviewBoard({
 }
 
 export function GameReview({ log, onBack, meta, gameId }: Props) {
+  const toast = useToast();
   const [shareCopied, setShareCopied] = useState(false);
   function handleShare() {
     if (!gameId) return;
     const url = `${window.location.origin}${window.location.pathname}?game=${gameId}`;
-    navigator.clipboard.writeText(url).then(() => {
-      setShareCopied(true);
-      setTimeout(() => setShareCopied(false), 2500);
-    });
+    navigator.clipboard
+      .writeText(url)
+      .then(() => {
+        setShareCopied(true);
+        setTimeout(() => setShareCopied(false), 2500);
+        toast.show('Share link copied to clipboard', 'success');
+      })
+      .catch(() => {
+        toast.show('Could not copy link — try again', 'error');
+      });
   }
 
   const [result, setResult] = useState<GameReviewResult | null>(null);

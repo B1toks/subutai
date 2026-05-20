@@ -5307,3 +5307,231 @@ body.checkmate-flash::after {
 [data-theme="fantasy"] .sidebar-moves .move-log-text {
   color: var(--text-secondary);
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   SPRINT 3.4 — premium polish: toasts, skeletons, empty states, tips
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ─── Toast notifications ──────────────────────────────────────── */
+.toast-container {
+  position: fixed;
+  top: var(--space-4);
+  right: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  z-index: 10000;
+  pointer-events: none;
+  max-width: calc(100vw - var(--space-4) * 2);
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-elevated);
+  color: var(--text-primary);
+  font-weight: 500;
+  font-size: 13px;
+  min-width: 220px;
+  max-width: 360px;
+  pointer-events: auto;
+  animation: toast-slide-in 280ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.toast-success {
+  border-color: var(--accent-success);
+  box-shadow: 0 0 12px rgba(74, 222, 128, 0.25), var(--shadow-elevated);
+}
+
+.toast-success svg {
+  color: var(--accent-success);
+}
+
+.toast-error {
+  border-color: var(--accent-danger);
+  box-shadow: 0 0 12px rgba(192, 57, 43, 0.25), var(--shadow-elevated);
+}
+
+.toast-error svg {
+  color: var(--accent-danger);
+}
+
+.toast-info {
+  border-color: var(--accent-primary);
+}
+
+.toast-info svg {
+  color: var(--accent-primary);
+}
+
+@keyframes toast-slide-in {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@media (max-width: 640px) {
+  .toast-container {
+    top: var(--space-2);
+    right: var(--space-2);
+    left: var(--space-2);
+  }
+  .toast {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+
+/* ─── Loading skeletons ────────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg-mid) 0%,
+    var(--bg-elevated) 50%,
+    var(--bg-mid) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+  display: inline-block;
+}
+
+.skeleton.is-rounded {
+  border-radius: var(--radius-full);
+}
+
+@keyframes skeleton-shimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* ─── Empty state ─────────────────────────────────────────────── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: var(--space-5);
+  gap: var(--space-2);
+  color: var(--text-secondary);
+}
+
+.empty-state-icon {
+  color: var(--text-muted);
+  opacity: 0.55;
+  margin-bottom: var(--space-2);
+  display: inline-flex;
+}
+
+.empty-state-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.empty-state-description {
+  margin: 0;
+  font-size: 14px;
+  max-width: 340px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.empty-state-action {
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  background: var(--accent-primary);
+  color: var(--piece-text-on-bright);
+  border: none;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.15s ease;
+}
+
+.empty-state-action:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.empty-state-action:active {
+  transform: translateY(0);
+}
+
+/* ─── Tooltip ─────────────────────────────────────────────────── */
+.tooltip-trigger {
+  position: relative;
+  display: inline-flex;
+}
+
+.tooltip {
+  position: absolute;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: var(--shadow-elevated);
+  pointer-events: none;
+  z-index: 9999;
+  animation: tooltip-fade-in 150ms ease-out;
+}
+
+@keyframes tooltip-fade-in {
+  from { opacity: 0; transform: translate(var(--tip-tx, -50%), var(--tip-ty, 2px)); }
+  to   { opacity: 1; transform: translate(var(--tip-tx, -50%), var(--tip-ty, 0)); }
+}
+
+.tooltip-top {
+  --tip-tx: -50%;
+  --tip-ty: 0;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.tooltip-bottom {
+  --tip-tx: -50%;
+  --tip-ty: 0;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.tooltip-left {
+  --tip-tx: 0;
+  --tip-ty: -50%;
+  right: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.tooltip-right {
+  --tip-tx: 0;
+  --tip-ty: -50%;
+  left: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+  .skeleton {
+    animation: none;
+    background: var(--bg-mid);
+  }
+  .tooltip {
+    animation: none;
+  }
+}

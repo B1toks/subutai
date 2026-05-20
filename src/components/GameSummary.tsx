@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Check, Link2 } from 'lucide-react';
 import { Icon } from './Icon';
+import { useToast } from './Toast';
 import type { GameOutcome, GamePoints, MoveQualityCounts } from '../analysis/points';
 import { FeedbackPrompt } from './FeedbackPrompt';
 
@@ -197,13 +198,20 @@ export function GameSummary({
 }
 
 function ShareGameButton({ gameId }: { gameId: string }) {
+  const toast = useToast();
   const [copied, setCopied] = useState(false);
   function handleShare() {
     const url = `${window.location.origin}${window.location.pathname}?game=${gameId}`;
-    navigator.clipboard.writeText(url).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+    navigator.clipboard
+      .writeText(url)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+        toast.show('Share link copied to clipboard', 'success');
+      })
+      .catch(() => {
+        toast.show('Could not copy link — try again', 'error');
+      });
   }
   return (
     <div className="summary-share-row">

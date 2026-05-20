@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { MoonStar, Sparkles, Sun, TreePine } from 'lucide-react';
 import { Icon } from './Icon';
+import { useToast } from './Toast';
 
 type Theme = 'wood' | 'wood-light' | 'cyberpunk' | 'fantasy';
 
@@ -29,7 +30,11 @@ function readInitialTheme(): Theme {
 }
 
 export function ThemeToggle() {
+  const toast = useToast();
   const [theme, setTheme] = useState<Theme>(readInitialTheme);
+  // Suppress the toast for the very first effect run (initial mount); we
+  // only want it on user-initiated cycles, not page-load.
+  const firstRunRef = useRef(true);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -38,7 +43,12 @@ export function ThemeToggle() {
     } catch {
       /* localStorage may be unavailable (private mode, quota) — no-op */
     }
-  }, [theme]);
+    if (firstRunRef.current) {
+      firstRunRef.current = false;
+      return;
+    }
+    toast.show(`Theme: ${LABELS[theme]}`, 'info', 1500);
+  }, [theme, toast]);
 
   function cycle() {
     const idx = THEMES.indexOf(theme);

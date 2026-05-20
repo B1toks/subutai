@@ -1,7 +1,9 @@
 import { memo, useEffect, useMemo, useState } from 'react';
+import { Archive, Filter } from 'lucide-react';
 import { localStorageAdapter } from './storage';
 import { matches960Pattern } from './filter';
 import { GameCard } from './GameCard';
+import { EmptyState } from '../components/EmptyState';
 import type { SavedGame } from './types';
 
 type SortKey = 'date' | 'result' | 'config960' | 'moveCount';
@@ -111,11 +113,19 @@ function MemoryPanelImpl({
         </div>
         <div className="memory-list">
           {sorted.length === 0 ? (
-            <div className="memory-empty">
-              {games.length === 0
-                ? 'No games saved yet. Finish a game to see it here.'
-                : 'No games match the filter.'}
-            </div>
+            games.length === 0 ? (
+              <EmptyState
+                icon={Archive}
+                title="No saved games"
+                description="Completed games are saved locally and show up here."
+              />
+            ) : (
+              <EmptyState
+                icon={Filter}
+                title="No matches"
+                description="No games match the filter. Try a different pattern or clear it."
+              />
+            )
           ) : (
             sorted.map((game) => (
               <div

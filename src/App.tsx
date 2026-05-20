@@ -32,6 +32,7 @@ import { FriendLobby } from './components/FriendLobby';
 import { ThemeToggle } from './components/ThemeToggle';
 import { UserMenu } from './components/UserMenu';
 import { Icon } from './components/Icon';
+import { Tooltip } from './components/Tooltip';
 import {
   AlarmClock,
   AlertTriangle,
@@ -3072,34 +3073,41 @@ function App() {
           )}
         </div>
         <div className="header-controls">
-          <button
-            type="button"
-            className="header-action-btn"
-            onClick={() => setView('leaderboard')}
-            title="Leaderboard"
-            aria-label="Leaderboard"
-          >
-            <Icon icon={Trophy} size="md" aria-hidden />
-          </button>
-          <button
-            type="button"
-            className="header-action-btn"
-            onClick={() => setShowFeedbackModal(true)}
+          <Tooltip text="Leaderboard" side="bottom">
+            <button
+              type="button"
+              className="header-action-btn"
+              onClick={() => setView('leaderboard')}
+              aria-label="Leaderboard"
+            >
+              <Icon icon={Trophy} size="md" aria-hidden />
+            </button>
+          </Tooltip>
+          <Tooltip
+            text={user && displayName ? 'Send feedback' : 'Sign in to send feedback'}
+            side="bottom"
             disabled={!user || !displayName}
-            title={user && displayName ? 'Send feedback' : 'Sign in and pick a name to send feedback'}
-            aria-label="Send feedback"
           >
-            <Icon icon={MessageSquare} size="md" aria-hidden />
-          </button>
-          <button
-            type="button"
-            className="header-action-btn"
-            onClick={() => setShowHelp(true)}
-            title="Rules & info"
-            aria-label="Rules & info"
-          >
-            <Icon icon={HelpCircle} size="md" aria-hidden />
-          </button>
+            <button
+              type="button"
+              className="header-action-btn"
+              onClick={() => setShowFeedbackModal(true)}
+              disabled={!user || !displayName}
+              aria-label="Send feedback"
+            >
+              <Icon icon={MessageSquare} size="md" aria-hidden />
+            </button>
+          </Tooltip>
+          <Tooltip text="Rules & info" side="bottom">
+            <button
+              type="button"
+              className="header-action-btn"
+              onClick={() => setShowHelp(true)}
+              aria-label="Rules & info"
+            >
+              <Icon icon={HelpCircle} size="md" aria-hidden />
+            </button>
+          </Tooltip>
           <ThemeToggle />
           {displayName && (
             <UserMenu
@@ -3593,53 +3601,72 @@ function App() {
             Threat / Preview). Lock no longer reads as a stray button \u2014
             it's middle-of-the-row inside the same container. */}
         <div className="action-buttons-group">
-          <button
-            type="button"
-            className="action-btn"
-            onClick={startNewGame}
-            title="New game"
+          <Tooltip text="New game" side="top">
+            <button
+              type="button"
+              className="action-btn"
+              onClick={startNewGame}
+              aria-label="New game"
+            >
+              <Icon icon={RotateCw} size="md" aria-hidden />
+            </button>
+          </Tooltip>
+          <Tooltip
+            text={formationLocked ? 'Unlock formation (next game random)' : 'Lock formation (keep this 960)'}
+            side="top"
           >
-            <Icon icon={RotateCw} size="md" aria-hidden />
-          </button>
-          <button
-            type="button"
-            className={`action-btn${formationLocked ? ' active' : ''}`}
-            onClick={toggleFormationLock}
-            title={formationLocked ? 'Unlock formation (new games will be random)' : 'Lock formation (new game keeps this 960)'}
-          >
-            <Icon icon={Lock} size="md" aria-hidden />
-          </button>
-          <button
-            type="button"
-            className="action-btn resign-btn"
-            onClick={requestResign}
-            disabled={!!watchingGame || gameStatus !== 'active' || log.moves.length === 0}
-            title="Resign \u2014 half move points, no bonus"
-          >
-            <Icon icon={Flag} size="md" aria-hidden />
-          </button>
+            <button
+              type="button"
+              className={`action-btn${formationLocked ? ' active' : ''}`}
+              onClick={toggleFormationLock}
+              aria-label={formationLocked ? 'Unlock formation' : 'Lock formation'}
+            >
+              <Icon icon={Lock} size="md" aria-hidden />
+            </button>
+          </Tooltip>
+          <Tooltip text="Resign \u2014 half points, no bonus" side="top">
+            <button
+              type="button"
+              className="action-btn resign-btn"
+              onClick={requestResign}
+              disabled={!!watchingGame || gameStatus !== 'active' || log.moves.length === 0}
+              aria-label="Resign"
+            >
+              <Icon icon={Flag} size="md" aria-hidden />
+            </button>
+          </Tooltip>
           <span className="action-group-divider" aria-hidden />
-          <button
-            type="button"
-            className={`action-btn${showSupport ? ' active' : ''}`}
-            title="Toggle support map (who backs up whom)"
-            onClick={() => setShowSupport((v) => !v)}
+          <Tooltip text="Support map (who backs whom)" side="top">
+            <button
+              type="button"
+              className={`action-btn${showSupport ? ' active' : ''}`}
+              onClick={() => setShowSupport((v) => !v)}
+              aria-label="Toggle support map"
+              aria-pressed={showSupport}
+            >
+              <Icon icon={ArrowRight} size="md" aria-hidden />
+            </button>
+          </Tooltip>
+          <Tooltip text="Threat map" side="top">
+            <button
+              type="button"
+              className={`action-btn${showThreats ? ' active' : ''}`}
+              onClick={() => setShowThreats((v) => !v)}
+              aria-label="Toggle threat map"
+              aria-pressed={showThreats}
+            >
+              <Icon icon={AlertTriangle} size="md" aria-hidden />
+            </button>
+          </Tooltip>
+          <Tooltip
+            text={previewLocked ? 'Unlock rotation preview' : 'Preview rotation (click locks it)'}
+            side="top"
           >
-            <Icon icon={ArrowRight} size="md" aria-hidden />
-          </button>
-          <button
-            type="button"
-            className={`action-btn${showThreats ? ' active' : ''}`}
-            title="Toggle threat map"
-            onClick={() => setShowThreats((v) => !v)}
-          >
-            <Icon icon={AlertTriangle} size="md" aria-hidden />
-          </button>
-          <button
-            type="button"
-            className={`action-btn preview-btn${previewLocked ? ' active' : ''}`}
-            title={previewLocked ? 'Unlock rotation preview' : 'Preview rotation (click to lock)'}
-            disabled={currentPlayer !== 'human'}
+            <button
+              type="button"
+              className={`action-btn preview-btn${previewLocked ? ' active' : ''}`}
+              disabled={currentPlayer !== 'human'}
+              aria-label={previewLocked ? 'Unlock rotation preview' : 'Preview rotation'}
             onClick={() => {
               if (currentPlayer !== 'human') return;
               if (previewLocked) {
@@ -3661,6 +3688,7 @@ function App() {
           >
             <Icon icon={Eye} size="md" aria-hidden />
           </button>
+          </Tooltip>
         </div>
 
         {/* Sprint 2.7.1 \u2014 compact spin button replaces the old wide
