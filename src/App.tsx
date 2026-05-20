@@ -86,8 +86,11 @@ import { localStorageAdapter } from './memory/storage';
 import { MemoryPanel } from './memory/MemoryPanel';
 import type { SavedGame } from './memory/types';
 import { NotationParseError, parseMemoryNotation } from './memory/notation';
-import { useBeatClock, scoreMoveAgainstBeat } from './hooks/useBeatClock';
+import { useBeatClock } from './hooks/useBeatClock';
 import { MusicPanel } from './components/MusicPanel';
+import { BeatPulseOverlay } from './components/BeatPulseOverlay';
+import { handleSpotifyCallback } from './spotify/auth';
+import { useToast } from './components/Toast';
 
 type GameStatus =
   | 'active'
@@ -611,6 +614,27 @@ function App() {
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  // Sprint M.1 — process the Spotify OAuth redirect on mount. Returns
+  // null when there's no ?code= or ?error= in the URL, so it's safe to
+  // run unconditionally. Fires a window event so the MusicPanel can
+  // flip its connected state without a remount.
+  const toast = useToast();
+  useEffect(() => {
+    let cancelled = false;
+    handleSpotifyCallback().then((result) => {
+      if (cancelled || !result) return;
+      window.dispatchEvent(new Event('subutai:spotify-auth-changed'));
+      if (result.ok) {
+        toast.show('Spotify connected.', 'success');
+      } else if (result.error && result.error !== 'access_denied') {
+        toast.show(`Spotify auth failed: ${result.error}`, 'error');
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [toast]);
 
   // Sprint M.0 — subscribe to the shared beat clock and trigger a short
   // board-ring pulse on every beat. The subscription is recreated when
@@ -2663,12 +2687,9 @@ function App() {
 
     // Sprint M.0 — on-beat scoring (experimental). Compares move time
     // to the nearest beat; perfect/good extend the streak, off resets.
+    // M.1: scoreMove handles both tap and analysis sources uniformly.
     if (beatClock.isRunning && beatClock.bpm > 0) {
-      const score = scoreMoveAgainstBeat(
-        performance.now(),
-        beatClock.getNextBeatAt(),
-        beatClock.bpm,
-      );
+      const score = beatClock.scoreMove(performance.now());
       setLastBeatScore(score);
       if (score === 'perfect') {
         setOnBeatStreak((s) => s + 1);
@@ -4289,6 +4310,8 @@ function App() {
           On-Beat: {onBeatStreak}
         </div>
       )}
+
+      <BeatPulseOverlay clock={beatClock} />
 
       {!authLoading && user && !displayName && (
         <NamePicker

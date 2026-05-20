@@ -6160,24 +6160,17 @@ button:active:not(:disabled) {
   font-style: italic;
 }
 
-/* Board ring pulse on each beat. */
-@keyframes beat-pulse-ring {
-  0% {
-    box-shadow: 0 0 0 0 var(--accent-primary), var(--shadow-elevated);
-  }
-  50% {
-    box-shadow:
-      0 0 0 6px transparent,
-      0 0 24px 4px color-mix(in srgb, var(--accent-primary) 50%, transparent),
-      var(--shadow-elevated);
-  }
-  100% {
-    box-shadow: 0 0 0 0 transparent, var(--shadow-elevated);
-  }
+/* Sprint M.1 — softer board pulse. The dramatic ring used in M.0 now
+   lives in the BeatPulseOverlay (concentric viewport ripples); the board
+   only gets a subtle 2px accent stroke so the two layers don't fight. */
+@keyframes beat-pulse-soft {
+  0%   { box-shadow: var(--shadow-elevated); }
+  30%  { box-shadow: 0 0 0 2px var(--accent-primary), var(--shadow-elevated); }
+  100% { box-shadow: var(--shadow-elevated); }
 }
 
 .board.is-beat-pulse {
-  animation: beat-pulse-ring 220ms ease-out;
+  animation: beat-pulse-soft 250ms ease-out;
 }
 
 /* On-beat streak badge. */
@@ -6244,4 +6237,285 @@ button:active:not(:disabled) {
   .beat-running-dot {
     animation: none;
   }
+}
+
+/* ========================================================================
+   Sprint M.1 — Spotify OAuth UI + dynamic wave pulse overlay.
+   ======================================================================== */
+
+.music-config-warning {
+  background: color-mix(in srgb, var(--danger-coral) 12%, transparent);
+  border: 1px solid var(--danger-coral);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  margin: var(--space-2) 0;
+  font-size: 11px;
+  color: var(--text-primary);
+}
+
+.music-config-warning code {
+  background: var(--bg-deep);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+}
+
+.spotify-connect-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-2) 0;
+  padding: var(--space-2);
+  background: var(--bg-deep);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.spotify-connect-prompt p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.spotify-connect-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  background: #1db954;
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-full);
+  padding: var(--space-2) var(--space-3);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  margin-top: var(--space-1);
+  transition: filter 120ms;
+}
+
+.spotify-connect-btn:hover {
+  filter: brightness(1.08);
+}
+
+.music-hint {
+  font-size: 10px;
+  opacity: 0.6;
+  font-style: italic;
+}
+
+.spotify-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 12px;
+  color: var(--text-primary);
+  margin: var(--space-2) 0;
+}
+
+.spotify-status .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #666;
+}
+
+.spotify-status .status-dot.is-connected {
+  background: #1db954;
+  box-shadow: 0 0 6px #1db954;
+}
+
+.spotify-disconnect-btn {
+  margin-left: auto;
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.spotify-disconnect-btn:hover {
+  opacity: 1;
+  border-color: var(--accent-primary);
+}
+
+.analysis-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.analysis-fetch-btn,
+.analysis-start-btn,
+.analysis-stop-btn {
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+}
+
+.analysis-fetch-btn:hover:not(:disabled),
+.analysis-start-btn:hover,
+.analysis-stop-btn:hover {
+  border-color: var(--accent-primary);
+  background: var(--bg-elevated-hover);
+}
+
+.analysis-fetch-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.analysis-start-btn {
+  background: var(--accent-primary);
+  color: var(--bg-deep);
+  border-color: var(--accent-primary);
+}
+
+.analysis-info {
+  font-size: 12px;
+  color: var(--text-primary);
+  text-align: center;
+  padding: var(--space-1) 0;
+}
+
+.analysis-info strong {
+  color: var(--accent-primary);
+  font-size: 14px;
+}
+
+.music-fallback,
+.music-help {
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-2);
+}
+
+.music-fallback summary,
+.music-help summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-primary);
+  opacity: 0.7;
+  user-select: none;
+}
+
+.music-fallback summary:hover,
+.music-help summary:hover {
+  opacity: 1;
+  color: var(--accent-primary);
+}
+
+.music-fallback[open] summary,
+.music-help[open] summary {
+  margin-bottom: var(--space-2);
+  opacity: 1;
+}
+
+.music-help ol {
+  margin: 0;
+  padding-left: var(--space-3);
+  font-size: 11px;
+  color: var(--text-primary);
+  opacity: 0.85;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.music-help a {
+  color: var(--accent-primary);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.music-help a:hover {
+  text-decoration: underline;
+}
+
+/* Sprint M.1 — concentric radiating ripples. Pure CSS animation: each
+   beat spawns a 0×0 .beat-ripple at the board's centre that expands to
+   ~1800px while fading. A secondary ::before ring follows ~100ms later
+   in a contrasting hue so the wave reads as layered, not single-tone. */
+.beat-pulse-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 5;
+}
+
+.beat-ripple {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  border: 4px solid var(--accent-primary);
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  animation: beat-ripple-expand 1500ms cubic-bezier(0.2, 0.8, 0.4, 1) forwards;
+  will-change: width, height, opacity, border-width;
+}
+
+.beat-ripple::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  border: 3px solid var(--danger-coral);
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  animation: beat-ripple-expand-inner 1200ms cubic-bezier(0.2, 0.8, 0.4, 1) forwards;
+  animation-delay: 110ms;
+}
+
+@keyframes beat-ripple-expand {
+  0% {
+    width: 0;
+    height: 0;
+    opacity: 0.85;
+    border-width: 4px;
+  }
+  100% {
+    width: 1800px;
+    height: 1800px;
+    opacity: 0;
+    border-width: 1px;
+  }
+}
+
+@keyframes beat-ripple-expand-inner {
+  0% {
+    width: 0;
+    height: 0;
+    opacity: 0.6;
+    border-width: 3px;
+  }
+  100% {
+    width: 1400px;
+    height: 1400px;
+    opacity: 0;
+    border-width: 1px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .beat-pulse-overlay { display: none; }
+  .beat-ripple { animation: none; }
+  .beat-ripple::before { animation: none; }
 }
