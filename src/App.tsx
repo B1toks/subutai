@@ -38,6 +38,8 @@ import { Icon } from './components/Icon';
 import { Tooltip } from './components/Tooltip';
 import {
   AlarmClock,
+  AlertTriangle,
+  ArrowRight,
   BarChart3,
   Bot,
   Crosshair,
@@ -418,12 +420,11 @@ function App() {
   const [showHelp, setShowHelp] = useState(false);
   const [showMaterialPopup, setShowMaterialPopup] = useState(false);
   const [copied, setCopied] = useState(false);
-  // Sprint 3.6 — Support / Threat manual toggles removed; the state
-  // setters are no longer needed but the read values stay (false) so
-  // the legacy supportPairs / threatenedSquares useMemos short-circuit
-  // and produce empty results. Hover insights take over the visualisation.
-  const [showThreats] = useState(false);
-  const [showSupport] = useState(false);
+  // Sprint 3.7 (rev 2) — Threat / Support toggles restored after the
+  // 3.6 hover-insight experiment didn't stick. Manual toggles read
+  // more like deliberate training aids than a hover gimmick.
+  const [showThreats, setShowThreats] = useState(false);
+  const [showSupport, setShowSupport] = useState(false);
   const [previewLocked, setPreviewLocked] = useState(false);
   const [lockedPreviewTopology, setLockedPreviewTopology] = useState<TopologyState | null>(null);
   const [hoveredSquare, setHoveredSquare] = useState<string | null>(null);
@@ -2400,28 +2401,11 @@ function App() {
     return getAttackerSquares(state, hoveredSquare as SquareId, 'white', displayTopology);
   }, [showSupport, selected, hoveredSquare, state, displayTopology]);
 
-  // Sprint 3.6 — per-piece hover insights (Variant B of the threat/
-  // support rework). When the cursor is over one of MY pieces, surface
-  // a red dashed overlay on every opposing attacker of that square,
-  // and a green dashed overlay on every friendly defender. Replaces
-  // the always-on Threat / Support toggles (those buttons are now
-  // removed; the underlying showThreats / showSupport state stays at
-  // false default and gates its own computation paths to no-ops). */
-  const hoverInsights = useMemo<{ attackers: Set<SquareId>; defenders: Set<SquareId> }>(() => {
-    const empty = { attackers: new Set<SquareId>(), defenders: new Set<SquareId>() };
-    if (!hoveredSquare) return empty;
-    const piece = state.pieces[hoveredSquare as SquareId];
-    if (!piece) return empty;
-    if (piece.color !== myColor) return empty;
-    const opp: Color = myColor === 'white' ? 'black' : 'white';
-    const attackerList = getAttackerSquares(state, hoveredSquare as SquareId, opp, displayTopology);
-    const defenderList = getAttackerSquares(state, hoveredSquare as SquareId, myColor, displayTopology)
-      .filter((sq) => sq !== hoveredSquare);
-    return {
-      attackers: new Set(attackerList),
-      defenders: new Set(defenderList),
-    };
-  }, [hoveredSquare, state, myColor, displayTopology]);
+  // Sprint 3.7 (rev 2) — Sprint 3.6's hoverInsights useMemo and the
+  // .attacker-of-hovered / .defender-of-hovered tile classes are
+  // gone; the restored Threat / Support toggle buttons drive the
+  // overlay via the existing supportPairs / threatenedSquares /
+  // threateningPieceSquares pipeline instead.
 
   // Sprint 3.6 — right-click annotation handlers. Bound on every tile
    // alongside onClick. Left-click logic is untouched: button !== 2
@@ -3577,8 +3561,6 @@ function App() {
                 isCheckingPiece ? (gameStatus === 'checkmate' ? 'mating-piece' : 'checking-piece') : '',
                 threatCount > 0 ? 'threatened' : '',
                 isThreateningPiece ? 'threatening-piece' : '',
-                hoverInsights.attackers.has(sq as SquareId) ? 'attacker-of-hovered' : '',
-                hoverInsights.defenders.has(sq as SquareId) ? 'defender-of-hovered' : '',
                 classifiedSquare?.square === sq
                   ? `classified-${classifiedSquare.classification}`
                   : '',
@@ -3855,13 +3837,28 @@ function App() {
             </button>
           </Tooltip>
           <span className="action-group-divider" aria-hidden />
-          {/* Sprint 3.6 — Support / Threat toggle buttons removed.
-              Replaced by automatic per-piece hover insights (red
-              dashed overlay on enemy attackers, green dashed overlay
-              on friendly defenders of the hovered own-piece square).
-              The underlying showSupport / showThreats state is kept
-              defaulted to false so the legacy threat / support map
-              computations short-circuit to no-ops. */}
+          <Tooltip text="Support map (who backs whom)" side="top">
+            <button
+              type="button"
+              className={`action-btn${showSupport ? ' active' : ''}`}
+              onClick={() => setShowSupport((v) => !v)}
+              aria-label="Toggle support map"
+              aria-pressed={showSupport}
+            >
+              <Icon icon={ArrowRight} size="md" aria-hidden />
+            </button>
+          </Tooltip>
+          <Tooltip text="Threat map" side="top">
+            <button
+              type="button"
+              className={`action-btn${showThreats ? ' active' : ''}`}
+              onClick={() => setShowThreats((v) => !v)}
+              aria-label="Toggle threat map"
+              aria-pressed={showThreats}
+            >
+              <Icon icon={AlertTriangle} size="md" aria-hidden />
+            </button>
+          </Tooltip>
           <Tooltip
             text={previewLocked ? 'Unlock rotation preview' : 'Preview rotation (click locks it)'}
             side="top"
@@ -3924,7 +3921,7 @@ function App() {
         )}
 
         <Tooltip
-          text={`Rotate to topology ${state.topologyState === 'A' ? 'B' : 'A'}`}
+          text={`Rotate topology ${state.topologyState} → ${state.topologyState === 'A' ? 'B' : 'A'}`}
           side="top"
           disabled={!canRotate}
         >
@@ -3933,11 +3930,11 @@ function App() {
             className="rotate-btn-icon"
             onClick={handleRotate}
             disabled={!canRotate}
-            aria-label={`Rotate topology to ${state.topologyState === 'A' ? 'B' : 'A'}`}
+            aria-label={`Rotate topology ${state.topologyState} to ${state.topologyState === 'A' ? 'B' : 'A'}`}
           >
-            <Icon icon={RotateCw} size="lg" aria-hidden />
-            <span className="rotate-target-label" aria-hidden>
-              {state.topologyState === 'A' ? 'B' : 'A'}
+            <Icon icon={RotateCw} size="md" aria-hidden />
+            <span className="rotate-label-text" aria-hidden>
+              {state.topologyState}{' → '}{state.topologyState === 'A' ? 'B' : 'A'}
             </span>
           </button>
         </Tooltip>
@@ -4145,7 +4142,7 @@ function App() {
 
       {showReplayDialog && (
         <div className="help-backdrop" onClick={() => setShowReplayDialog(false)}>
-          <div className="help-dialog" onClick={(e) => e.stopPropagation()}>
+          <div className="help-dialog replay-dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Replay from log</h2>
             <p>Paste a move log in the same format as “Copy to clipboard”.</p>
             <textarea
