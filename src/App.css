@@ -6581,12 +6581,21 @@ button:active:not(:disabled) {
   cursor: not-allowed;
 }
 
-/* Perimeter equalizer ring — sits 24px outside .board edges so it
-   never overlaps tiles. Four sides; bars on top/bottom grow vertically
-   away from the board, side bars grow horizontally outward. */
+/* ========================================================================
+   Sprint M.4 — Equalizer visual polish.
+
+   Bigger ring (48px clearance), 15 bars per side, 3-stop gradient,
+   amplitude-driven glow stack, peak flash, and a bass-driven board
+   halo wired via --bass-amplitude on .board-with-coords.
+
+   Themes: --accent-primary always exists; --danger-coral always
+   exists; --accent-warning and --accent-danger don't, so we mix
+   on the fly with color-mix() — that keeps the gradient theme-aware
+   without invasive token additions across five theme blocks.
+   ======================================================================== */
 .perimeter-eq {
   position: absolute;
-  inset: -24px;
+  inset: -48px;
   pointer-events: none;
   z-index: 4;
 }
@@ -6594,14 +6603,14 @@ button:active:not(:disabled) {
 .eq-side {
   position: absolute;
   display: flex;
-  gap: 2px;
+  gap: 3px;
 }
 
 .eq-top,
 .eq-bottom {
-  left: 24px;
-  right: 24px;
-  height: 20px;
+  left: 48px;
+  right: 48px;
+  height: 40px;
   justify-content: space-between;
 }
 
@@ -6617,9 +6626,9 @@ button:active:not(:disabled) {
 
 .eq-left,
 .eq-right {
-  top: 24px;
-  bottom: 24px;
-  width: 20px;
+  top: 48px;
+  bottom: 48px;
+  width: 40px;
   flex-direction: column;
   justify-content: space-between;
 }
@@ -6636,58 +6645,116 @@ button:active:not(:disabled) {
 
 .eq-bar {
   display: block;
+  border-radius: 3px;
+  /* 3-stop gradient: accent → warm mid → coral peak. color-mix gives
+     us a theme-aware "warning" tone without committing to a new token
+     across all theme blocks. */
   background: linear-gradient(
-    135deg,
-    var(--accent-primary),
-    var(--danger-coral)
+    to top,
+    var(--accent-primary) 0%,
+    color-mix(in srgb, var(--accent-primary) 55%, var(--danger-coral)) 65%,
+    var(--danger-coral) 100%
   );
-  border-radius: 2px;
-  opacity: calc(0.25 + var(--amplitude, 0) * 0.75);
-  box-shadow: 0 0 6px color-mix(in srgb, var(--accent-primary) 40%, transparent);
+  opacity: calc(0.3 + var(--amplitude, 0) * 0.7);
+  /* Two-layer glow: tight inner halo + diffuse outer halo. Both blur
+     radii are calc'd from --amplitude so silent bars cast no glow at
+     all (blur radius 0 ⇒ no rendered shadow). Color opacity is fixed
+     per layer; the calc() scaling lives on the blur dimension. */
+  box-shadow:
+    0 0 calc(var(--amplitude, 0) * 10px)
+      color-mix(in srgb, var(--accent-primary) 65%, transparent),
+    0 0 calc(var(--amplitude, 0) * 24px)
+      color-mix(in srgb, var(--accent-primary) 30%, transparent);
   transition:
-    height 70ms ease-out,
-    width 70ms ease-out,
-    opacity 70ms ease-out;
+    height 60ms cubic-bezier(0.2, 0.8, 0.4, 1),
+    width 60ms cubic-bezier(0.2, 0.8, 0.4, 1),
+    opacity 100ms ease,
+    box-shadow 100ms ease;
 }
 
 .eq-bar-vertical {
-  width: 3px;
-  height: calc(3px + var(--amplitude, 0) * 18px);
+  width: 4px;
+  height: calc(4px + var(--amplitude, 0) * 36px);
 }
 
 .eq-bar-horizontal {
-  height: 3px;
-  width: calc(3px + var(--amplitude, 0) * 18px);
+  height: 4px;
+  width: calc(4px + var(--amplitude, 0) * 36px);
+}
+
+/* Peak burst — when a band crosses the threshold we layer an extra
+   coral / white halo and pop the scale by 8%. scaleZ is no-op without
+   3D context; scale() works everywhere and reads on the right axis. */
+.eq-bar.is-peak {
+  box-shadow:
+    0 0 16px color-mix(in srgb, var(--danger-coral) 75%, transparent),
+    0 0 32px color-mix(in srgb, var(--danger-coral) 40%, transparent),
+    0 0 4px rgba(255, 255, 255, 0.6);
+  animation: eq-peak-flash 220ms ease-out;
+}
+
+@keyframes eq-peak-flash {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.08); }
+}
+
+/* Bass-driven board halo. --bass-amplitude is set inline on
+   .board-with-coords by App.tsx whenever the visualizer is active.
+   A 0 value yields a 0px shadow, so the halo cleanly vanishes when
+   the source is off — no display:none toggling needed. */
+.board-with-coords.has-viz {
+  box-shadow:
+    0 0 calc(var(--bass-amplitude, 0) * 48px)
+      color-mix(in srgb, var(--accent-primary) 45%, transparent),
+    0 0 calc(var(--bass-amplitude, 0) * 96px)
+      color-mix(in srgb, var(--accent-primary) 18%, transparent);
+  transition: box-shadow 80ms ease-out;
+}
+
+@media (max-width: 768px) {
+  .perimeter-eq { inset: -32px; }
+  .eq-top, .eq-bottom {
+    left: 32px;
+    right: 32px;
+    height: 28px;
+  }
+  .eq-left, .eq-right {
+    top: 32px;
+    bottom: 32px;
+    width: 28px;
+  }
+  .eq-bar-vertical {
+    height: calc(3px + var(--amplitude, 0) * 24px);
+  }
+  .eq-bar-horizontal {
+    width: calc(3px + var(--amplitude, 0) * 24px);
+  }
+}
+
+@media (max-width: 480px) {
+  /* On very tight phones the ring at -32px still risks overlapping
+     adjacent panels — tuck it closer to the board. */
+  .perimeter-eq { inset: -20px; }
+  .eq-top, .eq-bottom {
+    left: 20px;
+    right: 20px;
+    height: 18px;
+  }
+  .eq-left, .eq-right {
+    top: 20px;
+    bottom: 20px;
+    width: 18px;
+  }
+  .eq-bar-vertical {
+    height: calc(2px + var(--amplitude, 0) * 14px);
+  }
+  .eq-bar-horizontal {
+    width: calc(2px + var(--amplitude, 0) * 14px);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .eq-bar {
-    transition: none;
-  }
-}
-
-@media (max-width: 600px) {
-  /* Mobile boards are tight — pull the ring tighter to the board and
-     shorten the bars so they don't intrude on adjacent panels. */
-  .perimeter-eq {
-    inset: -16px;
-  }
-  .eq-top,
-  .eq-bottom {
-    left: 16px;
-    right: 16px;
-    height: 14px;
-  }
-  .eq-left,
-  .eq-right {
-    top: 16px;
-    bottom: 16px;
-    width: 14px;
-  }
-  .eq-bar-vertical {
-    height: calc(2px + var(--amplitude, 0) * 12px);
-  }
-  .eq-bar-horizontal {
-    width: calc(2px + var(--amplitude, 0) * 12px);
-  }
+  .eq-bar { transition: none; }
+  .eq-bar.is-peak { animation: none; }
+  .board-with-coords.has-viz { transition: none; }
 }

@@ -1,21 +1,38 @@
 // Sprint M.3 — microphone-driven equalizer. Opens the system mic via
-// getUserMedia, runs an FFT, and downsamples the bins into 40 bars.
+// getUserMedia, runs an FFT, and downsamples the bins into N bars.
+//
+// M.4 upgrades:
+//   • GainNode boost (default 3×) — laptop mics are notoriously quiet.
+//   • Auto-gain: tracks a rolling peak history and nudges the gain so
+//     the visualizer sits at ~70% of full-scale on average. Capped at
+//     [1, 8] so we never clip the analyser or amplify pure noise into
+//     a static-fed shimmer.
+//   • Logarithmic frequency mapping — bass gets more bars than treble,
+//     matching how music actually distributes energy.
+//   • Power curve (γ=0.7) — lifts mid-amplitude bars without crushing
+//     the silent floor, so quiet music still produces visible motion.
 //
 // Critically: the analyser is NOT connected to ctx.destination, so the
-// captured audio never plays back through the speakers. That avoids a
-// feedback loop (mic → speaker → mic) which on devices with even
-// modest gain immediately howls.
-//
-// Works on any audible source — Spotify in another tab, a phone next
-// to the laptop, a TV across the room. The browser handles permission
-// state; we surface failures via the start() return value.
+// captured audio never plays back through the speakers (no feedback).
 
 export type BandsListener = (bands: number[]) => void;
 
-const BAND_COUNT = 40;
-const FFT_SIZE = 128;             // 64 frequency bins post-FFT
-const SMOOTHING = 0.85;           // analyser-side smoothing
-const UPDATE_INTERVAL_MS = 33;    // ~30fps emit cap, matches spotifyEq
+const BAND_COUNT = 60;
+const FFT_SIZE = 256;             // 128 frequency bins post-FFT
+const SMOOTHING = 0.82;           // analyser-side smoothing
+const UPDATE_INTERVAL_MS = 33;    // ~30fps emit cap
+
+// Auto-gain calibration knobs.
+const INITIAL_GAIN = 3.0;
+const MIN_GAIN = 1.0;
+const MAX_GAIN = 8.0;
+const PEAK_HISTORY_SIZE = 60;
+const PEAK_HISTORY_MIN_FOR_ADJUST = 30;
+const TARGET_PEAK_LOW = 80;       // below this, boost
+const TARGET_PEAK_HIGH = 200;     // above this, attenuate
+const GAIN_STEP_UP = 1.05;
+const GAIN_STEP_DOWN = 0.95;
+const POWER_CURVE_GAMMA = 0.7;
 
 export type MicStartResult =
   | { ok: true }
@@ -24,12 +41,15 @@ export type MicStartResult =
 export class MicEqualizer {
   private ctx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
+  private gain: GainNode | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
   private stream: MediaStream | null = null;
   private rafId: number | null = null;
   private bands: number[] = new Array(BAND_COUNT).fill(0);
   private listeners = new Set<BandsListener>();
   private lastEmitAt = 0;
+  private peakHistory: number[] = [];
+  private autoGainEnabled = true;
 
   isRunning(): boolean {
     return this.ctx !== null;
@@ -38,9 +58,6 @@ export class MicEqualizer {
   async start(): Promise<MicStartResult> {
     if (this.ctx) return { ok: true };
 
-    // Browsers (notably Chrome on mobile) refuse getUserMedia outside
-    // a secure context — surface that cleanly rather than as a generic
-    // NotAllowedError. localhost is treated as secure.
     if (typeof window !== 'undefined' && !window.isSecureContext) {
       return { ok: false, reason: 'insecure' };
     }
@@ -49,9 +66,6 @@ export class MicEqualizer {
     }
 
     try {
-      // Disable the browser's voice processing — we want raw audio.
-      // echoCancellation/noiseSuppression chew up music as if it were
-      // speech and the visualizer ends up reacting to nothing.
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: false,
@@ -71,15 +85,28 @@ export class MicEqualizer {
     }
 
     this.ctx = new AudioContext();
+    this.gain = this.ctx.createGain();
+    this.gain.gain.value = INITIAL_GAIN;
+
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = FFT_SIZE;
     this.analyser.smoothingTimeConstant = SMOOTHING;
+
     this.source = this.ctx.createMediaStreamSource(this.stream);
-    this.source.connect(this.analyser);
+    this.source.connect(this.gain).connect(this.analyser);
     // Intentionally NOT: this.analyser.connect(this.ctx.destination).
 
+    this.peakHistory = [];
     this.startTicking();
     return { ok: true };
+  }
+
+  setAutoGain(enabled: boolean) {
+    this.autoGainEnabled = enabled;
+  }
+
+  getGain(): number {
+    return this.gain?.gain.value ?? INITIAL_GAIN;
   }
 
   onUpdate(cb: BandsListener): () => void {
@@ -97,6 +124,7 @@ export class MicEqualizer {
     }
     try {
       this.source?.disconnect();
+      this.gain?.disconnect();
     } catch {
       // already disconnected
     }
@@ -106,30 +134,74 @@ export class MicEqualizer {
     this.stream?.getTracks().forEach((t) => t.stop());
     this.ctx = null;
     this.analyser = null;
+    this.gain = null;
     this.source = null;
     this.stream = null;
+    this.peakHistory = [];
     this.bands = new Array(BAND_COUNT).fill(0);
     this.listeners.forEach((cb) => cb(this.bands));
   }
 
   private startTicking() {
-    if (!this.analyser) return;
-    const binCount = this.analyser.frequencyBinCount;
+    const analyser = this.analyser;
+    if (!analyser) return;
+    const binCount = analyser.frequencyBinCount;
     const dataArray = new Uint8Array(binCount);
 
     const tick = () => {
-      if (!this.analyser) return;
-      this.analyser.getByteFrequencyData(dataArray);
+      const a = this.analyser;
+      const g = this.gain;
+      if (!a || !g) return;
+      a.getByteFrequencyData(dataArray);
 
-      // Down-sample binCount bins → BAND_COUNT bars. Linear stride is
-      // simple but gives a slightly bass-heavy bias; that's actually
-      // desirable here since most music has more energy in the low end.
+      // Auto-gain: track the per-frame peak across the spectrum, then
+      // adjust the gain to land the rolling average near the target
+      // band. Bounded so a totally silent room can't ramp up forever.
+      let currentPeak = 0;
+      for (let i = 0; i < binCount; i++) {
+        if (dataArray[i] > currentPeak) currentPeak = dataArray[i];
+      }
+      this.peakHistory.push(currentPeak);
+      if (this.peakHistory.length > PEAK_HISTORY_SIZE) this.peakHistory.shift();
+
+      if (
+        this.autoGainEnabled &&
+        this.peakHistory.length >= PEAK_HISTORY_MIN_FOR_ADJUST
+      ) {
+        const avgPeak =
+          this.peakHistory.reduce((a2, b2) => a2 + b2, 0) /
+          this.peakHistory.length;
+        const cur = g.gain.value;
+        if (avgPeak < TARGET_PEAK_LOW && cur < MAX_GAIN) {
+          g.gain.value = Math.min(MAX_GAIN, cur * GAIN_STEP_UP);
+        } else if (avgPeak > TARGET_PEAK_HIGH && cur > MIN_GAIN) {
+          g.gain.value = Math.max(MIN_GAIN, cur * GAIN_STEP_DOWN);
+        }
+      }
+
+      // Logarithmic band mapping. t^2.5 stretches the low end of the
+      // bin range across more bars — a 60-band linear mapping wastes
+      // half the bars on inaudible >10kHz bins; log mapping puts them
+      // where music lives. The averaging window (span) smooths between
+      // adjacent bins so neighbouring bars don't pop independently.
       const next = new Array(BAND_COUNT);
+      const span = Math.max(1, Math.floor(binCount / BAND_COUNT));
       for (let i = 0; i < BAND_COUNT; i++) {
-        const binIdx = Math.floor((i / BAND_COUNT) * binCount);
-        next[i] = dataArray[binIdx] / 255;
+        const t = i / BAND_COUNT;
+        const logIdx = Math.pow(t, 2.5) * binCount;
+        const idx = Math.floor(logIdx);
+        let sum = 0;
+        let n = 0;
+        for (let j = 0; j < span && idx + j < binCount; j++) {
+          sum += dataArray[idx + j];
+          n += 1;
+        }
+        const value = n > 0 ? sum / n / 255 : 0;
+        // Power curve lifts mid-range without clipping.
+        next[i] = Math.min(1, Math.pow(value, POWER_CURVE_GAMMA));
       }
       this.bands = next;
+
       const now = performance.now();
       if (now - this.lastEmitAt >= UPDATE_INTERVAL_MS) {
         this.lastEmitAt = now;

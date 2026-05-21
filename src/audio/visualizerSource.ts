@@ -15,7 +15,7 @@ import type { AudioAnalysis } from '../spotify/analysis';
 
 export type VizSource = 'off' | 'spotify' | 'mic';
 
-const BAND_COUNT = 40;
+const BAND_COUNT = 60;
 const STORAGE_KEY = 'subutai_viz_source';
 
 type SourceListener = (source: VizSource) => void;

@@ -9,7 +9,9 @@ import type { AudioAnalysis, SpotifySegment } from '../spotify/analysis';
 
 export type BandsListener = (bands: number[]) => void;
 
-const BAND_COUNT = 40;
+// M.4 — bumped from 40 to 60 to match the new perimeter ring (15
+// bars per side) and let bass / mid / treble actually split.
+const BAND_COUNT = 60;
 const SMOOTHING = 0.7;          // 0 = no smoothing, ~0.85 = sluggish
 const UPDATE_INTERVAL_MS = 33;  // ~30fps emit rate to keep React happy
 const LOUDNESS_FLOOR_DB = -60;

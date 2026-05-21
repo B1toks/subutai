@@ -1,15 +1,15 @@
 import { memo } from 'react';
 
-// Sprint M.3 — viewport-relative perimeter equalizer ring. Sits as an
-// overlay around the board (inset: -24px from board edges), with N
-// bars per side. Bars on the top/bottom extend outward vertically;
-// left/right bars extend outward horizontally — so the ring "breathes"
-// away from the board, never inward over the pieces.
+// Sprint M.3 + M.4 — viewport-relative perimeter equalizer ring. 60
+// bars total, 15 per side. Bars on top/bottom grow vertically away
+// from the board; left/right bars grow horizontally outward — so the
+// ring "breathes" away from the board, never inward over pieces.
 //
-// The `bands` array carries normalized 0..1 amplitudes (any length —
-// we wrap modulo). React.memo + identity-stable inline styles keeps
-// the per-frame reconciliation cheap; a 30fps emit cap from the
-// equalizer sources prevents thrash.
+// M.4 additions:
+//   • Peak detection — bands above PEAK_THRESHOLD get .is-peak so CSS
+//     can layer a brighter glow + a small scale-pop animation.
+//   • Amplitude is still wired through the --amplitude custom prop so
+//     transitions stay 100% CSS-driven (no rAF re-render thrash).
 
 interface Props {
   bands: number[];
@@ -17,6 +17,8 @@ interface Props {
 }
 
 type Side = 'top' | 'right' | 'bottom' | 'left';
+
+const PEAK_THRESHOLD = 0.75;
 
 function sideOffset(side: Side, barsPerSide: number): number {
   switch (side) {
@@ -37,10 +39,12 @@ function renderSide(side: Side, bands: number[], barsPerSide: number) {
   const out: React.ReactNode[] = [];
   for (let i = 0; i < barsPerSide; i++) {
     const amplitude = bands[(offset + i) % bands.length] ?? 0;
+    const peak = amplitude > PEAK_THRESHOLD ? ' is-peak' : '';
+    const orient = isVertical ? 'vertical' : 'horizontal';
     out.push(
       <span
         key={`${side}-${i}`}
-        className={`eq-bar eq-bar-${isVertical ? 'vertical' : 'horizontal'}`}
+        className={`eq-bar eq-bar-${orient}${peak}`}
         style={{ ['--amplitude' as never]: amplitude }}
       />,
     );
@@ -48,7 +52,7 @@ function renderSide(side: Side, bands: number[], barsPerSide: number) {
   return out;
 }
 
-function PerimeterEqualizerImpl({ bands, barsPerSide = 10 }: Props) {
+function PerimeterEqualizerImpl({ bands, barsPerSide = 15 }: Props) {
   return (
     <div className="perimeter-eq" aria-hidden>
       <div className="eq-side eq-top">{renderSide('top', bands, barsPerSide)}</div>

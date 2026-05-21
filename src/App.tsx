@@ -100,7 +100,7 @@ import {
   type VizSource,
 } from './audio/visualizerSource';
 
-const EMPTY_BANDS: number[] = Object.freeze(new Array(40).fill(0)) as number[];
+const EMPTY_BANDS: number[] = Object.freeze(new Array(60).fill(0)) as number[];
 
 type GameStatus =
   | 'active'
@@ -384,6 +384,18 @@ function App() {
   // the active source (off / spotify / mic) so we just subscribe here.
   const [vizSource, setVizSourceLocal] = useState<VizSource>(() => getVizSource());
   const [vizBands, setVizBands] = useState<number[]>(() => getLastBands());
+
+  // M.4 — bass amplitude drives a low-frequency board glow. Sliced to
+  // the bottom 8 bands (after log mapping these are the deepest bass).
+  // useMemo would force a fresh array key per emit; cheaper to compute
+  // directly since the math is trivial.
+  let bassAmplitude = 0;
+  if (vizBands.length > 0) {
+    const slice = Math.min(8, vizBands.length);
+    let sum = 0;
+    for (let i = 0; i < slice; i++) sum += vizBands[i];
+    bassAmplitude = sum / slice;
+  }
   // Sprint 2.5 — local AFK detector. Independent of the MP afk-watchdog
   // (mpSync.selfAfkWarning) which forfeits the match after 30s; this one
   // is a UX nag that surfaces a pulsing banner when the player's been
@@ -3585,9 +3597,15 @@ function App() {
           mateInPlies={searchMateInPlies}
           isPending={!isMultiplayer && searchEvalFromWhite === null}
         />
-      <div className="board-with-coords" style={{ width: boardSize }}>
+      <div
+        className={`board-with-coords${vizSource !== 'off' ? ' has-viz' : ''}`}
+        style={{
+          width: boardSize,
+          ['--bass-amplitude' as never]: vizSource === 'off' ? 0 : bassAmplitude,
+        }}
+      >
       {vizSource !== 'off' && (
-        <PerimeterEqualizer bands={vizBands} barsPerSide={10} />
+        <PerimeterEqualizer bands={vizBands} barsPerSide={15} />
       )}
       <div
         className={`board${previewTopology || previewLocked ? ' previewing' : ''}${recentRotation ? ' is-rotated' : ''}${beatPulse ? ' is-beat-pulse' : ''}`}
