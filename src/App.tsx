@@ -1447,6 +1447,9 @@ function App() {
     // Sprint 3.8 — fire the roulette spin SFX at the same moment the
     // visual roll starts; the synth's decelerating clicks + final
     // chime line up with the spin animation.
+    // Sprint 4.0 — slowed visual reveal from 400ms to 2500ms so the
+    // wheel reads as a real "gambling" deceleration. Audio extended
+    // to ~2.5–3s in synths.ts to match.
     audio.play('rouletteSpin');
     setTimeout(() => {
       // Roll only from pieces the current player actually has on the board.
@@ -1481,7 +1484,7 @@ function App() {
         // set so target squares (teal) show up for the allowed pieces.
         setLegalMoves(playable);
       }
-    }, 400);
+    }, 2500);
   }
 
   function checkGameOver(nextState: BoardState, lastMoveWasRotation: boolean = false) {
@@ -3315,34 +3318,21 @@ function App() {
         </div>
       )}
 
-      {isMultiplayer && mpSync && mpSync.matchState.status === 'active' && (
-        <div
-          className={`mp-banner${mpSync.isMyTurn ? ' mp-banner-active' : ' mp-banner-wait'}`}
-        >
-          {mpSync.isMyTurn ? (
-            // Roulette UI is rendered by the shared solo panel below
-            // (Spin Roulette button + slot chips). Surface a compact
-            // action counter when we're mid-turn so the player knows
-            // they still have moves left.
-            mpSync.isRouletteMode && mpSync.rouletteSlots ? (
-              <>
-                Your turn — {mpSync.rouletteActionsLeft} action
-                {mpSync.rouletteActionsLeft === 1 ? '' : 's'} left
-              </>
-            ) : (
-              'Your turn'
-            )
-          ) : mpSync.isRouletteMode && mpSync.rouletteSlots ? (
-            <>
-              <span className="mp-spinner" aria-hidden />
-              {mpSync.opponentDisplayName} is acting…
-            </>
-          ) : (
-            <>
-              <span className="mp-spinner" aria-hidden />
-              Waiting for {mpSync.opponentDisplayName}…
-            </>
-          )}
+      {/* Sprint 4.0 — persistent "Your turn / Waiting" MP banner removed
+          again (re-grew during the post-3.0 rewrites). Whose turn it is
+          reads from the board + opponent panel; the local AFK alert
+          covers the attention case. The waiting-for-opponent spinner
+          is kept as a slim, non-text indicator so users still know the
+          other side is acting — without the heavy banner. */}
+      {isMultiplayer
+        && mpSync
+        && mpSync.matchState.status === 'active'
+        && !mpSync.isMyTurn && (
+        <div className="mp-banner mp-banner-wait">
+          <span className="mp-spinner" aria-hidden />
+          {mpSync.isRouletteMode && mpSync.rouletteSlots
+            ? `${mpSync.opponentDisplayName} is acting…`
+            : `Waiting for ${mpSync.opponentDisplayName}…`}
         </div>
       )}
 
@@ -3351,7 +3341,7 @@ function App() {
         mpSync.selfAfkWarning &&
         mpSync.matchState.status === 'active' && (
           <div className="mp-banner mp-banner-warn">
-            <Icon icon={AlarmClock} size="sm" aria-hidden /> Your turn — make a move or auto-forfeit in ~30s.
+            <Icon icon={AlarmClock} size="sm" aria-hidden /> Make a move soon — auto-forfeit in ~30s.
           </div>
         )}
 
@@ -3423,13 +3413,27 @@ function App() {
             {allowedPieceTypes ? (
               allowedPieceTypes.map((t, i) => {
                 const isUsed = usedRouletteSlots.includes(i);
+                // Sprint 4.0 — render the piece in the *turn-owner's*
+                // colour, not in state.sideToMove. During action 2 of
+                // an MP roulette turn the local engine flips
+                // sideToMove only on the active client (Q.D.3 override
+                // in the `state` IIFE above); on the opposite client
+                // sideToMove still reads as the just-flipped value,
+                // so the bag visualised in the wrong colour. Deriving
+                // owner from mpSync.isMyTurn + myColor keeps both
+                // clients in sync.
+                const rouletteOwner: 'white' | 'black' = isMultiplayer && mpSync
+                  ? (mpSync.isMyTurn
+                      ? mpSync.myColor
+                      : (mpSync.myColor === 'white' ? 'black' : 'white'))
+                  : state.sideToMove;
                 return (
                   <span
                     key={i}
                     className={`roulette-face roulette-face-${t}${isUsed ? ' slot-used' : ''}`}
                   >
-                    <span className={`piece piece-${state.sideToMove}`}>
-                      {glyphForPiece(state.sideToMove, t)}
+                    <span className={`piece piece-${rouletteOwner}`}>
+                      {glyphForPiece(rouletteOwner, t)}
                     </span>
                   </span>
                 );
@@ -3463,6 +3467,7 @@ function App() {
       <div className="board-with-coords" style={{ width: boardSize }}>
       <div
         className={`board${previewTopology || previewLocked ? ' previewing' : ''}${recentRotation ? ' is-rotated' : ''}`}
+        data-topology={displayTopology}
         style={{ width: boardSize, height: boardSize }}
       >
         {squares.map((sq) => {

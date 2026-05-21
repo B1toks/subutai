@@ -197,18 +197,20 @@ export function playPromotion(ctx: AudioContext, out: GainNode) {
   });
 }
 
-/** Sprint 3.8 — roulette wheel. 16 decelerating square-wave clicks
- *  through a tight band-pass + a resolving fifth-interval chime at
- *  the end ("winner" tone). Total ~1.5s. */
+/** Sprint 4.0 — roulette wheel, slowed for "gambling" feel.
+ *  24 decelerating square-wave clicks (was 16) with a 1.8-power
+ *  ease-out so the tail drags longer + a resolving fifth-interval
+ *  chime. Total ~2.5–3s; lines up with the 2500ms visual reveal in
+ *  doSpinRouletteNow. */
 export function playRouletteSpin(ctx: AudioContext, out: GainNode) {
   const t = ctx.currentTime;
-  const ticks = 16;
+  const ticks = 24;
   let cumulative = 0;
 
   for (let i = 0; i < ticks; i++) {
     const progress = i / ticks;
-    // Ease-out — interval grows quadratically so the wheel slows down.
-    const interval = 0.035 + progress * progress * 0.12;
+    // Heavier ease-out — last clicks really drag.
+    const interval = 0.04 + Math.pow(progress, 1.8) * 0.18;
     cumulative += interval;
 
     const click = ctx.createOscillator();

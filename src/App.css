@@ -1073,8 +1073,9 @@
 /* Tight mobile: shrink header, hide eval bar (board needs the room) */
 @media (max-width: 640px) {
   .app-header h1 {
-    font-size: 26px;
-    letter-spacing: 0;
+    /* Sprint 4.0 — proportional shrink; weight + letter-spacing
+       inherited from the desktop base rule. */
+    font-size: 24px;
   }
   .board-area {
     max-width: 100%;
@@ -1109,9 +1110,16 @@
 }
 
 .app-header h1 {
-  font-size: 42px;
-  letter-spacing: -1px;
+  /* Sprint 4.0 — single canonical title style. Per-theme overrides
+     below only touch colour / text-shadow / font-family; size, weight
+     and letter-spacing are pinned here so the wordmark reads
+     identically across every view + theme. */
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
   margin: 0;
+  color: var(--text-primary);
 }
 
 .app-brand {
@@ -4258,11 +4266,29 @@ body.checkmate-flash::after {
 .tile.light .tile-coord {
   color: var(--tile-dark);
   opacity: 0.7;
+  transition: color 280ms ease, opacity 280ms ease;
 }
 
 .tile.dark .tile-coord {
   color: var(--tile-light);
   opacity: 0.7;
+  transition: color 280ms ease, opacity 280ms ease;
+}
+
+/* Sprint 4.0 — topology B switches the coord tint to the active
+   theme's accent so A and B are immediately distinguishable. data-
+   topology is set on .board by App.tsx with the display value (live
+   value or preview value). */
+.board[data-topology='B'] .tile-coord {
+  color: var(--accent-primary);
+  opacity: 0.9;
+}
+
+/* Sprint 4.0 — hide the coord overlay during the rotation preview so
+   labels don't appear to jump with the tiles. They fade back in once
+   the player commits or releases the preview. */
+.board.previewing .tile-coord {
+  opacity: 0;
 }
 
 /* Rotation outline pulse — fires for ~2.5s after every topology flip. */
@@ -5383,9 +5409,11 @@ body.checkmate-flash::after {
 
 /* Brand title: monospace, soft tracking — no uppercase shouting */
 [data-theme="cyberpunk"] .app-header h1 {
+  /* Sprint 4.0 — keep cyberpunk's monospace display family + neon
+     glow; size / weight / letter-spacing inherited from the base
+     rule so the logo stays the same wordmark. */
   font-family: var(--font-display);
-  font-weight: 500;
-  letter-spacing: 0.04em;
+  text-shadow: 0 0 12px rgba(93, 200, 214, 0.55);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -5482,9 +5510,11 @@ body.checkmate-flash::after {
 
 /* Engraved-style title — Cinzel Decorative + warm gold ink shadow */
 [data-theme="fantasy"] .app-header h1 {
+  /* Sprint 4.0 — fantasy keeps the engraved family + gold-ink shadow;
+     size / weight inherited from the base. letter-spacing nudged
+     wider for the decorative face. */
   font-family: 'Cinzel Decorative', 'Cinzel', serif;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   color: var(--accent-primary);
   text-shadow:
     0 1px 0 rgba(0, 0, 0, 0.8),
