@@ -1155,15 +1155,16 @@ function App() {
     el.scrollTop = el.scrollHeight;
   }, [log.moves.length]);
 
-  // Sprint 4.1 — one-time rotate hint for first-time players. After 5
-  // moves the rotate icon starts pulsing with a small tooltip
-  // pointing at it; localStorage gates the hint so it never reappears
-  // once dismissed or once the user has actually rotated.
+  // Sprint 4.2 — rotate hint now fires immediately on game start (was
+  // move 5 in 4.1; new players need to discover rotate from move 1).
+  // Hint auto-dismisses after 10s of inactivity so it doesn't linger
+  // forever; localStorage still gates so it never reappears after the
+  // first dismissal or first rotation.
   const [rotateHintShown, setRotateHintShown] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
     return window.localStorage.getItem('subutai_rotate_hint_seen') === '1';
   });
-  const showRotateHint = !rotateHintShown && log.moves.length >= 5 && gameStatus === 'active';
+  const showRotateHint = !rotateHintShown && gameStatus === 'active';
   function dismissRotateHint() {
     setRotateHintShown(true);
     try {
@@ -1172,6 +1173,14 @@ function App() {
       /* private mode / quota — no-op */
     }
   }
+  // Sprint 4.2 — auto-dismiss the rotate hint after 10s if the user
+  // hasn't interacted with it. Prevents the pulse + tooltip from
+  // becoming permanent visual noise.
+  useEffect(() => {
+    if (!showRotateHint) return;
+    const id = setTimeout(() => dismissRotateHint(), 10_000);
+    return () => clearTimeout(id);
+  }, [showRotateHint]);
 
   // Sprint 3.4.1 — captures no longer trigger their own visual burst.
   // The per-take flash from Sprint 3.2 fired too often and read as
@@ -3520,6 +3529,55 @@ function App() {
           )}
         </div>
       )}
+      {/* Sprint 4.2 — per-side action rows in local 2P mode. Top row
+          mirrors the bottom one but is visually flipped 180° so the
+          opposite-sitting player sees it upright. Buttons mirror the
+          subset of the main action row that matters during a hot-seat
+          game (resign / preview rotation / commit rotation). */}
+      {isLocalMode && gameStatus === 'active' && (
+        <div className="local-actions local-actions-top" aria-hidden={state.sideToMove !== 'black'}>
+          <button
+            type="button"
+            className="action-btn resign-btn"
+            onClick={requestResign}
+            disabled={log.moves.length === 0}
+            aria-label="Resign (black)"
+            title="Resign"
+          >
+            <Icon icon={Flag} size="md" aria-hidden />
+          </button>
+          <button
+            type="button"
+            className={`action-btn preview-btn${previewLocked ? ' active' : ''}`}
+            onClick={() => {
+              if (previewLocked) {
+                setPreviewLocked(false);
+                setLockedPreviewTopology(null);
+              } else {
+                setPreviewLocked(true);
+                setLockedPreviewTopology(state.topologyState === 'A' ? 'B' : 'A');
+              }
+            }}
+            aria-label={previewLocked ? 'Unlock rotation preview' : 'Preview rotation'}
+            title={previewLocked ? 'Unlock preview' : 'Preview rotation'}
+          >
+            <Icon icon={Eye} size="md" aria-hidden />
+          </button>
+          <button
+            type="button"
+            className="rotate-btn-icon"
+            onClick={handleRotate}
+            disabled={!canRotate}
+            aria-label={`Rotate ${state.topologyState} to ${state.topologyState === 'A' ? 'B' : 'A'}`}
+            title="Rotate board"
+          >
+            <Icon icon={RotateCw} size="md" aria-hidden />
+            <span className="rotate-label-text" aria-hidden>
+              {state.topologyState}{' → '}{state.topologyState === 'A' ? 'B' : 'A'}
+            </span>
+          </button>
+        </div>
+      )}
       <div className="board-with-eval">
         <EvalBar
           evalCp={myPerspectiveEval}
@@ -3578,17 +3636,11 @@ function App() {
           const tx = cxView - tileBase / 2;
           const ty = cyView - tileBase / 2;
 
-          // Sprint 3.4.1 — coordinate labels live inside the corner tiles
-          // (Lichess pattern). Rank label on the player-side leftmost
-          // file; file label on the player-side bottom rank. The flip
-          // var already encodes the black-perspective orientation, so
-          // the leftmost-from-player file is 'h' under flip and 'a'
-          // otherwise; the bottom-most rank is '8' under flip and '1'
-          // otherwise.
-          const file = sq[0];
-          const rank = sq[1];
-          const showRankLabel = flip ? file === 'h' : file === 'a';
-          const showFileLabel = flip ? rank === '8' : rank === '1';
+          // Sprint 4.2 — coordinate labels moved out of the tiles into
+          // a sibling overlay (.board-coords-overlay below) so they no
+          // longer rotate with .board. The per-tile showRankLabel /
+          // showFileLabel locals + the corresponding <span> children
+          // removed accordingly.
 
           // Sprint 3.2 — piece slide-in. When this tile is lastMove.to in
           // classic mode and both endpoints have angle 0 (no per-tile
@@ -3679,16 +3731,6 @@ function App() {
                   aria-hidden
                 />
               )}
-              {showRankLabel && (
-                <span className="tile-coord tile-coord-rank" aria-hidden>
-                  {rank}
-                </span>
-              )}
-              {showFileLabel && (
-                <span className="tile-coord tile-coord-file" aria-hidden>
-                  {file}
-                </span>
-              )}
               {piece ? (
                 <span
                   className={`piece-slide-wrap${isSliding ? ' is-sliding-in' : ''}`}
@@ -3697,17 +3739,29 @@ function App() {
                     '--slide-dy': `${slideDy}px`,
                   } as React.CSSProperties) : undefined}
                 >
-                  <span
-                    className={[
-                      'piece',
-                      piece.color === 'white'
-                        ? 'piece-white'
-                        : 'piece-black',
-                    ].join(' ')}
-                    style={angle ? { transform: `rotate(${-angle}deg)` } : undefined}
-                  >
-                    {glyphForPiece(piece.color, piece.type)}
-                  </span>
+                  {(() => {
+                    // Sprint 4.2 — in local 2P mode flip black pieces 180°
+                    // so the opposite-sitting player sees their own
+                    // pieces upright. Composes with the existing
+                    // topology-B counter-rotation (`-angle`); MP / AI
+                    // modes are untouched.
+                    const localBlackFlip =
+                      opponentMode === 'local' && piece.color === 'black';
+                    const totalRot = (angle ? -angle : 0) + (localBlackFlip ? 180 : 0);
+                    return (
+                      <span
+                        className={[
+                          'piece',
+                          piece.color === 'white'
+                            ? 'piece-white'
+                            : 'piece-black',
+                        ].join(' ')}
+                        style={totalRot !== 0 ? { transform: `rotate(${totalRot}deg)` } : undefined}
+                      >
+                        {glyphForPiece(piece.color, piece.type)}
+                      </span>
+                    );
+                  })()}
                 </span>
               ) : null}
             </button>
@@ -3857,8 +3911,94 @@ function App() {
           </svg>
         )}
       </div>
+      {/* Sprint 4.2 — coords overlay lives OUTSIDE .board so the labels
+          stay still while the board itself can rotate / preview-rotate.
+          Earlier attempts kept the labels inside the tiles, which meant
+          the .board rotation transform dragged them along. */}
+      {(() => {
+        const flip = isMultiplayer && mpSync?.myColor === 'black';
+        const previewing = !!(previewTopology || previewLocked);
+        return (
+          <div
+            className={`board-coords-overlay${previewing ? ' previewing' : ''}`}
+            data-topology={displayTopology}
+            aria-hidden
+            style={{ width: boardSize, height: boardSize }}
+          >
+            {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => {
+              const rankChar = flip ? String(i + 1) : String(8 - i);
+              const fileChar = flip
+                ? String.fromCharCode('a'.charCodeAt(0) + (7 - i))
+                : String.fromCharCode('a'.charCodeAt(0) + i);
+              return (
+                <span key={`coord-row-${i}`}>
+                  <span
+                    className="board-coord board-coord-rank"
+                    style={{ top: i * tileBase + 3, left: 4 }}
+                  >
+                    {rankChar}
+                  </span>
+                  <span
+                    className="board-coord board-coord-file"
+                    style={{ left: (i + 1) * tileBase - 12, bottom: 3 }}
+                  >
+                    {fileChar}
+                  </span>
+                </span>
+              );
+            })}
+          </div>
+        );
+      })()}
       </div>
       </div>
+
+      {/* Sprint 4.2 — bottom action row for the white-side player in
+          local 2P mode. Mirrors the top row, rendered upright. */}
+      {isLocalMode && gameStatus === 'active' && (
+        <div className="local-actions local-actions-bottom" aria-hidden={state.sideToMove !== 'white'}>
+          <button
+            type="button"
+            className="action-btn resign-btn"
+            onClick={requestResign}
+            disabled={log.moves.length === 0}
+            aria-label="Resign (white)"
+            title="Resign"
+          >
+            <Icon icon={Flag} size="md" aria-hidden />
+          </button>
+          <button
+            type="button"
+            className={`action-btn preview-btn${previewLocked ? ' active' : ''}`}
+            onClick={() => {
+              if (previewLocked) {
+                setPreviewLocked(false);
+                setLockedPreviewTopology(null);
+              } else {
+                setPreviewLocked(true);
+                setLockedPreviewTopology(state.topologyState === 'A' ? 'B' : 'A');
+              }
+            }}
+            aria-label={previewLocked ? 'Unlock rotation preview' : 'Preview rotation'}
+            title={previewLocked ? 'Unlock preview' : 'Preview rotation'}
+          >
+            <Icon icon={Eye} size="md" aria-hidden />
+          </button>
+          <button
+            type="button"
+            className="rotate-btn-icon"
+            onClick={handleRotate}
+            disabled={!canRotate}
+            aria-label={`Rotate ${state.topologyState} to ${state.topologyState === 'A' ? 'B' : 'A'}`}
+            title="Rotate board"
+          >
+            <Icon icon={RotateCw} size="md" aria-hidden />
+            <span className="rotate-label-text" aria-hidden>
+              {state.topologyState}{' → '}{state.topologyState === 'A' ? 'B' : 'A'}
+            </span>
+          </button>
+        </div>
+      )}
 
       {pendingPromotion && (
         <div className="promotion-backdrop" onClick={() => setPendingPromotion(null)}>
@@ -3928,29 +4068,36 @@ function App() {
               <Icon icon={Flag} size="md" aria-hidden />
             </button>
           </Tooltip>
-          <span className="action-group-divider" aria-hidden />
-          <Tooltip text="Support map (who backs whom)" side="top">
-            <button
-              type="button"
-              className={`action-btn${showSupport ? ' active' : ''}`}
-              onClick={() => setShowSupport((v) => !v)}
-              aria-label="Toggle support map"
-              aria-pressed={showSupport}
-            >
-              <Icon icon={ArrowRight} size="md" aria-hidden />
-            </button>
-          </Tooltip>
-          <Tooltip text="Threat map" side="top">
-            <button
-              type="button"
-              className={`action-btn${showThreats ? ' active' : ''}`}
-              onClick={() => setShowThreats((v) => !v)}
-              aria-label="Toggle threat map"
-              aria-pressed={showThreats}
-            >
-              <Icon icon={AlertTriangle} size="md" aria-hidden />
-            </button>
-          </Tooltip>
+          {/* Sprint 4.2 — hide threat/support insight tools in local
+              2P mode for a cleaner hot-seat UX (one device, two humans
+              sharing the screen; coaching arrows are distracting). */}
+          {opponentMode !== 'local' && (
+            <>
+              <span className="action-group-divider" aria-hidden />
+              <Tooltip text="Support map (who backs whom)" side="top">
+                <button
+                  type="button"
+                  className={`action-btn${showSupport ? ' active' : ''}`}
+                  onClick={() => setShowSupport((v) => !v)}
+                  aria-label="Toggle support map"
+                  aria-pressed={showSupport}
+                >
+                  <Icon icon={ArrowRight} size="md" aria-hidden />
+                </button>
+              </Tooltip>
+              <Tooltip text="Threat map" side="top">
+                <button
+                  type="button"
+                  className={`action-btn${showThreats ? ' active' : ''}`}
+                  onClick={() => setShowThreats((v) => !v)}
+                  aria-label="Toggle threat map"
+                  aria-pressed={showThreats}
+                >
+                  <Icon icon={AlertTriangle} size="md" aria-hidden />
+                </button>
+              </Tooltip>
+            </>
+          )}
           <Tooltip
             text={previewLocked ? 'Unlock rotation preview' : 'Preview rotation (click locks it)'}
             side="top"

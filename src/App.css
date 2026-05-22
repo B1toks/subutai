@@ -73,6 +73,9 @@
 
   /* Accents — primary (gold family) */
   --accent-primary: #d4a843;
+  /* Sprint 4.2 — secondary accent for thematic contrast on
+     auxiliary controls (rotate button etc.); aged-bronze. */
+  --accent-secondary: #c9a062;
   --accent-gold: #d4a843;
   --accent-gold-bright: #ffd700;
   --accent-gold-orange: #ff8c00;
@@ -200,6 +203,7 @@
 
   /* Accents — warm gold (muted vs wood) */
   --accent-primary: #8b6f3a;
+  --accent-secondary: #b85450;
   --accent-gold: #8b6f3a;
   --accent-gold-bright: #b8902a;
   --accent-gold-orange: #c47a2a;
@@ -315,6 +319,7 @@
 
   /* Accents — saturated only for interactive states */
   --accent-primary: #5dc8d6;
+  --accent-secondary: #d65d8c;
   --accent-gold: #5dc8d6;
   --accent-gold-bright: #7ad8e3;
   --accent-gold-orange: #d6995d;
@@ -431,6 +436,7 @@
 
   /* Accents — aged gold primary */
   --accent-primary: #c9a062;
+  --accent-secondary: #ffd700;
   --accent-gold: #c9a062;
   --accent-gold-bright: #e8c878;
   --accent-gold-orange: #b8862a;
@@ -1756,13 +1762,9 @@ body.checkmate-flash::after {
   filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.6));
 }
 
-/* Keep coordinate labels glued to the tile face — translateZ(0) gives
-   them their own composite layer for crisper anti-aliasing in Chrome
-   without lifting them off the surface. Safe to leave un-gated; it's
-   a no-op without a 3D context. */
-.tile-coord {
-  transform: translateZ(0);
-}
+/* Sprint 4.2 — old `.tile-coord` helper removed (labels moved to the
+   sibling .board-coords-overlay). The translateZ-only rule below has
+   no remaining selector targets, kept as a comment marker. */
 
 .piece-white {
   color: var(--piece-white);
@@ -2021,7 +2023,9 @@ body.checkmate-flash::after {
   background: var(--bg-elevated);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
-  color: var(--accent-primary);
+  /* Sprint 4.2 — rotate uses thematic secondary accent so it reads
+     as a distinct utility action vs the primary-coloured controls. */
+  color: var(--accent-secondary, var(--accent-primary));
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -2033,7 +2037,7 @@ body.checkmate-flash::after {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.05em;
-  color: var(--accent-primary);
+  color: var(--accent-secondary, var(--accent-primary));
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
@@ -4234,60 +4238,48 @@ body.checkmate-flash::after {
   inset: 0;
 }
 
-/* Sprint 3.4.1 — coordinate labels now live inside their respective
-   corner tiles (Lichess pattern) so the outer absolute overlays from
-   Sprint 2.7.2 are gone. Rank label tucks into the top-left of the
-   player-side leftmost file; file label sits in the bottom-right of
-   the player-side bottom rank. */
-.tile-coord {
+/* Sprint 4.2 — coord labels moved out of tiles into a sibling
+   .board-coords-overlay so they no longer rotate with .board (the
+   board's rotation animation used to drag the labels along; Sprint
+   3.4.1's inline-in-tile pattern is fully gone). Overlay sits
+   absolutely on top of .board at the same dimensions; labels are
+   pointer-events:none so they don't intercept clicks. */
+.board-coords-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+  /* Fade in/out matched to the rotation preview state below. */
+  transition: opacity 200ms ease;
+}
+
+.board-coord {
   position: absolute;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  pointer-events: none;
   user-select: none;
-  z-index: 2;
   font-variant-numeric: tabular-nums;
   line-height: 1;
+  color: var(--text-muted, var(--tile-dark));
+  opacity: 0.75;
+  text-shadow:
+    0 0 2px var(--bg-elevated),
+    0 0 3px var(--bg-elevated);
+  transition: color 280ms ease, opacity 200ms ease;
 }
 
-.tile-coord-rank {
-  top: 3px;
-  left: 4px;
-}
-
-.tile-coord-file {
-  bottom: 3px;
-  right: 4px;
-}
-
-/* On light tiles use the dark-tile tone; on dark tiles use the light-
-   tile tone. Each pair guarantees enough contrast across themes. */
-.tile.light .tile-coord {
-  color: var(--tile-dark);
-  opacity: 0.7;
-  transition: color 280ms ease, opacity 280ms ease;
-}
-
-.tile.dark .tile-coord {
-  color: var(--tile-light);
-  opacity: 0.7;
-  transition: color 280ms ease, opacity 280ms ease;
-}
-
-/* Sprint 4.0 — topology B switches the coord tint to the active
-   theme's accent so A and B are immediately distinguishable. data-
-   topology is set on .board by App.tsx with the display value (live
-   value or preview value). */
-.board[data-topology='B'] .tile-coord {
+/* Sprint 4.0 carry-over — topology B switches the coord tint to the
+   active theme's accent so A and B are still distinguishable from
+   the overlay (data-topology mirrored onto the overlay too). */
+.board-coords-overlay[data-topology='B'] .board-coord {
   color: var(--accent-primary);
-  opacity: 0.9;
+  opacity: 0.95;
 }
 
-/* Sprint 4.0 — hide the coord overlay during the rotation preview so
-   labels don't appear to jump with the tiles. They fade back in once
-   the player commits or releases the preview. */
-.board.previewing .tile-coord {
+/* Sprint 4.0 carry-over — hide labels during the rotation preview
+   so they don't appear to lag behind tiles. */
+.board-coords-overlay.previewing .board-coord {
   opacity: 0;
 }
 
@@ -4319,16 +4311,16 @@ body.checkmate-flash::after {
    or on X click; persistence via localStorage so it never reappears. */
 @keyframes rotate-hint-pulse {
   0%, 100% {
-    box-shadow: 0 0 0 0 var(--accent-primary);
+    box-shadow: 0 0 0 0 var(--accent-secondary, var(--accent-primary));
   }
   50% {
-    box-shadow: 0 0 0 6px transparent, 0 0 24px var(--accent-primary);
+    box-shadow: 0 0 0 6px transparent, 0 0 24px var(--accent-secondary, var(--accent-primary));
   }
 }
 
 .rotate-btn-icon.is-hint-pulsing {
   animation: rotate-hint-pulse 1.5s ease-in-out infinite;
-  border-color: var(--accent-primary);
+  border-color: var(--accent-secondary, var(--accent-primary));
 }
 
 .rotate-hint-tooltip {
@@ -4336,7 +4328,7 @@ body.checkmate-flash::after {
   bottom: calc(100% + 10px);
   left: 50%;
   transform: translateX(-50%);
-  background: var(--accent-primary);
+  background: var(--accent-secondary, var(--accent-primary));
   color: var(--bg-deep);
   padding: 6px 12px;
   border-radius: var(--radius-md);
@@ -4359,7 +4351,7 @@ body.checkmate-flash::after {
   left: 50%;
   transform: translateX(-50%);
   border: 6px solid transparent;
-  border-top-color: var(--accent-primary);
+  border-top-color: var(--accent-secondary, var(--accent-primary));
 }
 
 .rotate-hint-dismiss {
@@ -4429,6 +4421,41 @@ body.checkmate-flash::after {
 .local-turn-suffix {
   color: var(--text-muted);
   font-weight: 500;
+}
+
+/* Sprint 4.2 — per-side action rows for local 2P mode. Two identical
+   rows sit above and below the board; the top one is rotated 180° so
+   the opposite-sitting player sees it upright. The aria-hidden bound
+   to !sideToMove on the inactive side dims that row visually so the
+   active player's row reads as the primary control surface. */
+.local-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: var(--space-2) auto;
+  max-width: var(--board-size);
+  width: max-content;
+  transition: opacity 200ms ease;
+}
+
+.local-actions-top {
+  transform: rotate(180deg);
+  transform-origin: center;
+}
+
+.local-actions[aria-hidden='true'] {
+  opacity: 0.45;
+}
+
+.local-actions[aria-hidden='false'] {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .local-actions {
+    transition: none;
+  }
 }
 
 /* Rotation outline pulse — fires for ~2.5s after every topology flip. */
