@@ -4291,6 +4291,146 @@ body.checkmate-flash::after {
   opacity: 0;
 }
 
+/* Sprint 4.1 — gold pulse on own pieces matching an unused roulette
+   slot this turn. Class only sticks while allowedPieceTypes is set
+   and the slot for that type hasn't been spent; clears automatically
+   as soon as the user moves that piece (which consumes the slot). */
+@keyframes roulette-match-pulse {
+  0%, 100% {
+    box-shadow: inset 0 0 0 2px rgba(212, 175, 55, 0.7);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 3px rgba(212, 175, 55, 1),
+      0 0 16px rgba(212, 175, 55, 0.55);
+  }
+}
+
+.tile.is-roulette-match::before {
+  animation: roulette-match-pulse 1.2s ease-in-out infinite;
+}
+
+.tile.is-roulette-match .piece {
+  filter: drop-shadow(0 0 6px rgba(212, 175, 55, 0.85));
+}
+
+/* Sprint 4.1 — first-time rotate hint. Pulses the rotate button and
+   floats a tooltip pointing at it. Auto-dismisses on first rotation
+   or on X click; persistence via localStorage so it never reappears. */
+@keyframes rotate-hint-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 var(--accent-primary);
+  }
+  50% {
+    box-shadow: 0 0 0 6px transparent, 0 0 24px var(--accent-primary);
+  }
+}
+
+.rotate-btn-icon.is-hint-pulsing {
+  animation: rotate-hint-pulse 1.5s ease-in-out infinite;
+  border-color: var(--accent-primary);
+}
+
+.rotate-hint-tooltip {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--accent-primary);
+  color: var(--bg-deep);
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  box-shadow: var(--glow-accent);
+  animation: rotate-hint-bounce 1.5s ease-in-out infinite;
+  z-index: 50;
+  pointer-events: auto;
+}
+
+.rotate-hint-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: var(--accent-primary);
+}
+
+.rotate-hint-dismiss {
+  background: none;
+  border: none;
+  color: var(--bg-deep);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 0 0 var(--space-1);
+  font-weight: 700;
+}
+
+@keyframes rotate-hint-bounce {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50%      { transform: translateX(-50%) translateY(-4px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rotate-btn-icon.is-hint-pulsing,
+  .rotate-hint-tooltip {
+    animation: none;
+  }
+}
+
+/* Sprint 4.1 — local 2P hot-seat banner. Renders above the board on
+   each turn so the next-to-play side can pick up the device cleanly. */
+.local-turn-banner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: 0 auto;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  box-shadow: var(--glow-accent);
+  max-width: var(--board-size);
+  width: max-content;
+}
+
+.local-turn-chip {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+  border: 1px solid var(--btn-border);
+}
+
+.local-turn-chip-white {
+  background: var(--piece-white);
+}
+
+.local-turn-chip-black {
+  background: var(--piece-black);
+}
+
+.local-turn-color {
+  color: var(--accent-primary);
+  letter-spacing: 0.04em;
+}
+
+.local-turn-suffix {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
 /* Rotation outline pulse — fires for ~2.5s after every topology flip. */
 
 .board.is-rotated {

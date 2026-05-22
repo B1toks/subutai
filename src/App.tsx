@@ -54,6 +54,7 @@ import {
   Sparkles,
   Trophy,
   Users,
+  UsersRound,
 } from 'lucide-react';
 import type { GameReviewMeta } from './components/GameReview';
 import { useMultiplayerSync } from './components/MultiplayerGameView';
@@ -363,7 +364,7 @@ function App() {
   // solo flow; 'friend' opens the PvP lobby. Once a match starts it just
   // overlays the existing 'game' view — the board/log/header reuse the
   // single-player UI, only the data source flips.
-  const [opponentMode, setOpponentMode] = useState<'ai' | 'friend'>('ai');
+  const [opponentMode, setOpponentMode] = useState<'ai' | 'friend' | 'local'>('ai');
   // Q.B.2: active PvP match handshake. When non-null, the rest of App
   // sources its board / log / turn state from useMultiplayerSync below
   // instead of the local engine.
@@ -1143,6 +1144,35 @@ function App() {
   // from an ordinary tactical brilliancy.
   const [sacrificeSquare, setSacrificeSquare] = useState<SquareId | null>(null);
   const sacrificeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Sprint 4.1 — auto-scroll the sidebar move log so the latest ply
+  // is always visible without manual scrolling. Anchored to the
+  // <pre className="move-log-text"> element which already has the
+  // max-height + overflow-y: auto from the sidebar-moves CSS.
+  const moveLogScrollRef = useRef<HTMLPreElement | null>(null);
+  useEffect(() => {
+    const el = moveLogScrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [log.moves.length]);
+
+  // Sprint 4.1 — one-time rotate hint for first-time players. After 5
+  // moves the rotate icon starts pulsing with a small tooltip
+  // pointing at it; localStorage gates the hint so it never reappears
+  // once dismissed or once the user has actually rotated.
+  const [rotateHintShown, setRotateHintShown] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    return window.localStorage.getItem('subutai_rotate_hint_seen') === '1';
+  });
+  const showRotateHint = !rotateHintShown && log.moves.length >= 5 && gameStatus === 'active';
+  function dismissRotateHint() {
+    setRotateHintShown(true);
+    try {
+      window.localStorage.setItem('subutai_rotate_hint_seen', '1');
+    } catch {
+      /* private mode / quota — no-op */
+    }
+  }
+
   // Sprint 3.4.1 — captures no longer trigger their own visual burst.
   // The per-take flash from Sprint 3.2 fired too often and read as
   // noise; only the classifier reactions (?? shake / !! sparkles) and
@@ -1450,6 +1480,9 @@ function App() {
     // Sprint 4.0 — slowed visual reveal from 400ms to 2500ms so the
     // wheel reads as a real "gambling" deceleration. Audio extended
     // to ~2.5–3s in synths.ts to match.
+    // Sprint 4.1 — pulled back to 2300ms (~1.5× faster than 4.0)
+    // after the 2.5s felt sluggish in repeated play; still reads as
+    // a deliberate deceleration rather than a quick blip.
     audio.play('rouletteSpin');
     setTimeout(() => {
       // Roll only from pieces the current player actually has on the board.
@@ -1484,7 +1517,7 @@ function App() {
         // set so target squares (teal) show up for the allowed pieces.
         setLegalMoves(playable);
       }
-    }, 2500);
+    }, 2300);
   }
 
   function checkGameOver(nextState: BoardState, lastMoveWasRotation: boolean = false) {
@@ -1568,6 +1601,8 @@ function App() {
     if (watchingGame) return;
     if (currentPlayer !== 'human') return;
     if (state.lastMoveWasRotation) return;
+    // Sprint 4.1 — first actual rotation dismisses the hint for good.
+    if (!rotateHintShown) dismissRotateHint();
 
     // Multiplayer: send a topologyToggle move through Firestore — the
     // opponent's listener re-derives the board (rebuildBoardFromMatch
@@ -1685,13 +1720,20 @@ function App() {
   // In MP currentPlayer reflects whose turn it is from MY seat: 'human' when
   // I can act, 'ai' otherwise. Keeping the same vocabulary lets the existing
   // canRotate / scheduler / UI-disable code work unchanged.
+  // Sprint 4.1 — `local` opponent mode means both colours are played
+  // from this device, so the engine should never schedule an AI turn.
+  // Cached here so the AI scheduler, classifier, and downstream UI
+  // can short-circuit on a single flag.
+  const isLocalMode = opponentMode === 'local' && !isMultiplayer;
   const currentPlayer = isMultiplayer
     ? mpSync!.isMyTurn
       ? 'human'
       : 'ai'
-    : state.sideToMove === 'white'
+    : isLocalMode
       ? 'human'
-      : 'ai';
+      : state.sideToMove === 'white'
+        ? 'human'
+        : 'ai';
 
   // Sprint 2.5 — local AFK nag. Pointer / keyboard activity refreshes
   // the timestamp and clears any existing alert; if we're idle for 20s
@@ -2626,15 +2668,21 @@ function App() {
     setSearchEvalFromWhite(null);
     setSearchMateInPlies(null);
     const moveIdx = log.moves.length;
-    classifyAsync(state, resolvedMove, afterMove, {
-      budgetMs: 1000,
-      maxDepth: 7,
-      allowSelfCheck: gameMode === 'roulette',
-    })
-      .then((analysis) => {
-        setLog((prev) => updateMoveAnalysisAt(prev, moveIdx, analysis));
-        applyClassifyVisuals(moveIdx, analysis, resolvedMove.to);
-      });
+    // Sprint 4.1 — local hot-seat skips the classifier worker. The
+    // analysis pipeline is tied to leaderboard / review of solo games
+    // vs the AI; in local 2P play there's no scoring and both sides
+    // are human, so the cost / noise isn't worth it.
+    if (!isLocalMode) {
+      classifyAsync(state, resolvedMove, afterMove, {
+        budgetMs: 1000,
+        maxDepth: 7,
+        allowSelfCheck: gameMode === 'roulette',
+      })
+        .then((analysis) => {
+          setLog((prev) => updateMoveAnalysisAt(prev, moveIdx, analysis));
+          applyClassifyVisuals(moveIdx, analysis, resolvedMove.to);
+        });
+    }
 
     if (gameMode !== 'roulette') {
       setState(afterMove);
@@ -3349,6 +3397,20 @@ function App() {
         <div className="mp-banner mp-banner-error">{mpSync.error}</div>
       )}
 
+      {/* Sprint 4.1 — local hot-seat turn banner. Hands off cleanly
+          between the two players sharing the device; the colour
+          chip mirrors the active side so the next-to-move player
+          can pick up immediately. */}
+      {isLocalMode && gameStatus === 'active' && (
+        <div className="local-turn-banner">
+          <span className={`local-turn-chip local-turn-chip-${state.sideToMove}`} aria-hidden />
+          <span className="local-turn-color">
+            {state.sideToMove === 'white' ? 'White' : 'Black'}
+          </span>
+          <span className="local-turn-suffix">to move</span>
+        </div>
+      )}
+
       <div className="app-body">
       <div className="board-area">
       <div className="game-mode-cards">
@@ -3569,6 +3631,25 @@ function App() {
                 isLastTo ? 'last-to' : '',
                 olderHighlight ? 'last-older' : '',
                 isCheckedKing ? (gameStatus === 'checkmate' ? 'mated-king' : 'checked-king') : '',
+                /* Sprint 4.1 — pulse own pieces whose type matches an
+                   unused roulette slot for THIS turn. Only on the
+                   active client (currentPlayer === 'human') so the
+                   opponent doesn't see hints in MP. isPieceMovable
+                   InRoulette handles the slot-used + in-check filter. */
+                gameMode === 'roulette' &&
+                currentPlayer === 'human' &&
+                allowedPieceTypes !== null &&
+                piece &&
+                piece.color === state.sideToMove &&
+                isPieceMovableInRoulette(
+                  piece.type,
+                  state,
+                  'roulette',
+                  allowedPieceTypes,
+                  usedRouletteSlots,
+                )
+                  ? 'is-roulette-match'
+                  : '',
                 isCheckingPiece ? (gameStatus === 'checkmate' ? 'mating-piece' : 'checking-piece') : '',
                 threatCount > 0 ? 'threatened' : '',
                 isThreateningPiece ? 'threatening-piece' : '',
@@ -3938,7 +4019,7 @@ function App() {
         >
           <button
             type="button"
-            className="rotate-btn-icon"
+            className={`rotate-btn-icon${showRotateHint && canRotate ? ' is-hint-pulsing' : ''}`}
             onClick={handleRotate}
             disabled={!canRotate}
             aria-label={`Rotate topology ${state.topologyState} to ${state.topologyState === 'A' ? 'B' : 'A'}`}
@@ -3947,6 +4028,22 @@ function App() {
             <span className="rotate-label-text" aria-hidden>
               {state.topologyState}{' → '}{state.topologyState === 'A' ? 'B' : 'A'}
             </span>
+            {showRotateHint && canRotate && (
+              <span className="rotate-hint-tooltip" role="status">
+                <span>Try rotating the board!</span>
+                <button
+                  type="button"
+                  className="rotate-hint-dismiss"
+                  aria-label="Dismiss hint"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    dismissRotateHint();
+                  }}
+                >
+                  ×
+                </button>
+              </span>
+            )}
           </button>
         </Tooltip>
         <div
@@ -4078,6 +4175,19 @@ function App() {
               <span>vs Friend</span>
               <span className="beta-tag-small">BETA</span>
             </button>
+            {/* Sprint 4.1 — Local hot-seat. Both colours play from this
+                device; the AI scheduler short-circuits via the
+                isLocalMode flag in the currentPlayer derivation. */}
+            <button
+              type="button"
+              className={`opp-tab${opponentMode === 'local' ? ' is-active' : ''}`}
+              onClick={() => setOpponentMode('local')}
+              title="Hot-seat — both players on this device"
+            >
+              <Icon icon={UsersRound} size="md" aria-hidden />
+              <span>Local</span>
+              <span className="beta-tag-small">BETA</span>
+            </button>
           </div>
         </section>
 
@@ -4088,7 +4198,9 @@ function App() {
           {log.moves.length === 0 ? (
             <div className="move-log-empty">No moves yet.</div>
           ) : (
-            <pre className="move-log-text">{notationString}</pre>
+            <pre ref={moveLogScrollRef} className="move-log-text">
+              {notationString}
+            </pre>
           )}
           <button
             type="button"
