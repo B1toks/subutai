@@ -6207,3 +6207,348 @@ button:active:not(:disabled) {
     font-size: 16px;
   }
 }
+
+/* ============================================================
+   Sprint 4.3 — Showcase mode (?showcase=1)
+   ------------------------------------------------------------
+   Kiosk/TV view rendered as a top-level alternative to <App />.
+   Self-contained: no app chrome leaks in because we never mount
+   the rest of the app tree. CSS lives here so theme tokens stay
+   in scope; the .showcase-view wrapper sets data-theme="wood"
+   so the kiosk has a deterministic palette regardless of any
+   stored localStorage theme on the host machine.
+   ============================================================ */
+
+.showcase-view {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: 'Cinzel', 'Cormorant Garamond', serif;
+}
+
+.showcase-autoplay {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  animation: showcase-fade-in 400ms ease;
+}
+
+.showcase-header {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.showcase-title {
+  font-family: 'Cinzel Decorative', 'Cinzel', serif;
+  font-size: clamp(40px, 6vh, 72px);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.showcase-tagline {
+  color: var(--accent-primary);
+  font-size: clamp(12px, 1.6vh, 18px);
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  font-family: 'Inter', sans-serif;
+  font-weight: 700;
+}
+
+.showcase-board-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.showcase-board {
+  display: flex;
+  flex-direction: column;
+  width: min(70vh, 70vw);
+  aspect-ratio: 1 / 1;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow:
+    0 0 0 4px var(--border-strong),
+    0 24px 48px rgba(0, 0, 0, 0.5);
+}
+
+.showcase-board-row {
+  display: flex;
+  flex: 1;
+}
+
+.showcase-tile {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: background 200ms ease;
+}
+
+.showcase-tile.light {
+  background: var(--tile-light);
+}
+
+.showcase-tile.dark {
+  background: var(--tile-dark);
+}
+
+.showcase-tile.last-from::after,
+.showcase-tile.last-to::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--accent-primary);
+  opacity: 0.22;
+  pointer-events: none;
+}
+
+.showcase-piece {
+  font-size: min(9vh, 9vw);
+  line-height: 1;
+  user-select: none;
+}
+
+.showcase-piece-white {
+  color: var(--piece-white);
+  text-shadow: var(--piece-white-shadow);
+}
+
+.showcase-piece-black {
+  color: var(--piece-black);
+  text-shadow: var(--piece-black-shadow);
+}
+
+.showcase-banner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--bg-elevated);
+  border: 2px solid var(--accent-primary);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-5);
+  font-family: 'Inter', sans-serif;
+  font-size: clamp(18px, 3vh, 28px);
+  font-weight: 700;
+  color: var(--accent-primary);
+  letter-spacing: 0.05em;
+  box-shadow: var(--glow-accent);
+  animation: showcase-banner-pop 500ms cubic-bezier(0.2, 0.8, 0.4, 1);
+}
+
+@keyframes showcase-banner-pop {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.85); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+.showcase-stats {
+  display: flex;
+  gap: var(--space-5);
+  font-family: 'Inter', sans-serif;
+}
+
+.showcase-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 80px;
+}
+
+.showcase-stat-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-weight: 600;
+}
+
+.showcase-stat-value {
+  color: var(--text-primary);
+  font-size: clamp(20px, 3vh, 32px);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Leaderboard interrupt screen --- */
+
+.showcase-leaderboard {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5);
+  padding: var(--space-5);
+  animation: showcase-leaderboard-enter 500ms cubic-bezier(0.2, 0.8, 0.4, 1);
+}
+
+.showcase-leaderboard-header {
+  text-align: center;
+}
+
+.showcase-leaderboard-title {
+  font-family: 'Cinzel Decorative', 'Cinzel', serif;
+  font-size: clamp(36px, 6vh, 64px);
+  font-weight: 900;
+  margin: 0;
+  letter-spacing: 0.04em;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.highlight-badge {
+  color: var(--accent-secondary, var(--accent-primary));
+  filter: drop-shadow(0 0 8px var(--accent-primary));
+  animation: highlight-badge-spin 3s linear infinite;
+}
+
+.highlight-name {
+  color: var(--accent-primary);
+  text-shadow: 0 0 24px var(--accent-primary);
+  animation: highlight-pulse 1.5s ease-in-out infinite;
+}
+
+.highlight-suffix {
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+  font-weight: 500;
+  font-size: 0.85em;
+}
+
+@keyframes highlight-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+@keyframes highlight-badge-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.showcase-leaderboard-list {
+  width: min(720px, 88vw);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.showcase-leaderboard-loading {
+  color: var(--text-muted);
+  text-align: center;
+  padding: var(--space-4);
+  font-family: 'Inter', sans-serif;
+}
+
+.leaderboard-row-large {
+  display: grid;
+  grid-template-columns: 80px 1fr 160px;
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  font-family: 'Inter', sans-serif;
+  font-size: clamp(16px, 2.2vh, 24px);
+  font-weight: 600;
+}
+
+.leaderboard-row-large .rank {
+  color: var(--accent-primary);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.leaderboard-row-large .name {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leaderboard-row-large .score {
+  color: var(--text-secondary, var(--text-primary));
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.leaderboard-row-large.is-new-user {
+  border-color: var(--accent-primary);
+  background: linear-gradient(
+    135deg,
+    var(--bg-elevated) 0%,
+    color-mix(in srgb, var(--accent-primary) 22%, var(--bg-elevated)) 100%
+  );
+  box-shadow: 0 0 32px color-mix(in srgb, var(--accent-primary) 50%, transparent);
+  animation: new-user-glow 1.5s ease-in-out infinite;
+}
+
+.leaderboard-row-large.is-ghost .score {
+  color: var(--accent-primary);
+  font-style: italic;
+  font-weight: 700;
+}
+
+@keyframes new-user-glow {
+  0%, 100% {
+    box-shadow: 0 0 32px color-mix(in srgb, var(--accent-primary) 40%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 56px color-mix(in srgb, var(--accent-primary) 75%, transparent);
+  }
+}
+
+.showcase-countdown {
+  margin-top: var(--space-3);
+  color: var(--text-muted);
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  letter-spacing: 0.05em;
+  animation: countdown-fade 10s linear forwards;
+}
+
+@keyframes countdown-fade {
+  0% { opacity: 0.4; }
+  90% { opacity: 0.4; }
+  100% { opacity: 0; }
+}
+
+@keyframes showcase-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes showcase-leaderboard-enter {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .showcase-autoplay,
+  .showcase-leaderboard,
+  .showcase-banner,
+  .highlight-name,
+  .highlight-badge,
+  .leaderboard-row-large.is-new-user {
+    animation: none;
+  }
+}
