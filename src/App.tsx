@@ -341,6 +341,12 @@ function App() {
   );
   const [gameOutcome, setGameOutcome] = useState<GameOutcome | null>(null);
   const [confirmingResign, setConfirmingResign] = useState(false);
+  // Sprint 4.3.1 — pending opponent switch during an active local game.
+  // When non-null the ConfirmDialog mounts; on confirm we discard the
+  // local game state and start fresh in the requested mode.
+  const [pendingOpponentChange, setPendingOpponentChange] = useState<
+    'ai' | 'friend' | 'local' | null
+  >(null);
   const [savingGame, setSavingGame] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [currentRank, setCurrentRank] = useState<number | null>(null);
@@ -1606,6 +1612,25 @@ function App() {
     });
   }
 
+  // Sprint 4.3.1 — opponent switch with a guard for active local games.
+  // If a local game has progressed past move 0 and is still active, a
+  // bare setOpponentMode would silently drop the user's in-progress
+  // position into the AI scheduler (which then plays a move on top of
+  // the existing board). Route through a confirm dialog instead.
+  function requestOpponentChange(next: 'ai' | 'friend' | 'local') {
+    if (next === opponentMode) return;
+    if (isLocalMode && gameInProgress && next !== 'local') {
+      setPendingOpponentChange(next);
+      return;
+    }
+    applyOpponentChange(next);
+  }
+
+  function applyOpponentChange(next: 'ai' | 'friend' | 'local') {
+    setOpponentMode(next);
+    if (next === 'friend') setView('friend-lobby');
+  }
+
   function handleRotate() {
     if (watchingGame) return;
     if (currentPlayer !== 'human') return;
@@ -1734,6 +1759,11 @@ function App() {
   // Cached here so the AI scheduler, classifier, and downstream UI
   // can short-circuit on a single flag.
   const isLocalMode = opponentMode === 'local' && !isMultiplayer;
+  // Sprint 4.3.1 — derived "the user has committed to this game" flag.
+  // Used to (a) hide the duplicate bottom action group in local 2P and
+  // (b) lock the opponent / mode toggles so a misclick can't reset
+  // mid-game state.
+  const gameInProgress = log.moves.length > 0 && gameStatus === 'active';
   const currentPlayer = isMultiplayer
     ? mpSync!.isMyTurn
       ? 'human'
@@ -3217,6 +3247,14 @@ function App() {
   return (
     <div
       className={`app-shell${flashEffect ? ` is-${flashEffect}-flash` : ''}`}
+      // Sprint 4.3.1 — data-opponent-mode + data-game-active drive CSS
+      // selectors that hide duplicate / irrelevant controls in local
+      // 2P hot-seat mode (the standard action group, standalone rotate,
+      // material-score chip). Gated on game-active so the controls
+      // reappear once the local game finishes and the user needs the
+      // New Game / Lock buttons again.
+      data-opponent-mode={opponentMode}
+      data-game-active={gameInProgress ? '1' : '0'}
       ref={shellRef}
     >
     {flashEffect && (
@@ -4298,44 +4336,55 @@ function App() {
       <aside className="right-sidebar">
         <section className="sidebar-panel sidebar-opponent">
           <h3 className="sidebar-panel-title">Opponent</h3>
-          <div className="opponent-tabs-vertical">
-            <button
-              type="button"
-              className={`opp-tab${opponentMode === 'ai' ? ' is-active' : ''}`}
-              onClick={() => setOpponentMode('ai')}
-              title="Play vs the engine"
-            >
-              <Icon icon={Bot} size="md" aria-hidden />
-              <span>vs AI</span>
-            </button>
-            <button
-              type="button"
-              className={`opp-tab${opponentMode === 'friend' ? ' is-active' : ''}`}
-              onClick={() => {
-                setOpponentMode('friend');
-                setView('friend-lobby');
-              }}
-              title="Private match by code"
-              disabled={!user || !displayName}
-            >
-              <Icon icon={Users} size="md" aria-hidden />
-              <span>vs Friend</span>
-              <span className="beta-tag-small">BETA</span>
-            </button>
-            {/* Sprint 4.1 — Local hot-seat. Both colours play from this
-                device; the AI scheduler short-circuits via the
-                isLocalMode flag in the currentPlayer derivation. */}
-            <button
-              type="button"
-              className={`opp-tab${opponentMode === 'local' ? ' is-active' : ''}`}
-              onClick={() => setOpponentMode('local')}
-              title="Hot-seat — both players on this device"
-            >
-              <Icon icon={UsersRound} size="md" aria-hidden />
-              <span>Local</span>
-              <span className="beta-tag-small">BETA</span>
-            </button>
-          </div>
+          {/* Sprint 4.3.1 — when a local game is in progress, lock all
+              non-local opponent tabs behind a confirm dialog so a stray
+              tap can't silently abandon the game. The lock is "soft":
+              the button is visually dimmed (.is-locked) but still
+              dispatches click → confirm, instead of being natively
+              disabled (which would also suppress the click handler). */}
+          {(() => {
+            const oppLocked = isLocalMode && gameInProgress;
+            const lockedTitle = 'Finish or resign the current local game first';
+            return (
+              <div className="opponent-tabs-vertical">
+                <button
+                  type="button"
+                  className={`opp-tab${opponentMode === 'ai' ? ' is-active' : ''}${oppLocked ? ' is-locked' : ''}`}
+                  onClick={() => requestOpponentChange('ai')}
+                  aria-disabled={oppLocked || undefined}
+                  title={oppLocked ? lockedTitle : 'Play vs the engine'}
+                >
+                  <Icon icon={Bot} size="md" aria-hidden />
+                  <span>vs AI</span>
+                </button>
+                <button
+                  type="button"
+                  className={`opp-tab${opponentMode === 'friend' ? ' is-active' : ''}${oppLocked ? ' is-locked' : ''}`}
+                  onClick={() => requestOpponentChange('friend')}
+                  aria-disabled={oppLocked || undefined}
+                  title={oppLocked ? lockedTitle : 'Private match by code'}
+                  disabled={!user || !displayName}
+                >
+                  <Icon icon={Users} size="md" aria-hidden />
+                  <span>vs Friend</span>
+                  <span className="beta-tag-small">BETA</span>
+                </button>
+                {/* Sprint 4.1 — Local hot-seat. Both colours play from this
+                    device; the AI scheduler short-circuits via the
+                    isLocalMode flag in the currentPlayer derivation. */}
+                <button
+                  type="button"
+                  className={`opp-tab${opponentMode === 'local' ? ' is-active' : ''}`}
+                  onClick={() => requestOpponentChange('local')}
+                  title="Hot-seat — both players on this device"
+                >
+                  <Icon icon={UsersRound} size="md" aria-hidden />
+                  <span>Local</span>
+                  <span className="beta-tag-small">BETA</span>
+                </button>
+              </div>
+            );
+          })()}
         </section>
 
         <section className="sidebar-panel sidebar-moves">
@@ -4495,6 +4544,23 @@ function App() {
           danger
           onConfirm={confirmResign}
           onCancel={() => setConfirmingResign(false)}
+        />
+      )}
+
+      {pendingOpponentChange && (
+        <ConfirmDialog
+          title="Abandon current local game?"
+          message="Switching opponent will discard the in-progress local game. The position is not saved."
+          confirmLabel="Abandon game"
+          cancelLabel="Keep playing"
+          danger
+          onConfirm={() => {
+            const next = pendingOpponentChange;
+            setPendingOpponentChange(null);
+            applyOpponentChange(next);
+            startNewGame();
+          }}
+          onCancel={() => setPendingOpponentChange(null)}
         />
       )}
 

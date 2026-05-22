@@ -4458,6 +4458,31 @@ body.checkmate-flash::after {
   }
 }
 
+/* Sprint 4.3.1 — local 2P duplicates cleanup. While a local game is in
+   progress the per-side action rows above/below the board own the full
+   set of in-game controls (resign / preview / rotate). The standard
+   .board-actions row below the board would duplicate every one of
+   those buttons + add a stale material-score chip and a second rotate
+   icon, so we hide it wholesale. Reveals again on game-over so the
+   user can hit "New game" / "Lock formation" from the standard row. */
+.app-shell[data-opponent-mode='local'][data-game-active='1'] .board-actions {
+  display: none;
+}
+
+/* Sprint 4.3.1 — soft-locked opponent tab during an active local game.
+   Uses aria-disabled + class (not the disabled attribute) so the click
+   handler still fires and we can show a confirm dialog rather than
+   silently swallow the click. */
+.opp-tab.is-locked {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.opp-tab.is-locked:hover {
+  box-shadow: none;
+  transform: none;
+}
+
 /* Rotation outline pulse — fires for ~2.5s after every topology flip. */
 
 .board.is-rotated {
