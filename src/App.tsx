@@ -37,6 +37,7 @@ import { MusicToggle } from './components/MusicToggle';
 import { audio } from './audio/AudioController';
 import { Icon } from './components/Icon';
 import { Tooltip } from './components/Tooltip';
+import { TutorialOverlay, TUTORIAL_DONE_KEY } from './components/TutorialOverlay';
 import {
   AlarmClock,
   AlertTriangle,
@@ -47,7 +48,9 @@ import {
   Dices,
   Eye,
   Flag,
+  GraduationCap,
   HelpCircle,
+  Lightbulb,
   Lock,
   MessageSquare,
   RotateCw,
@@ -172,6 +175,14 @@ function backRankString(boardState: BoardState): string {
       return piece ? abbrev[piece.type] ?? '?' : '?';
     })
     .join('');
+}
+
+// S2.5 — mm:ss elapsed-time display for the per-side clocks.
+function formatClock(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
 }
 
 const MOVE_CLASS_MARKER: Record<MoveClass, string> = {
@@ -426,6 +437,21 @@ function App() {
   const [previewTopology, setPreviewTopology] = useState<TopologyState | null>(null);
   const [lastMoveLocal, setLastMove] = useState<{ from?: SquareId; to?: SquareId } | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  // S2.2 — first-launch tour. Defaults to open until the user finishes
+  // or skips it once; replayable from the Help dialog.
+  const [showTutorial, setShowTutorial] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(TUTORIAL_DONE_KEY) !== '1';
+    } catch {
+      return false;
+    }
+  });
+  const closeTutorial = useCallback(() => {
+    try {
+      localStorage.setItem(TUTORIAL_DONE_KEY, '1');
+    } catch { /* private mode — show it again next visit */ }
+    setShowTutorial(false);
+  }, []);
   const [showMaterialPopup, setShowMaterialPopup] = useState(false);
   const [copied, setCopied] = useState(false);
   // Sprint 3.7 (rev 2) — Threat / Support toggles restored after the
@@ -433,6 +459,29 @@ function App() {
   // more like deliberate training aids than a hover gimmick.
   const [showThreats, setShowThreats] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
+  // S2.4 — master switch for the coaching tools (support / threat / hint).
+  // Players who want "pure" chess can collapse the whole group; persisted
+  // so the choice survives reloads.
+  const [helpToolsEnabled, setHelpToolsEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('subutai_help_tools') !== '0';
+    } catch {
+      return true;
+    }
+  });
+  // S2.4 — engine hint: best move for the current position, shown as a
+  // pulsing from→to pair on the board. Cleared whenever the position
+  // changes. `rotate: true` means the engine recommends Rotate itself.
+  const [hintMove, setHintMove] = useState<
+    { from: SquareId; to: SquareId } | { rotate: true } | null
+  >(null);
+  // S2.5 — per-side elapsed clocks. Pure UX (no flag-fall): the active
+  // side's clock accumulates wall time while the game is live. Reset on
+  // every new game log.
+  const [clockMs, setClockMs] = useState<{ white: number; black: number }>({
+    white: 0,
+    black: 0,
+  });
   const [previewLocked, setPreviewLocked] = useState(false);
   const [lockedPreviewTopology, setLockedPreviewTopology] = useState<TopologyState | null>(null);
   const [hoveredSquare, setHoveredSquare] = useState<string | null>(null);
@@ -924,6 +973,12 @@ function App() {
   }
 
   async function startWatching(gameId: string, playerName: string) {
+    // S2.1 — while a multiplayer match is live, the board is driven by
+    // mpSync.boardState, so the replay projection below would clobber
+    // log/gameStatus while the board keeps showing the match: a
+    // split-brain. The Leaderboard disables Watch in that case; this is
+    // the backstop.
+    if (isMultiplayer) return;
     try {
       const saved = await fetchSavedGame(gameId);
       if (!saved) {
@@ -1604,6 +1659,72 @@ function App() {
     liveSavedGameIdRef.current = `live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   }
 
+  // S2.4 — any change to the position invalidates a shown hint.
+  useEffect(() => {
+    setHintMove(null);
+  }, [logLocal.moves.length, state.topologyState, gameStatus]);
+
+  // S2.5 — clock ticking. A ref mirrors sideToMove so the interval
+  // closure always charges the side actually to move without re-arming
+  // the timer on every ply.
+  const clockSideRef = useRef<Color>(state.sideToMove);
+  useEffect(() => {
+    clockSideRef.current = state.sideToMove;
+  }, [state.sideToMove]);
+
+  useEffect(() => {
+    setClockMs({ white: 0, black: 0 });
+  }, [logLocal.id]);
+
+  useEffect(() => {
+    if (gameStatus !== 'active' || watchingGame) return;
+    let last = Date.now();
+    const id = setInterval(() => {
+      const now = Date.now();
+      const dt = now - last;
+      last = now;
+      const side = clockSideRef.current;
+      setClockMs((c) => ({ ...c, [side]: c[side] + dt }));
+    }, 500);
+    return () => clearInterval(id);
+  }, [gameStatus, watchingGame, logLocal.id]);
+
+  function toggleHelpTools() {
+    setHelpToolsEnabled((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem('subutai_help_tools', next ? '1' : '0');
+      } catch { /* private mode */ }
+      if (!next) {
+        setShowSupport(false);
+        setShowThreats(false);
+        setHintMove(null);
+      }
+      return next;
+    });
+  }
+
+  // S2.4 — engine hint. A short synchronous search (~0.5s) is fine for a
+  // deliberate button press. Classic mode only: roulette's slot
+  // restrictions aren't modeled by the bare search, so its "best move"
+  // could be illegal this turn.
+  function computeHint() {
+    if (currentPlayer !== 'human' || gameStatus !== 'active' || watchingGame) return;
+    if (gameMode !== 'classic') return;
+    const result = searchPosition(state, {
+      budgetMs: 500,
+      maxDepth: 5,
+      lastMoveWasRotation: state.lastMoveWasRotation,
+    });
+    const best = result.bestMove;
+    if (!best) return;
+    if (best.kind === 'topologyToggle') {
+      setHintMove({ rotate: true });
+    } else if (best.from && best.to) {
+      setHintMove({ from: best.from, to: best.to });
+    }
+  }
+
   function toggleFormationLock() {
     setFormationLocked((v) => {
       if (!v) setLockedFormationKey(backRankString(initialState));
@@ -1613,13 +1734,14 @@ function App() {
   }
 
   // Sprint 4.3.1 — opponent switch with a guard for active local games.
-  // If a local game has progressed past move 0 and is still active, a
-  // bare setOpponentMode would silently drop the user's in-progress
-  // position into the AI scheduler (which then plays a move on top of
-  // the existing board). Route through a confirm dialog instead.
+  // Sprint 5.0 (S2.1) — generalized to ANY in-progress non-MP game.
+  // Previously only local games confirmed; switching ai→local mid-game
+  // silently converted a live AI game into hot-seat, and ai→friend
+  // suspended it under the lobby. Every mode now has one exit rule:
+  // finish, resign, or explicitly abandon via the dialog.
   function requestOpponentChange(next: 'ai' | 'friend' | 'local') {
     if (next === opponentMode) return;
-    if (isLocalMode && gameInProgress && next !== 'local') {
+    if (gameInProgress && !isMultiplayer && !watchingGame) {
       setPendingOpponentChange(next);
       return;
     }
@@ -3209,6 +3331,7 @@ function App() {
       <div className="app-shell" ref={shellRef}>
         <Leaderboard
           currentUid={user?.uid ?? null}
+          watchDisabled={isMultiplayer}
           onBack={() => setView('game')}
           onWatchGame={(gameId, playerName) => {
             void startWatching(gameId, playerName);
@@ -3279,11 +3402,6 @@ function App() {
             <Icon icon={Sparkles} size="md" aria-hidden />
           </span>
         ))}
-      </div>
-    )}
-    {showAfkAlert && currentPlayer === 'human' && gameStatus === 'active' && (
-      <div className="afk-alert" role="status" aria-live="polite">
-        <Icon icon={AlarmClock} size="md" aria-hidden /> Your move!
       </div>
     )}
     <div className="app-root" style={{ '--board-size': `${boardSize}px` } as React.CSSProperties}>
@@ -3460,7 +3578,7 @@ function App() {
 
       <div className="app-body">
       <div className="board-area">
-      <div className="game-mode-cards">
+      <div className="game-mode-cards" data-tour="modes">
         <button
           type="button"
           className={`mode-card${gameMode === 'classic' ? ' is-active' : ''}`}
@@ -3510,6 +3628,24 @@ function App() {
           </span>
         </button>
       </div>
+      {/* S2.5 — per-side elapsed clocks. The chip for the side to move
+          glows so the bar doubles as a turn indicator. */}
+      {gameStatus === 'active' && !watchingGame && (
+        <div className="game-clocks" aria-label="Game clocks">
+          <span
+            className={`clock-chip clock-chip-white${state.sideToMove === 'white' ? ' is-running' : ''}`}
+          >
+            <span className="clock-chip-dot" aria-hidden />
+            White {formatClock(clockMs.white)}
+          </span>
+          <span
+            className={`clock-chip clock-chip-black${state.sideToMove === 'black' ? ' is-running' : ''}`}
+          >
+            <span className="clock-chip-dot" aria-hidden />
+            Black {formatClock(clockMs.black)}
+          </span>
+        </div>
+      )}
       {/* Sprint 2.7.1 — the roulette panel now only renders when there
           is actual slot or spinning state to show. Pre-spin attention
           is handled by the compact .spin-roulette-btn-compact in the
@@ -3622,7 +3758,11 @@ function App() {
           mateInPlies={searchMateInPlies}
           isPending={!isMultiplayer && searchEvalFromWhite === null}
         />
-      <div className="board-with-coords" style={{ width: boardSize }}>
+      <div
+        className={`board-with-coords${showAfkAlert && currentPlayer === 'human' && gameStatus === 'active' ? ' is-afk-nudge' : ''}`}
+        style={{ width: boardSize }}
+        data-tour="board"
+      >
       <div
         className={`board${previewTopology || previewLocked ? ' previewing' : ''}${recentRotation ? ' is-rotated' : ''}`}
         data-topology={displayTopology}
@@ -3747,6 +3887,8 @@ function App() {
                   ? `classified-${classifiedSquare.classification}`
                   : '',
                 sacrificeSquare === sq ? 'is-sacrifice' : '',
+                hintMove && 'from' in hintMove && hintMove.from === sq ? 'hint-from' : '',
+                hintMove && 'from' in hintMove && hintMove.to === sq ? 'hint-to' : '',
               ]
                 .filter(Boolean)
                 .join(' ')}
@@ -4112,28 +4254,62 @@ function App() {
           {opponentMode !== 'local' && (
             <>
               <span className="action-group-divider" aria-hidden />
-              <Tooltip text="Support map (who backs whom)" side="top">
+              {/* S2.4 — master switch for the coaching group. Off hides
+                  (and deactivates) support / threat / hint so the row
+                  reads as plain chess. */}
+              <Tooltip
+                text={helpToolsEnabled ? 'Hide coaching tools' : 'Show coaching tools (support, threats, hint)'}
+                side="top"
+              >
                 <button
                   type="button"
-                  className={`action-btn${showSupport ? ' active' : ''}`}
-                  onClick={() => setShowSupport((v) => !v)}
-                  aria-label="Toggle support map"
-                  aria-pressed={showSupport}
+                  className={`action-btn${helpToolsEnabled ? ' active' : ''}`}
+                  onClick={toggleHelpTools}
+                  aria-label="Toggle coaching tools"
+                  aria-pressed={helpToolsEnabled}
                 >
-                  <Icon icon={ArrowRight} size="md" aria-hidden />
+                  <Icon icon={GraduationCap} size="md" aria-hidden />
                 </button>
               </Tooltip>
-              <Tooltip text="Threat map" side="top">
-                <button
-                  type="button"
-                  className={`action-btn${showThreats ? ' active' : ''}`}
-                  onClick={() => setShowThreats((v) => !v)}
-                  aria-label="Toggle threat map"
-                  aria-pressed={showThreats}
-                >
-                  <Icon icon={AlertTriangle} size="md" aria-hidden />
-                </button>
-              </Tooltip>
+              {helpToolsEnabled && (
+                <>
+                  <Tooltip text="Support map (who backs whom)" side="top">
+                    <button
+                      type="button"
+                      className={`action-btn${showSupport ? ' active' : ''}`}
+                      onClick={() => setShowSupport((v) => !v)}
+                      aria-label="Toggle support map"
+                      aria-pressed={showSupport}
+                    >
+                      <Icon icon={ArrowRight} size="md" aria-hidden />
+                    </button>
+                  </Tooltip>
+                  <Tooltip text="Threat map" side="top">
+                    <button
+                      type="button"
+                      className={`action-btn${showThreats ? ' active' : ''}`}
+                      onClick={() => setShowThreats((v) => !v)}
+                      aria-label="Toggle threat map"
+                      aria-pressed={showThreats}
+                    >
+                      <Icon icon={AlertTriangle} size="md" aria-hidden />
+                    </button>
+                  </Tooltip>
+                  {gameMode === 'classic' && (
+                    <Tooltip text="Hint — engine suggests a move" side="top">
+                      <button
+                        type="button"
+                        className={`action-btn${hintMove ? ' active' : ''}`}
+                        onClick={computeHint}
+                        disabled={currentPlayer !== 'human' || gameStatus !== 'active' || !!watchingGame}
+                        aria-label="Show a hint"
+                      >
+                        <Icon icon={Lightbulb} size="md" aria-hidden />
+                      </button>
+                    </Tooltip>
+                  )}
+                </>
+              )}
             </>
           )}
           <Tooltip
@@ -4144,6 +4320,7 @@ function App() {
               type="button"
               className={`action-btn preview-btn${previewLocked ? ' active' : ''}`}
               disabled={currentPlayer !== 'human'}
+              data-tour="preview"
               aria-label={previewLocked ? 'Unlock rotation preview' : 'Preview rotation'}
             onClick={() => {
               if (currentPlayer !== 'human') return;
@@ -4204,9 +4381,10 @@ function App() {
         >
           <button
             type="button"
-            className={`rotate-btn-icon${showRotateHint && canRotate ? ' is-hint-pulsing' : ''}`}
+            className={`rotate-btn-icon${(showRotateHint || (hintMove && 'rotate' in hintMove)) && canRotate ? ' is-hint-pulsing' : ''}`}
             onClick={handleRotate}
             disabled={!canRotate}
+            data-tour="rotate"
             aria-label={`Rotate topology ${state.topologyState} to ${state.topologyState === 'A' ? 'B' : 'A'}`}
           >
             <Icon icon={RotateCw} size="md" aria-hidden />
@@ -4215,18 +4393,28 @@ function App() {
             </span>
             {showRotateHint && canRotate && (
               <span className="rotate-hint-tooltip" role="status">
-                <span>Try rotating the board!</span>
-                <button
-                  type="button"
+                <span>Try rotating the board! +15 pts, +25 more if it sets up a capture</span>
+                {/* span-as-button: a real <button> here would nest inside
+                    the rotate <button>, which is invalid HTML (React 19
+                    logs hydration errors for it). */}
+                <span
+                  role="button"
+                  tabIndex={0}
                   className="rotate-hint-dismiss"
                   aria-label="Dismiss hint"
                   onClick={(e) => {
                     e.stopPropagation();
                     dismissRotateHint();
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.stopPropagation();
+                      dismissRotateHint();
+                    }
+                  }}
                 >
                   ×
-                </button>
+                </span>
               </span>
             )}
           </button>
@@ -4286,6 +4474,11 @@ function App() {
       </div>
 
       <div className="position-label-wrap">
+        {/* S2.1 — Replay import and formation editing clobber local game
+            state, which in MP would split-brain against the Firestore
+            board, and while watching would corrupt the stop-restore
+            backup. Both controls are live-local-game-only. */}
+        {!isMultiplayer && !watchingGame && (
         <button
           type="button"
           className="position-replay-btn"
@@ -4297,8 +4490,9 @@ function App() {
         >
           Replay
         </button>
+        )}
         <span className="position-label">Chess960: {positionLabel}</span>
-        {!formationInputMode ? (
+        {isMultiplayer || watchingGame ? null : !formationInputMode ? (
           <button
             type="button"
             className="position-edit-btn"
@@ -4343,8 +4537,8 @@ function App() {
               dispatches click → confirm, instead of being natively
               disabled (which would also suppress the click handler). */}
           {(() => {
-            const oppLocked = isLocalMode && gameInProgress;
-            const lockedTitle = 'Finish or resign the current local game first';
+            const oppLocked = gameInProgress && !isMultiplayer && !watchingGame;
+            const lockedTitle = 'Finish or resign the current game first';
             return (
               <div className="opponent-tabs-vertical">
                 <button
@@ -4408,7 +4602,7 @@ function App() {
           </button>
         </section>
 
-        <section className="sidebar-panel sidebar-analysis">
+        <section className="sidebar-panel sidebar-analysis" data-tour="analysis">
           <h3 className="sidebar-panel-title">Analysis</h3>
           {(() => {
             if (searchMateInPlies != null) {
@@ -4446,14 +4640,18 @@ function App() {
           {/* Sprint 3.4.1 — Review CTA moved out of the board-actions
               row into the Analysis panel, where it reads as the natural
               next step after viewing the eval. */}
+          {/* S2.1 — mid-match the local `log` belongs to the previous
+              single-player game, so Review here would open the wrong
+              game. Finished matches review via the end-of-match dialog. */}
           <button
             type="button"
             className="panel-action-btn"
             onClick={() => setView('review')}
-            disabled={log.moves.length === 0}
+            disabled={log.moves.length === 0 || isMultiplayer}
+            title={isMultiplayer ? 'Review opens from the end-of-match screen' : undefined}
           >
             <Icon icon={BarChart3} size="md" aria-hidden />
-            Review {log.moves.length > 0 ? 'this game' : '— no moves yet'}
+            Review {isMultiplayer ? '— after the match' : log.moves.length > 0 ? 'this game' : '— no moves yet'}
           </button>
         </section>
       </aside>
@@ -4549,8 +4747,8 @@ function App() {
 
       {pendingOpponentChange && (
         <ConfirmDialog
-          title="Abandon current local game?"
-          message="Switching opponent will discard the in-progress local game. The position is not saved."
+          title="Abandon current game?"
+          message="Switching opponent will end the game in progress and start fresh."
           confirmLabel="Abandon game"
           cancelLabel="Keep playing"
           danger
@@ -4713,7 +4911,9 @@ function App() {
             <ul>
               <li>The board is divided into 4&times;4 blocks of 2&times;2 squares.</li>
               <li>Pressing <em>Rotate</em> flips all blocks &plusmn;90&deg;, reshuffling
-                which squares are adjacent. This <strong>costs your turn</strong>.</li>
+                which squares are adjacent. This <strong>costs your turn</strong> but
+                earns a <strong>+15 point bonus</strong> (up to 4 per game), and
+                <strong> +25 more</strong> if you capture within your next two moves.</li>
               <li>Hover the eye button to preview the rotation; <strong>click</strong> the eye to
                 temporarily lock the rotated view for inspection (click again to unlock). This is not the move.</li>
               <li><em>Support map</em> (arrow button): shows which of your pieces are backed up by others (arrows from supporter to supported).</li>
@@ -4730,11 +4930,29 @@ function App() {
                 Chess960 on Wikipedia
               </a>
             </p>
-            <button type="button" className="help-close-btn" onClick={() => setShowHelp(false)}>
-              Close
-            </button>
+            <div className="help-dialog-actions">
+              <button
+                type="button"
+                className="help-tour-btn"
+                onClick={() => {
+                  setShowHelp(false);
+                  setShowTutorial(true);
+                }}
+              >
+                Replay tutorial
+              </button>
+              <button type="button" className="help-close-btn" onClick={() => setShowHelp(false)}>
+                Close
+              </button>
+            </div>
           </div>
         </div>
+      )}
+
+      {/* S2.2 — first-launch tour. Only meaningful over the live game
+          screen; suppressed in replays, multiplayer, and sub-views. */}
+      {showTutorial && view === 'game' && !isMultiplayer && !watchingGame && (
+        <TutorialOverlay onClose={closeTutorial} />
       )}
 
     </div>

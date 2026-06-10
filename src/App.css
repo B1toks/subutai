@@ -1008,31 +1008,19 @@
    appears when the player has been idle on their own turn for >20s.
    Renders inside the .app-shell but as position:fixed it doesn't
    affect layout. */
-.afk-alert {
-  position: fixed;
-  /* Sprint 2.7.3 — moved closer to the viewport top so the nudge
-     reads as a status notification, not an overlay sitting over the
-     board. Still clears the header row on standard viewports. */
-  top: var(--space-2);
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--accent-danger);
-  color: var(--text-white);
-  padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-full);
-  font-weight: 700;
-  font-size: 14px;
-  box-shadow: var(--glow-danger), var(--shadow-elevated);
-  animation: afk-pulse 1.2s ease-in-out infinite;
-  z-index: 1000;
-  pointer-events: none;
-  user-select: none;
-  white-space: nowrap;
+/* Sprint 5.0 — the AFK nudge used to be a fixed red "Your move!" pill
+   pinned over the header; it read as an error and kept covering the
+   header buttons. Replaced with a slow ambient breathing glow on the
+   board frame itself — visible from the corner of the eye, blocks
+   nothing, no text. */
+.board-with-coords.is-afk-nudge {
+  border-radius: var(--radius-md);
+  animation: afk-breathe 3s ease-in-out infinite;
 }
 
-@keyframes afk-pulse {
-  0%, 100% { transform: translateX(-50%) scale(1); opacity: 0.92; }
-  50%      { transform: translateX(-50%) scale(1.05); opacity: 1; }
+@keyframes afk-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 200, 80, 0); }
+  50%      { box-shadow: 0 0 0 3px rgba(255, 200, 80, 0.35), 0 0 28px rgba(255, 200, 80, 0.25); }
 }
 
 /* Mobile: stack sidebar below board and collapse mode-card grid */
@@ -1507,6 +1495,23 @@
 .tile.last-to::before {
   background: rgba(100, 140, 220, 0.55);
   box-shadow: inset 0 0 0 2px rgba(140, 180, 255, 0.6);
+}
+
+/* S2.4 — engine hint pair. Teal so it can't be confused with the blue
+   last-move pair or the gold selection. Pulses until the next move. */
+@keyframes hint-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 2px rgba(20, 184, 166, 0.5); }
+  50%      { box-shadow: inset 0 0 0 3px rgba(20, 184, 166, 0.95), 0 0 12px rgba(20, 184, 166, 0.5); }
+}
+
+.tile.hint-from::before,
+.tile.hint-to::before {
+  background: rgba(20, 184, 166, 0.22);
+  animation: hint-pulse 1.4s ease-in-out infinite;
+}
+
+.tile.hint-to::before {
+  background: rgba(20, 184, 166, 0.38);
 }
 
 /* Sprint 3.2 — pulse the king's tile while it's in check so the warning
@@ -2722,6 +2727,214 @@ body.checkmate-flash::after {
 
 .help-close-btn:hover {
   background: var(--bg-elevated-hover);
+}
+
+.help-dialog-actions {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.help-tour-btn {
+  margin-top: 8px;
+  padding: 8px 20px;
+  border-radius: 6px;
+  border: 1px solid var(--accent-primary);
+  background: transparent;
+  color: var(--accent-primary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.help-tour-btn:hover {
+  background: var(--bg-elevated-hover);
+}
+
+/* ── S2.5: per-side elapsed clocks ────────────────────────────────────
+   Sits between the mode cards and the board. The running side's chip
+   lights up, so this also reads as a quiet turn indicator. */
+
+.game-clocks {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-3);
+  margin: var(--space-2) 0;
+}
+
+.clock-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--radius-full, 999px);
+  border: 1px solid var(--btn-border);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  transition: color 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+.clock-chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.5;
+}
+
+.clock-chip-white .clock-chip-dot { background: var(--piece-white-flat); opacity: 0.9; }
+.clock-chip-black .clock-chip-dot { background: var(--piece-black-flat); opacity: 0.9; box-shadow: 0 0 0 1px var(--text-muted); }
+
+.clock-chip.is-running {
+  color: var(--text);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 8px rgba(212, 168, 67, 0.25);
+}
+
+/* ── S2.2: first-launch tour ──────────────────────────────────────────
+   Spotlight = a transparent box whose enormous box-shadow dims the rest
+   of the viewport; the highlighted element stays fully interactive-
+   looking (though the overlay blocks clicks until the tour ends). */
+
+.tour-root {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+}
+
+.tour-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.tour-spotlight {
+  position: absolute;
+  border-radius: var(--radius-md);
+  box-shadow:
+    0 0 0 9999px rgba(0, 0, 0, 0.65),
+    0 0 0 2px var(--accent-primary),
+    0 0 24px rgba(212, 168, 67, 0.4);
+  transition: top 0.3s ease, left 0.3s ease, width 0.3s ease, height 0.3s ease;
+  pointer-events: none;
+}
+
+.tour-card {
+  position: absolute;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  background: var(--bg-popup);
+  border: 1px solid var(--btn-border);
+  border-radius: var(--radius-lg, 12px);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-elevated, 0 12px 40px rgba(0, 0, 0, 0.5));
+  animation: tour-card-in 0.25s ease-out;
+}
+
+@keyframes tour-card-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.tour-card[style*="translate(-50%"] {
+  /* centered variant — the entry animation transform would fight the
+     centering translate, so skip it */
+  animation: none;
+}
+
+.tour-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.tour-card-icon {
+  display: inline-flex;
+  color: var(--accent-primary);
+}
+
+.tour-card-title {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.tour-card-body {
+  margin: 0 0 var(--space-4);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.tour-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.tour-skip-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 6px 8px;
+}
+
+.tour-skip-btn:hover {
+  color: var(--text);
+}
+
+.tour-dots {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.tour-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--bg-elevated-hover);
+}
+
+.tour-dot.is-active {
+  background: var(--accent-primary);
+}
+
+.tour-nav {
+  display: inline-flex;
+  gap: var(--space-2);
+}
+
+.tour-back-btn {
+  border: 1px solid var(--btn-border);
+  background: transparent;
+  color: var(--text);
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tour-next-btn {
+  border: none;
+  background: var(--accent-primary);
+  color: var(--text-on-bright-gold);
+  border-radius: 6px;
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tour-next-btn:hover {
+  filter: brightness(1.1);
 }
 
 /* Promotion dialog */
@@ -5656,7 +5869,7 @@ body.checkmate-flash::after {
   .tile.classified-brilliant::before,
   .board.is-rotated::after,
   .spin-roulette-btn-compact,
-  .afk-alert,
+  .board-with-coords.is-afk-nudge,
   .milestone-celebration,
   .victor-badge,
   body.checkmate-flash::after,

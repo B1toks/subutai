@@ -71,6 +71,7 @@ function zeroPoints(moveCount: number): GamePoints {
     movePoints: 0,
     capturePoints: 0,
     qualityPoints: 0,
+    rotationPoints: 0,
     outcomeBonus: 0,
     total: 0,
     moveCount,

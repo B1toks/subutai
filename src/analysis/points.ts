@@ -1,7 +1,7 @@
 import type { GameLog } from '../recording/log';
 import type { Color, PieceType, BoardState } from '../engine/types';
 import { applyMove } from '../engine/moves';
-import { toggleTopology } from '../engine/auxetic';
+import { applyRotationMove } from '../engine/auxetic';
 import type { MoveClass } from './classify';
 
 export type GameOutcome = 'human-win' | 'ai-win' | 'draw' | 'human-resign';
@@ -18,6 +18,10 @@ export interface GamePoints {
   movePoints: number;
   capturePoints: number;
   qualityPoints: number;
+  /** S2.3 — reward for using the signature mechanic: points per rotation
+   *  played (capped) plus a "rotate strike" bonus when a rotation is
+   *  followed by a capture within the player's next two moves. */
+  rotationPoints: number;
   outcomeBonus: number;
   total: number;
   moveCount: number;
@@ -38,6 +42,13 @@ const PIECE_VALUE_CP: Record<PieceType, number> = {
 };
 
 const MIN_COUNTED_MOVES = 10;
+// S2.3 — rotation rewards. Each rotation costs a tempo, so the per-use
+// bonus is self-limiting; the cap is a backstop against A↔B ping-pong
+// farming in dead positions. The strike bonus pays for *tactical*
+// rotations — twist the board, then convert within two of your moves.
+const ROTATION_USE_BONUS = 15;
+const ROTATION_USE_CAP = 4;
+const ROTATION_STRIKE_BONUS = 25;
 // Resigning a long game still earns points, but only half of the move-points
 // portion and no capture or outcome bonus — playing it out always pays more.
 // Quality bonus is intentionally NOT scaled: good moves before resign still
@@ -89,6 +100,7 @@ function computeClassicPoints(
       movePoints,
       capturePoints: 0,
       qualityPoints: quality.bonus,
+      rotationPoints: 0,
       outcomeBonus: 0,
       total,
       moveCount,
@@ -101,6 +113,7 @@ function computeClassicPoints(
   const movePoints = moveCount * 5;
   const captureValueCp = sumHumanCaptures(log, humanColor);
   const capturePoints = Math.floor(captureValueCp / 10);
+  const rotationPoints = computeRotationBonus(log, humanColor);
 
   let outcomeBonus = 0;
   if (outcome === 'human-win') outcomeBonus = 100;
@@ -110,13 +123,57 @@ function computeClassicPoints(
     movePoints,
     capturePoints,
     qualityPoints: quality.bonus,
+    rotationPoints,
     outcomeBonus,
-    total: movePoints + capturePoints + quality.bonus + outcomeBonus,
+    total: movePoints + capturePoints + quality.bonus + rotationPoints + outcomeBonus,
     moveCount,
     captureValueCp,
     moveQualityCounts: quality.counts,
     counted: true,
   };
+}
+
+// S2.3 — walk the log tracking the human's rotations. A rotation opens a
+// two-move "strike window": if any of the human's next two piece moves is
+// a capture, the rotation clearly enabled (or accompanied) a tactic and
+// earns the strike bonus on top of the flat use bonus.
+function computeRotationBonus(log: GameLog, humanColor: Color): number {
+  let state: BoardState = log.initialState;
+  let rotations = 0;
+  let strikes = 0;
+  let strikeWindow = 0;
+
+  for (const entry of log.moves) {
+    const mv = entry.move;
+    const isHumanTurn = state.sideToMove === humanColor;
+
+    if (mv.kind === 'topologyToggle') {
+      if (isHumanTurn) {
+        rotations++;
+        strikeWindow = 2;
+      }
+      state = applyRotationMove(state);
+      continue;
+    }
+
+    if (isHumanTurn && strikeWindow > 0) {
+      const isCapture =
+        mv.kind === 'enPassant' || (mv.to !== undefined && state.pieces[mv.to] !== undefined);
+      if (isCapture) {
+        strikes++;
+        strikeWindow = 0;
+      } else {
+        strikeWindow--;
+      }
+    }
+
+    state = applyMove(state, mv);
+  }
+
+  return (
+    Math.min(rotations, ROTATION_USE_CAP) * ROTATION_USE_BONUS +
+    strikes * ROTATION_STRIKE_BONUS
+  );
 }
 
 // Roulette mode: win-focused. Zero on loss/resign, small draw consolation,
@@ -146,6 +203,7 @@ function computeRoulettePoints(
       movePoints: 0,
       capturePoints: 0,
       qualityPoints: 0,
+      rotationPoints: 0,
       outcomeBonus: 0,
       total: 0,
       moveCount,
@@ -160,6 +218,7 @@ function computeRoulettePoints(
       movePoints: 0,
       capturePoints: 0,
       qualityPoints: 0,
+      rotationPoints: 0,
       outcomeBonus: ROULETTE_DRAW_BONUS,
       total: ROULETTE_DRAW_BONUS,
       moveCount,
@@ -183,6 +242,7 @@ function computeRoulettePoints(
     movePoints: speedBonus,
     capturePoints,
     qualityPoints: 0,
+    rotationPoints: 0,
     outcomeBonus: ROULETTE_WIN_BASE,
     total,
     moveCount,
@@ -226,8 +286,12 @@ function computeQualityBonus(
       bonus += QUALITY_BONUS[cls];
     }
 
+    // Logged rotations consumed the turn, so the replay must flip
+    // sideToMove too (applyRotationMove), or every post-rotation move
+    // gets attributed to the wrong side. toggleTopology (the old call
+    // here) is the pure no-turn variant — that was a scoring bug.
     if (entry.move.kind === 'topologyToggle') {
-      state = toggleTopology(state);
+      state = applyRotationMove(state);
     } else {
       state = applyMove(state, entry.move);
     }
@@ -242,7 +306,7 @@ function sumHumanCaptures(log: GameLog, humanColor: Color): number {
   for (const entry of log.moves) {
     const mv = entry.move;
     if (mv.kind === 'topologyToggle') {
-      state = toggleTopology(state);
+      state = applyRotationMove(state);
       continue;
     }
     if (state.sideToMove === humanColor) {
@@ -263,6 +327,7 @@ function zeroResult(moveCount: number): GamePoints {
     movePoints: 0,
     capturePoints: 0,
     qualityPoints: 0,
+    rotationPoints: 0,
     outcomeBonus: 0,
     total: 0,
     moveCount,

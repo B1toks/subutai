@@ -112,6 +112,12 @@ export function GameSummary({
                   <span className="summary-num">{points.qualityPoints}</span>
                 </div>
               )}
+              {points.rotationPoints > 0 && (
+                <div className="summary-row">
+                  <span>Rotation bonus</span>
+                  <span className="summary-num">{points.rotationPoints}</span>
+                </div>
+              )}
               <div className="summary-row">
                 <span>{outcomeBonusLabel}</span>
                 <span className="summary-num">{points.outcomeBonus}</span>

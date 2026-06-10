@@ -24,6 +24,9 @@ interface LeaderboardProps {
   currentUid: string | null;
   onBack: () => void;
   onWatchGame: (gameId: string, playerName: string) => void;
+  /** S2.1 — true while a multiplayer match is live; Watch would
+   *  split-brain the board against the Firestore game, so it's locked. */
+  watchDisabled?: boolean;
 }
 
 function outcomeIcon(outcome: GameOutcome): { icon: LucideIcon; label: string; tone: string } {
@@ -46,7 +49,7 @@ function formatDuration(ms: number): string {
   return min === 0 ? `${sec}s` : `${min}m ${sec}s`;
 }
 
-export function Leaderboard({ currentUid, onBack, onWatchGame }: LeaderboardProps) {
+export function Leaderboard({ currentUid, onBack, onWatchGame, watchDisabled }: LeaderboardProps) {
   const [boardType, setBoardType] = useState<BoardType>('classic');
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [cursor, setCursor] = useState<LeaderboardCursor>(null);
@@ -229,8 +232,14 @@ export function Leaderboard({ currentUid, onBack, onWatchGame }: LeaderboardProp
                   <button
                     type="button"
                     className="leaderboard-replay-btn"
-                    disabled={!e.bestGameId}
-                    title={e.bestGameId ? `Watch ${e.displayName}’s best game` : 'No replay available'}
+                    disabled={!e.bestGameId || watchDisabled}
+                    title={
+                      watchDisabled
+                        ? 'Finish your match first'
+                        : e.bestGameId
+                          ? `Watch ${e.displayName}’s best game`
+                          : 'No replay available'
+                    }
                     onClick={() => {
                       if (e.bestGameId) onWatchGame(e.bestGameId, e.displayName);
                     }}
