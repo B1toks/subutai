@@ -2752,6 +2752,20 @@ body.checkmate-flash::after {
   background: var(--bg-elevated-hover);
 }
 
+/* M.5.2 — tiny style indicator on the music toggle: gold dot = warm,
+   violet = dark. */
+.music-style-dot {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.music-style-dot[data-style="warm"] { background: var(--accent-gold-bright); }
+.music-style-dot[data-style="dark"] { background: #8b5cf6; }
+
 /* ── S2.5: per-side elapsed clocks ────────────────────────────────────
    Sits between the mode cards and the board. The running side's chip
    lights up, so this also reads as a quiet turn indicator. */

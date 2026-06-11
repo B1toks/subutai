@@ -22,6 +22,15 @@
 export type AmbientTheme = 'wood' | 'wood-light' | 'cyberpunk' | 'fantasy';
 export type StingerKind = 'danger' | 'sacrifice';
 
+/* M.5.2 — two musical directions sharing one engine:
+ *   warm (default): slow maj7-family chord pads cycling every ~14s with
+ *     crossfades, plus bright kalimba/music-box plucks walking the
+ *     chord tones. Harmonic context + fast attacks = cozy, intentional.
+ *   dark: the M.5.1 sound kept as a mode — sparse slow swells over a
+ *     bare drone floor. Eerie by design now, not by accident.
+ */
+export type AmbientStyle = 'warm' | 'dark';
+
 interface DroneSpec {
   freq: number;
   type: OscillatorType;
@@ -42,6 +51,9 @@ interface ThemeSpec {
   noteIntervalMs: [number, number];
   /** Root for the tension stack + stingers. */
   tensionRoot: number;
+  /** M.5.2 (warm style) — chord progression, each chord a set of
+   *  mid-register frequencies voiced for soft pads. Cycles in order. */
+  progression: number[][];
 }
 
 const THEMES: Record<AmbientTheme, ThemeSpec> = {
@@ -59,6 +71,13 @@ const THEMES: Record<AmbientTheme, ThemeSpec> = {
     noteFilter: 1800,
     noteIntervalMs: [2600, 5600],
     tensionRoot: 220,
+    // I–IV–vi–V in A major, maj7/m7 voicings: Amaj7 → Dmaj7 → F#m7 → Esus.
+    progression: [
+      [220, 277.18, 329.63, 415.3],
+      [293.66, 369.99, 440, 554.37],
+      [185.0, 220, 277.18, 329.63],
+      [164.81, 220, 246.94, 293.66],
+    ],
   },
   'wood-light': {
     drones: [
@@ -72,6 +91,13 @@ const THEMES: Record<AmbientTheme, ThemeSpec> = {
     noteFilter: 2400,
     noteIntervalMs: [2400, 5200],
     tensionRoot: 293.66,
+    // Dmaj7 → Gmaj7 → Bm7 → Asus4.
+    progression: [
+      [293.66, 369.99, 440, 554.37],
+      [196, 246.94, 293.66, 369.99],
+      [246.94, 293.66, 369.99, 440],
+      [220, 293.66, 329.63, 440],
+    ],
   },
   cyberpunk: {
     drones: [
@@ -85,6 +111,13 @@ const THEMES: Record<AmbientTheme, ThemeSpec> = {
     noteFilter: 1200,
     noteIntervalMs: [2200, 4800],
     tensionRoot: 220,
+    // Synthwave-friendly Am7 → Fmaj7 → Cmaj7 → G.
+    progression: [
+      [220, 261.63, 329.63, 392],
+      [174.61, 220, 261.63, 329.63],
+      [261.63, 329.63, 392, 493.88],
+      [196, 246.94, 293.66, 392],
+    ],
   },
   fantasy: {
     drones: [
@@ -98,6 +131,13 @@ const THEMES: Record<AmbientTheme, ThemeSpec> = {
     noteFilter: 1600,
     noteIntervalMs: [2800, 6000],
     tensionRoot: 196,
+    // Dorian warmth: Gm7 → Bbmaj7 → Cm7 → Dm.
+    progression: [
+      [196, 233.08, 293.66, 349.23],
+      [233.08, 293.66, 349.23, 440],
+      [261.63, 311.13, 392, 466.16],
+      [293.66, 349.23, 440, 523.25],
+    ],
   },
 };
 
@@ -122,6 +162,14 @@ export class AmbientPlayer {
   private delaySend: GainNode | null = null;
   private noteTimer: ReturnType<typeof setTimeout> | null = null;
   private delayNodes: AudioNode[] = [];
+
+  // M.5.2 — style + chord pad engine (warm style only).
+  private style: AmbientStyle = 'warm';
+  private chordTimer: ReturnType<typeof setTimeout> | null = null;
+  private chordIdx = 0;
+  private padLayers: ActiveLayer[] = [];
+  /** Melodic random-walk position inside the pluck palette. */
+  private walkIdx = 0;
 
   // M.5 — adaptive tension sub-stack.
   private tensionGain: GainNode | null = null;
@@ -149,6 +197,22 @@ export class AmbientPlayer {
     return this.currentTheme;
   }
 
+  getStyle(): AmbientStyle {
+    return this.style;
+  }
+
+  /** Switch musical direction. Rebuilds the stack in place when music
+   *  is already playing so the change is audible immediately. */
+  setStyle(style: AmbientStyle) {
+    if (style === this.style) return;
+    this.style = style;
+    const theme = this.currentTheme;
+    if (theme) {
+      this.stop();
+      this.play(theme);
+    }
+  }
+
   /** Start the music for `theme`, fading in over 2s. Calling with the
    *  current theme is a no-op; a different theme hands over smoothly. */
   play(theme: AmbientTheme) {
@@ -156,9 +220,14 @@ export class AmbientPlayer {
     this.stop();
     this.currentTheme = theme;
     const spec = THEMES[theme];
-    this.buildDrone(spec);
+    this.buildDrone(spec, this.style === 'warm' ? 0.55 : 1);
     this.buildNoteSpace();
     this.buildTensionStack(spec);
+    if (this.style === 'warm') {
+      this.chordIdx = 0;
+      this.walkIdx = Math.floor(spec.scale.length / 2);
+      this.playNextChord();
+    }
     this.scheduleNextNote();
 
     const now = this.ctx.currentTime;
@@ -177,17 +246,22 @@ export class AmbientPlayer {
       clearTimeout(this.noteTimer);
       this.noteTimer = null;
     }
+    if (this.chordTimer) {
+      clearTimeout(this.chordTimer);
+      this.chordTimer = null;
+    }
     const now = this.ctx.currentTime;
     const currentValue = this.masterGain.gain.value;
     this.masterGain.gain.cancelScheduledValues(now);
     this.masterGain.gain.setValueAtTime(currentValue, now);
     this.masterGain.gain.linearRampToValueAtTime(0, now + 0.5);
 
-    const teardown = [...this.layers, ...this.tensionLayers];
+    const teardown = [...this.layers, ...this.tensionLayers, ...this.padLayers];
     const tremolo = this.tensionTremolo;
     const delayNodes = this.delayNodes;
     this.layers = [];
     this.tensionLayers = [];
+    this.padLayers = [];
     this.tensionTremolo = null;
     this.tensionGain = null;
     this.noteBus = null;
@@ -226,6 +300,13 @@ export class AmbientPlayer {
   private applyTension(t: number, rampSec: number) {
     if (!this.tensionGain) return;
     const now = this.ctx.currentTime;
+    // Warm style: duck the major pads as drama rises so they don't
+    // fight the minor tense palette — the floor + clash take over.
+    for (const l of this.padLayers) {
+      l.gain.gain.cancelScheduledValues(now);
+      l.gain.gain.setValueAtTime(l.gain.gain.value, now);
+      l.gain.gain.linearRampToValueAtTime(0.05 * (1 - t * 0.7), now + rampSec);
+    }
     // Perceptual curve + tamed ceiling (0.3): the clash should color the
     // music, not bury it.
     const g = t * t * 0.3;
@@ -302,7 +383,9 @@ export class AmbientPlayer {
 
   // ─── internals ─────────────────────────────────────────────────────
 
-  private buildDrone(spec: ThemeSpec) {
+  /** gainScale < 1 in warm style: the chord pads carry the harmony, so
+   *  the floor only needs to anchor the low end. */
+  private buildDrone(spec: ThemeSpec, gainScale = 1) {
     for (const d of spec.drones) {
       const osc = this.ctx.createOscillator();
       osc.type = d.type;
@@ -310,7 +393,7 @@ export class AmbientPlayer {
       osc.detune.value = Math.random() * 6 - 3;
 
       const gain = this.ctx.createGain();
-      gain.gain.value = d.gainMul * 0.4;
+      gain.gain.value = d.gainMul * 0.4 * gainScale;
 
       // Very slow gain LFO (8–20s period) so the floor breathes instead
       // of sitting dead-static — the "однообразність" fix at the
@@ -366,6 +449,63 @@ export class AmbientPlayer {
     this.delayNodes = [delayA, delayB, fbA, fbB, this.delaySend];
   }
 
+  /** M.5.2 (warm) — crossfade to the next chord in the progression.
+   *  Old pad voices ramp out over 3s and stop; new ones ramp in over
+   *  3s. Chord holds ~14s, slightly shorter when the position is hot. */
+  private playNextChord() {
+    if (!this.currentTheme) return;
+    const spec = THEMES[this.currentTheme];
+    const chord = spec.progression[this.chordIdx % spec.progression.length];
+    this.chordIdx++;
+    const now = this.ctx.currentTime;
+
+    // Fade out + retire the previous pad.
+    const old = this.padLayers;
+    this.padLayers = [];
+    for (const l of old) {
+      l.gain.gain.cancelScheduledValues(now);
+      l.gain.gain.setValueAtTime(l.gain.gain.value, now);
+      l.gain.gain.linearRampToValueAtTime(0, now + 3);
+      try { l.osc.stop(now + 3.2); } catch { /* already stopped */ }
+      try { l.lfo?.stop(now + 3.2); } catch { /* already stopped */ }
+    }
+
+    // Two detuned voices per chord tone — soft, filtered, slow swell in.
+    for (const f of chord) {
+      for (const det of [3, -4]) {
+        const osc = this.ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.value = f;
+        osc.detune.value = det;
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = 1100;
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0, now);
+        // Target respects the current tension duck (see applyTension).
+        gain.gain.linearRampToValueAtTime(0.05 * (1 - this.tension * 0.7), now + 3);
+        osc.connect(filter).connect(gain).connect(this.masterGain);
+        osc.start(now);
+        this.padLayers.push({ osc, gain, filter });
+      }
+    }
+
+    const hold = (12000 + Math.random() * 5000) * (1 - this.tension * 0.35);
+    this.chordTimer = setTimeout(() => this.playNextChord(), hold);
+  }
+
+  /** Pluck palette for the warm style: current chord tones doubled an
+   *  octave up, merged with the theme scale, sorted — the melodic walk
+   *  moves over this so lines feel composed, not random. */
+  private warmPalette(spec: ThemeSpec): number[] {
+    const chord = spec.progression[(this.chordIdx - 1 + spec.progression.length) % spec.progression.length] ?? spec.progression[0];
+    const tones = new Set<number>([...spec.scale]);
+    for (const f of chord) {
+      tones.add(f * 2); // octave-up chord tones ring like a music box
+    }
+    return [...tones].sort((a, b) => a - b);
+  }
+
   private scheduleNextNote() {
     if (!this.currentTheme) return;
     const spec = THEMES[this.currentTheme];
@@ -382,12 +522,39 @@ export class AmbientPlayer {
   private playGenerativeNote() {
     if (!this.currentTheme || !this.noteBus || !this.delaySend) return;
     const spec = THEMES[this.currentTheme];
-    const palette = this.tension > 0.55 ? spec.tenseScale : spec.scale;
-    const freq = palette[Math.floor(Math.random() * palette.length)];
     const now = this.ctx.currentTime;
 
+    let freq: number;
+    let attack: number;
+    let release: number;
+    let peak: number;
+    let noteType: OscillatorType = spec.noteType;
+
+    if (this.style === 'warm' && this.tension <= 0.55) {
+      // Kalimba pluck: melodic random walk over the chord-tone palette
+      // so consecutive notes relate (steps, not teleports).
+      const palette = this.warmPalette(spec);
+      this.walkIdx = Math.max(
+        0,
+        Math.min(palette.length - 1, this.walkIdx + (Math.floor(Math.random() * 5) - 2)),
+      );
+      freq = palette[this.walkIdx];
+      attack = 0.008;
+      release = 1.8 + Math.random() * 1.4;
+      peak = 0.2 + Math.random() * 0.06;
+      noteType = 'triangle';
+    } else {
+      // Dark style — or any style under high tension: the M.5.1 slow
+      // swell from the (tense) pentatonic palette.
+      const palette = this.tension > 0.55 ? spec.tenseScale : spec.scale;
+      freq = palette[Math.floor(Math.random() * palette.length)];
+      attack = 0.6 + Math.random() * 0.9;
+      release = 2.5 + Math.random() * 2;
+      peak = 0.16 + Math.random() * 0.08;
+    }
+
     const osc = this.ctx.createOscillator();
-    osc.type = spec.noteType;
+    osc.type = noteType;
     osc.frequency.value = freq;
     osc.detune.value = Math.random() * 8 - 4;
 
@@ -395,10 +562,6 @@ export class AmbientPlayer {
     filter.type = 'lowpass';
     filter.frequency.value = spec.noteFilter;
 
-    // Slow swell in, long tail out — pad-like, never percussive.
-    const attack = 0.6 + Math.random() * 0.9;
-    const release = 2.5 + Math.random() * 2;
-    const peak = 0.16 + Math.random() * 0.08;
     const gain = this.ctx.createGain();
     gain.gain.setValueAtTime(0, now);
     gain.gain.linearRampToValueAtTime(peak, now + attack);

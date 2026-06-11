@@ -16,41 +16,57 @@ function readCurrentTheme(): AmbientTheme {
 }
 
 /**
- * Sprint 3.8 — header toggle for the ambient music drone. Separate
+ * Sprint 3.8 / M.5.2 — header toggle for the ambient music. Separate
  * from AudioToggle because users often want SFX without music (or
- * vice versa). Default OFF. The drone fades in over 2s on enable
- * and out over 0.5s on disable. Per-theme synth stacks live in
+ * vice versa). Default OFF.
+ *
+ * M.5.2: the button now cycles Off → Warm → Dark → Off. Warm is the
+ * cozy chord-pad + kalimba direction (default); Dark keeps the M.5.1
+ * eerie drone as a deliberate mode. Per-theme synth stacks live in
  * ../audio/ambient.ts.
  */
+type MusicState = 'off' | 'warm' | 'dark';
+
 export function MusicToggle() {
   const toast = useToast();
-  const [enabled, setEnabled] = useState(() => audio.isMusicEnabled());
+  const [state, setState] = useState<MusicState>(() =>
+    audio.isMusicEnabled() ? audio.getMusicStyle() : 'off',
+  );
 
-  function toggle() {
-    const next = !enabled;
-    setEnabled(next);
-    if (next) {
-      audio.setMusicEnabled(true, readCurrentTheme());
-      toast.show('Music on', 'info', 1500);
-    } else {
+  function cycle() {
+    const next: MusicState =
+      state === 'off' ? 'warm' : state === 'warm' ? 'dark' : 'off';
+    setState(next);
+    if (next === 'off') {
       audio.setMusicEnabled(false);
       toast.show('Music off', 'info', 1500);
+      return;
     }
+    audio.setMusicStyle(next);
+    audio.setMusicEnabled(true, readCurrentTheme());
+    toast.show(next === 'warm' ? 'Music: Warm ☀' : 'Music: Dark ☾', 'info', 1500);
   }
 
+  const tooltip =
+    state === 'off'
+      ? 'Play music (warm)'
+      : state === 'warm'
+        ? 'Switch music to dark mode'
+        : 'Turn music off';
+
   return (
-    <Tooltip
-      text={enabled ? 'Pause ambient music' : 'Play ambient music'}
-      side="bottom"
-    >
+    <Tooltip text={tooltip} side="bottom">
       <button
         type="button"
         className="header-action-btn"
-        onClick={toggle}
-        aria-pressed={enabled}
-        aria-label={enabled ? 'Pause music' : 'Play music'}
+        onClick={cycle}
+        aria-pressed={state !== 'off'}
+        aria-label={tooltip}
       >
-        <Icon icon={enabled ? Music : Music2} size="md" aria-hidden />
+        <Icon icon={state !== 'off' ? Music : Music2} size="md" aria-hidden />
+        {state !== 'off' && (
+          <span className="music-style-dot" data-style={state} aria-hidden />
+        )}
       </button>
     </Tooltip>
   );

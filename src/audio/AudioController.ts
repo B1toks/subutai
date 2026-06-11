@@ -9,9 +9,14 @@ import {
   playPromotion,
   playRouletteSpin,
 } from './synths';
-import { AmbientPlayer, type AmbientTheme, type StingerKind } from './ambient';
+import {
+  AmbientPlayer,
+  type AmbientStyle,
+  type AmbientTheme,
+  type StingerKind,
+} from './ambient';
 
-export type { AmbientTheme, StingerKind };
+export type { AmbientStyle, AmbientTheme, StingerKind };
 
 export type SfxName =
   | 'move'
@@ -34,6 +39,7 @@ const ENABLED_KEY = 'subutai_audio_enabled';
 const VOLUME_KEY = 'subutai_audio_volume';
 const MUSIC_ENABLED_KEY = 'subutai_music_enabled';
 const MUSIC_VOLUME_KEY = 'subutai_music_volume';
+const MUSIC_STYLE_KEY = 'subutai_music_style';
 
 /**
  * Sprint 3.7 — singleton wrapping a Web Audio context. Lazily creates
@@ -53,6 +59,7 @@ class AudioControllerImpl {
   private ambient: AmbientPlayer | null = null;
   private musicEnabled: boolean;
   private musicVolume: number;
+  private musicStyle: AmbientStyle;
   private pendingMusicTheme: AmbientTheme | null = null;
   // M.5 — last game-reported tension, buffered so enabling music
   // mid-battle starts at the right drama level (ambient is lazy).
@@ -63,6 +70,12 @@ class AudioControllerImpl {
     this.volume = this.readVolumeFromStorage();
     this.musicEnabled = this.readMusicEnabledFromStorage();
     this.musicVolume = this.readMusicVolumeFromStorage();
+    this.musicStyle = this.readMusicStyleFromStorage();
+  }
+
+  private readMusicStyleFromStorage(): AmbientStyle {
+    if (typeof window === 'undefined') return 'warm';
+    return window.localStorage.getItem(MUSIC_STYLE_KEY) === 'dark' ? 'dark' : 'warm';
   }
 
   private readEnabledFromStorage(): boolean {
@@ -108,6 +121,7 @@ class AudioControllerImpl {
       // (not through the SFX masterGain) so SFX / music volumes stay
       // independent.
       this.ambient = new AmbientPlayer(this.ctx, this.ctx.destination, this.musicVolume);
+      this.ambient.setStyle(this.musicStyle);
       this.ambient.setTension(this.pendingTension);
       if (this.musicEnabled && this.pendingMusicTheme) {
         this.ambient.play(this.pendingMusicTheme);
@@ -214,6 +228,22 @@ class AudioControllerImpl {
 
   getMusicVolume(): number {
     return this.musicVolume;
+  }
+
+  // ─── M.5.2: musical direction ────────────────────────────────────
+
+  getMusicStyle(): AmbientStyle {
+    return this.musicStyle;
+  }
+
+  setMusicStyle(style: AmbientStyle) {
+    this.musicStyle = style;
+    try {
+      window.localStorage.setItem(MUSIC_STYLE_KEY, style);
+    } catch {
+      /* private mode / quota — no-op */
+    }
+    this.ambient?.setStyle(style);
   }
 
   // ─── M.5: adaptive tension API ───────────────────────────────────
