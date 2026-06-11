@@ -2752,6 +2752,14 @@ body.checkmate-flash::after {
   background: var(--bg-elevated-hover);
 }
 
+/* Sprint 4.4 — full-screen Suspense fallback for code-split views. */
+.view-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+}
+
 /* M.5.2 — tiny style indicator on the music toggle: gold dot = warm,
    violet = dark. */
 .music-style-dot {

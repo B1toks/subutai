@@ -20,15 +20,12 @@ import { evaluate, PIECE_VALUE } from './ai/evaluate';
 import { searchPosition, ttClear } from './ai/search';
 import { type MoveClass, type MoveAnalysis } from './analysis/classify';
 import { classifyAsync } from './analysis/classifyClient';
-import { GameReview } from './components/GameReview';
 import { NamePicker } from './components/NamePicker';
 import { GameSummary } from './components/GameSummary';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { FeedbackModal } from './components/FeedbackModal';
 import { MilestoneModal } from './components/MilestoneModal';
 import { AutoPlayView } from './components/AutoPlayView';
-import { StatsPage } from './components/StatsPage';
-import { FriendLobby } from './components/FriendLobby';
 import { ThemeToggle } from './components/ThemeToggle';
 import { UserMenu } from './components/UserMenu';
 import { Effects3DToggle } from './components/Effects3DToggle';
@@ -74,9 +71,8 @@ import {
   fetchSavedGame,
   deserializeGameLog,
 } from './firebase/games';
-import { Leaderboard } from './components/Leaderboard';
 import { computeGamePoints, type GameOutcome, type GamePoints } from './analysis/points';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
 import {
   appendMove,
@@ -90,6 +86,24 @@ import { localStorageAdapter } from './memory/storage';
 import { MemoryPanel } from './memory/MemoryPanel';
 import type { SavedGame } from './memory/types';
 import { NotationParseError, parseMemoryNotation } from './memory/notation';
+
+// Sprint 4.4 — heavy sub-views are code-split. Each renders as a
+// full-screen takeover, so a Suspense spinner fallback is natural.
+// NOTE: this block must sit BELOW the react import — Vite's dev-mode
+// CJS interop turns `import { lazy }` into a const at the import line,
+// so calling lazy() above it is a TDZ ReferenceError.
+const GameReview = lazy(() =>
+  import('./components/GameReview').then((m) => ({ default: m.GameReview })),
+);
+const Leaderboard = lazy(() =>
+  import('./components/Leaderboard').then((m) => ({ default: m.Leaderboard })),
+);
+const FriendLobby = lazy(() =>
+  import('./components/FriendLobby').then((m) => ({ default: m.FriendLobby })),
+);
+const StatsPage = lazy(() =>
+  import('./components/StatsPage').then((m) => ({ default: m.StatsPage })),
+);
 
 type GameStatus =
   | 'active'
@@ -3264,7 +3278,11 @@ function App() {
   }, [gameStatus, state.sideToMove]);
 
   if (isStatsMode) {
-    return <StatsPage />;
+    return (
+      <Suspense fallback={<div className="view-loading"><span className="spinner" /></div>}>
+        <StatsPage />
+      </Suspense>
+    );
   }
 
   if (isAutoMode) {
@@ -3346,6 +3364,7 @@ function App() {
   if (view === 'review') {
     return (
       <div className="app-shell" ref={shellRef}>
+        <Suspense fallback={<div className="view-loading"><span className="spinner" /></div>}>
         <GameReview
           log={activeReviewLog ?? log}
           meta={activeReviewMeta ?? undefined}
@@ -3366,6 +3385,7 @@ function App() {
             }
           }}
         />
+        </Suspense>
       </div>
     );
   }
@@ -3373,6 +3393,7 @@ function App() {
   if (view === 'leaderboard') {
     return (
       <div className="app-shell" ref={shellRef}>
+        <Suspense fallback={<div className="view-loading"><span className="spinner" /></div>}>
         <Leaderboard
           currentUid={user?.uid ?? null}
           watchDisabled={isMultiplayer}
@@ -3381,6 +3402,7 @@ function App() {
             void startWatching(gameId, playerName);
           }}
         />
+        </Suspense>
       </div>
     );
   }
@@ -3388,6 +3410,7 @@ function App() {
   if (view === 'friend-lobby') {
     return (
       <div className="app-shell" ref={shellRef}>
+        <Suspense fallback={<div className="view-loading"><span className="spinner" /></div>}>
         <FriendLobby
           uid={user?.uid ?? null}
           displayName={displayName}
@@ -3407,6 +3430,7 @@ function App() {
             mpWroteOutcomeRef.current = null;
           }}
         />
+        </Suspense>
       </div>
     );
   }
