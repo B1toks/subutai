@@ -1205,6 +1205,48 @@ function App() {
   // from an ordinary tactical brilliancy.
   const [sacrificeSquare, setSacrificeSquare] = useState<SquareId | null>(null);
   const sacrificeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ─── M.5: adaptive music ──────────────────────────────────────────
+  // The ambient drone "нагнітає" with the position: a 0..1 tension scale
+  // derived from the engine eval, forced-mate detection and check state
+  // morphs a dissonant layer + heartbeat tremolo inside AmbientPlayer.
+  // All calls are no-ops while music is off.
+  const kingInDanger = useMemo(() => {
+    if (gameStatus !== 'active') return false;
+    const king = findKing(state, state.sideToMove);
+    if (!king) return false;
+    const opp: Color = state.sideToMove === 'white' ? 'black' : 'white';
+    return isSquareAttacked(state, king, opp, state.topologyState);
+  }, [state, gameStatus]);
+
+  useEffect(() => {
+    if (gameStatus !== 'active' || watchingGame) {
+      audio.setMusicTension(0);
+      return;
+    }
+    // |eval| 0 → calm, 700cp → 0.55; check stacks +0.3; forced mate pins
+    // the needle. tanh-free linear is fine — AmbientPlayer squares it.
+    let t = Math.min(1, Math.abs(currentEval) / 700) * 0.55;
+    if (kingInDanger) t += 0.3;
+    if (searchMateInPlies !== null) t = 1;
+    audio.setMusicTension(Math.min(1, t));
+  }, [currentEval, searchMateInPlies, kingInDanger, gameStatus, watchingGame]);
+
+  // Danger stinger on the not-in-check → in-check edge only.
+  const prevKingDangerRef = useRef(false);
+  useEffect(() => {
+    if (kingInDanger && !prevKingDangerRef.current && gameStatus === 'active' && !watchingGame) {
+      audio.playMusicStinger('danger');
+    }
+    prevKingDangerRef.current = kingInDanger;
+  }, [kingInDanger, gameStatus, watchingGame]);
+
+  // Sacrifice stinger piggybacks on the classifier's sacrifice highlight.
+  useEffect(() => {
+    if (sacrificeSquare && gameStatus === 'active' && !watchingGame) {
+      audio.playMusicStinger('sacrifice');
+    }
+  }, [sacrificeSquare, gameStatus, watchingGame]);
   // Sprint 4.1 — auto-scroll the sidebar move log so the latest ply
   // is always visible without manual scrolling. Anchored to the
   // <pre className="move-log-text"> element which already has the

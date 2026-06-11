@@ -9,9 +9,9 @@ import {
   playPromotion,
   playRouletteSpin,
 } from './synths';
-import { AmbientPlayer, type AmbientTheme } from './ambient';
+import { AmbientPlayer, type AmbientTheme, type StingerKind } from './ambient';
 
-export type { AmbientTheme };
+export type { AmbientTheme, StingerKind };
 
 export type SfxName =
   | 'move'
@@ -54,6 +54,9 @@ class AudioControllerImpl {
   private musicEnabled: boolean;
   private musicVolume: number;
   private pendingMusicTheme: AmbientTheme | null = null;
+  // M.5 — last game-reported tension, buffered so enabling music
+  // mid-battle starts at the right drama level (ambient is lazy).
+  private pendingTension = 0;
 
   constructor() {
     this.enabled = this.readEnabledFromStorage();
@@ -105,6 +108,7 @@ class AudioControllerImpl {
       // (not through the SFX masterGain) so SFX / music volumes stay
       // independent.
       this.ambient = new AmbientPlayer(this.ctx, this.ctx.destination, this.musicVolume);
+      this.ambient.setTension(this.pendingTension);
       if (this.musicEnabled && this.pendingMusicTheme) {
         this.ambient.play(this.pendingMusicTheme);
       }
@@ -211,6 +215,31 @@ class AudioControllerImpl {
   getMusicVolume(): number {
     return this.musicVolume;
   }
+
+  // ─── M.5: adaptive tension API ───────────────────────────────────
+
+  /** Game-state drama 0..1. Safe to call regardless of music state —
+   *  the value is remembered and applied when the drone (re)starts. */
+  setMusicTension(t: number) {
+    // Buffer even when music is off so the level is current the moment
+    // the user enables it mid-game.
+    this.pendingTension = t;
+    this.ambient?.setTension(t);
+  }
+
+  /** One-shot dramatic accent. Silently ignored when music is off. */
+  playMusicStinger(kind: StingerKind) {
+    if (!this.musicEnabled || !this.ambient) return;
+    const ctx = this.ctx;
+    if (ctx && ctx.state === 'suspended') void ctx.resume();
+    this.ambient.playStinger(kind);
+  }
 }
 
 export const audio = new AudioControllerImpl();
+
+// Dev-only escape hatch so adaptive-music behavior can be exercised from
+// the browser console / preview tooling without playing a full game.
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  (window as unknown as { __audio?: AudioControllerImpl }).__audio = audio;
+}
