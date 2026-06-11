@@ -1,44 +1,114 @@
 /**
- * Sprint 3.8 — per-theme ambient drone. Each theme gets a small stack
- * of always-running oscillators wired through optional low-pass
- * filters with a slow LFO sweep, fed into a master gain that fades
- * in / out smoothly. Switching themes hands over with no perceptible
- * gap. Volume capped at 0.4 (master gain) so the drone sits below
- * the SFX layer.
+ * Sprint 3.8 / M.5.1 — per-theme ambient music.
+ *
+ * M.5.1 rework after listening feedback ("однообразна, низькочастотна,
+ * ріже вухо"): the old design was a static stack of low saw/triangle
+ * drones — all the energy sat below 300Hz and never changed. The new
+ * design follows the Eno "Music for Airports" brief from the original
+ * audio direction:
+ *
+ *   - a QUIET two-layer drone (filtered, warm) as the floor
+ *   - a GENERATIVE note layer: every few seconds a soft mid-register
+ *     tone from the theme's pentatonic scale, slow attack / long
+ *     release, run through a feedback-delay "space" so notes overlap
+ *     and shimmer instead of repeating
+ *   - tension (M.5) now also affects WHICH notes play (minor colors)
+ *     and HOW OFTEN (denser when the position burns), on top of the
+ *     dissonant tension stack + heartbeat
+ *
+ * Volume capped at 0.4 (master gain) so music sits below the SFX layer.
  */
 
 export type AmbientTheme = 'wood' | 'wood-light' | 'cyberpunk' | 'fantasy';
+export type StingerKind = 'danger' | 'sacrifice';
 
-interface LayerOpts {
-  detune?: number;
-  gainMul?: number;
+interface DroneSpec {
+  freq: number;
+  type: OscillatorType;
+  gainMul: number;
   filterFreq?: number;
-  filterQ?: number;
-  /** LFO rate in Hz to sweep the filter cutoff. */
-  lfoRate?: number;
 }
+
+interface ThemeSpec {
+  drones: DroneSpec[];
+  /** Calm generative palette (mid-register pentatonic). */
+  scale: number[];
+  /** Palette when tension > 0.55 — minor / darker colors. */
+  tenseScale: number[];
+  noteType: OscillatorType;
+  /** Low-pass applied to each generative note. */
+  noteFilter: number;
+  /** Calm scheduling window between notes, ms. */
+  noteIntervalMs: [number, number];
+  /** Root for the tension stack + stingers. */
+  tensionRoot: number;
+}
+
+const THEMES: Record<AmbientTheme, ThemeSpec> = {
+  wood: {
+    // Warm floor an octave apart, heavily filtered — felt, not heard.
+    drones: [
+      { freq: 110, type: 'triangle', gainMul: 0.4, filterFreq: 400 },
+      { freq: 220, type: 'sine', gainMul: 0.3 },
+    ],
+    // A major pentatonic, A3–E5: kalimba-ish warmth.
+    scale: [220, 246.94, 277.18, 329.63, 369.99, 440, 554.37, 659.26],
+    // A harmonic-minor colors for tense positions.
+    tenseScale: [220, 261.63, 329.63, 415.3, 440, 523.25],
+    noteType: 'triangle',
+    noteFilter: 1800,
+    noteIntervalMs: [2600, 5600],
+    tensionRoot: 220,
+  },
+  'wood-light': {
+    drones: [
+      { freq: 293.66, type: 'sine', gainMul: 0.35 },
+      { freq: 440, type: 'sine', gainMul: 0.22 },
+    ],
+    // D major pentatonic, bright bells.
+    scale: [293.66, 329.63, 369.99, 440, 493.88, 587.33, 739.99],
+    tenseScale: [293.66, 349.23, 440, 466.16, 554.37, 587.33],
+    noteType: 'sine',
+    noteFilter: 2400,
+    noteIntervalMs: [2400, 5200],
+    tensionRoot: 293.66,
+  },
+  cyberpunk: {
+    drones: [
+      { freq: 55, type: 'sine', gainMul: 0.35 },
+      { freq: 110, type: 'triangle', gainMul: 0.25, filterFreq: 500 },
+    ],
+    // A minor pentatonic blips.
+    scale: [220, 261.63, 293.66, 329.63, 392, 440, 523.25],
+    tenseScale: [220, 233.08, 293.66, 311.13, 415.3, 440],
+    noteType: 'sawtooth',
+    noteFilter: 1200,
+    noteIntervalMs: [2200, 4800],
+    tensionRoot: 220,
+  },
+  fantasy: {
+    drones: [
+      { freq: 98, type: 'triangle', gainMul: 0.35, filterFreq: 500 },
+      { freq: 196, type: 'sine', gainMul: 0.25 },
+    ],
+    // G dorian — медієвальний відтінок.
+    scale: [196, 220, 233.08, 261.63, 293.66, 349.23, 392],
+    tenseScale: [196, 207.65, 246.94, 293.66, 311.13, 392],
+    noteType: 'triangle',
+    noteFilter: 1600,
+    noteIntervalMs: [2800, 6000],
+    tensionRoot: 196,
+  },
+};
 
 interface ActiveLayer {
   osc: OscillatorNode;
   gain: GainNode;
   filter?: BiquadFilterNode;
   lfo?: OscillatorNode;
-  lfoGain?: GainNode;
 }
 
 const MAX_VOLUME = 0.4;
-
-/* M.5 — per-theme root note for the tension stack. Matches the drone's
- * tonal center so the dissonant layers clash *against* it rather than
- * just sounding like noise. */
-const TENSION_ROOT: Record<AmbientTheme, number> = {
-  wood: 110,         // A2
-  'wood-light': 147, // D3 (drone is D4/A4)
-  cyberpunk: 55,     // A1
-  fantasy: 98,       // G2
-};
-
-export type StingerKind = 'danger' | 'sacrifice';
 
 export class AmbientPlayer {
   private ctx: AudioContext;
@@ -46,8 +116,14 @@ export class AmbientPlayer {
   private layers: ActiveLayer[] = [];
   private currentTheme: AmbientTheme | null = null;
   private volume: number;
-  // M.5 — adaptive tension sub-stack. Always built alongside the drone
-  // but muted; setTension() fades it in/out as the position heats up.
+
+  // Generative note layer.
+  private noteBus: GainNode | null = null;
+  private delaySend: GainNode | null = null;
+  private noteTimer: ReturnType<typeof setTimeout> | null = null;
+  private delayNodes: AudioNode[] = [];
+
+  // M.5 — adaptive tension sub-stack.
   private tensionGain: GainNode | null = null;
   private tensionLayers: ActiveLayer[] = [];
   private tensionTremolo: OscillatorNode | null = null;
@@ -73,15 +149,17 @@ export class AmbientPlayer {
     return this.currentTheme;
   }
 
-  /** Start the drone for `theme`, fading in over 2s. Calling with the
-   *  current theme is a no-op; calling with a different theme stops
-   *  the existing stack first. */
+  /** Start the music for `theme`, fading in over 2s. Calling with the
+   *  current theme is a no-op; a different theme hands over smoothly. */
   play(theme: AmbientTheme) {
     if (this.currentTheme === theme) return;
     this.stop();
     this.currentTheme = theme;
-    this.buildLayersForTheme(theme);
-    this.buildTensionStack(theme);
+    const spec = THEMES[theme];
+    this.buildDrone(spec);
+    this.buildNoteSpace();
+    this.buildTensionStack(spec);
+    this.scheduleNextNote();
 
     const now = this.ctx.currentTime;
     this.masterGain.gain.cancelScheduledValues(now);
@@ -92,21 +170,29 @@ export class AmbientPlayer {
     if (this.tension > 0) this.applyTension(this.tension, 0.5);
   }
 
-  /** Fade out and tear down the oscillator stack. Safe to call when
-   *  nothing is playing. */
+  /** Fade out and tear down everything. Safe to call when idle. */
   stop() {
     if (this.layers.length === 0 && this.currentTheme === null) return;
+    if (this.noteTimer) {
+      clearTimeout(this.noteTimer);
+      this.noteTimer = null;
+    }
     const now = this.ctx.currentTime;
     const currentValue = this.masterGain.gain.value;
     this.masterGain.gain.cancelScheduledValues(now);
     this.masterGain.gain.setValueAtTime(currentValue, now);
     this.masterGain.gain.linearRampToValueAtTime(0, now + 0.5);
+
     const teardown = [...this.layers, ...this.tensionLayers];
     const tremolo = this.tensionTremolo;
+    const delayNodes = this.delayNodes;
     this.layers = [];
     this.tensionLayers = [];
     this.tensionTremolo = null;
     this.tensionGain = null;
+    this.noteBus = null;
+    this.delaySend = null;
+    this.delayNodes = [];
     this.currentTheme = null;
     setTimeout(() => {
       teardown.forEach((l) => {
@@ -114,20 +200,22 @@ export class AmbientPlayer {
         try { l.lfo?.stop(); } catch { /* already stopped */ }
       });
       try { tremolo?.stop(); } catch { /* already stopped */ }
+      delayNodes.forEach((n) => {
+        try { n.disconnect(); } catch { /* already disconnected */ }
+      });
     }, 600);
   }
 
   // ─── M.5: adaptive tension ─────────────────────────────────────────
 
-  /** Position drama on a 0..1 scale. 0 = calm drone only; 1 = full
-   *  dissonance + racing heartbeat. Ramps smoothly (~1.2s) so eval
-   *  jitter between moves doesn't pump the music. */
+  /** Position drama on a 0..1 scale. Ramps ~1.2s so eval jitter doesn't
+   *  pump the music. Also darkens the note palette + densifies the
+   *  generative layer (read by the scheduler on each note). */
   setTension(t: number) {
     const clamped = Math.max(0, Math.min(1, t));
-    // Ignore sub-5% wiggles — they're search noise, not drama.
     if (Math.abs(clamped - this.tension) < 0.05 && clamped !== 0) return;
     this.tension = clamped;
-    if (!this.tensionGain) return; // music not playing — remembered for play()
+    if (!this.tensionGain) return; // music off — remembered for play()
     this.applyTension(clamped, 1.2);
   }
 
@@ -138,8 +226,9 @@ export class AmbientPlayer {
   private applyTension(t: number, rampSec: number) {
     if (!this.tensionGain) return;
     const now = this.ctx.currentTime;
-    // Perceptual curve: dissonance stays subtle until ~0.5 then opens up.
-    const g = t * t * 0.5;
+    // Perceptual curve + tamed ceiling (0.3): the clash should color the
+    // music, not bury it.
+    const g = t * t * 0.3;
     this.tensionGain.gain.cancelScheduledValues(now);
     this.tensionGain.gain.setValueAtTime(this.tensionGain.gain.value, now);
     this.tensionGain.gain.linearRampToValueAtTime(g, now + rampSec);
@@ -151,29 +240,26 @@ export class AmbientPlayer {
     }
   }
 
-  /** One-shot dramatic accent, mixed at music volume.
-   *  - danger: low sawtooth swell + sub thump (king under threat / mate found)
-   *  - sacrifice: minor-chord string swell (material thrown into the fire) */
+  /** One-shot dramatic accent, mixed at music volume. */
   playStinger(kind: StingerKind) {
-    if (this.currentTheme === null) return; // music off — no stingers
-    const root = TENSION_ROOT[this.currentTheme];
+    if (this.currentTheme === null) return;
+    const root = THEMES[this.currentTheme].tensionRoot;
     const now = this.ctx.currentTime;
 
     if (kind === 'danger') {
-      // Rising low growl: G-ish root gliding up an octave through an
-      // opening low-pass, with a sub-bass heartbeat thump underneath.
+      // Rising growl an octave below the root, kept tame (lp ≤ 1000).
       const osc = this.ctx.createOscillator();
       osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(root / 2, now);
-      osc.frequency.linearRampToValueAtTime(root, now + 1.1);
+      osc.frequency.setValueAtTime(root / 4, now);
+      osc.frequency.linearRampToValueAtTime(root / 2, now + 1.1);
       const filter = this.ctx.createBiquadFilter();
       filter.type = 'lowpass';
       filter.frequency.setValueAtTime(200, now);
-      filter.frequency.linearRampToValueAtTime(1400, now + 1.0);
-      filter.Q.value = 2;
+      filter.frequency.linearRampToValueAtTime(1000, now + 1.0);
+      filter.Q.value = 1.5;
       const gain = this.ctx.createGain();
       gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.5, now + 0.5);
+      gain.gain.linearRampToValueAtTime(0.35, now + 0.5);
       gain.gain.linearRampToValueAtTime(0, now + 1.4);
       osc.connect(filter).connect(gain).connect(this.masterGain);
       osc.start(now);
@@ -181,10 +267,10 @@ export class AmbientPlayer {
 
       const sub = this.ctx.createOscillator();
       sub.type = 'sine';
-      sub.frequency.value = root / 3;
+      sub.frequency.value = Math.max(root / 4, 55);
       const subGain = this.ctx.createGain();
       subGain.gain.setValueAtTime(0, now);
-      subGain.gain.linearRampToValueAtTime(0.6, now + 0.08);
+      subGain.gain.linearRampToValueAtTime(0.4, now + 0.08);
       subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
       sub.connect(subGain).connect(this.masterGain);
       sub.start(now);
@@ -192,23 +278,21 @@ export class AmbientPlayer {
       return;
     }
 
-    // sacrifice — slow minor-triad swell (root, minor third, fifth),
-    // detuned saws through a gentle low-pass: "strings" rising out of
-    // the drone and sinking back.
+    // sacrifice — slow minor-triad swell (root, minor third, fifth).
     const freqs = [root, root * 1.189, root * 1.498];
     for (const [i, f] of freqs.entries()) {
       const osc = this.ctx.createOscillator();
-      osc.type = 'sawtooth';
+      osc.type = 'triangle';
       osc.frequency.value = f;
       osc.detune.value = i % 2 === 0 ? 4 : -5;
       const filter = this.ctx.createBiquadFilter();
       filter.type = 'lowpass';
       filter.frequency.setValueAtTime(500, now);
-      filter.frequency.linearRampToValueAtTime(1800, now + 1.2);
+      filter.frequency.linearRampToValueAtTime(1600, now + 1.2);
       filter.frequency.linearRampToValueAtTime(600, now + 2.0);
       const gain = this.ctx.createGain();
       gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.22, now + 0.9);
+      gain.gain.linearRampToValueAtTime(0.2, now + 0.9);
       gain.gain.linearRampToValueAtTime(0, now + 2.1);
       osc.connect(filter).connect(gain).connect(this.masterGain);
       osc.start(now);
@@ -216,11 +300,122 @@ export class AmbientPlayer {
     }
   }
 
-  /** Dissonant companion stack, silent until setTension() opens it:
-   *  semitone clash + tritone over the theme root, plus a tremolo'd
-   *  sub pulse whose rate scales with tension (the "heartbeat"). */
-  private buildTensionStack(theme: AmbientTheme) {
-    const root = TENSION_ROOT[theme];
+  // ─── internals ─────────────────────────────────────────────────────
+
+  private buildDrone(spec: ThemeSpec) {
+    for (const d of spec.drones) {
+      const osc = this.ctx.createOscillator();
+      osc.type = d.type;
+      osc.frequency.value = d.freq;
+      osc.detune.value = Math.random() * 6 - 3;
+
+      const gain = this.ctx.createGain();
+      gain.gain.value = d.gainMul * 0.4;
+
+      // Very slow gain LFO (8–20s period) so the floor breathes instead
+      // of sitting dead-static — the "однообразність" fix at the
+      // texture level.
+      const lfo = this.ctx.createOscillator();
+      lfo.type = 'sine';
+      lfo.frequency.value = 0.05 + Math.random() * 0.07;
+      const lfoDepth = this.ctx.createGain();
+      lfoDepth.gain.value = d.gainMul * 0.12;
+      lfo.connect(lfoDepth).connect(gain.gain);
+      lfo.start();
+
+      let lastNode: AudioNode = osc;
+      let filter: BiquadFilterNode | undefined;
+      if (d.filterFreq) {
+        filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = d.filterFreq;
+        lastNode.connect(filter);
+        lastNode = filter;
+      }
+      lastNode.connect(gain).connect(this.masterGain);
+      osc.start();
+      this.layers.push({ osc, gain, filter, lfo });
+    }
+  }
+
+  /** Note bus + a stereo-ish feedback delay pair ("space"). Notes go
+   *  dry→master and send→delays; the delays cross-feed at 0.35 so each
+   *  tone echoes into the next few seconds. */
+  private buildNoteSpace() {
+    this.noteBus = this.ctx.createGain();
+    this.noteBus.gain.value = 0.5;
+    this.noteBus.connect(this.masterGain);
+
+    this.delaySend = this.ctx.createGain();
+    this.delaySend.gain.value = 0.4;
+
+    const delayA = this.ctx.createDelay(2);
+    delayA.delayTime.value = 0.42;
+    const delayB = this.ctx.createDelay(2);
+    delayB.delayTime.value = 0.61;
+    const fbA = this.ctx.createGain();
+    fbA.gain.value = 0.35;
+    const fbB = this.ctx.createGain();
+    fbB.gain.value = 0.3;
+    // Cross-feedback: A → B → A, both tapped into the note bus.
+    this.delaySend.connect(delayA);
+    delayA.connect(fbA).connect(delayB);
+    delayB.connect(fbB).connect(delayA);
+    delayA.connect(this.noteBus);
+    delayB.connect(this.noteBus);
+    this.delayNodes = [delayA, delayB, fbA, fbB, this.delaySend];
+  }
+
+  private scheduleNextNote() {
+    if (!this.currentTheme) return;
+    const spec = THEMES[this.currentTheme];
+    const [lo, hi] = spec.noteIntervalMs;
+    // Tension densifies the layer: at t=1 notes come ~2.5× faster.
+    const scale = 1 - this.tension * 0.6;
+    const wait = (lo + Math.random() * (hi - lo)) * scale;
+    this.noteTimer = setTimeout(() => {
+      this.playGenerativeNote();
+      this.scheduleNextNote();
+    }, wait);
+  }
+
+  private playGenerativeNote() {
+    if (!this.currentTheme || !this.noteBus || !this.delaySend) return;
+    const spec = THEMES[this.currentTheme];
+    const palette = this.tension > 0.55 ? spec.tenseScale : spec.scale;
+    const freq = palette[Math.floor(Math.random() * palette.length)];
+    const now = this.ctx.currentTime;
+
+    const osc = this.ctx.createOscillator();
+    osc.type = spec.noteType;
+    osc.frequency.value = freq;
+    osc.detune.value = Math.random() * 8 - 4;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = spec.noteFilter;
+
+    // Slow swell in, long tail out — pad-like, never percussive.
+    const attack = 0.6 + Math.random() * 0.9;
+    const release = 2.5 + Math.random() * 2;
+    const peak = 0.16 + Math.random() * 0.08;
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(peak, now + attack);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + attack + release);
+
+    osc.connect(filter).connect(gain);
+    gain.connect(this.noteBus);
+    gain.connect(this.delaySend);
+    osc.start(now);
+    osc.stop(now + attack + release + 0.1);
+  }
+
+  /** Dissonant companion stack, silent until setTension() opens it.
+   *  M.5.1: clash voiced an octave UP from the old version (less rumble)
+   *  and through tighter filters — color, not mud. */
+  private buildTensionStack(spec: ThemeSpec) {
+    const root = spec.tensionRoot;
     this.tensionGain = this.ctx.createGain();
     this.tensionGain.gain.value = 0;
     this.tensionGain.connect(this.masterGain);
@@ -250,103 +445,21 @@ export class AmbientPlayer {
       return { osc, gain, filter };
     };
 
-    // Semitone clash against the root — the classic horror rub.
-    this.tensionLayers.push(mk(root * 1.0595, 'sawtooth', 0.5, 900));
-    // Tritone — diabolus in musica.
-    this.tensionLayers.push(mk(root * 1.4142, 'triangle', 0.35));
+    // Semitone clash against the root — triangle, not saw.
+    this.tensionLayers.push(mk(root * 1.0595, 'triangle', 0.4, 900));
+    // Tritone — diabolus in musica, quiet sine.
+    this.tensionLayers.push(mk(root * 1.4142, 'sine', 0.25));
 
-    // Sub pulse with tremolo'd gain (heartbeat). Base 0.45 ± 0.4 keeps
-    // the gain positive so the LFO reads as a pulse, not phase flips.
-    const sub = mk(root / 2, 'sine', 0.45);
+    // Sub pulse with tremolo'd gain (heartbeat), clamped ≥ 55Hz.
+    const sub = mk(Math.max(root / 4, 55), 'sine', 0.4);
     const tremolo = this.ctx.createOscillator();
     tremolo.type = 'sine';
     tremolo.frequency.value = 1.5;
     const tremDepth = this.ctx.createGain();
-    tremDepth.gain.value = 0.4;
+    tremDepth.gain.value = 0.35;
     tremolo.connect(tremDepth).connect(sub.gain.gain);
     tremolo.start();
     this.tensionTremolo = tremolo;
     this.tensionLayers.push(sub);
-  }
-
-  private buildLayersForTheme(theme: AmbientTheme) {
-    switch (theme) {
-      case 'wood':
-        // Warm low drone — A2 detuned pair + E3 quiet companion.
-        this.addLayer(110, 'triangle', { detune: 5 });
-        this.addLayer(110, 'triangle', { detune: -7 });
-        this.addLayer(165, 'sine', { gainMul: 0.5 });
-        break;
-      case 'wood-light':
-        // Bright airy pad — D4 + A4 sine with a very slow LFO sweep.
-        this.addLayer(294, 'sine', { detune: 3 });
-        this.addLayer(440, 'sine', { detune: -5, gainMul: 0.6 });
-        break;
-      case 'cyberpunk':
-        // Cold synth — A1 sub + A2/A3 sawtooth with filter sweep.
-        this.addLayer(55, 'sine', { gainMul: 0.7 });
-        this.addLayer(110, 'sawtooth', {
-          detune: 7,
-          filterFreq: 800,
-          filterQ: 4,
-          lfoRate: 0.08,
-        });
-        this.addLayer(220, 'sawtooth', {
-          detune: -5,
-          filterFreq: 1200,
-          gainMul: 0.3,
-        });
-        break;
-      case 'fantasy':
-        // Cello-like sustain — G2 saw through low-pass, octave + 5th sines.
-        this.addLayer(98, 'sawtooth', {
-          detune: 3,
-          filterFreq: 600,
-          filterQ: 1.5,
-          lfoRate: 0.1,
-        });
-        this.addLayer(196, 'sine', { gainMul: 0.6 });
-        this.addLayer(294, 'sine', { detune: 5, gainMul: 0.3 });
-        break;
-    }
-  }
-
-  private addLayer(freq: number, type: OscillatorType, opts: LayerOpts = {}) {
-    const osc = this.ctx.createOscillator();
-    osc.type = type;
-    osc.frequency.value = freq;
-    if (opts.detune) osc.detune.value = opts.detune;
-
-    const gain = this.ctx.createGain();
-    gain.gain.value = (opts.gainMul ?? 1) * 0.4;
-
-    let lastNode: AudioNode = osc;
-    let filter: BiquadFilterNode | undefined;
-    let lfo: OscillatorNode | undefined;
-    let lfoGain: GainNode | undefined;
-
-    if (opts.filterFreq) {
-      filter = this.ctx.createBiquadFilter();
-      filter.type = 'lowpass';
-      filter.frequency.value = opts.filterFreq;
-      if (opts.filterQ) filter.Q.value = opts.filterQ;
-      lastNode.connect(filter);
-      lastNode = filter;
-
-      if (opts.lfoRate) {
-        lfo = this.ctx.createOscillator();
-        lfo.type = 'sine';
-        lfo.frequency.value = opts.lfoRate;
-        lfoGain = this.ctx.createGain();
-        lfoGain.gain.value = opts.filterFreq * 0.3;
-        lfo.connect(lfoGain).connect(filter.frequency);
-        lfo.start();
-      }
-    }
-
-    lastNode.connect(gain).connect(this.masterGain);
-    osc.start();
-
-    this.layers.push({ osc, gain, filter, lfo, lfoGain });
   }
 }
