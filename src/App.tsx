@@ -1221,7 +1221,7 @@ function App() {
 
   useEffect(() => {
     if (gameStatus !== 'active' || watchingGame) {
-      audio.setMusicTension(0);
+      audio.setMusicSituation(0, 0);
       return;
     }
     // |eval| 0 → calm, 700cp → 0.55; check stacks +0.3; forced mate pins
@@ -1229,8 +1229,10 @@ function App() {
     let t = Math.min(1, Math.abs(currentEval) / 700) * 0.55;
     if (kingInDanger) t += 0.3;
     if (searchMateInPlies !== null) t = 1;
-    audio.setMusicTension(Math.min(1, t));
-  }, [currentEval, searchMateInPlies, kingInDanger, gameStatus, watchingGame]);
+    // M.5.3 — the my-perspective advantage lets the adaptive style pick
+    // warm (neutral) / dark (losing) / victory (winning).
+    audio.setMusicSituation(Math.min(1, t), myPerspectiveEval);
+  }, [currentEval, myPerspectiveEval, searchMateInPlies, kingInDanger, gameStatus, watchingGame]);
 
   // Danger stinger on the not-in-check → in-check edge only.
   const prevKingDangerRef = useRef(false);

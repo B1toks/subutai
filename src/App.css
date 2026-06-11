@@ -2765,6 +2765,7 @@ body.checkmate-flash::after {
 
 .music-style-dot[data-style="warm"] { background: var(--accent-gold-bright); }
 .music-style-dot[data-style="dark"] { background: #8b5cf6; }
+.music-style-dot[data-style="adaptive"] { background: var(--accent-teal-bright); }
 
 /* ── S2.5: per-side elapsed clocks ────────────────────────────────────
    Sits between the mode cards and the board. The running side's chip

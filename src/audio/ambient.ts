@@ -22,14 +22,21 @@
 export type AmbientTheme = 'wood' | 'wood-light' | 'cyberpunk' | 'fantasy';
 export type StingerKind = 'danger' | 'sacrifice';
 
-/* M.5.2 — two musical directions sharing one engine:
+/* M.5.2 — musical directions sharing one engine:
  *   warm (default): slow maj7-family chord pads cycling every ~14s with
  *     crossfades, plus bright kalimba/music-box plucks walking the
  *     chord tones. Harmonic context + fast attacks = cozy, intentional.
  *   dark: the M.5.1 sound kept as a mode — sparse slow swells over a
  *     bare drone floor. Eerie by design now, not by accident.
+ *   adaptive (M.5.3): the engine follows the board — neutral position
+ *     plays warm, losing plays dark, winning plays the internal
+ *     "victory" voice (brighter pads + ascending chord arpeggios).
+ *     Switches use a ±cp hysteresis band so eval jitter can't flap
+ *     the mood.
  */
-export type AmbientStyle = 'warm' | 'dark';
+export type AmbientStyle = 'warm' | 'dark' | 'adaptive';
+/** What actually sounds. 'victory' is only reachable through adaptive. */
+type EffectiveStyle = 'warm' | 'dark' | 'victory';
 
 interface DroneSpec {
   freq: number;
@@ -163,13 +170,19 @@ export class AmbientPlayer {
   private noteTimer: ReturnType<typeof setTimeout> | null = null;
   private delayNodes: AudioNode[] = [];
 
-  // M.5.2 — style + chord pad engine (warm style only).
+  // M.5.2 — style + chord pad engine (warm/victory styles).
   private style: AmbientStyle = 'warm';
+  /** What actually plays right now (style, or the adaptive pick). */
+  private effective: EffectiveStyle = 'warm';
   private chordTimer: ReturnType<typeof setTimeout> | null = null;
   private chordIdx = 0;
   private padLayers: ActiveLayer[] = [];
   /** Melodic random-walk position inside the pluck palette. */
   private walkIdx = 0;
+  /** M.5.3 — arpeggio cursor for the victory voice. */
+  private arpIdx = 0;
+  /** Last reported my-perspective advantage (centipawns). */
+  private advantage = 0;
 
   // M.5 — adaptive tension sub-stack.
   private tensionGain: GainNode | null = null;
@@ -201,16 +214,55 @@ export class AmbientPlayer {
     return this.style;
   }
 
+  getEffectiveStyle(): EffectiveStyle {
+    return this.effective;
+  }
+
   /** Switch musical direction. Rebuilds the stack in place when music
    *  is already playing so the change is audible immediately. */
   setStyle(style: AmbientStyle) {
     if (style === this.style) return;
     this.style = style;
-    const theme = this.currentTheme;
-    if (theme) {
-      this.stop();
-      this.play(theme);
+    const next = style === 'adaptive' ? this.adaptivePick() : style;
+    if (next !== this.effective) {
+      this.effective = next;
+      this.rebuild();
     }
+  }
+
+  /** M.5.3 — board situation feed. Tension drives the drama layer as
+   *  before; in adaptive style the my-perspective advantage also picks
+   *  WHICH music plays: warm (neutral) / dark (losing) / victory
+   *  (winning), with a hysteresis band so the mood doesn't flap. */
+  setSituation(tension: number, advantageCp: number) {
+    this.advantage = advantageCp;
+    this.setTension(tension);
+    if (this.style !== 'adaptive') return;
+    const next = this.adaptivePick();
+    if (next !== this.effective) {
+      this.effective = next;
+      this.rebuild();
+    }
+  }
+
+  /** Enter victory/dark at ±280cp, fall back toward warm at ±160cp. */
+  private adaptivePick(): EffectiveStyle {
+    const adv = this.advantage;
+    switch (this.effective) {
+      case 'victory':
+        return adv >= 160 ? 'victory' : adv <= -280 ? 'dark' : 'warm';
+      case 'dark':
+        return adv <= -160 ? 'dark' : adv >= 280 ? 'victory' : 'warm';
+      default:
+        return adv >= 280 ? 'victory' : adv <= -280 ? 'dark' : 'warm';
+    }
+  }
+
+  private rebuild() {
+    const theme = this.currentTheme;
+    if (!theme) return;
+    this.stop();
+    this.play(theme);
   }
 
   /** Start the music for `theme`, fading in over 2s. Calling with the
@@ -220,12 +272,13 @@ export class AmbientPlayer {
     this.stop();
     this.currentTheme = theme;
     const spec = THEMES[theme];
-    this.buildDrone(spec, this.style === 'warm' ? 0.55 : 1);
+    this.buildDrone(spec, this.effective === 'dark' ? 1 : 0.55);
     this.buildNoteSpace();
     this.buildTensionStack(spec);
-    if (this.style === 'warm') {
+    if (this.effective !== 'dark') {
       this.chordIdx = 0;
       this.walkIdx = Math.floor(spec.scale.length / 2);
+      this.arpIdx = 0;
       this.playNextChord();
     }
     this.scheduleNextNote();
@@ -297,6 +350,13 @@ export class AmbientPlayer {
     return this.tension;
   }
 
+  /** Pad voice target gain — warm ducks with tension (the minor tense
+   *  palette takes over); victory holds steady and bright, because a
+   *  winning |eval| is high by definition and must NOT read as dread. */
+  private padTargetGain(): number {
+    return this.effective === 'victory' ? 0.06 : 0.05 * (1 - this.tension * 0.7);
+  }
+
   private applyTension(t: number, rampSec: number) {
     if (!this.tensionGain) return;
     const now = this.ctx.currentTime;
@@ -305,11 +365,14 @@ export class AmbientPlayer {
     for (const l of this.padLayers) {
       l.gain.gain.cancelScheduledValues(now);
       l.gain.gain.setValueAtTime(l.gain.gain.value, now);
-      l.gain.gain.linearRampToValueAtTime(0.05 * (1 - t * 0.7), now + rampSec);
+      l.gain.gain.linearRampToValueAtTime(this.padTargetGain(), now + rampSec);
     }
     // Perceptual curve + tamed ceiling (0.3): the clash should color the
-    // music, not bury it.
-    const g = t * t * 0.3;
+    // music, not bury it. In victory the |eval| is huge by definition,
+    // so the dissonance is nearly muted — triumph, not dread; the
+    // heartbeat keeps a little pulse for momentum.
+    const styleScale = this.effective === 'victory' ? 0.15 : 1;
+    const g = t * t * 0.3 * styleScale;
     this.tensionGain.gain.cancelScheduledValues(now);
     this.tensionGain.gain.setValueAtTime(this.tensionGain.gain.value, now);
     this.tensionGain.gain.linearRampToValueAtTime(g, now + rampSec);
@@ -471,7 +534,11 @@ export class AmbientPlayer {
     }
 
     // Two detuned voices per chord tone — soft, filtered, slow swell in.
-    for (const f of chord) {
+    // Victory voicing is brighter (open filter, a touch louder) and adds
+    // an octave-up doubling on the chord root for fanfare sheen.
+    const isVictory = this.effective === 'victory';
+    const voiced = isVictory ? [...chord, chord[0] * 2] : chord;
+    for (const f of voiced) {
       for (const det of [3, -4]) {
         const osc = this.ctx.createOscillator();
         osc.type = 'sine';
@@ -479,18 +546,20 @@ export class AmbientPlayer {
         osc.detune.value = det;
         const filter = this.ctx.createBiquadFilter();
         filter.type = 'lowpass';
-        filter.frequency.value = 1100;
+        filter.frequency.value = isVictory ? 1700 : 1100;
         const gain = this.ctx.createGain();
         gain.gain.setValueAtTime(0, now);
         // Target respects the current tension duck (see applyTension).
-        gain.gain.linearRampToValueAtTime(0.05 * (1 - this.tension * 0.7), now + 3);
+        gain.gain.linearRampToValueAtTime(this.padTargetGain(), now + 3);
         osc.connect(filter).connect(gain).connect(this.masterGain);
         osc.start(now);
         this.padLayers.push({ osc, gain, filter });
       }
     }
 
-    const hold = (12000 + Math.random() * 5000) * (1 - this.tension * 0.35);
+    const hold =
+      (12000 + Math.random() * 5000) *
+      (isVictory ? 0.7 : 1 - this.tension * 0.35);
     this.chordTimer = setTimeout(() => this.playNextChord(), hold);
   }
 
@@ -509,10 +578,16 @@ export class AmbientPlayer {
   private scheduleNextNote() {
     if (!this.currentTheme) return;
     const spec = THEMES[this.currentTheme];
-    const [lo, hi] = spec.noteIntervalMs;
-    // Tension densifies the layer: at t=1 notes come ~2.5× faster.
-    const scale = 1 - this.tension * 0.6;
-    const wait = (lo + Math.random() * (hi - lo)) * scale;
+    let wait: number;
+    if (this.effective === 'victory') {
+      // Steady ascending arpeggio cadence — momentum, not ambience.
+      wait = 650 + Math.random() * 450;
+    } else {
+      const [lo, hi] = spec.noteIntervalMs;
+      // Tension densifies the layer: at t=1 notes come ~2.5× faster.
+      const scale = 1 - this.tension * 0.6;
+      wait = (lo + Math.random() * (hi - lo)) * scale;
+    }
     this.noteTimer = setTimeout(() => {
       this.playGenerativeNote();
       this.scheduleNextNote();
@@ -530,7 +605,21 @@ export class AmbientPlayer {
     let peak: number;
     let noteType: OscillatorType = spec.noteType;
 
-    if (this.style === 'warm' && this.tension <= 0.55) {
+    if (this.effective === 'victory') {
+      // M.5.3 — ascending chord arpeggio: cycle the current chord tones
+      // upward an octave above the pad; every full lap tops out with a
+      // double-octave sparkle. Fanfare momentum without percussion.
+      const chord =
+        spec.progression[(this.chordIdx - 1 + spec.progression.length) % spec.progression.length] ??
+        spec.progression[0];
+      const lap = this.arpIdx % (chord.length + 1);
+      freq = lap < chord.length ? chord[lap] * 2 : chord[0] * 4;
+      this.arpIdx++;
+      attack = 0.008;
+      release = 1.1 + Math.random() * 0.7;
+      peak = 0.18 + Math.random() * 0.05;
+      noteType = 'triangle';
+    } else if (this.effective === 'warm' && this.tension <= 0.55) {
       // Kalimba pluck: melodic random walk over the chord-tone palette
       // so consecutive notes relate (steps, not teleports).
       const palette = this.warmPalette(spec);
@@ -560,7 +649,10 @@ export class AmbientPlayer {
 
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.value = spec.noteFilter;
+    // Victory arps sit an octave or two up — open the filter so the
+    // sparkle survives.
+    filter.frequency.value =
+      this.effective === 'victory' ? spec.noteFilter * 1.6 : spec.noteFilter;
 
     const gain = this.ctx.createGain();
     gain.gain.setValueAtTime(0, now);

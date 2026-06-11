@@ -61,9 +61,10 @@ class AudioControllerImpl {
   private musicVolume: number;
   private musicStyle: AmbientStyle;
   private pendingMusicTheme: AmbientTheme | null = null;
-  // M.5 — last game-reported tension, buffered so enabling music
+  // M.5 — last game-reported situation, buffered so enabling music
   // mid-battle starts at the right drama level (ambient is lazy).
   private pendingTension = 0;
+  private pendingAdvantage = 0;
 
   constructor() {
     this.enabled = this.readEnabledFromStorage();
@@ -75,7 +76,8 @@ class AudioControllerImpl {
 
   private readMusicStyleFromStorage(): AmbientStyle {
     if (typeof window === 'undefined') return 'warm';
-    return window.localStorage.getItem(MUSIC_STYLE_KEY) === 'dark' ? 'dark' : 'warm';
+    const raw = window.localStorage.getItem(MUSIC_STYLE_KEY);
+    return raw === 'dark' || raw === 'adaptive' ? raw : 'warm';
   }
 
   private readEnabledFromStorage(): boolean {
@@ -122,7 +124,7 @@ class AudioControllerImpl {
       // independent.
       this.ambient = new AmbientPlayer(this.ctx, this.ctx.destination, this.musicVolume);
       this.ambient.setStyle(this.musicStyle);
-      this.ambient.setTension(this.pendingTension);
+      this.ambient.setSituation(this.pendingTension, this.pendingAdvantage);
       if (this.musicEnabled && this.pendingMusicTheme) {
         this.ambient.play(this.pendingMusicTheme);
       }
@@ -251,10 +253,17 @@ class AudioControllerImpl {
   /** Game-state drama 0..1. Safe to call regardless of music state —
    *  the value is remembered and applied when the drone (re)starts. */
   setMusicTension(t: number) {
-    // Buffer even when music is off so the level is current the moment
-    // the user enables it mid-game.
-    this.pendingTension = t;
-    this.ambient?.setTension(t);
+    this.setMusicSituation(t, this.pendingAdvantage);
+  }
+
+  /** M.5.3 — full board-situation feed: drama level + my-perspective
+   *  advantage (cp). In adaptive style the advantage picks which music
+   *  plays (warm / dark / victory). Buffered while the lazy AudioContext
+   *  doesn't exist yet. */
+  setMusicSituation(tension: number, advantageCp: number) {
+    this.pendingTension = tension;
+    this.pendingAdvantage = advantageCp;
+    this.ambient?.setSituation(tension, advantageCp);
   }
 
   /** One-shot dramatic accent. Silently ignored when music is off. */

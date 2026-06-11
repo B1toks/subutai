@@ -20,12 +20,26 @@ function readCurrentTheme(): AmbientTheme {
  * from AudioToggle because users often want SFX without music (or
  * vice versa). Default OFF.
  *
- * M.5.2: the button now cycles Off → Warm → Dark → Off. Warm is the
- * cozy chord-pad + kalimba direction (default); Dark keeps the M.5.1
- * eerie drone as a deliberate mode. Per-theme synth stacks live in
- * ../audio/ambient.ts.
+ * M.5.2/3: the button cycles Off → Warm → Dark → Adaptive → Off.
+ * Warm is the cozy chord-pad + kalimba direction (default); Dark keeps
+ * the M.5.1 eerie drone as a deliberate mode; Adaptive follows the
+ * board — warm when neutral, dark when losing, a victory voice when
+ * winning. Per-theme synth stacks live in ../audio/ambient.ts.
  */
-type MusicState = 'off' | 'warm' | 'dark';
+type MusicState = 'off' | 'warm' | 'dark' | 'adaptive';
+
+const NEXT_STATE: Record<MusicState, MusicState> = {
+  off: 'warm',
+  warm: 'dark',
+  dark: 'adaptive',
+  adaptive: 'off',
+};
+
+const STATE_TOAST: Record<Exclude<MusicState, 'off'>, string> = {
+  warm: 'Music: Warm ☀',
+  dark: 'Music: Dark ☾',
+  adaptive: 'Music: Adaptive ⚖ — follows the board',
+};
 
 export function MusicToggle() {
   const toast = useToast();
@@ -34,8 +48,7 @@ export function MusicToggle() {
   );
 
   function cycle() {
-    const next: MusicState =
-      state === 'off' ? 'warm' : state === 'warm' ? 'dark' : 'off';
+    const next = NEXT_STATE[state];
     setState(next);
     if (next === 'off') {
       audio.setMusicEnabled(false);
@@ -44,7 +57,7 @@ export function MusicToggle() {
     }
     audio.setMusicStyle(next);
     audio.setMusicEnabled(true, readCurrentTheme());
-    toast.show(next === 'warm' ? 'Music: Warm ☀' : 'Music: Dark ☾', 'info', 1500);
+    toast.show(STATE_TOAST[next], 'info', 1500);
   }
 
   const tooltip =
@@ -52,7 +65,9 @@ export function MusicToggle() {
       ? 'Play music (warm)'
       : state === 'warm'
         ? 'Switch music to dark mode'
-        : 'Turn music off';
+        : state === 'dark'
+          ? 'Switch music to adaptive mode (follows the board)'
+          : 'Turn music off';
 
   return (
     <Tooltip text={tooltip} side="bottom">
