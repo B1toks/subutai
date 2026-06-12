@@ -167,7 +167,7 @@ export function TutorialOverlay({ onClose }: TutorialOverlayProps) {
           <button type="button" className="tour-skip-btn" onClick={onClose}>
             Skip
           </button>
-          <span className="tour-dots" aria-label={`Step ${stepIdx + 1} of ${STEPS.length}`}>
+          <span className="tour-dots" role="img" aria-label={`Step ${stepIdx + 1} of ${STEPS.length}`}>
             {STEPS.map((_, i) => (
               <span key={i} className={`tour-dot${i === stepIdx ? ' is-active' : ''}`} />
             ))}

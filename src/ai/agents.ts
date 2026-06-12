@@ -1,6 +1,7 @@
 import type { BoardState, Move } from '../engine';
 import { generateLegalMoves } from '../engine/moves';
 import { iterativeDeepen } from './search';
+import { scaleBudgetMs } from '../utils/deviceTier';
 
 export interface AgentContext {
   readonly seed?: number;
@@ -48,9 +49,11 @@ export const SubutaiAgent: Agent = {
     _legalMoves: readonly Move[],
     context?: AgentContext,
   ): Promise<Move | null> {
+    // Sprint 4.5 — low-end devices get ~45% of the think budget so the
+    // AI never locks the main thread for close to a second.
     return iterativeDeepen(
       state,
-      800,
+      scaleBudgetMs(800),
       context?.lastMoveWasRotation ?? false,
       context?.allowSelfCheck ?? false,
     );

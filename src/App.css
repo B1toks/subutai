@@ -802,7 +802,9 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--text-muted);
+  /* Sprint 4.5 — was --text-muted, which fails WCAG 4.5:1 on the panel
+     background at this size. Secondary keeps the de-emphasis. */
+  color: var(--text-secondary);
 }
 
 .sidebar-moves .move-log-text {
@@ -822,7 +824,7 @@
 
 .sidebar-moves .move-log-empty {
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   padding: var(--space-2);
 }
 
@@ -892,7 +894,7 @@
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
   font-size: 13px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   background: var(--bg-card);
   border: 1px solid var(--btn-border);
   border-radius: var(--radius-md);
@@ -2123,7 +2125,7 @@ body.checkmate-flash::after {
   border-radius: 4px;
   border: 1px solid var(--btn-border);
   background: var(--btn-bg);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
@@ -2137,7 +2139,7 @@ body.checkmate-flash::after {
   border-radius: 4px;
   border: 1px solid var(--btn-border);
   background: var(--btn-bg);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
@@ -2289,7 +2291,7 @@ body.checkmate-flash::after {
   padding: 8px 14px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
   user-select: none;
   list-style: none;
@@ -2794,7 +2796,7 @@ body.checkmate-flash::after {
   border-radius: var(--radius-full, 999px);
   border: 1px solid var(--btn-border);
   background: var(--bg-card);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
   transition: color 0.2s, border-color 0.2s, box-shadow 0.2s;
@@ -2903,7 +2905,7 @@ body.checkmate-flash::after {
 .tour-skip-btn {
   border: none;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
   padding: 6px 8px;
@@ -3809,7 +3811,7 @@ body.checkmate-flash::after {
 }
 
 .modal-status-neutral {
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .modal-error {

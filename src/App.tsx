@@ -86,6 +86,7 @@ import { localStorageAdapter } from './memory/storage';
 import { MemoryPanel } from './memory/MemoryPanel';
 import type { SavedGame } from './memory/types';
 import { NotationParseError, parseMemoryNotation } from './memory/notation';
+import { scaleBudgetMs } from './utils/deviceTier';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -1485,7 +1486,7 @@ function App() {
             continue;
           }
           const a = await classifyAsync(states[i], entry.move, states[i + 1], {
-            budgetMs: 1000,
+            budgetMs: scaleBudgetMs(1000),
             maxDepth: 7,
             allowSelfCheck: loadedLog.gameMode === 'roulette',
           });
@@ -2351,7 +2352,7 @@ function App() {
           setSearchEvalFromWhite(null);
           setSearchMateInPlies(null);
           const aiAnalysis = await classifyAsync(boardState, move, next, {
-            budgetMs: 1000,
+            budgetMs: scaleBudgetMs(1000),
             maxDepth: 7,
             allowSelfCheck: gameMode === 'roulette',
           });
@@ -2893,7 +2894,7 @@ function App() {
     // are human, so the cost / noise isn't worth it.
     if (!isLocalMode) {
       classifyAsync(state, resolvedMove, afterMove, {
-        budgetMs: 1000,
+        budgetMs: scaleBudgetMs(1000),
         maxDepth: 7,
         allowSelfCheck: gameMode === 'roulette',
       })
@@ -2976,7 +2977,7 @@ function App() {
     setSearchMateInPlies(null);
     const moveIdx = log.moves.length;
     classifyAsync(state, move, next, {
-      budgetMs: 1000,
+      budgetMs: scaleBudgetMs(1000),
       maxDepth: 7,
       allowSelfCheck: gameMode === 'roulette',
     }).then(
@@ -3972,6 +3973,7 @@ function App() {
               onMouseUp={(e) => handleTileMouseUp(e, sq as SquareId)}
               onMouseEnter={() => setHoveredSquare(sq)}
               onMouseLeave={() => setHoveredSquare(null)}
+              aria-label={piece ? `${piece.color} ${piece.type} on ${sq}` : sq}
             >
               {squareAnnotations.get(sq as SquareId) && (
                 <span
@@ -3982,6 +3984,10 @@ function App() {
               {piece ? (
                 <span
                   className={`piece-slide-wrap${isSliding ? ' is-sliding-in' : ''}`}
+                  /* Glyph is decorative — the tile button's aria-label
+                     already says "white pawn on e2"; exposing the raw
+                     ♟ char would make the visible text mismatch it. */
+                  aria-hidden
                   style={isSliding ? ({
                     '--slide-dx': `${slideDx}px`,
                     '--slide-dy': `${slideDy}px`,
@@ -4453,7 +4459,7 @@ function App() {
             onClick={handleRotate}
             disabled={!canRotate}
             data-tour="rotate"
-            aria-label={`Rotate topology ${state.topologyState} to ${state.topologyState === 'A' ? 'B' : 'A'}`}
+            aria-label={`Rotate topology ${state.topologyState} → ${state.topologyState === 'A' ? 'B' : 'A'}`}
           >
             <Icon icon={RotateCw} size="md" aria-hidden />
             <span className="rotate-label-text" aria-hidden>
@@ -4597,7 +4603,7 @@ function App() {
       </div>
       <aside className="right-sidebar">
         <section className="sidebar-panel sidebar-opponent">
-          <h3 className="sidebar-panel-title">Opponent</h3>
+          <h2 className="sidebar-panel-title">Opponent</h2>
           {/* Sprint 4.3.1 — when a local game is in progress, lock all
               non-local opponent tabs behind a confirm dialog so a stray
               tap can't silently abandon the game. The lock is "soft":
@@ -4650,9 +4656,9 @@ function App() {
         </section>
 
         <section className="sidebar-panel sidebar-moves">
-          <h3 className="sidebar-panel-title">
+          <h2 className="sidebar-panel-title">
             Moves ({Math.ceil(log.moves.length / 2)})
-          </h3>
+          </h2>
           {log.moves.length === 0 ? (
             <div className="move-log-empty">No moves yet.</div>
           ) : (
@@ -4671,7 +4677,7 @@ function App() {
         </section>
 
         <section className="sidebar-panel sidebar-analysis" data-tour="analysis">
-          <h3 className="sidebar-panel-title">Analysis</h3>
+          <h2 className="sidebar-panel-title">Analysis</h2>
           {(() => {
             if (searchMateInPlies != null) {
               const movesToMate = Math.ceil(Math.abs(searchMateInPlies) / 2);

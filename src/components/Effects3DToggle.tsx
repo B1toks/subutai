@@ -4,14 +4,20 @@ import { Icon } from './Icon';
 import { Tooltip } from './Tooltip';
 import { useToast } from './Toast';
 import { audio } from '../audio/AudioController';
+import { deviceTier } from '../utils/deviceTier';
 
 const STORAGE_KEY = 'subutai_3d';
 
 function readInitial(): boolean {
   if (typeof window === 'undefined') return true;
-  // Default ON; explicit '0' opts out. Anything else (no entry, '1',
-  // legacy values) reads as enabled.
-  return window.localStorage.getItem(STORAGE_KEY) !== '0';
+  // Explicit user choice always wins.
+  const stored = window.localStorage.getItem(STORAGE_KEY);
+  if (stored === '0') return false;
+  if (stored === '1') return true;
+  // Sprint 4.5 — no stored choice: default OFF on low-end devices
+  // (perspective transforms + per-tile transitions are the priciest
+  // paint work we do). The header toggle re-enables in one tap.
+  return deviceTier() === 'high';
 }
 
 /**
