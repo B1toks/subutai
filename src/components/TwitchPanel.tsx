@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
-import { Cast, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Cast, GripVertical, X } from 'lucide-react';
 import { Icon } from './Icon';
 import { twitchChat, type TwitchChatMessage, type TwitchChatStatus } from '../twitch/chat';
 import {
@@ -9,27 +10,62 @@ import {
   winnersFor,
   type GameResult,
   type PredictionState,
-  type PredictionWinner,
 } from '../twitch/predictions';
+import { moveVoting, type ViewerScore, type VoteMode, type VoteRound } from '../twitch/moveVoting';
+import { loadEmoteMap, type EmoteMap } from '../twitch/seventv';
 
 const CHANNEL_KEY = 'subutai_twitch_channel';
+const POS_KEY = 'subutai_twitch_pos';
 const MAX_MESSAGES = 60;
-const MAX_WINNER_NICKS = 10;
+const LEADERBOARD_SIZE = 10;
 
 interface TwitchPanelProps {
-  /** Changes on every new game — clears votes + the winners banner. */
+  /** Changes on every new game — clears votes + the leaderboard. */
   gameKey: string;
   /** Null while the game runs; set once when it ends. */
   gameResult: GameResult | null;
   onClose: () => void;
 }
 
+/** Message text with 7TV emote tokens swapped for <img> tags. */
+function EmoteText({ text, emotes }: { text: string; emotes: EmoteMap | null }) {
+  const parts = useMemo(() => {
+    if (!emotes || emotes.size === 0) return [text];
+    const out: (string | { name: string; url: string })[] = [];
+    let buf: string[] = [];
+    for (const word of text.split(' ')) {
+      const url = emotes.get(word);
+      if (url) {
+        if (buf.length) out.push(buf.join(' ') + ' ');
+        buf = [];
+        out.push({ name: word, url });
+        out.push(' ');
+      } else {
+        buf.push(word);
+      }
+    }
+    if (buf.length) out.push(buf.join(' '));
+    return out;
+  }, [text, emotes]);
+
+  return (
+    <span className="twitch-msg-text">
+      {parts.map((p, i) =>
+        typeof p === 'string' ? (
+          p
+        ) : (
+          <img key={i} className="twitch-emote" src={p.url} alt={p.name} title={p.name} loading="lazy" />
+        ),
+      )}
+    </span>
+  );
+}
+
 /**
- * T3 — on-screen Twitch chat + predictions overlay.
- *
- * Read-only anonymous chat: viewers' messages render with their Twitch
- * colors; !white / !black / !draw messages double as predictions. When
- * the game ends the viewers who called it get their nicks on screen.
+ * T3/T4/T5 — Twitch overlay: live chat (with 7TV emotes), per-move
+ * vote rounds (predict / chat-plays-the-AI), result calls, and a
+ * match leaderboard. Freely draggable by the header — the first brick
+ * of the stream-layout constructor.
  */
 export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) {
   const [channelInput, setChannelInput] = useState(() => {
@@ -43,22 +79,20 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
   const [statusDetail, setStatusDetail] = useState<string>('');
   const [messages, setMessages] = useState<TwitchChatMessage[]>([]);
   const [counts, setCounts] = useState({ white: 0, black: 0, draw: 0 });
-  const [winners, setWinners] = useState<PredictionWinner[] | null>(null);
+  const [voteMode, setVoteMode] = useState<VoteMode>(() => moveVoting.getMode());
+  const [round, setRound] = useState<VoteRound | null>(() => moveVoting.getRound());
+  const [roundNow, setRoundNow] = useState(() => Date.now());
+  const [scores, setScores] = useState<ViewerScore[]>(() => moveVoting.getScores());
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [emotes, setEmotes] = useState<EmoteMap | null>(null);
   const predictionsRef = useRef<PredictionState>(emptyPredictions());
   const feedRef = useRef<HTMLDivElement | null>(null);
 
-  // Chat subscription — lives as long as the panel is mounted. The
-  // client itself is a singleton, so reopening the panel keeps the
-  // connection (kiosk-friendly).
-  //
-  // Big channels push 50+ messages/sec; a setState per message melts
-  // the renderer. Messages accumulate in a ref and flush to state on a
-  // 300ms interval — chat still feels live, React renders ≤3×/sec.
+  // ── chat plumbing (buffered: big channels push 50+ msg/s) ──
   const pendingRef = useRef<TwitchChatMessage[]>([]);
   useEffect(() => {
     const offMsg = twitchChat.onMessage((msg) => {
       pendingRef.current.push(msg);
-      // The buffer itself never needs more than one screenful.
       if (pendingRef.current.length > MAX_MESSAGES) {
         pendingRef.current = pendingRef.current.slice(-MAX_MESSAGES);
       }
@@ -85,24 +119,119 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
     };
   }, []);
 
-  // New game — votes and banner reset, chat history stays.
+  // ── vote rounds + scores ──
+  useEffect(() => {
+    const offRound = moveVoting.onRound(setRound);
+    const offScores = moveVoting.onScores(setScores);
+    return () => {
+      offRound();
+      offScores();
+    };
+  }, []);
+
+  // Countdown tick while a round is open.
+  useEffect(() => {
+    if (!round || round.revealIdx !== null) return;
+    const id = setInterval(() => setRoundNow(Date.now()), 250);
+    return () => clearInterval(id);
+  }, [round]);
+
+  // New game — votes, scores and banners reset; chat history stays.
+  // setState-in-effect is intentional: this fires once per game change
+  // (rare), and the reset must also touch refs + the external voting
+  // store, so the render-phase "adjust state from props" pattern can't
+  // express it without double-mutating the store under StrictMode.
   useEffect(() => {
     predictionsRef.current = emptyPredictions();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCounts({ white: 0, black: 0, draw: 0 });
-    setWinners(null);
+    setShowLeaderboard(false);
+    moveVoting.resetScores();
   }, [gameKey]);
 
-  // Game ended — freeze the round and crown the correct predictors.
+  // Game ended — award result calls (+3) and show the leaderboard.
+  // Same rationale as above: a once-per-game external-store mutation.
   useEffect(() => {
     if (!gameResult) return;
-    setWinners(winnersFor(predictionsRef.current, gameResult));
+    moveVoting.awardResultCall(winnersFor(predictionsRef.current, gameResult));
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setShowLeaderboard(true);
   }, [gameResult]);
+
+  // 7TV emotes for the connected channel.
+  useEffect(() => {
+    if (status !== 'connected') return;
+    const ch = twitchChat.getChannel();
+    if (!ch) return;
+    let cancelled = false;
+    void loadEmoteMap(ch).then((map) => {
+      if (!cancelled) setEmotes(map);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [status]);
 
   // Stick to the newest message.
   useEffect(() => {
     const el = feedRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length]);
+
+  // ── free drag (desktop) — header is the handle ──
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(() => {
+    try {
+      const raw = localStorage.getItem(POS_KEY);
+      return raw ? (JSON.parse(raw) as { x: number; y: number }) : null;
+    } catch {
+      return null;
+    }
+  });
+  const panelRef = useRef<HTMLElement | null>(null);
+  const dragRef = useRef<{ dx: number; dy: number } | null>(null);
+  const lastPosRef = useRef<{ x: number; y: number } | null>(null);
+
+  const onDragStart = useCallback((e: React.PointerEvent) => {
+    if (window.innerWidth <= 720) return; // bottom sheet on mobile
+    const panel = panelRef.current;
+    if (!panel) return;
+    const r = panel.getBoundingClientRect();
+    dragRef.current = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    try {
+      (e.target as Element).setPointerCapture?.(e.pointerId);
+    } catch { /* synthetic/stale pointer — capture is best-effort */ }
+
+    const move = (ev: PointerEvent) => {
+      const d = dragRef.current;
+      if (!d) return;
+      const w = panel.offsetWidth;
+      // Keep at least the header on screen — a fully off-screen panel
+      // is unrecoverable without the double-click reset.
+      const x = Math.max(0, Math.min(ev.clientX - d.dx, window.innerWidth - w));
+      const y = Math.max(0, Math.min(ev.clientY - d.dy, window.innerHeight - 48));
+      lastPosRef.current = { x, y };
+      setPos({ x, y });
+    };
+    const up = () => {
+      dragRef.current = null;
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      if (lastPosRef.current) {
+        try {
+          localStorage.setItem(POS_KEY, JSON.stringify(lastPosRef.current));
+        } catch { /* private mode */ }
+      }
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }, []);
+
+  function resetPos() {
+    setPos(null);
+    try {
+      localStorage.removeItem(POS_KEY);
+    } catch { /* private mode */ }
+  }
 
   function connect() {
     const ch = channelInput.trim();
@@ -111,15 +240,39 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
       localStorage.setItem(CHANNEL_KEY, ch);
     } catch { /* private mode */ }
     setMessages([]);
+    setEmotes(null);
     twitchChat.connect(ch);
   }
 
-  const connected = status === 'connected';
+  function pickMode(m: VoteMode) {
+    moveVoting.setMode(m);
+    setVoteMode(m);
+  }
 
-  return (
-    <aside className="twitch-panel" aria-label="Twitch chat">
-      <div className="twitch-panel-header">
+  const connected = status === 'connected';
+  const secondsLeft = round && round.revealIdx === null
+    ? Math.max(0, Math.ceil((round.endsAt - roundNow) / 1000))
+    : 0;
+
+  const panelStyle: React.CSSProperties | undefined =
+    pos && window.innerWidth > 720
+      ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' }
+      : undefined;
+
+  // Portal to <body>: ancestors inside the app shell carry transforms
+  // (3D tilt, eval-gradient layers), which turn position:fixed into
+  // "fixed relative to the transformed box" and break both the default
+  // placement and drag math.
+  return createPortal(
+    <aside className="twitch-panel" ref={panelRef} style={panelStyle} aria-label="Twitch chat">
+      <div
+        className="twitch-panel-header twitch-drag-handle"
+        onPointerDown={onDragStart}
+        onDoubleClick={resetPos}
+        title="Drag to move · double-click to reset position"
+      >
         <span className="twitch-panel-title">
+          <Icon icon={GripVertical} size="sm" aria-hidden />
           <Icon icon={Cast} size="md" aria-hidden /> Twitch
           {connected && twitchChat.getChannel() && (
             <span className="twitch-channel-name">#{twitchChat.getChannel()}</span>
@@ -161,40 +314,76 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
 
       {connected && (
         <>
-          <div className="twitch-predict-bar" aria-label="Predictions">
-            <span className="twitch-predict-hint">Chat votes: !white !black !draw</span>
+          {/* T4 — move-vote mode selector */}
+          <div className="twitch-mode-row" role="radiogroup" aria-label="Move voting mode">
+            {(['off', 'predict', 'chat'] as VoteMode[]).map((m) => (
+              <button
+                key={m}
+                type="button"
+                role="radio"
+                aria-checked={voteMode === m}
+                className={`twitch-mode-pill${voteMode === m ? ' is-active' : ''}`}
+                onClick={() => pickMode(m)}
+              >
+                {m === 'off' ? 'Off' : m === 'predict' ? 'Predict' : 'Chat plays'}
+              </button>
+            ))}
+          </div>
+
+          {/* T4 — live vote round */}
+          {round && (
+            <div className={`twitch-round${round.revealIdx !== null ? ' is-revealed' : ''}`}>
+              <div className="twitch-round-title">
+                {round.revealIdx !== null
+                  ? round.mode === 'predict'
+                    ? 'The engine played:'
+                    : 'Chat picked:'
+                  : round.mode === 'predict'
+                    ? `Which move will the AI play? · ${secondsLeft}s`
+                    : `Chat — pick the AI's move! · ${secondsLeft}s`}
+              </div>
+              {round.candidates.map((c, i) => (
+                <div
+                  key={i}
+                  className={`twitch-round-option${round.revealIdx === i ? ' is-winner' : ''}`}
+                >
+                  <span className="twitch-round-cmd">!{i + 1}</span>
+                  <span className="twitch-round-san">{c.san}</span>
+                  <span className="twitch-round-count">{round.counts[i]}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* leaderboard at match end */}
+          {showLeaderboard && scores.length > 0 && (
+            <div className="twitch-leaderboard" role="status">
+              <div className="twitch-leaderboard-title">🏆 Chat leaderboard</div>
+              {scores.slice(0, LEADERBOARD_SIZE).map((s, i) => (
+                <div key={s.nick} className="twitch-leaderboard-row">
+                  <span className="twitch-lb-rank">{i + 1}.</span>
+                  <span
+                    className="twitch-winner-nick"
+                    style={s.color ? { color: s.color } : undefined}
+                  >
+                    {s.displayName}
+                  </span>
+                  <span className="twitch-lb-points">{s.points}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="twitch-predict-bar" aria-label="Result calls">
+            <span className="twitch-predict-hint">
+              Result: !white !black !draw (+3) · Moves: !1–!4 (+1)
+            </span>
             <span className="twitch-predict-counts">
               <span className="predict-chip predict-white">♙ {counts.white}</span>
               <span className="predict-chip predict-black">♟ {counts.black}</span>
               <span className="predict-chip predict-draw">½ {counts.draw}</span>
             </span>
           </div>
-
-          {winners && (
-            <div className="twitch-winners" role="status">
-              {winners.length === 0 ? (
-                <span className="twitch-winners-none">Nobody called it 🤷</span>
-              ) : (
-                <>
-                  <span className="twitch-winners-title">🎉 Called it:</span>
-                  <span className="twitch-winners-list">
-                    {winners.slice(0, MAX_WINNER_NICKS).map((w) => (
-                      <span
-                        key={w.nick}
-                        className="twitch-winner-nick"
-                        style={w.color ? { color: w.color } : undefined}
-                      >
-                        {w.displayName}
-                      </span>
-                    ))}
-                    {winners.length > MAX_WINNER_NICKS && (
-                      <span className="twitch-winners-more">+{winners.length - MAX_WINNER_NICKS} more</span>
-                    )}
-                  </span>
-                </>
-              )}
-            </div>
-          )}
 
           <div className="twitch-feed" ref={feedRef}>
             {messages.length === 0 ? (
@@ -208,13 +397,14 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
                   >
                     {m.displayName}
                   </span>
-                  <span className="twitch-msg-text">{m.text}</span>
+                  <EmoteText text={m.text} emotes={emotes} />
                 </div>
               ))
             )}
           </div>
         </>
       )}
-    </aside>
+    </aside>,
+    document.body,
   );
 }

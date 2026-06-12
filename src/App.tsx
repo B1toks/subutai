@@ -87,6 +87,7 @@ import { localStorageAdapter } from './memory/storage';
 import { MemoryPanel } from './memory/MemoryPanel';
 import type { SavedGame } from './memory/types';
 import { NotationParseError, parseMemoryNotation } from './memory/notation';
+import { moveVoting } from './twitch/moveVoting';
 import { scaleBudgetMs } from './utils/deviceTier';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
@@ -2319,15 +2320,26 @@ function App() {
     ) => {
       if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
       aiTimerRef.current = setTimeout(async () => {
-        const move = await SubutaiAgent.chooseMove(boardState, moves, {
+        const chosen = await SubutaiAgent.chooseMove(boardState, moves, {
           lastMoveWasRotation,
           allowSelfCheck: gameMode === 'roulette',
         });
-        if (!move) return;
-        if (move.kind === 'topologyToggle' && boardState.lastMoveWasRotation) {
+        if (!chosen) return;
+        if (chosen.kind === 'topologyToggle' && boardState.lastMoveWasRotation) {
           console.warn('[rotation guard] AI returned rotation when not allowed — ignoring');
           return;
         }
+
+        // T4 — Twitch move-vote gate. No-op (returns `chosen` instantly)
+        // unless a vote mode is on and chat is connected. In predict
+        // mode the gate holds the engine's move through a 15s vote
+        // window; in chat mode it substitutes the chat-elected move.
+        // Classic only — roulette's slot rules don't fit the candidate
+        // model.
+        const move =
+          gameMode === 'classic'
+            ? await moveVoting.gate(boardState, moves, chosen)
+            : chosen;
 
         const next =
           move.kind === 'topologyToggle'
@@ -5064,7 +5076,12 @@ function App() {
               if (gameStatus.startsWith('draw')) return 'draw';
               return null;
             })()}
-            onClose={() => setShowTwitch(false)}
+            onClose={() => {
+              // Closing the overlay also stops gating AI moves —
+              // otherwise the game would silently pause 15s per move.
+              moveVoting.setMode('off');
+              setShowTwitch(false);
+            }}
           />
         </Suspense>
       )}

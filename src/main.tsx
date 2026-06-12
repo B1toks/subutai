@@ -26,7 +26,17 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   });
 }
 
-createRoot(document.getElementById('root')!).render(
+// HMR can re-execute this entry module; calling createRoot twice on the
+// same container is a React error (and spams the console in dev). Stash
+// the root on the container and reuse it.
+const container = document.getElementById('root')!;
+interface RootHost {
+  __subutaiRoot?: ReturnType<typeof createRoot>;
+}
+const host = container as unknown as RootHost;
+const root = host.__subutaiRoot ?? (host.__subutaiRoot = createRoot(container));
+
+root.render(
   <StrictMode>
     {isShowcase ? (
       <Suspense fallback={null}>

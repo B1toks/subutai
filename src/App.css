@@ -2931,6 +2931,124 @@ body.checkmate-flash::after {
 
 .twitch-msg-text { color: var(--text); }
 
+.twitch-emote {
+  height: 24px;
+  vertical-align: middle;
+  margin: -4px 1px;
+}
+
+/* T4 — drag handle + vote rounds + leaderboard */
+
+.twitch-drag-handle {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.twitch-drag-handle:active { cursor: grabbing; }
+
+.twitch-mode-row {
+  display: flex;
+  gap: 6px;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--btn-border);
+}
+
+.twitch-mode-pill {
+  flex: 1;
+  border: 1px solid var(--btn-border);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  border-radius: var(--radius-full, 999px);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 0;
+  cursor: pointer;
+}
+
+.twitch-mode-pill.is-active {
+  background: #a970ff;
+  border-color: #a970ff;
+  color: #fff;
+}
+
+.twitch-round {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--btn-border);
+  background: rgba(169, 112, 255, 0.07);
+}
+
+.twitch-round-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.twitch-round-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 3px 6px;
+  border-radius: 6px;
+}
+
+.twitch-round-option.is-winner {
+  background: rgba(212, 168, 67, 0.18);
+  box-shadow: inset 0 0 0 1px var(--accent-primary);
+}
+
+.twitch-round-cmd {
+  font-weight: 700;
+  color: #a970ff;
+  min-width: 22px;
+}
+
+.twitch-round-san {
+  flex: 1;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--text);
+}
+
+.twitch-round-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.twitch-leaderboard {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--btn-border);
+  background: rgba(212, 168, 67, 0.08);
+}
+
+.twitch-leaderboard-title {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--accent-primary);
+  margin-bottom: 4px;
+}
+
+.twitch-leaderboard-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.twitch-lb-rank {
+  color: var(--text-muted);
+  min-width: 20px;
+}
+
+.twitch-lb-points {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--text);
+}
+
 /* Narrow screens: the panel becomes a bottom sheet so it never covers
    the whole board. */
 @media (max-width: 720px) {
