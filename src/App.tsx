@@ -43,6 +43,7 @@ import {
   Bot,
   Crosshair,
   Dices,
+  Disc3,
   Eye,
   Flag,
   GraduationCap,
@@ -88,6 +89,8 @@ import { MemoryPanel } from './memory/MemoryPanel';
 import type { SavedGame } from './memory/types';
 import { NotationParseError, parseMemoryNotation } from './memory/notation';
 import { moveVoting } from './twitch/moveVoting';
+import { micEq } from './audio/micEqualizer';
+import { PerimeterEqualizer } from './components/PerimeterEqualizer';
 import { scaleBudgetMs } from './utils/deviceTier';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
@@ -110,6 +113,10 @@ const StatsPage = lazy(() =>
 // T3 — Twitch overlay is code-split: only streamers pay for it.
 const TwitchPanel = lazy(() =>
   import('./components/TwitchPanel').then((m) => ({ default: m.TwitchPanel })),
+);
+// SP — Spotify dock, same deal.
+const MusicDock = lazy(() =>
+  import('./components/MusicDock').then((m) => ({ default: m.MusicDock })),
 );
 
 type GameStatus =
@@ -527,6 +534,11 @@ function App() {
   // T3 — Twitch overlay visibility (session-only; channel persists in
   // the panel itself).
   const [showTwitch, setShowTwitch] = useState(false);
+  // SP — Spotify dock visibility + whether the mic equalizer runs
+  // (the perimeter ring mounts only while it does).
+  const [showMusicDock, setShowMusicDock] = useState(false);
+  const [vizOn, setVizOn] = useState(false);
+  useEffect(() => micEq.onState(setVizOn), []);
   // S2.5 — per-side elapsed clocks. Pure UX (no flag-fall): the active
   // side's clock accumulates wall time while the game is live. Reset on
   // every new game log.
@@ -3614,6 +3626,17 @@ function App() {
           )}
         </div>
         <div className="header-controls">
+          <Tooltip text={showMusicDock ? 'Hide music dock' : 'Spotify + beat sync'} side="bottom">
+            <button
+              type="button"
+              className={`header-action-btn${showMusicDock ? ' is-active' : ''}`}
+              onClick={() => setShowMusicDock((v) => !v)}
+              aria-label="Toggle music dock"
+              aria-pressed={showMusicDock}
+            >
+              <Icon icon={Disc3} size="md" aria-hidden />
+            </button>
+          </Tooltip>
           <Tooltip text={showTwitch ? 'Hide Twitch chat' : 'Twitch chat + predictions'} side="bottom">
             <button
               type="button"
@@ -3967,6 +3990,9 @@ function App() {
         style={{ width: boardSize }}
         data-tour="board"
       >
+      {/* SP — mic-driven spectrum ring; mounts only while the
+          equalizer listens. Self-driving (no App re-renders). */}
+      {vizOn && <PerimeterEqualizer />}
       <div
         className={`board${previewTopology || previewLocked ? ' previewing' : ''}${recentRotation ? ' is-rotated' : ''}`}
         data-topology={displayTopology}
@@ -5168,6 +5194,14 @@ function App() {
       {/* T3 — Twitch chat + predictions overlay. gameKey resets the
           vote round per game; the result is derived once the status
           leaves 'active'. */}
+      {/* SP — Spotify dock: embed player + tap-tempo beat sync + mic
+          equalizer controls. */}
+      {showMusicDock && (
+        <Suspense fallback={null}>
+          <MusicDock onClose={() => setShowMusicDock(false)} />
+        </Suspense>
+      )}
+
       {showTwitch && (
         <Suspense fallback={null}>
           <TwitchPanel
