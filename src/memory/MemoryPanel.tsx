@@ -89,7 +89,7 @@ function MemoryPanelImpl({
           <input
             type="text"
             className="memory-filter-input"
-            placeholder="Filter: R****BBN"
+            placeholder="Position: BBN or R****BBN"
             value={filterPattern}
             onChange={(e) => setFilterPattern(e.target.value)}
           />

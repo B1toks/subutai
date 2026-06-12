@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useState } from 'react';
-import { RotateCw, Eye, Dices, BarChart3, Swords } from 'lucide-react';
+import { RotateCw, Eye, Dices, BarChart3, GraduationCap, Swords } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Icon } from './Icon';
 
@@ -52,6 +52,16 @@ const STEPS: TourStep[] = [
       'Hover the eye to preview what the rotation would do. Click it to ' +
       'lock the preview while you think. Preview is free — only Rotate ' +
       'spends the turn.',
+  },
+  {
+    target: 'coach',
+    icon: GraduationCap,
+    title: 'Coaching tools',
+    body:
+      'The cap toggles your helper kit: a support map (who defends whom), ' +
+      'a threat map, and — the star of the set — the 💡 Hint button: the ' +
+      'engine suggests a strong move, and even tells you when rotating ' +
+      'the board is the best play. Switch the kit off for a pure game.',
   },
   {
     target: 'modes',

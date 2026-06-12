@@ -198,6 +198,34 @@ function backRankString(boardState: BoardState): string {
     .join('');
 }
 
+// B3 — eval-bar stability. Dropping the search eval to null between
+// moves made the bar flicker: search → static fallback → worker. Now
+// the previous search eval is *bumped* by the move's material delta
+// (the dominant term) so the bar shifts once toward the truth and the
+// worker only fine-tunes it ~1s later.
+function bumpEvalForMove(
+  prevEval: number | null,
+  stateBefore: BoardState,
+  move: Move,
+): number | null {
+  if (prevEval === null) return null;
+  if (move.kind === 'topologyToggle' || !move.to) return prevEval;
+  let delta = 0;
+  const victim = stateBefore.pieces[move.to];
+  if (victim) {
+    delta += PIECE_VALUE[victim.type] * (victim.color === 'black' ? 1 : -1);
+  } else if (move.kind === 'enPassant') {
+    const mover = move.from ? stateBefore.pieces[move.from] : undefined;
+    delta += PIECE_VALUE.pawn * (mover?.color === 'white' ? 1 : -1);
+  }
+  if (move.kind === 'promotion' && move.promotion && move.from) {
+    const mover = stateBefore.pieces[move.from];
+    const gain = PIECE_VALUE[move.promotion] - PIECE_VALUE.pawn;
+    delta += gain * (mover?.color === 'white' ? 1 : -1);
+  }
+  return prevEval + delta;
+}
+
 // S2.5 — mm:ss elapsed-time display for the per-side clocks.
 function formatClock(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
@@ -1757,6 +1785,64 @@ function App() {
     return () => clearInterval(id);
   }, [gameStatus, watchingGame, logLocal.id]);
 
+  // ── B8: multiplayer time control ──────────────────────────────────
+  // Both peers derive identical countdown clocks from the shared move
+  // timestamps in the match doc — no extra writes, no sync drift
+  // beyond local clock skew. White's first move is free (no reliable
+  // "game started" epoch in the doc); every later entry charges the
+  // time since the previous entry to its mover. Flag-fall self-forfeits
+  // through the existing resign path — same trust model as the AFK
+  // watchdog.
+  const mpTimeControl =
+    isMultiplayer && mpSync && mpSync.matchState.gameMode !== 'roulette'
+      ? mpSync.matchState.timeControlSec ?? null
+      : null;
+
+  const [mpNow, setMpNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!mpTimeControl || gameStatus !== 'active') return;
+    const id = setInterval(() => setMpNow(Date.now()), 500);
+    return () => clearInterval(id);
+  }, [mpTimeControl, gameStatus]);
+
+  const mpClocks = useMemo(() => {
+    if (!mpTimeControl || !mpSync) return null;
+    const moves = mpSync.matchState.log.moves;
+    let usedWhite = 0;
+    let usedBlack = 0;
+    for (let i = 1; i < moves.length; i++) {
+      const dt = Math.max(0, (moves[i].timestamp ?? 0) - (moves[i - 1].timestamp ?? 0));
+      // Mover of entry i: entries alternate starting with white (rotations
+      // consume the turn too, so parity holds in classic).
+      if (i % 2 === 0) usedWhite += dt;
+      else usedBlack += dt;
+    }
+    if (gameStatus === 'active' && moves.length > 0) {
+      const live = Math.max(0, mpNow - (moves[moves.length - 1].timestamp ?? mpNow));
+      if (moves.length % 2 === 0) usedWhite += live;
+      else usedBlack += live;
+    }
+    const total = mpTimeControl * 1000;
+    return {
+      white: Math.max(0, total - usedWhite),
+      black: Math.max(0, total - usedBlack),
+    };
+  }, [mpTimeControl, mpSync, mpNow, gameStatus]);
+
+  const flagFiredRef = useRef(false);
+  useEffect(() => {
+    flagFiredRef.current = false;
+  }, [mpSync?.matchState.code]);
+  useEffect(() => {
+    if (!mpClocks || !mpSync || flagFiredRef.current) return;
+    if (mpSync.matchState.status !== 'active') return;
+    const mine = mpSync.myColor === 'white' ? mpClocks.white : mpClocks.black;
+    if (mine <= 0) {
+      flagFiredRef.current = true;
+      void mpSync.resign();
+    }
+  }, [mpClocks, mpSync]);
+
   function toggleHelpTools() {
     setHelpToolsEnabled((v) => {
       const next = !v;
@@ -1788,7 +1874,27 @@ function App() {
     if (!best) return;
     if (best.kind === 'topologyToggle') {
       setHintMove({ rotate: true });
-    } else if (best.from && best.to) {
+      return;
+    }
+    // B4 — the search explores rotation but its eval rarely ranks it
+    // strictly #1, so the hint never showed the signature move. Probe
+    // the rotation line explicitly: if it's at least as good as the
+    // best piece move (within 30cp), recommend the rotate — it's the
+    // mechanic worth teaching.
+    if (canRotate && !state.lastMoveWasRotation) {
+      const rotated = applyRotationMove(state);
+      const reply = searchPosition(rotated, {
+        budgetMs: 300,
+        maxDepth: 4,
+        lastMoveWasRotation: true,
+      });
+      const rotationScore = -reply.score; // negamax: reply is opponent-side
+      if (rotationScore >= result.score - 30) {
+        setHintMove({ rotate: true });
+        return;
+      }
+    }
+    if (best.from && best.to) {
       setHintMove({ from: best.from, to: best.to });
     }
   }
@@ -2367,9 +2473,8 @@ function App() {
         // synchronous setLog call returns).
         if (move.kind !== 'topologyToggle') {
           const moveIdx = logLengthRef.current;
-          // Drop search-eval so the bar follows the static fallback for the
-          // ~1 s before the worker comes back with the upgraded score.
-          setSearchEvalFromWhite(null);
+          // B3 — material-delta bump instead of static-fallback flicker.
+          setSearchEvalFromWhite((prev) => bumpEvalForMove(prev, boardState, move));
           setSearchMateInPlies(null);
           const aiAnalysis = await classifyAsync(boardState, move, next, {
             budgetMs: scaleBudgetMs(1000),
@@ -2902,10 +3007,9 @@ function App() {
     // ~1 s depth-7 search runs. moveIdx is captured pre-append so the .then
     // can patch by index even if the user / AI has moved on by the time the
     // analysis lands. Visuals are gated to "still the latest move".
-    // Drop the previous search-eval immediately — currentEval falls back to
-    // the static evaluator, which gives the bar an instant first-pass shift
-    // (matters most on captures). The classify .then upgrades it ~1s later.
-    setSearchEvalFromWhite(null);
+    // B3 — bump the previous search-eval by the material delta instead
+    // of dropping to the static fallback (the bar was flickering).
+    setSearchEvalFromWhite((prev) => bumpEvalForMove(prev, state, resolvedMove));
     setSearchMateInPlies(null);
     const moveIdx = log.moves.length;
     // Sprint 4.1 — local hot-seat skips the classifier worker. The
@@ -2991,9 +3095,8 @@ function App() {
     setPendingPromotion(null);
     setLog((prev) => appendMove(prev, move, san, state.topologyState));
     setLastMove({ from: move.from, to: move.to });
-    // See onSquareClick: drop search-eval so the static fallback paints the
-    // bar instantly while the worker classifier catches up.
-    setSearchEvalFromWhite(null);
+    // B3 — material-delta bump instead of static-fallback flicker.
+    setSearchEvalFromWhite((prev) => bumpEvalForMove(prev, state, move));
     setSearchMateInPlies(null);
     const moveIdx = log.moves.length;
     classifyAsync(state, move, next, {
@@ -3728,22 +3831,23 @@ function App() {
           </span>
         </button>
       </div>
-      {/* S2.5 — per-side elapsed clocks. The chip for the side to move
-          glows so the bar doubles as a turn indicator. */}
+      {/* S2.5 — per-side clocks. Elapsed time normally; in a timed MP
+          match (B8) they switch to countdown, glowing red under 30s. */}
       {gameStatus === 'active' && !watchingGame && (
         <div className="game-clocks" aria-label="Game clocks">
-          <span
-            className={`clock-chip clock-chip-white${state.sideToMove === 'white' ? ' is-running' : ''}`}
-          >
-            <span className="clock-chip-dot" aria-hidden />
-            White {formatClock(clockMs.white)}
-          </span>
-          <span
-            className={`clock-chip clock-chip-black${state.sideToMove === 'black' ? ' is-running' : ''}`}
-          >
-            <span className="clock-chip-dot" aria-hidden />
-            Black {formatClock(clockMs.black)}
-          </span>
+          {(['white', 'black'] as const).map((side) => {
+            const ms = mpClocks ? mpClocks[side] : clockMs[side];
+            const low = mpClocks !== null && ms < 30_000;
+            return (
+              <span
+                key={side}
+                className={`clock-chip clock-chip-${side}${state.sideToMove === side ? ' is-running' : ''}${low ? ' is-low' : ''}`}
+              >
+                <span className="clock-chip-dot" aria-hidden />
+                {side === 'white' ? 'White' : 'Black'} {formatClock(ms)}
+              </span>
+            );
+          })}
         </div>
       )}
       {/* Sprint 2.7.1 — the roulette panel now only renders when there
@@ -4370,6 +4474,7 @@ function App() {
                   type="button"
                   className={`action-btn${helpToolsEnabled ? ' active' : ''}`}
                   onClick={toggleHelpTools}
+                  data-tour="coach"
                   aria-label="Toggle coaching tools"
                   aria-pressed={helpToolsEnabled}
                 >

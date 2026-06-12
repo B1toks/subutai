@@ -37,6 +37,8 @@ export function FriendLobby({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [createMode, setCreateMode] = useState<MatchGameMode>('classic');
+  // B8 — 10-min time control checkbox (friend matches only for now).
+  const [timed, setTimed] = useState(false);
   // onMatchReady changes identity on every parent render; storing in a ref
   // keeps the subscribe-effect deps minimal.
   const onMatchReadyRef = useRef(onMatchReady);
@@ -68,6 +70,8 @@ export function FriendLobby({
       const code = await createMatch(
         { uid: uid!, displayName: displayName! },
         createMode,
+        // Timed roulette doesn't fit the multi-action turn model yet.
+        createMode === 'classic' && timed ? 600 : null,
       );
       setView({ kind: 'hosted', code, status: 'waiting' });
     } catch (err) {
@@ -194,6 +198,17 @@ export function FriendLobby({
                 </span>
               </label>
             </div>
+            {/* B8 — single 10-min preset for now; more controls later. */}
+            <label className={`friend-lobby-timecontrol${timed ? ' is-selected' : ''}`}>
+              <input
+                type="checkbox"
+                checked={timed}
+                onChange={(e) => setTimed(e.target.checked)}
+                disabled={busy}
+              />
+              <span className="friend-lobby-mode-title">⏱ Time control</span>
+              <span className="friend-lobby-mode-sub">10 minutes per player</span>
+            </label>
             <button
               type="button"
               className="friend-lobby-primary-btn"
