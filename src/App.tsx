@@ -53,6 +53,7 @@ import {
   RotateCw,
   Sparkles,
   Trophy,
+  Cast,
   Users,
   UsersRound,
 } from 'lucide-react';
@@ -104,6 +105,10 @@ const FriendLobby = lazy(() =>
 );
 const StatsPage = lazy(() =>
   import('./components/StatsPage').then((m) => ({ default: m.StatsPage })),
+);
+// T3 — Twitch overlay is code-split: only streamers pay for it.
+const TwitchPanel = lazy(() =>
+  import('./components/TwitchPanel').then((m) => ({ default: m.TwitchPanel })),
 );
 
 type GameStatus =
@@ -490,6 +495,9 @@ function App() {
   const [hintMove, setHintMove] = useState<
     { from: SquareId; to: SquareId } | { rotate: true } | null
   >(null);
+  // T3 — Twitch overlay visibility (session-only; channel persists in
+  // the panel itself).
+  const [showTwitch, setShowTwitch] = useState(false);
   // S2.5 — per-side elapsed clocks. Pure UX (no flag-fall): the active
   // side's clock accumulates wall time while the game is live. Reset on
   // every new game log.
@@ -3491,6 +3499,17 @@ function App() {
           )}
         </div>
         <div className="header-controls">
+          <Tooltip text={showTwitch ? 'Hide Twitch chat' : 'Twitch chat + predictions'} side="bottom">
+            <button
+              type="button"
+              className={`header-action-btn${showTwitch ? ' is-active' : ''}`}
+              onClick={() => setShowTwitch((v) => !v)}
+              aria-label="Toggle Twitch chat"
+              aria-pressed={showTwitch}
+            >
+              <Icon icon={Cast} size="md" aria-hidden />
+            </button>
+          </Tooltip>
           <Tooltip text="Leaderboard" side="bottom">
             <button
               type="button"
@@ -5027,6 +5046,27 @@ function App() {
           screen; suppressed in replays, multiplayer, and sub-views. */}
       {showTutorial && view === 'game' && !isMultiplayer && !watchingGame && (
         <TutorialOverlay onClose={closeTutorial} />
+      )}
+
+      {/* T3 — Twitch chat + predictions overlay. gameKey resets the
+          vote round per game; the result is derived once the status
+          leaves 'active'. */}
+      {showTwitch && (
+        <Suspense fallback={null}>
+          <TwitchPanel
+            gameKey={logLocal.id}
+            gameResult={(() => {
+              if (gameStatus === 'checkmate') {
+                return state.sideToMove === 'white' ? 'black' : 'white';
+              }
+              if (gameStatus === 'king_captured_white_wins') return 'white';
+              if (gameStatus === 'king_captured_black_wins') return 'black';
+              if (gameStatus.startsWith('draw')) return 'draw';
+              return null;
+            })()}
+            onClose={() => setShowTwitch(false)}
+          />
+        </Suspense>
       )}
 
     </div>
