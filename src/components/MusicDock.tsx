@@ -27,6 +27,18 @@ import { micEq, type MicStartResult } from '../audio/micEqualizer';
 const URL_KEY = 'subutai_spotify_url';
 const BPM_MAP_KEY = 'subutai_spotify_bpm';
 const POS_KEY = 'subutai_music_pos';
+
+/* SP-4 — tempo presets: the "prepared playlists" half of the idea, in
+ * its safe form. One tap arms a beat grid at a known tempo — no track,
+ * no lookup, works with the mic equalizer, external speakers, or as a
+ * bare metronome. Covers the common chess-stream vibes. */
+const TEMPO_PRESETS: { label: string; bpm: number }[] = [
+  { label: 'Chill', bpm: 70 },
+  { label: 'Lo-fi', bpm: 85 },
+  { label: 'Groove', bpm: 100 },
+  { label: 'House', bpm: 124 },
+  { label: 'DnB', bpm: 174 },
+];
 const URL_RE = /open\.spotify\.com\/(?:embed\/)?(track|playlist|album)\/([a-zA-Z0-9]+)/;
 
 interface SpotifyController {
@@ -226,6 +238,18 @@ export function MusicDock({ onClose }: MusicDockProps) {
     setSyncRunning(false);
   }
 
+  // SP-4 — one-tap tempo preset: arm the grid at a fixed BPM and start.
+  // Track base when a Spotify embed is loaded (so pause still freezes
+  // it), wall base otherwise (mic / speakers / metronome).
+  function handlePreset(presetBpm: number) {
+    beatEngine.setBase(loadedUrl ? 'track' : 'wall');
+    beatEngine.adoptBpm(presetBpm);
+    setBpm(presetBpm);
+    setAutoBpm('idle');
+    beatEngine.start();
+    setSyncRunning(true);
+  }
+
   async function toggleMic() {
     setMicError(null);
     if (micEq.isRunning()) {
@@ -365,6 +389,21 @@ export function MusicDock({ onClose }: MusicDockProps) {
       {playerState === 'loading' && (
         <div className="twitch-status">Loading player…</div>
       )}
+
+      {/* SP-4 — instant tempo presets ("prepared playlists", safe form). */}
+      <div className="music-dock-presets" role="group" aria-label="Tempo presets">
+        {TEMPO_PRESETS.map((p) => (
+          <button
+            key={p.label}
+            type="button"
+            className={`music-dock-preset${syncRunning && bpm === p.bpm ? ' is-active' : ''}`}
+            onClick={() => handlePreset(p.bpm)}
+            title={`${p.bpm} BPM`}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
 
       <div className="music-dock-beat">
         <button type="button" className="music-dock-tap-btn" onClick={handleTap}>
