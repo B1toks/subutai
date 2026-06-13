@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Disc3, GripVertical, Mic, MicOff, Play, Square, X } from 'lucide-react';
+import {
+  Disc3, GripVertical, ListMusic, Mic, MicOff, Play, Plus, SkipForward, Square, Trash2, X,
+} from 'lucide-react';
 import { Icon } from './Icon';
 import { beatEngine } from '../music/beatEngine';
-import { lookupBpm } from '../music/autoBpm';
+import { lookupBpm, analyzeTrack } from '../music/autoBpm';
 import { beatMode } from '../music/beatMode';
+import {
+  loadPlaylists, savePlaylist, deletePlaylist, newPlaylistId,
+  type SavedPlaylist, type PlaylistTrack,
+} from '../music/playlists';
 import { micEq, type MicStartResult } from '../audio/micEqualizer';
 
 /* SP-2 — the Spotify dock, IFrame-API edition.
@@ -119,6 +125,14 @@ export function MusicDock({ onClose }: MusicDockProps) {
   const [autoBpm, setAutoBpm] = useState<'idle' | 'looking' | 'found' | 'none'>('idle');
   // SP-3 — Beat Mode: moves snap to the beat (classic solo only).
   const [beatModeOn, setBeatModeOn] = useState(() => beatMode.isEnabled());
+  // SP-5 — pre-analyzed playlists.
+  const [showPlaylists, setShowPlaylists] = useState(false);
+  const [playlists, setPlaylists] = useState<SavedPlaylist[]>(() => loadPlaylists());
+  const [builderText, setBuilderText] = useState('');
+  const [builderName, setBuilderName] = useState('');
+  const [analyzing, setAnalyzing] = useState<{ done: number; total: number } | null>(null);
+  // Active playlist playback: id + current track index.
+  const [nowPlaying, setNowPlaying] = useState<{ id: string; idx: number } | null>(null);
 
   const embedHostRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<SpotifyController | null>(null);
@@ -127,17 +141,29 @@ export function MusicDock({ onClose }: MusicDockProps) {
   const loadedUrlRef = useRef('');
 
   // ── embed controller lifecycle ──
+  // Thin wrapper for the URL input box: load + auto-detect BPM.
   async function loadUrl() {
-    const parsed = parseSpotifyUrl(urlInput);
+    await loadTrack(urlInput);
+  }
+
+  /**
+   * Load a track into the embed and arm the beat grid.
+   *  - knownBpm provided (playlist playback): adopt it, skip the lookup.
+   *  - otherwise: use the saved-per-URL BPM, else the keyless oEmbed →
+   *    Deezer auto-detect (a tap later just fixes the phase).
+   */
+  async function loadTrack(url: string, knownBpm?: number | null) {
+    const parsed = parseSpotifyUrl(url);
     if (!parsed || !embedHostRef.current) return;
     try {
-      localStorage.setItem(URL_KEY, urlInput);
+      localStorage.setItem(URL_KEY, url);
     } catch { /* private mode */ }
+    setUrlInput(url);
     setPlayerState('loading');
-    setLoadedUrl(urlInput);
-    loadedUrlRef.current = urlInput;
+    setLoadedUrl(url);
+    loadedUrlRef.current = url;
     beatEngine.setBase('track');
-    const saved = readBpmMap()[urlInput];
+    const saved = knownBpm ?? readBpmMap()[url];
     if (saved) {
       beatEngine.adoptBpm(saved);
       setAutoBpm('found');
@@ -146,7 +172,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
       // the player doesn't HAVE to tap. A single tap later just fixes
       // the phase. Falls back silently to tap-tempo on any miss.
       setAutoBpm('looking');
-      const target = urlInput;
+      const target = url;
       void lookupBpm(target).then((result) => {
         // Ignore if the user loaded a different link meanwhile.
         if (loadedUrlRef.current !== target) return;
@@ -248,6 +274,60 @@ export function MusicDock({ onClose }: MusicDockProps) {
     setAutoBpm('idle');
     beatEngine.start();
     setSyncRunning(true);
+  }
+
+  // ── SP-5: playlists ──
+  // Pre-analyze every pasted URL (title + BPM), drop dead links, save.
+  async function analyzeAndSave() {
+    const urls = builderText
+      .split(/[\s,]+/)
+      .map((u) => u.trim())
+      .filter((u) => parseSpotifyUrl(u));
+    if (urls.length === 0) return;
+    setAnalyzing({ done: 0, total: urls.length });
+    const tracks: PlaylistTrack[] = [];
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i];
+      const parsed = parseSpotifyUrl(url)!;
+      const info = await analyzeTrack(url);
+      if (info) {
+        tracks.push({ url, uri: parsed.uri, title: info.title, bpm: info.bpm });
+      }
+      setAnalyzing({ done: i + 1, total: urls.length });
+    }
+    setAnalyzing(null);
+    if (tracks.length === 0) return;
+    const name = builderName.trim() || `Playlist ${playlists.length + 1}`;
+    const pl: SavedPlaylist = { id: newPlaylistId(), name, tracks, createdAt: Date.now() };
+    setPlaylists(savePlaylist(pl));
+    setBuilderText('');
+    setBuilderName('');
+  }
+
+  function removePlaylist(id: string) {
+    setPlaylists(deletePlaylist(id));
+    if (nowPlaying?.id === id) setNowPlaying(null);
+  }
+
+  // Play a playlist from a track index — loads the embed with the
+  // pre-analyzed BPM (instant grid, no lookup) and starts sync.
+  async function playPlaylistTrack(pl: SavedPlaylist, idx: number) {
+    const track = pl.tracks[idx];
+    if (!track) return;
+    setNowPlaying({ id: pl.id, idx });
+    await loadTrack(track.url, track.bpm);
+    if (track.bpm) {
+      beatEngine.start();
+      setSyncRunning(true);
+    }
+  }
+
+  function nextTrack() {
+    if (!nowPlaying) return;
+    const pl = playlists.find((p) => p.id === nowPlaying.id);
+    if (!pl) return;
+    const next = (nowPlaying.idx + 1) % pl.tracks.length;
+    void playPlaylistTrack(pl, next);
   }
 
   async function toggleMic() {
@@ -469,6 +549,102 @@ export function MusicDock({ onClose }: MusicDockProps) {
         </span>
       </div>
       {micError && <div className="twitch-status twitch-status-error">{micError}</div>}
+
+      {/* SP-5 — pre-analyzed playlists. Assemble track URLs, analyze BPM
+          ahead of time, then play track-by-track with the grid pre-armed. */}
+      <div className="music-dock-playlists">
+        <button
+          type="button"
+          className="music-dock-pl-toggle"
+          onClick={() => setShowPlaylists((v) => !v)}
+          aria-expanded={showPlaylists}
+        >
+          <Icon icon={ListMusic} size="sm" aria-hidden />
+          Playlists{playlists.length > 0 ? ` (${playlists.length})` : ''}
+          <span className="music-dock-pl-caret">{showPlaylists ? '▾' : '▸'}</span>
+        </button>
+
+        {showPlaylists && (
+          <div className="music-dock-pl-body">
+            {/* saved playlists */}
+            {playlists.map((pl) => {
+              const playing = nowPlaying?.id === pl.id;
+              const withBpm = pl.tracks.filter((t) => t.bpm !== null).length;
+              return (
+                <div key={pl.id} className={`music-dock-pl-card${playing ? ' is-playing' : ''}`}>
+                  <div className="music-dock-pl-head">
+                    <button
+                      type="button"
+                      className="music-dock-pl-play"
+                      onClick={() => void playPlaylistTrack(pl, playing ? nowPlaying!.idx : 0)}
+                      title="Play playlist"
+                    >
+                      <Icon icon={Play} size="sm" aria-hidden />
+                    </button>
+                    <span className="music-dock-pl-name">{pl.name}</span>
+                    <span className="music-dock-pl-meta">
+                      {pl.tracks.length} · {withBpm} BPM
+                    </span>
+                    <button
+                      type="button"
+                      className="music-dock-pl-del"
+                      onClick={() => removePlaylist(pl.id)}
+                      aria-label={`Delete ${pl.name}`}
+                    >
+                      <Icon icon={Trash2} size="sm" aria-hidden />
+                    </button>
+                  </div>
+                  {playing && (
+                    <div className="music-dock-pl-nowplaying">
+                      <span className="music-dock-pl-track">
+                        ▶ {pl.tracks[nowPlaying!.idx]?.title ?? '—'}
+                        {pl.tracks[nowPlaying!.idx]?.bpm
+                          ? ` · ${pl.tracks[nowPlaying!.idx]!.bpm} BPM`
+                          : ' · tap to set tempo'}
+                      </span>
+                      <button type="button" className="music-dock-pl-next" onClick={nextTrack} title="Next track">
+                        <Icon icon={SkipForward} size="sm" aria-hidden />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* builder */}
+            {analyzing ? (
+              <div className="music-dock-pl-analyzing">
+                Analyzing… {analyzing.done}/{analyzing.total}
+              </div>
+            ) : (
+              <div className="music-dock-pl-builder">
+                <input
+                  type="text"
+                  className="music-dock-input"
+                  placeholder="Playlist name"
+                  value={builderName}
+                  onChange={(e) => setBuilderName(e.target.value)}
+                />
+                <textarea
+                  className="music-dock-pl-textarea"
+                  placeholder="Paste Spotify track URLs, one per line"
+                  value={builderText}
+                  onChange={(e) => setBuilderText(e.target.value)}
+                  rows={3}
+                />
+                <button
+                  type="button"
+                  className="music-dock-load-btn music-dock-pl-analyze-btn"
+                  onClick={() => void analyzeAndSave()}
+                  disabled={builderText.trim().length === 0}
+                >
+                  <Icon icon={Plus} size="sm" aria-hidden /> Analyze &amp; save
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </aside>,
     document.body,
   );

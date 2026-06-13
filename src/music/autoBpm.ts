@@ -108,3 +108,41 @@ export function lookupBpm(spotifyUrl: string): Promise<AutoBpmResult | null> {
   }
   return p;
 }
+
+/** Deezer BPM for a free-text "title artist" query, or null. Shared by
+ *  lookupBpm and analyzeTrack. */
+async function deezerBpm(query: string): Promise<number | null> {
+  const search = await jsonp<DeezerSearch>(
+    `https://api.deezer.com/search?q=${encodeURIComponent(query)}&limit=5`,
+  );
+  const tracks = search?.data ?? [];
+  for (const candidate of tracks.slice(0, 3)) {
+    if (!candidate.id) continue;
+    const detail = await jsonp<DeezerTrack>(`https://api.deezer.com/track/${candidate.id}?`);
+    const bpm = detail?.bpm;
+    if (bpm && bpm >= 40 && bpm <= 220) return Math.round(bpm * 10) / 10;
+  }
+  return null;
+}
+
+export interface AnalyzedTrack {
+  /** A track display title ("Song — Artist" when the artist resolves). */
+  title: string;
+  /** Detected BPM, or null when neither Deezer nor a sane match found one
+   *  (the track still plays — it just needs a tap to set tempo). */
+  bpm: number | null;
+}
+
+/**
+ * SP-5 — pre-analyze one track for a saved playlist: resolve the title
+ * via Spotify oEmbed, then the BPM via Deezer. Returns null only when
+ * the URL doesn't resolve at all (so callers can drop dead links);
+ * a resolved track with no BPM comes back as { title, bpm: null }.
+ */
+export async function analyzeTrack(spotifyUrl: string): Promise<AnalyzedTrack | null> {
+  const label = await fetchTrackLabel(spotifyUrl);
+  if (!label) return null;
+  const title = label.artist ? `${label.title} — ${label.artist}` : label.title;
+  const bpm = await deezerBpm(`${label.title} ${label.artist}`.trim());
+  return { title, bpm };
+}
