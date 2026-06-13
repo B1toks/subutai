@@ -89,6 +89,13 @@ export class BeatEngine {
     this.taps.push(t);
     if (this.taps.length > MAX_TAPS) this.taps.shift();
 
+    // SP-3 — when the BPM is already known (auto-detected or saved),
+    // a SINGLE tap re-anchors the phase: "tap once on any beat". Full
+    // 4-tap calibration still recomputes both below.
+    if (this.intervalMs > 0 && this.taps.length < TAPS_FOR_BPM) {
+      this.phaseMs = t % this.intervalMs;
+    }
+
     if (this.taps.length >= TAPS_FOR_BPM) {
       const intervals: number[] = [];
       for (let i = 1; i < this.taps.length; i++) {
@@ -148,6 +155,18 @@ export class BeatEngine {
     return () => {
       this.listeners.delete(cb);
     };
+  }
+
+  /** Milliseconds until the next beat (0 when no grid / not running).
+   *  Used by the move-snap delay in Beat Mode. Note: when sitting
+   *  exactly on a beat this returns ~intervalMs (a full wait to the
+   *  NEXT beat), not 0 — the caller's SNAP_FLOOR handles the
+   *  just-before-beat case where the wait is tiny. */
+  msToNextBeat(): number {
+    if (!this.running || this.intervalMs <= 0) return 0;
+    const t = this.now();
+    const offset = (((t - this.phaseMs) % this.intervalMs) + this.intervalMs) % this.intervalMs;
+    return Math.round(this.intervalMs - offset);
   }
 
   /** Distance from "now" to the nearest beat, scored. */

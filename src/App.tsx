@@ -92,6 +92,7 @@ import { moveVoting } from './twitch/moveVoting';
 import { micEq } from './audio/micEqualizer';
 import { PerimeterEqualizer } from './components/PerimeterEqualizer';
 import { beatBridge } from './music/beatBridge';
+import { beatMode } from './music/beatMode';
 import { BeatCombo } from './components/BeatCombo';
 import { scaleBudgetMs } from './utils/deviceTier';
 
@@ -658,6 +659,9 @@ function App() {
       : rouletteSpinCountLocal;
   const formationInputRef = useRef<HTMLInputElement>(null);
   const aiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // SP-3 — true while a Beat-Mode move is queued to land on the next
+  // beat; blocks board input so the snap can't be raced.
+  const beatSnapPendingRef = useRef(false);
   // Stage P addendum 7: wall-clock when the current game began. Used to
   // compute durationMs on save. Set in startNewGame (and on initial mount
   // for the first game).
@@ -2867,6 +2871,9 @@ function App() {
 
   function onSquareClick(square: string) {
     if (watchingGame) return; // replay mode is read-only.
+    // SP-3 Beat Mode — a move is queued to land on the next beat; ignore
+    // further board input until it commits so the snap can't be raced.
+    if (beatSnapPendingRef.current) return;
 
     // Multiplayer: bypass the local engine pipeline entirely. Selection +
     // legalMoves are the same shared values; the only difference is the
@@ -3009,6 +3016,27 @@ function App() {
         ? { ...move, promotion: 'queen' }
         : move;
 
+    // SP-3 Beat Mode — in classic solo play, hold the move so it lands
+    // on the next beat. The commit closure below captures this render's
+    // state/log; nothing mutates them during the <1-beat hold (it's the
+    // human's turn), so deferring is safe. Game logic is unchanged — only
+    // the timing of the commit shifts. Roulette/MP are excluded.
+    const snapMs =
+      gameMode === 'classic' && !isMultiplayer ? beatMode.snapDelayMs() : 0;
+    if (snapMs > 0) {
+      beatSnapPendingRef.current = true;
+      setSelected(null); // deselect immediately so the hold feels intentional
+      window.setTimeout(() => {
+        beatSnapPendingRef.current = false;
+        commitMove();
+      }, snapMs);
+      return;
+    }
+    commitMove();
+    return;
+
+    // ── commit closure ──────────────────────────────────────────────
+    function commitMove() {
     const san = computeSAN(state, resolvedMove);
     const moverType = state.pieces[resolvedMove.from!]!.type;
     const afterMove = applyMove(state, resolvedMove);
@@ -3091,6 +3119,7 @@ function App() {
       setSelected(null);
     }
     checkGameOver(afterMove);
+    } // end commitMove
   }
 
   function handlePromotion(pieceType: PieceType) {

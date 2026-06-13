@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { Disc3, GripVertical, Mic, MicOff, Play, Square, X } from 'lucide-react';
 import { Icon } from './Icon';
 import { beatEngine } from '../music/beatEngine';
+import { lookupBpm } from '../music/autoBpm';
+import { beatMode } from '../music/beatMode';
 import { micEq, type MicStartResult } from '../audio/micEqualizer';
 
 /* SP-2 — the Spotify dock, IFrame-API edition.
@@ -101,9 +103,16 @@ export function MusicDock({ onClose }: MusicDockProps) {
   // Engine mirrors for the UI (the engine itself lives outside React).
   const [bpm, setBpm] = useState(() => beatEngine.getBpm());
   const [syncRunning, setSyncRunning] = useState(() => beatEngine.isRunning());
+  // SP-3 — automatic BPM lookup (oEmbed → Deezer).
+  const [autoBpm, setAutoBpm] = useState<'idle' | 'looking' | 'found' | 'none'>('idle');
+  // SP-3 — Beat Mode: moves snap to the beat (classic solo only).
+  const [beatModeOn, setBeatModeOn] = useState(() => beatMode.isEnabled());
 
   const embedHostRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<SpotifyController | null>(null);
+  // SP-3 — mirrors loadedUrl for the async BPM lookup's stale-result
+  // guard (the closure captured at call time would go stale otherwise).
+  const loadedUrlRef = useRef('');
 
   // ── embed controller lifecycle ──
   async function loadUrl() {
@@ -114,9 +123,35 @@ export function MusicDock({ onClose }: MusicDockProps) {
     } catch { /* private mode */ }
     setPlayerState('loading');
     setLoadedUrl(urlInput);
+    loadedUrlRef.current = urlInput;
     beatEngine.setBase('track');
     const saved = readBpmMap()[urlInput];
-    if (saved) beatEngine.adoptBpm(saved);
+    if (saved) {
+      beatEngine.adoptBpm(saved);
+      setAutoBpm('found');
+    } else {
+      // SP-3 — no saved BPM: try the keyless oEmbed → Deezer lookup so
+      // the player doesn't HAVE to tap. A single tap later just fixes
+      // the phase. Falls back silently to tap-tempo on any miss.
+      setAutoBpm('looking');
+      const target = urlInput;
+      void lookupBpm(target).then((result) => {
+        // Ignore if the user loaded a different link meanwhile.
+        if (loadedUrlRef.current !== target) return;
+        if (result) {
+          beatEngine.adoptBpm(result.bpm);
+          setBpm(result.bpm);
+          const map = readBpmMap();
+          map[target] = result.bpm;
+          try {
+            localStorage.setItem(BPM_MAP_KEY, JSON.stringify(map));
+          } catch { /* private mode */ }
+          setAutoBpm('found');
+        } else {
+          setAutoBpm('none');
+        }
+      });
+    }
     setBpm(beatEngine.getBpm());
 
     if (controllerRef.current) {
@@ -269,11 +304,15 @@ export function MusicDock({ onClose }: MusicDockProps) {
 
   const savedBpm = loadedUrl ? readBpmMap()[loadedUrl] : undefined;
   const tapsHint =
-    bpm > 0
-      ? `${bpm} BPM${beatEngine.getBase() === 'track' ? ' · track-locked' : ''}`
-      : savedBpm
-        ? `saved ${savedBpm} BPM — tap to set the phase`
-        : 'tap 4+ times to the beat';
+    autoBpm === 'looking'
+      ? 'detecting BPM…'
+      : bpm > 0
+        ? `${bpm} BPM${autoBpm === 'found' ? ' · auto · tap once to align' : ''}`
+        : savedBpm
+          ? `saved ${savedBpm} BPM — tap to set the phase`
+          : autoBpm === 'none'
+            ? "couldn't detect — tap 4+ times"
+            : 'tap 4+ times to the beat';
 
   const panelStyle: React.CSSProperties | undefined =
     pos && window.innerWidth > 720
@@ -353,6 +392,28 @@ export function MusicDock({ onClose }: MusicDockProps) {
           Moves land on the beat → PERFECT streaks. ×10 = Rhythm Master 🏆
         </div>
       )}
+
+      {/* SP-3 — Beat Mode: hold each move until the next beat so the
+          piece moves in time. Classic solo only; never alters the move
+          itself. */}
+      <div className="music-dock-beat">
+        <button
+          type="button"
+          className={`music-dock-beat-btn${beatModeOn ? ' is-active' : ''}`}
+          onClick={() => {
+            const next = !beatModeOn;
+            beatMode.set(next);
+            setBeatModeOn(next);
+          }}
+          aria-pressed={beatModeOn}
+        >
+          <Icon icon={Disc3} size="sm" aria-hidden />
+          {beatModeOn ? 'Beat Mode on' : 'Beat Mode'}
+        </button>
+        <span className="music-dock-hint">
+          {beatModeOn ? 'moves snap to the beat' : 'moves play in rhythm (classic)'}
+        </span>
+      </div>
 
       <div className="music-dock-beat">
         <button
