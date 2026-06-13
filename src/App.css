@@ -3319,8 +3319,84 @@ body.checkmate-flash::after {
   color: var(--text-muted);
 }
 
+.music-dock-embed-host {
+  width: 100%;
+}
+
+.music-dock-embed-host iframe {
+  border: 0;
+  width: 100%;
+  display: block;
+}
+
+.music-dock-hint-row {
+  padding: 0 var(--space-3) var(--space-2);
+}
+
 @media (max-width: 720px) {
   .music-dock { left: 8px; right: 8px; width: auto; }
+}
+
+/* ── SP-2: on-beat combo overlay ──────────────────────────────────────
+   Fixed badge above the board center; tier colors escalate with the
+   streak. Pops in with a punch, parent unmounts it after the hold. */
+
+.beat-combo {
+  position: fixed;
+  top: 18%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 20px;
+  border-radius: var(--radius-full, 999px);
+  background: var(--bg-popup);
+  border: 2px solid var(--accent-primary);
+  box-shadow: 0 0 24px rgba(212, 168, 67, 0.35), var(--shadow-elevated, 0 12px 40px rgba(0, 0, 0, 0.5));
+  z-index: 1100;
+  pointer-events: none;
+  animation: beat-combo-pop 280ms cubic-bezier(0.2, 1.4, 0.4, 1);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+@keyframes beat-combo-pop {
+  0%   { transform: translateX(-50%) scale(0.6); opacity: 0; }
+  100% { transform: translateX(-50%) scale(1); opacity: 1; }
+}
+
+.beat-combo-label { color: var(--text); font-size: 15px; }
+.beat-combo-streak { color: var(--accent-primary); font-size: 17px; }
+
+.beat-combo-perfect .beat-combo-label { color: var(--accent-gold-bright); }
+.beat-combo-off {
+  border-color: var(--btn-border);
+  box-shadow: none;
+  opacity: 0.75;
+}
+.beat-combo-off .beat-combo-label { color: var(--text-muted); }
+
+/* Tier escalation — border + glow shift with the streak. */
+.beat-tier-great { border-color: var(--accent-teal-bright); box-shadow: 0 0 24px rgba(20, 184, 166, 0.4); }
+.beat-tier-great .beat-combo-streak { color: var(--accent-teal-bright); }
+.beat-tier-awesome { border-color: #8b5cf6; box-shadow: 0 0 28px rgba(139, 92, 246, 0.5); }
+.beat-tier-awesome .beat-combo-streak { color: #8b5cf6; }
+.beat-tier-master {
+  border-color: var(--accent-gold-bright);
+  box-shadow: 0 0 16px rgba(255, 215, 0, 0.6), 0 0 40px rgba(255, 140, 0, 0.4);
+  animation: beat-combo-pop 280ms cubic-bezier(0.2, 1.4, 0.4, 1), combo-master-glow 1.2s ease-in-out infinite 280ms;
+}
+.beat-tier-master .beat-combo-streak { color: var(--accent-gold-bright); }
+
+@keyframes combo-master-glow {
+  0%, 100% { box-shadow: 0 0 16px rgba(255, 215, 0, 0.6), 0 0 40px rgba(255, 140, 0, 0.4); }
+  50%      { box-shadow: 0 0 24px rgba(255, 215, 0, 0.9), 0 0 56px rgba(255, 140, 0, 0.6); }
+}
+
+.beat-combo-achievement {
+  color: var(--accent-gold-bright);
+  font-size: 14px;
 }
 
 /* Sprint 4.4 — full-screen Suspense fallback for code-split views. */

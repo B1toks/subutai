@@ -91,6 +91,8 @@ import { NotationParseError, parseMemoryNotation } from './memory/notation';
 import { moveVoting } from './twitch/moveVoting';
 import { micEq } from './audio/micEqualizer';
 import { PerimeterEqualizer } from './components/PerimeterEqualizer';
+import { beatBridge } from './music/beatBridge';
+import { BeatCombo } from './components/BeatCombo';
 import { scaleBudgetMs } from './utils/deviceTier';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
@@ -3012,6 +3014,9 @@ function App() {
     const afterMove = applyMove(state, resolvedMove);
     setLog((prev) => appendMove(prev, resolvedMove, san, state.topologyState));
     setLastMove({ from: resolvedMove.from, to: resolvedMove.to });
+    // SP-2 — score the move against the beat grid (no-op when music
+    // sync is off). Display-only combo; leaderboard points untouched.
+    beatBridge.reportMove();
     // Defer classify so the click feels instant — main thread is still
     // single-threaded but the DOM paints first, then the analysis lands
     // ~300 ms later as if the engine is "thinking".
@@ -3107,6 +3112,7 @@ function App() {
     setPendingPromotion(null);
     setLog((prev) => appendMove(prev, move, san, state.topologyState));
     setLastMove({ from: move.from, to: move.to });
+    beatBridge.reportMove(); // SP-2 — promotion path counts too
     // B3 — material-delta bump instead of static-fallback flicker.
     setSearchEvalFromWhite((prev) => bumpEvalForMove(prev, state, move));
     setSearchMateInPlies(null);
@@ -5201,6 +5207,8 @@ function App() {
           <MusicDock onClose={() => setShowMusicDock(false)} />
         </Suspense>
       )}
+      {/* SP-2 — on-beat combo overlay; renders null while idle. */}
+      <BeatCombo />
 
       {showTwitch && (
         <Suspense fallback={null}>

@@ -1,36 +1,77 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Disc3, Mic, MicOff, Play, Square, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Disc3, GripVertical, Mic, MicOff, Play, Square, X } from 'lucide-react';
 import { Icon } from './Icon';
-import { useBeatClock } from '../hooks/useBeatClock';
+import { beatEngine } from '../music/beatEngine';
 import { micEq, type MicStartResult } from '../audio/micEqualizer';
 
-/* SP — the Spotify dock, post-API-deprecation edition.
+/* SP-2 — the Spotify dock, IFrame-API edition.
  *
  * Spotify killed /audio-analysis for new apps (Nov 2024) and DRM walls
- * off the raw audio, so this build needs NO OAuth, NO client id:
- *   • music: the official Spotify embed (full tracks for users logged
- *     into Spotify in the browser, 30s previews otherwise)
- *   • beats: tap-tempo — 4+ taps lock the BPM grid; remembered per
- *     track URL so a song needs calibrating once
- *   • spectrum: the microphone equalizer hears whatever plays (the
- *     embed through speakers included) and drives the perimeter ring
+ * off the raw audio, so this build needs NO OAuth and NO client id:
+ *   • music — the official Embed IFrame API. Full tracks when the
+ *     browser is logged into Spotify, previews otherwise. The API
+ *     streams playback_update {position, isPaused} which we feed to
+ *     the beat engine, so the beat grid lives in TRACK time: pause
+ *     freezes it, resume/seek keep the phase — tap once per song.
+ *   • beats — tap-tempo locks BPM + phase; BPM remembered per link.
+ *   • spectrum — the mic equalizer hears whatever plays and drives
+ *     the perimeter ring around the board.
  *
- * The on-beat board pulse writes a class straight onto the board
- * wrapper — kiosk-style imperative wiring, deliberately cheap.
+ * The dock is draggable by its header (same pattern as TwitchPanel)
+ * and portals to <body> — transformed ancestors hijack position:fixed.
  */
 
-const CHANNEL_KEY = 'subutai_spotify_url';
+const URL_KEY = 'subutai_spotify_url';
 const BPM_MAP_KEY = 'subutai_spotify_bpm';
+const POS_KEY = 'subutai_music_pos';
 const URL_RE = /open\.spotify\.com\/(?:embed\/)?(track|playlist|album)\/([a-zA-Z0-9]+)/;
 
-function embedSrcFor(url: string): { src: string; height: number } | null {
+interface SpotifyController {
+  addListener: (event: string, cb: (e: { data: { position: number; duration: number; isPaused: boolean } }) => void) => void;
+  loadUri: (uri: string) => void;
+  destroy: () => void;
+}
+
+interface SpotifyIFrameAPI {
+  createController: (
+    el: HTMLElement,
+    options: { uri: string; width?: string | number; height?: string | number },
+    cb: (controller: SpotifyController) => void,
+  ) => void;
+}
+
+declare global {
+  interface Window {
+    onSpotifyIframeApiReady?: (api: SpotifyIFrameAPI) => void;
+    __spotifyIframeApi?: SpotifyIFrameAPI;
+  }
+}
+
+const API_SRC = 'https://open.spotify.com/embed/iframe-api/v1';
+
+/** Load the IFrame API script once; resolves with the API object. */
+function loadIframeApi(): Promise<SpotifyIFrameAPI> {
+  if (window.__spotifyIframeApi) return Promise.resolve(window.__spotifyIframeApi);
+  return new Promise((resolve) => {
+    window.onSpotifyIframeApiReady = (api) => {
+      window.__spotifyIframeApi = api;
+      resolve(api);
+    };
+    if (!document.querySelector(`script[src="${API_SRC}"]`)) {
+      const s = document.createElement('script');
+      s.src = API_SRC;
+      s.async = true;
+      document.body.appendChild(s);
+    }
+  });
+}
+
+function parseSpotifyUrl(url: string): { uri: string; height: number } | null {
   const m = url.match(URL_RE);
   if (!m) return null;
   const [, type, id] = m;
-  return {
-    src: `https://open.spotify.com/embed/${type}/${id}?theme=0`,
-    height: type === 'track' ? 80 : 152,
-  };
+  return { uri: `spotify:${type}:${id}`, height: type === 'track' ? 80 : 152 };
 }
 
 function readBpmMap(): Record<string, number> {
@@ -48,65 +89,106 @@ interface MusicDockProps {
 export function MusicDock({ onClose }: MusicDockProps) {
   const [urlInput, setUrlInput] = useState(() => {
     try {
-      return localStorage.getItem(CHANNEL_KEY) ?? '';
+      return localStorage.getItem(URL_KEY) ?? '';
     } catch {
       return '';
     }
   });
-  const [embedUrl, setEmbedUrl] = useState<string>('');
+  const [loadedUrl, setLoadedUrl] = useState('');
+  const [playerState, setPlayerState] = useState<'idle' | 'loading' | 'ready'>('idle');
   const [micOn, setMicOn] = useState(() => micEq.isRunning());
   const [micError, setMicError] = useState<string | null>(null);
-  const clock = useBeatClock();
+  // Engine mirrors for the UI (the engine itself lives outside React).
+  const [bpm, setBpm] = useState(() => beatEngine.getBpm());
+  const [syncRunning, setSyncRunning] = useState(() => beatEngine.isRunning());
 
-  const embed = useMemo(() => (embedUrl ? embedSrcFor(embedUrl) : null), [embedUrl]);
+  const embedHostRef = useRef<HTMLDivElement | null>(null);
+  const controllerRef = useRef<SpotifyController | null>(null);
 
-  // Restore the persisted link (and its calibrated BPM) on first open.
+  // ── embed controller lifecycle ──
+  async function loadUrl() {
+    const parsed = parseSpotifyUrl(urlInput);
+    if (!parsed || !embedHostRef.current) return;
+    try {
+      localStorage.setItem(URL_KEY, urlInput);
+    } catch { /* private mode */ }
+    setPlayerState('loading');
+    setLoadedUrl(urlInput);
+    beatEngine.setBase('track');
+    const saved = readBpmMap()[urlInput];
+    if (saved) beatEngine.adoptBpm(saved);
+    setBpm(beatEngine.getBpm());
+
+    if (controllerRef.current) {
+      controllerRef.current.loadUri(parsed.uri);
+      setPlayerState('ready');
+      return;
+    }
+    const api = await loadIframeApi();
+    // The API replaces the host node — keep a dedicated child for it.
+    const slot = document.createElement('div');
+    embedHostRef.current.innerHTML = '';
+    embedHostRef.current.appendChild(slot);
+    api.createController(
+      slot,
+      { uri: parsed.uri, width: '100%', height: parsed.height },
+      (controller) => {
+        controllerRef.current = controller;
+        controller.addListener('playback_update', (e) => {
+          beatEngine.feedPlayback(e.data.position, e.data.isPaused);
+        });
+        setPlayerState('ready');
+      },
+    );
+  }
+
+  // Restore the persisted link on first open.
   useEffect(() => {
-    if (urlInput && embedSrcFor(urlInput)) setEmbedUrl(urlInput);
+    if (urlInput && parseSpotifyUrl(urlInput)) void loadUrl();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // The controller survives dock close (music keeps playing) — App
+  // keeps the dock mounted; only unmount tears the player down.
+  useEffect(() => {
+    return () => {
+      controllerRef.current?.destroy();
+      controllerRef.current = null;
+    };
   }, []);
 
   // On-beat board pulse — imperative class toggle on the board wrapper.
   useEffect(() => {
-    return clock.onBeat(() => {
+    return beatEngine.onBeat(() => {
       const board = document.querySelector('.board-with-coords');
       if (!board) return;
       board.classList.remove('beat-tick');
-      // Force a reflow so back-to-back beats restart the animation.
-      void (board as HTMLElement).offsetWidth;
+      void (board as HTMLElement).offsetWidth; // restart the animation
       board.classList.add('beat-tick');
     });
-  }, [clock]);
+  }, []);
 
-  function loadUrl() {
-    const parsed = embedSrcFor(urlInput);
-    if (!parsed) return;
-    try {
-      localStorage.setItem(CHANNEL_KEY, urlInput);
-    } catch { /* private mode */ }
-    setEmbedUrl(urlInput);
-    // Re-arm a previously calibrated BPM for this link.
-    const saved = readBpmMap()[urlInput];
-    if (saved) {
-      // Seed the clock as if tapped: simplest is leaving it to the user
-      // to hit Start — the saved BPM shows in the badge.
-      clock.reset();
-    }
-  }
-
+  // ── beat controls ──
   function handleTap() {
-    clock.tapBeat();
+    beatEngine.tap();
+    setBpm(beatEngine.getBpm());
   }
 
-  function handleStart() {
-    clock.start();
-    if (clock.bpm > 0 && embedUrl) {
+  function handleSync() {
+    if (!beatEngine.start()) return;
+    setSyncRunning(true);
+    if (beatEngine.getBpm() > 0 && loadedUrl) {
       const map = readBpmMap();
-      map[embedUrl] = clock.bpm;
+      map[loadedUrl] = beatEngine.getBpm();
       try {
         localStorage.setItem(BPM_MAP_KEY, JSON.stringify(map));
       } catch { /* private mode */ }
     }
+  }
+
+  function handleStopSync() {
+    beatEngine.stop();
+    setSyncRunning(false);
   }
 
   async function toggleMic() {
@@ -133,20 +215,81 @@ export function MusicDock({ onClose }: MusicDockProps) {
     }
   }
 
-  // Stop everything when the dock unmounts? No — keep playing (the
-  // music is the point); the header button re-opens controls.
-  const savedBpm = embedUrl ? readBpmMap()[embedUrl] : undefined;
+  // ── drag (desktop) — header is the handle, same recipe as Twitch ──
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(() => {
+    try {
+      const raw = localStorage.getItem(POS_KEY);
+      return raw ? (JSON.parse(raw) as { x: number; y: number }) : null;
+    } catch {
+      return null;
+    }
+  });
+  const panelRef = useRef<HTMLElement | null>(null);
+  const dragRef = useRef<{ dx: number; dy: number } | null>(null);
+  const lastPosRef = useRef<{ x: number; y: number } | null>(null);
+
+  const onDragStart = useCallback((e: React.PointerEvent) => {
+    if (window.innerWidth <= 720) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const r = panel.getBoundingClientRect();
+    dragRef.current = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    try {
+      (e.target as Element).setPointerCapture?.(e.pointerId);
+    } catch { /* synthetic/stale pointer */ }
+    const move = (ev: PointerEvent) => {
+      const d = dragRef.current;
+      if (!d) return;
+      const w = panel.offsetWidth;
+      const x = Math.max(0, Math.min(ev.clientX - d.dx, window.innerWidth - w));
+      const y = Math.max(0, Math.min(ev.clientY - d.dy, window.innerHeight - 48));
+      lastPosRef.current = { x, y };
+      setPos({ x, y });
+    };
+    const up = () => {
+      dragRef.current = null;
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      if (lastPosRef.current) {
+        try {
+          localStorage.setItem(POS_KEY, JSON.stringify(lastPosRef.current));
+        } catch { /* private mode */ }
+      }
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }, []);
+
+  function resetPos() {
+    setPos(null);
+    try {
+      localStorage.removeItem(POS_KEY);
+    } catch { /* private mode */ }
+  }
+
+  const savedBpm = loadedUrl ? readBpmMap()[loadedUrl] : undefined;
   const tapsHint =
-    clock.bpm > 0
-      ? `${clock.bpm} BPM`
+    bpm > 0
+      ? `${bpm} BPM${beatEngine.getBase() === 'track' ? ' · track-locked' : ''}`
       : savedBpm
-        ? `saved: ${savedBpm} BPM — tap to re-sync`
+        ? `saved ${savedBpm} BPM — tap to set the phase`
         : 'tap 4+ times to the beat';
 
-  return (
-    <aside className="music-dock" aria-label="Music dock">
-      <div className="music-dock-header">
+  const panelStyle: React.CSSProperties | undefined =
+    pos && window.innerWidth > 720
+      ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' }
+      : undefined;
+
+  return createPortal(
+    <aside className="music-dock" ref={panelRef} style={panelStyle} aria-label="Music dock">
+      <div
+        className="music-dock-header twitch-drag-handle"
+        onPointerDown={onDragStart}
+        onDoubleClick={resetPos}
+        title="Drag to move · double-click to reset position"
+      >
         <span className="music-dock-title">
+          <Icon icon={GripVertical} size="sm" aria-hidden />
           <Icon icon={Disc3} size="md" aria-hidden /> Music
         </span>
         <button type="button" className="twitch-close-btn" onClick={onClose} aria-label="Close music dock">
@@ -162,28 +305,26 @@ export function MusicDock({ onClose }: MusicDockProps) {
           value={urlInput}
           onChange={(e) => setUrlInput(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') loadUrl();
+            if (e.key === 'Enter') void loadUrl();
           }}
         />
         <button
           type="button"
           className="music-dock-load-btn"
-          onClick={loadUrl}
-          disabled={!embedSrcFor(urlInput)}
+          onClick={() => void loadUrl()}
+          disabled={!parseSpotifyUrl(urlInput)}
         >
           Load
         </button>
       </div>
 
-      {embed && (
-        <iframe
-          className="music-dock-embed"
-          src={embed.src}
-          height={embed.height}
-          allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-          loading="lazy"
-          title="Spotify player"
-        />
+      <div
+        ref={embedHostRef}
+        className="music-dock-embed-host"
+        style={{ display: playerState === 'idle' ? 'none' : undefined }}
+      />
+      {playerState === 'loading' && (
+        <div className="twitch-status">Loading player…</div>
       )}
 
       <div className="music-dock-beat">
@@ -191,22 +332,27 @@ export function MusicDock({ onClose }: MusicDockProps) {
           TAP
         </button>
         <span className="music-dock-bpm">{tapsHint}</span>
-        {clock.isRunning ? (
-          <button type="button" className="music-dock-beat-btn" onClick={clock.stop} aria-label="Stop beat sync">
+        {syncRunning ? (
+          <button type="button" className="music-dock-beat-btn" onClick={handleStopSync} aria-label="Stop beat sync">
             <Icon icon={Square} size="sm" aria-hidden /> Stop
           </button>
         ) : (
           <button
             type="button"
             className="music-dock-beat-btn"
-            onClick={handleStart}
-            disabled={clock.bpm <= 0}
+            onClick={handleSync}
+            disabled={bpm <= 0}
             aria-label="Start beat sync"
           >
             <Icon icon={Play} size="sm" aria-hidden /> Sync
           </button>
         )}
       </div>
+      {syncRunning && (
+        <div className="music-dock-hint music-dock-hint-row">
+          Moves land on the beat → PERFECT streaks. ×10 = Rhythm Master 🏆
+        </div>
+      )}
 
       <div className="music-dock-beat">
         <button
@@ -223,6 +369,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
         </span>
       </div>
       {micError && <div className="twitch-status twitch-status-error">{micError}</div>}
-    </aside>
+    </aside>,
+    document.body,
   );
 }
