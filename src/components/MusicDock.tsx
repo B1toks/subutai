@@ -192,49 +192,55 @@ export function MusicDock({ onClose }: MusicDockProps) {
     setPlayerState('loading');
     setLoadedUrl(url);
     loadedUrlRef.current = url;
-    beatEngine.setBase('track');
+    // M.11 — if live capture (tab/mic) is running, IT owns the beat grid
+    // (wall base, always advancing). Loading a Spotify embed must NOT
+    // reset that grid or fight its tempo — only swap the player. This is
+    // the race that left the board frozen on a stale track BPM.
+    const liveOwns = micEq.getSource() === 'mic' || micEq.getSource() === 'display';
+    if (!liveOwns) beatEngine.setBase('track');
     const saved = knownBpm ?? readBpmMap()[url];
-    if (saved) {
-      beatEngine.adoptBpm(saved);
+    if (liveOwns) {
+      // Live grid stays in charge; just remember the BPM for later.
+      if (saved) setBpm(saved);
+      setAutoBpm(saved ? 'found' : 'idle');
+    } else if (saved) {
+      beatEngine.setGrid(saved, 0);
       setAutoBpm('found');
     } else if (parsed.type !== 'track') {
       // SP-8 — playlist/album: oEmbed returns the COLLECTION name, not a
-      // track, so a per-track BPM lookup is meaningless (this was the
-      // garbage "103 BPM" on a pasted playlist). The embed can't tell us
-      // which track is playing either, so the honest path is live
-      // detection (Tab audio) or TAP. Leave the grid uncalibrated.
+      // track, so a per-track BPM lookup is meaningless. The honest path
+      // is live detection (Tab audio) or TAP. Leave the grid uncalibrated.
       beatEngine.reset();
       setAutoBpm('none');
     } else {
-      // SP-3 — no saved BPM: try the keyless oEmbed → Deezer lookup so
-      // the player doesn't HAVE to tap. A single tap later just fixes
-      // the phase. Falls back silently to tap-tempo on any miss.
+      // SP-3 — no saved BPM: keyless oEmbed → Deezer lookup.
       setAutoBpm('looking');
       const target = url;
       void lookupBpm(target).then((result) => {
-        // Ignore if the user loaded a different link meanwhile.
         if (loadedUrlRef.current !== target) return;
+        // M.11 — a live capture may have taken over during the lookup;
+        // don't clobber it. Cache the BPM but leave the engine alone.
+        const liveNow = micEq.getSource() === 'mic' || micEq.getSource() === 'display';
         if (result) {
-          beatEngine.adoptBpm(result.bpm);
-          setBpm(result.bpm);
           const map = readBpmMap();
           map[target] = result.bpm;
           try {
             localStorage.setItem(BPM_MAP_KEY, JSON.stringify(map));
           } catch { /* private mode */ }
+          setBpm(result.bpm);
           setAutoBpm('found');
-          // M.10 — auto-start the grid so the board reacts immediately
-          // (no separate Sync press). A tap can still re-align the phase.
-          if (beatEngine.start()) setSyncRunning(true);
+          if (!liveNow) {
+            beatEngine.setGrid(result.bpm, 0);
+            // The grid starts when the embed actually plays (see the
+            // playback_update listener) — that's when the board should
+            // pulse. No frozen "synced but still" state.
+          }
         } else {
           setAutoBpm('none');
         }
       });
     }
-    // M.10 — saved/known BPM: start the grid right away too.
-    if (saved && beatEngine.getBpm() > 0 && beatEngine.start()) {
-      setSyncRunning(true);
-    }
+    // (track-base grids start on the embed's playback_update, below)
     setBpm(beatEngine.getBpm());
 
     if (controllerRef.current) {
@@ -253,7 +259,18 @@ export function MusicDock({ onClose }: MusicDockProps) {
       (controller) => {
         controllerRef.current = controller;
         controller.addListener('playback_update', (e) => {
+          // M.11 — live capture owns the grid; ignore embed playback then.
+          const liveNow = micEq.getSource() === 'mic' || micEq.getSource() === 'display';
+          if (liveNow) return;
           beatEngine.feedPlayback(e.data.position, e.data.isPaused);
+          // Start the grid the moment the track actually plays, so the
+          // board pulses in lock-step with real playback (and naturally
+          // pauses when the track is paused — frozen track clock = no
+          // beats). Fixes "synced but the board doesn't move".
+          if (!e.data.isPaused && beatEngine.getBpm() > 0 && !beatEngine.isRunning()) {
+            beatEngine.start();
+            setSyncRunning(true);
+          }
         });
         setPlayerState('ready');
       },
