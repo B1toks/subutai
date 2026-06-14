@@ -34,9 +34,15 @@ const GAIN_STEP_UP = 1.05;
 const GAIN_STEP_DOWN = 0.95;
 const POWER_CURVE_GAMMA = 0.7;
 
+export type AudioSource = 'mic' | 'display';
+
 export type MicStartResult =
   | { ok: true }
-  | { ok: false; reason: 'denied' | 'no-device' | 'insecure' | 'unknown'; message?: string };
+  | {
+      ok: false;
+      reason: 'denied' | 'no-device' | 'insecure' | 'no-audio-track' | 'unsupported' | 'unknown';
+      message?: string;
+    };
 
 export class MicEqualizer {
   private ctx: AudioContext | null = null;
@@ -53,9 +59,15 @@ export class MicEqualizer {
   // SP — run-state listeners so UI (perimeter ring mount) can follow
   // start/stop without polling.
   private stateListeners = new Set<(running: boolean) => void>();
+  // SP-8 — which capture is active (mic vs tab/system audio).
+  private activeSource: AudioSource | null = null;
 
   isRunning(): boolean {
     return this.ctx !== null;
+  }
+
+  getSource(): AudioSource | null {
+    return this.activeSource;
   }
 
   onState(cb: (running: boolean) => void): () => void {
@@ -105,22 +117,82 @@ export class MicEqualizer {
       return { ok: false, reason, message: err.message };
     }
 
+    this.wireStream(this.stream, 'mic');
+    return { ok: true };
+  }
+
+  /**
+   * SP-8 — capture TAB / SYSTEM audio via getDisplayMedia instead of the
+   * mic. This taps the actual digital audio (the Spotify embed, a
+   * YouTube tab, anything playing), so:
+   *   • it works on headphones — no speakers needed (internal audio)
+   *   • no mic processing / AEC ducking that degraded playback
+   *   • no room noise — clean signal for the live BPM detector
+   *
+   * The browser shows a picker; the user must tick "Share tab/system
+   * audio". We request video too (Chrome won't do audio-only display
+   * capture) but immediately drop the video track.
+   */
+  async startDisplay(): Promise<MicStartResult> {
+    if (this.ctx) return { ok: true };
+    if (typeof window !== 'undefined' && !window.isSecureContext) {
+      return { ok: false, reason: 'insecure' };
+    }
+    const md = navigator.mediaDevices as MediaDevices & {
+      getDisplayMedia?: (c: MediaStreamConstraints) => Promise<MediaStream>;
+    };
+    if (!md.getDisplayMedia) {
+      return { ok: false, reason: 'unsupported' };
+    }
+
+    let stream: MediaStream;
+    try {
+      stream = await md.getDisplayMedia({ audio: true, video: true });
+    } catch (e) {
+      const err = e as DOMException;
+      return {
+        ok: false,
+        reason: err.name === 'NotAllowedError' ? 'denied' : 'unknown',
+        message: err.message,
+      };
+    }
+
+    // Drop the video track — we only want the audio.
+    stream.getVideoTracks().forEach((t) => t.stop());
+    if (stream.getAudioTracks().length === 0) {
+      stream.getTracks().forEach((t) => t.stop());
+      return { ok: false, reason: 'no-audio-track' };
+    }
+    this.stream = stream;
+    this.wireStream(stream, 'display');
+    return { ok: true };
+  }
+
+  /** Shared AudioContext + analyser wiring for any capture stream. */
+  private wireStream(stream: MediaStream, source: AudioSource) {
     this.ctx = new AudioContext();
     this.gain = this.ctx.createGain();
-    this.gain.gain.value = INITIAL_GAIN;
+    // Display capture is already line-level/loud; the mic needs the boost.
+    this.gain.gain.value = source === 'display' ? 1.0 : INITIAL_GAIN;
 
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = FFT_SIZE;
     this.analyser.smoothingTimeConstant = SMOOTHING;
 
-    this.source = this.ctx.createMediaStreamSource(this.stream);
+    this.source = this.ctx.createMediaStreamSource(stream);
     this.source.connect(this.gain).connect(this.analyser);
-    // Intentionally NOT: this.analyser.connect(this.ctx.destination).
+    // Intentionally NOT connected to ctx.destination — no playback,
+    // no feedback. The user already hears the audio from its own source.
 
+    // If the user stops the share from the browser's own UI, tear down.
+    stream.getAudioTracks().forEach((t) => {
+      t.addEventListener('ended', () => this.stop());
+    });
+
+    this.activeSource = source;
     this.peakHistory = [];
     this.startTicking();
     this.emitState(true);
-    return { ok: true };
   }
 
   setAutoGain(enabled: boolean) {
@@ -159,6 +231,7 @@ export class MicEqualizer {
     this.gain = null;
     this.source = null;
     this.stream = null;
+    this.activeSource = null;
     this.peakHistory = [];
     this.bands = new Array(BAND_COUNT).fill(0);
     this.listeners.forEach((cb) => cb(this.bands));

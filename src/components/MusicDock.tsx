@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Disc3, GripVertical, ListMusic, Mic, MicOff, Play, Plus, SkipForward, Square, Trash2, X,
+  Disc3, GripVertical, ListMusic, Mic, MicOff, MonitorSpeaker, Play, Plus,
+  SkipForward, Square, Trash2, X,
 } from 'lucide-react';
 import { Icon } from './Icon';
 import { beatEngine } from '../music/beatEngine';
@@ -88,11 +89,17 @@ function loadIframeApi(): Promise<SpotifyIFrameAPI> {
   });
 }
 
-function parseSpotifyUrl(url: string): { uri: string; height: number } | null {
+function parseSpotifyUrl(
+  url: string,
+): { uri: string; height: number; type: 'track' | 'playlist' | 'album' } | null {
   const m = url.match(URL_RE);
   if (!m) return null;
   const [, type, id] = m;
-  return { uri: `spotify:${type}:${id}`, height: type === 'track' ? 80 : 152 };
+  return {
+    uri: `spotify:${type}:${id}`,
+    height: type === 'track' ? 80 : 152,
+    type: type as 'track' | 'playlist' | 'album',
+  };
 }
 
 function readBpmMap(): Record<string, number> {
@@ -118,8 +125,10 @@ export function MusicDock({ onClose }: MusicDockProps) {
   const [loadedUrl, setLoadedUrl] = useState('');
   const [playerState, setPlayerState] = useState<'idle' | 'loading' | 'ready'>('idle');
   const [micOn, setMicOn] = useState(() => micEq.isRunning());
+  const [captureSource, setCaptureSource] = useState<'mic' | 'display' | null>(() => micEq.getSource());
   const [micError, setMicError] = useState<string | null>(null);
-  // SP-7 — live tempo detected from the mic (any audio in the room).
+  // SP-7 — live tempo detected from the audio (mic room sound or the
+  // captured tab/system audio).
   const [live, setLive] = useState<{ bpm: number; conf: number } | null>(null);
   // Engine mirrors for the UI (the engine itself lives outside React).
   const [bpm, setBpm] = useState(() => beatEngine.getBpm());
@@ -175,6 +184,14 @@ export function MusicDock({ onClose }: MusicDockProps) {
     if (saved) {
       beatEngine.adoptBpm(saved);
       setAutoBpm('found');
+    } else if (parsed.type !== 'track') {
+      // SP-8 — playlist/album: oEmbed returns the COLLECTION name, not a
+      // track, so a per-track BPM lookup is meaningless (this was the
+      // garbage "103 BPM" on a pasted playlist). The embed can't tell us
+      // which track is playing either, so the honest path is live
+      // detection (Tab audio) or TAP. Leave the grid uncalibrated.
+      beatEngine.reset();
+      setAutoBpm('none');
     } else {
       // SP-3 — no saved BPM: try the keyless oEmbed → Deezer lookup so
       // the player doesn't HAVE to tap. A single tap later just fixes
@@ -374,30 +391,42 @@ export function MusicDock({ onClose }: MusicDockProps) {
     void playPlaylistTrack(pl, next);
   }
 
-  async function toggleMic() {
+  function stopCapture() {
+    micEq.stop();
+    liveBpm.stop();
+    setLive(null);
+    setMicOn(false);
+    setCaptureSource(null);
+  }
+
+  async function startCapture(source: 'mic' | 'display') {
     setMicError(null);
     if (micEq.isRunning()) {
-      micEq.stop();
-      liveBpm.stop();
-      setLive(null);
-      setMicOn(false);
-      return;
+      const wasSource = micEq.getSource();
+      stopCapture();
+      // Toggling the same source off; a different source starts fresh.
+      if (wasSource === source) return;
     }
-    const result: MicStartResult = await micEq.start();
+    const result: MicStartResult =
+      source === 'display' ? await micEq.startDisplay() : await micEq.start();
     if (result.ok) {
       setMicOn(true);
+      setCaptureSource(source);
       liveBpm.start(); // SP-7 — start listening for the tempo
     } else {
       setMicOn(false);
-      setMicError(
-        result.reason === 'denied'
-          ? 'Microphone access denied — allow it in the browser to visualize.'
-          : result.reason === 'no-device'
-            ? 'No microphone found.'
-            : result.reason === 'insecure'
-              ? 'Microphone needs HTTPS (or localhost).'
-              : 'Could not start the microphone.',
-      );
+      const messages: Record<string, string> = {
+        denied:
+          source === 'display'
+            ? 'Screen-share was cancelled — pick a tab/window and tick "Share audio".'
+            : 'Microphone access denied — allow it in the browser.',
+        'no-device': 'No microphone found.',
+        'no-audio-track': 'No audio was shared — tick "Share tab audio" in the picker.',
+        insecure: 'Audio capture needs HTTPS (or localhost).',
+        unsupported: 'Tab-audio capture is not supported in this browser.',
+        unknown: 'Could not start audio capture.',
+      };
+      setMicError(messages[result.reason] ?? messages.unknown);
     }
   }
 
@@ -454,6 +483,8 @@ export function MusicDock({ onClose }: MusicDockProps) {
   }
 
   const savedBpm = loadedUrl ? readBpmMap()[loadedUrl] : undefined;
+  // SP-8 — a playlist/album can't be per-track-analyzed; steer to live/tap.
+  const loadedIsCollection = loadedUrl ? parseSpotifyUrl(loadedUrl)?.type !== 'track' : false;
   const tapsHint =
     autoBpm === 'looking'
       ? 'detecting BPM…'
@@ -461,9 +492,11 @@ export function MusicDock({ onClose }: MusicDockProps) {
         ? `${bpm} BPM${autoBpm === 'found' ? ' · auto · tap once to align' : ''}`
         : savedBpm
           ? `saved ${savedBpm} BPM — tap to set the phase`
-          : autoBpm === 'none'
-            ? "couldn't detect — tap 4+ times"
-            : 'tap 4+ times to the beat';
+          : loadedIsCollection
+            ? 'playlist — use Tab audio for live tempo, or tap'
+            : autoBpm === 'none'
+              ? "couldn't detect — tap 4+ times"
+              : 'tap 4+ times to the beat';
 
   const panelStyle: React.CSSProperties | undefined =
     pos && window.innerWidth > 720
@@ -581,23 +614,39 @@ export function MusicDock({ onClose }: MusicDockProps) {
         </span>
       </div>
 
-      <div className="music-dock-beat">
+      {/* SP-8 — two capture sources. "Tab audio" grabs the digital
+          stream (Spotify embed, any tab) — works on headphones, no
+          speakers, no mic degradation. "Mic" listens to the room. */}
+      <div className="music-dock-source-row">
         <button
           type="button"
-          className={`music-dock-beat-btn${micOn ? ' is-active' : ''}`}
-          onClick={() => void toggleMic()}
-          aria-pressed={micOn}
+          className={`music-dock-beat-btn${captureSource === 'display' ? ' is-active' : ''}`}
+          onClick={() => void startCapture('display')}
+          aria-pressed={captureSource === 'display'}
         >
-          <Icon icon={micOn ? Mic : MicOff} size="sm" aria-hidden />
-          {micOn ? 'Equalizer on' : 'Equalizer (mic)'}
+          <Icon icon={MonitorSpeaker} size="sm" aria-hidden />
+          {captureSource === 'display' ? 'Tab audio on' : 'Tab audio'}
         </button>
-        <span className="music-dock-hint">
-          {micOn ? 'listening — bars ring the board' : 'visualizes whatever is playing'}
-        </span>
+        <button
+          type="button"
+          className={`music-dock-beat-btn${captureSource === 'mic' ? ' is-active' : ''}`}
+          onClick={() => void startCapture('mic')}
+          aria-pressed={captureSource === 'mic'}
+        >
+          <Icon icon={captureSource === 'mic' ? Mic : MicOff} size="sm" aria-hidden />
+          {captureSource === 'mic' ? 'Mic on' : 'Mic'}
+        </button>
+      </div>
+      <div className="music-dock-hint music-dock-hint-row">
+        {captureSource === 'display'
+          ? 'capturing tab/system audio — equalizer + live tempo'
+          : captureSource === 'mic'
+            ? 'listening to the room — equalizer + live tempo'
+            : 'Tab audio = internal sound (headphones ok) · Mic = room sound'}
       </div>
       {micError && <div className="twitch-status twitch-status-error">{micError}</div>}
 
-      {/* SP-7 — live tempo detected from whatever's playing in the room. */}
+      {/* SP-7 — live tempo detected from whatever's playing. */}
       {micOn && (
         <div className="music-dock-beat music-dock-live">
           {live ? (
@@ -613,7 +662,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
               </button>
             </>
           ) : (
-            <span className="music-dock-hint">detecting tempo from the room… play some music</span>
+            <span className="music-dock-hint">detecting tempo… play some music</span>
           )}
         </div>
       )}
