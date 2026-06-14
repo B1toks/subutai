@@ -8,7 +8,7 @@ import { beatEngine } from '../music/beatEngine';
 import { lookupBpm, analyzeTrack } from '../music/autoBpm';
 import { beatMode } from '../music/beatMode';
 import {
-  loadPlaylists, savePlaylist, deletePlaylist, newPlaylistId,
+  loadPlaylists, savePlaylist, deletePlaylist, setTrackBpm, newPlaylistId,
   type SavedPlaylist, type PlaylistTrack,
 } from '../music/playlists';
 import { micEq, type MicStartResult } from '../audio/micEqualizer';
@@ -125,9 +125,14 @@ export function MusicDock({ onClose }: MusicDockProps) {
   const [autoBpm, setAutoBpm] = useState<'idle' | 'looking' | 'found' | 'none'>('idle');
   // SP-3 — Beat Mode: moves snap to the beat (classic solo only).
   const [beatModeOn, setBeatModeOn] = useState(() => beatMode.isEnabled());
-  // SP-5 — pre-analyzed playlists.
-  const [showPlaylists, setShowPlaylists] = useState(false);
+  // SP-5 — pre-analyzed playlists. Auto-expanded when any are saved so
+  // they're actually discoverable (SP-6 fix).
   const [playlists, setPlaylists] = useState<SavedPlaylist[]>(() => loadPlaylists());
+  const [showPlaylists, setShowPlaylists] = useState(() => loadPlaylists().length > 0);
+  /** Which playlist card is expanded to show its track list. */
+  const [openPlaylistId, setOpenPlaylistId] = useState<string | null>(null);
+  /** Builder visible? Hidden behind "+ New" so saved lists lead. */
+  const [showBuilder, setShowBuilder] = useState(() => loadPlaylists().length === 0);
   const [builderText, setBuilderText] = useState('');
   const [builderName, setBuilderName] = useState('');
   const [analyzing, setAnalyzing] = useState<{ done: number; total: number } | null>(null);
@@ -302,11 +307,30 @@ export function MusicDock({ onClose }: MusicDockProps) {
     setPlaylists(savePlaylist(pl));
     setBuilderText('');
     setBuilderName('');
+    setShowBuilder(false);
+    setOpenPlaylistId(pl.id); // reveal the freshly-saved tracks
   }
 
   function removePlaylist(id: string) {
     setPlaylists(deletePlaylist(id));
     if (nowPlaying?.id === id) setNowPlaying(null);
+    if (openPlaylistId === id) setOpenPlaylistId(null);
+  }
+
+  // SP-6 — manual BPM override for a track the auto-detect missed (or
+  // got wrong). Updates storage + the live grid if that track is playing.
+  function editTrackBpm(playlistId: string, idx: number, value: string) {
+    const n = parseFloat(value);
+    const bpm = Number.isFinite(n) && n >= 40 && n <= 220 ? Math.round(n * 10) / 10 : null;
+    setPlaylists(setTrackBpm(playlistId, idx, bpm));
+    if (nowPlaying?.id === playlistId && nowPlaying.idx === idx && bpm) {
+      beatEngine.adoptBpm(bpm);
+      setBpm(bpm);
+      if (!beatEngine.isRunning()) {
+        beatEngine.start();
+        setSyncRunning(true);
+      }
+    }
   }
 
   // Play a playlist from a track index — loads the embed with the
@@ -566,10 +590,17 @@ export function MusicDock({ onClose }: MusicDockProps) {
 
         {showPlaylists && (
           <div className="music-dock-pl-body">
+            {playlists.length === 0 && !showBuilder && (
+              <div className="music-dock-hint music-dock-pl-empty">
+                No playlists yet — add tracks and analyze their BPM.
+              </div>
+            )}
+
             {/* saved playlists */}
             {playlists.map((pl) => {
               const playing = nowPlaying?.id === pl.id;
               const withBpm = pl.tracks.filter((t) => t.bpm !== null).length;
+              const expanded = openPlaylistId === pl.id;
               return (
                 <div key={pl.id} className={`music-dock-pl-card${playing ? ' is-playing' : ''}`}>
                   <div className="music-dock-pl-head">
@@ -581,9 +612,17 @@ export function MusicDock({ onClose }: MusicDockProps) {
                     >
                       <Icon icon={Play} size="sm" aria-hidden />
                     </button>
-                    <span className="music-dock-pl-name">{pl.name}</span>
+                    <button
+                      type="button"
+                      className="music-dock-pl-name music-dock-pl-name-btn"
+                      onClick={() => setOpenPlaylistId(expanded ? null : pl.id)}
+                      aria-expanded={expanded}
+                      title="Show tracks"
+                    >
+                      {pl.name}
+                    </button>
                     <span className="music-dock-pl-meta">
-                      {pl.tracks.length} · {withBpm} BPM
+                      {pl.tracks.length}♫ · {withBpm} BPM {expanded ? '▾' : '▸'}
                     </span>
                     <button
                       type="button"
@@ -594,13 +633,49 @@ export function MusicDock({ onClose }: MusicDockProps) {
                       <Icon icon={Trash2} size="sm" aria-hidden />
                     </button>
                   </div>
+
+                  {/* track list — the saved & analyzed tracks live here */}
+                  {expanded && (
+                    <ol className="music-dock-pl-tracks">
+                      {pl.tracks.map((t, i) => {
+                        const isCur = playing && nowPlaying!.idx === i;
+                        return (
+                          <li key={t.url} className={`music-dock-pl-trackrow${isCur ? ' is-current' : ''}`}>
+                            <button
+                              type="button"
+                              className="music-dock-pl-trackplay"
+                              onClick={() => void playPlaylistTrack(pl, i)}
+                              title="Play this track"
+                            >
+                              {isCur ? '▶' : i + 1}
+                            </button>
+                            <span className="music-dock-pl-tracktitle" title={t.title}>{t.title}</span>
+                            <span className="music-dock-pl-trackbpm">
+                              <input
+                                type="number"
+                                className="music-dock-bpm-input"
+                                value={t.bpm ?? ''}
+                                placeholder="BPM"
+                                min={40}
+                                max={220}
+                                step={0.1}
+                                onChange={(e) => editTrackBpm(pl.id, i, e.target.value)}
+                                title="BPM (editable — fix it if auto-detect missed)"
+                              />
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  )}
+
                   {playing && (
                     <div className="music-dock-pl-nowplaying">
                       <span className="music-dock-pl-track">
                         ▶ {pl.tracks[nowPlaying!.idx]?.title ?? '—'}
                         {pl.tracks[nowPlaying!.idx]?.bpm
                           ? ` · ${pl.tracks[nowPlaying!.idx]!.bpm} BPM`
-                          : ' · tap to set tempo'}
+                          : ' · set BPM above'}
                       </span>
                       <button type="button" className="music-dock-pl-next" onClick={nextTrack} title="Next track">
                         <Icon icon={SkipForward} size="sm" aria-hidden />
@@ -611,12 +686,12 @@ export function MusicDock({ onClose }: MusicDockProps) {
               );
             })}
 
-            {/* builder */}
+            {/* builder — behind a "+ New" button so saved lists lead */}
             {analyzing ? (
               <div className="music-dock-pl-analyzing">
-                Analyzing… {analyzing.done}/{analyzing.total}
+                Analyzing BPM… {analyzing.done}/{analyzing.total}
               </div>
-            ) : (
+            ) : showBuilder ? (
               <div className="music-dock-pl-builder">
                 <input
                   type="text"
@@ -632,15 +707,34 @@ export function MusicDock({ onClose }: MusicDockProps) {
                   onChange={(e) => setBuilderText(e.target.value)}
                   rows={3}
                 />
-                <button
-                  type="button"
-                  className="music-dock-load-btn music-dock-pl-analyze-btn"
-                  onClick={() => void analyzeAndSave()}
-                  disabled={builderText.trim().length === 0}
-                >
-                  <Icon icon={Plus} size="sm" aria-hidden /> Analyze &amp; save
-                </button>
+                <div className="music-dock-pl-builder-actions">
+                  {playlists.length > 0 && (
+                    <button
+                      type="button"
+                      className="music-dock-beat-btn"
+                      onClick={() => { setShowBuilder(false); setBuilderText(''); setBuilderName(''); }}
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="music-dock-load-btn music-dock-pl-analyze-btn"
+                    onClick={() => void analyzeAndSave()}
+                    disabled={builderText.trim().length === 0}
+                  >
+                    <Icon icon={Plus} size="sm" aria-hidden /> Analyze &amp; save
+                  </button>
+                </div>
               </div>
+            ) : (
+              <button
+                type="button"
+                className="music-dock-beat-btn music-dock-pl-newbtn"
+                onClick={() => setShowBuilder(true)}
+              >
+                <Icon icon={Plus} size="sm" aria-hidden /> New playlist
+              </button>
             )}
           </div>
         )}

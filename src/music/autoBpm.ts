@@ -83,35 +83,30 @@ export function lookupBpm(spotifyUrl: string): Promise<AutoBpmResult | null> {
     p = (async (): Promise<AutoBpmResult | null> => {
       const label = await fetchTrackLabel(spotifyUrl);
       if (!label) return null;
+      const bpm = await deezerBpm(label.title, label.artist);
+      if (bpm === null) return null;
       const q = `${label.title} ${label.artist}`.trim();
-      const search = await jsonp<DeezerSearch>(
-        `https://api.deezer.com/search?q=${encodeURIComponent(q)}&limit=5`,
-      );
-      const tracks = search?.data ?? [];
-      if (tracks.length === 0) return null;
-      // Deezer's /search omits BPM (always null there); the real value
-      // lives on /track/{id}. Probe the top few matches until one has a
-      // sane BPM (some tracks genuinely have none).
-      for (const candidate of tracks.slice(0, 3)) {
-        if (!candidate.id) continue;
-        const detail = await jsonp<DeezerTrack>(
-          `https://api.deezer.com/track/${candidate.id}?`,
-        );
-        const bpm = detail?.bpm;
-        if (bpm && bpm >= 40 && bpm <= 220) {
-          return { bpm: Math.round(bpm * 10) / 10, label: q };
-        }
-      }
-      return null;
+      return { bpm, label: q };
     })();
     cache.set(spotifyUrl, p);
   }
   return p;
 }
 
-/** Deezer BPM for a free-text "title artist" query, or null. Shared by
- *  lookupBpm and analyzeTrack. */
-async function deezerBpm(query: string): Promise<number | null> {
+/** SP-6 — strip the noise Spotify titles carry that throws off Deezer
+ *  matching: "(feat. …)", "(Radio Edit)", "- Remastered 2011", etc. */
+function simplifyTitle(title: string): string {
+  return title
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/\s-\s.*$/u, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Run one Deezer search query and return the first sane BPM, or null. */
+async function deezerBpmForQuery(query: string): Promise<number | null> {
+  if (!query) return null;
   const search = await jsonp<DeezerSearch>(
     `https://api.deezer.com/search?q=${encodeURIComponent(query)}&limit=5`,
   );
@@ -121,6 +116,20 @@ async function deezerBpm(query: string): Promise<number | null> {
     const detail = await jsonp<DeezerTrack>(`https://api.deezer.com/track/${candidate.id}?`);
     const bpm = detail?.bpm;
     if (bpm && bpm >= 40 && bpm <= 220) return Math.round(bpm * 10) / 10;
+  }
+  return null;
+}
+
+/** Deezer BPM for a "title artist" query, with a simplified-title
+ *  fallback so feat./remaster/edit suffixes don't sink the match. */
+async function deezerBpm(title: string, artist: string): Promise<number | null> {
+  const full = `${title} ${artist}`.trim();
+  const first = await deezerBpmForQuery(full);
+  if (first !== null) return first;
+  const simple = `${simplifyTitle(title)} ${artist}`.trim();
+  if (simple && simple !== full) {
+    const second = await deezerBpmForQuery(simple);
+    if (second !== null) return second;
   }
   return null;
 }
@@ -143,6 +152,6 @@ export async function analyzeTrack(spotifyUrl: string): Promise<AnalyzedTrack | 
   const label = await fetchTrackLabel(spotifyUrl);
   if (!label) return null;
   const title = label.artist ? `${label.title} — ${label.artist}` : label.title;
-  const bpm = await deezerBpm(`${label.title} ${label.artist}`.trim());
+  const bpm = await deezerBpm(label.title, label.artist);
   return { title, bpm };
 }

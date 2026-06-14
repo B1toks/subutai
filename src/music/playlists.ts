@@ -65,6 +65,18 @@ export function deletePlaylist(id: string): SavedPlaylist[] {
   return all;
 }
 
+/** SP-6 — set (or clear) a track's BPM, e.g. a manual override when
+ *  auto-detect missed. Returns the updated library. */
+export function setTrackBpm(playlistId: string, trackIdx: number, bpm: number | null): SavedPlaylist[] {
+  const all = loadPlaylists();
+  const pl = all.find((p) => p.id === playlistId);
+  if (pl && pl.tracks[trackIdx]) {
+    pl.tracks[trackIdx] = { ...pl.tracks[trackIdx], bpm };
+    persist(all);
+  }
+  return all;
+}
+
 /** Unique-ish id without Date.now()/Math.random restrictions concerns —
  *  this runs in component event handlers (not the workflow sandbox), so
  *  Date.now() is fine here. */
