@@ -92,6 +92,7 @@ import { moveVoting } from './twitch/moveVoting';
 import { micEq } from './audio/micEqualizer';
 import { PerimeterEqualizer } from './components/PerimeterEqualizer';
 import { beatBridge } from './music/beatBridge';
+import { beatEngine } from './music/beatEngine';
 import { beatMode } from './music/beatMode';
 import { BeatCombo } from './components/BeatCombo';
 import { scaleBudgetMs } from './utils/deviceTier';
@@ -542,6 +543,18 @@ function App() {
   const [showMusicDock, setShowMusicDock] = useState(false);
   const [vizOn, setVizOn] = useState(false);
   useEffect(() => micEq.onState(setVizOn), []);
+  // M.10 — on-beat board pulse lives at App level (not in the dock) so
+  // the board keeps reacting even when the music dock is closed or
+  // minimised, as long as the beat grid is running.
+  useEffect(() => {
+    return beatEngine.onBeat(() => {
+      const board = document.querySelector('.board-with-coords');
+      if (!board) return;
+      board.classList.remove('beat-tick');
+      void (board as HTMLElement).offsetWidth; // restart the animation
+      board.classList.add('beat-tick');
+    });
+  }, []);
   // S2.5 — per-side elapsed clocks. Pure UX (no flag-fall): the active
   // side's clock accumulates wall time while the game is live. Reset on
   // every new game log.

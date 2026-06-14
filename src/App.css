@@ -3089,107 +3089,114 @@ body.checkmate-flash::after {
    60 bars, 15 per side; bars grow away from the board. Amplitude is
    driven imperatively via --amplitude on each bar. */
 
+/* M.10 — perimeter equalizer, redesigned. Bars anchor AT the board
+   edge and grow OUTWARD (away from the board), longer reach, rounded
+   pill tips, per-side gradients that brighten toward the tip. The
+   --eq-reach var sizes the growth so one rule scales every breakpoint. */
 .perimeter-eq {
   position: absolute;
-  inset: -48px;
+  inset: calc(-1 * var(--eq-reach, 72px));
   pointer-events: none;
   z-index: 4;
+  --eq-reach: 72px;
+  --eq-base: 6px;
 }
 
 .eq-side {
   position: absolute;
   display: flex;
-  gap: 3px;
+  gap: 4px;
 }
 
+/* top / bottom strips span the board width; bars anchored at the board
+   side of the strip, growing outward. */
 .eq-top,
 .eq-bottom {
-  left: 48px;
-  right: 48px;
-  height: 40px;
+  left: var(--eq-reach);
+  right: var(--eq-reach);
+  height: var(--eq-reach);
   justify-content: space-between;
 }
-
-.eq-top { top: 0; align-items: flex-start; }
-.eq-bottom { bottom: 0; align-items: flex-end; }
+.eq-top { top: 0; align-items: flex-end; }      /* grow up / out */
+.eq-bottom { bottom: 0; align-items: flex-start; } /* grow down / out */
 
 .eq-left,
 .eq-right {
-  top: 48px;
-  bottom: 48px;
-  width: 40px;
+  top: var(--eq-reach);
+  bottom: var(--eq-reach);
+  width: var(--eq-reach);
   flex-direction: column;
   justify-content: space-between;
 }
-
-.eq-left { left: 0; align-items: flex-start; }
-.eq-right { right: 0; align-items: flex-end; }
+.eq-left { left: 0; align-items: flex-end; }     /* grow left / out */
+.eq-right { right: 0; align-items: flex-start; } /* grow right / out */
 
 .eq-bar {
   display: block;
-  border-radius: 3px;
-  background: linear-gradient(
-    to top,
-    var(--accent-primary) 0%,
-    color-mix(in srgb, var(--accent-primary) 55%, var(--danger-coral)) 65%,
-    var(--danger-coral) 100%
-  );
-  opacity: calc(0.3 + var(--amplitude, 0) * 0.7);
+  border-radius: 999px;
+  opacity: calc(0.35 + var(--amplitude, 0) * 0.65);
   box-shadow:
-    0 0 calc(var(--amplitude, 0) * 10px)
-      color-mix(in srgb, var(--accent-primary) 65%, transparent),
-    0 0 calc(var(--amplitude, 0) * 24px)
-      color-mix(in srgb, var(--accent-primary) 30%, transparent);
+    0 0 calc(var(--amplitude, 0) * 12px)
+      color-mix(in srgb, var(--accent-primary) 70%, transparent),
+    0 0 calc(var(--amplitude, 0) * 28px)
+      color-mix(in srgb, var(--accent-primary) 28%, transparent);
   transition:
-    height 60ms cubic-bezier(0.2, 0.8, 0.4, 1),
-    width 60ms cubic-bezier(0.2, 0.8, 0.4, 1),
-    opacity 100ms ease,
-    box-shadow 100ms ease;
+    height 70ms cubic-bezier(0.2, 0.85, 0.35, 1),
+    width 70ms cubic-bezier(0.2, 0.85, 0.35, 1),
+    opacity 110ms ease,
+    box-shadow 110ms ease;
 }
 
-.eq-bar-vertical { width: 4px; height: calc(4px + var(--amplitude, 0) * 36px); }
-.eq-bar-horizontal { height: 4px; width: calc(4px + var(--amplitude, 0) * 36px); }
+/* Gradient brightens from the board edge toward the growing tip. */
+.eq-top .eq-bar { background: linear-gradient(to top, color-mix(in srgb, var(--accent-primary) 80%, transparent), var(--danger-coral)); }
+.eq-bottom .eq-bar { background: linear-gradient(to bottom, color-mix(in srgb, var(--accent-primary) 80%, transparent), var(--danger-coral)); }
+.eq-left .eq-bar { background: linear-gradient(to left, color-mix(in srgb, var(--accent-primary) 80%, transparent), var(--danger-coral)); }
+.eq-right .eq-bar { background: linear-gradient(to right, color-mix(in srgb, var(--accent-primary) 80%, transparent), var(--danger-coral)); }
+
+.eq-bar-vertical { width: 5px; height: calc(var(--eq-base) + var(--amplitude, 0) * (var(--eq-reach) - 14px)); }
+.eq-bar-horizontal { height: 5px; width: calc(var(--eq-base) + var(--amplitude, 0) * (var(--eq-reach) - 14px)); }
 
 .eq-bar.is-peak {
   box-shadow:
-    0 0 16px color-mix(in srgb, var(--danger-coral) 75%, transparent),
-    0 0 32px color-mix(in srgb, var(--danger-coral) 40%, transparent),
-    0 0 4px rgba(255, 255, 255, 0.6);
-  animation: eq-peak-flash 220ms ease-out;
-}
-
-@keyframes eq-peak-flash {
-  0%, 100% { transform: scale(1); }
-  50%      { transform: scale(1.08); }
+    0 0 18px color-mix(in srgb, var(--danger-coral) 80%, transparent),
+    0 0 36px color-mix(in srgb, var(--danger-coral) 45%, transparent),
+    0 0 5px rgba(255, 255, 255, 0.7);
 }
 
 /* Bass halo on the board frame while the visualizer runs. */
 .board-with-coords.has-viz {
   box-shadow:
-    0 0 calc(var(--bass-amplitude, 0) * 48px)
-      color-mix(in srgb, var(--accent-primary) 45%, transparent),
-    0 0 calc(var(--bass-amplitude, 0) * 96px)
-      color-mix(in srgb, var(--accent-primary) 18%, transparent);
+    0 0 calc(var(--bass-amplitude, 0) * 52px)
+      color-mix(in srgb, var(--accent-primary) 48%, transparent),
+    0 0 calc(var(--bass-amplitude, 0) * 104px)
+      color-mix(in srgb, var(--accent-primary) 20%, transparent);
   transition: box-shadow 80ms ease-out;
 }
 
-@media (max-width: 768px) {
-  .perimeter-eq { inset: -32px; }
-  .eq-top, .eq-bottom { left: 32px; right: 32px; height: 28px; }
-  .eq-left, .eq-right { top: 32px; bottom: 32px; width: 28px; }
-  .eq-bar-vertical { height: calc(3px + var(--amplitude, 0) * 24px); }
-  .eq-bar-horizontal { width: calc(3px + var(--amplitude, 0) * 24px); }
+@media (max-width: 900px) {
+  .perimeter-eq { --eq-reach: 48px; }
+}
+@media (max-width: 560px) {
+  .perimeter-eq { --eq-reach: 30px; --eq-base: 4px; }
+  .eq-bar-vertical, .eq-bar-horizontal { /* thinner on tight screens */ }
+  .eq-bar-vertical { width: 4px; }
+  .eq-bar-horizontal { height: 4px; }
 }
 
-/* ── SP: tap-tempo beat pulse on the board frame ── */
+/* ── M.10: stronger, "throbbing" board beat pulse — scale + brightness
+   flash so the board visibly reacts to every beat. ── */
 .board-with-coords.beat-tick {
-  animation: beat-tick-pulse 180ms ease-out;
+  animation: beat-tick-pulse 240ms cubic-bezier(0.2, 0.9, 0.3, 1);
 }
 
 @keyframes beat-tick-pulse {
-  0%   { transform: scale(1); }
-  40%  { transform: scale(1.012); }
-  100% { transform: scale(1); }
+  0%   { transform: scale(1); filter: brightness(1); }
+  28%  { transform: scale(1.028); filter: brightness(1.14); }
+  100% { transform: scale(1); filter: brightness(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-with-coords.beat-tick { animation: none; }
 }
 
 /* ── SP: music dock ── */
@@ -3622,6 +3629,78 @@ body.checkmate-flash::after {
 
 .music-dock-pl-empty {
   padding: var(--space-2) 0;
+}
+
+/* M.10 — minimize / header actions / compact bar. */
+.music-dock-header-actions {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.music-dock-livedot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #1db954;
+  margin-left: 4px;
+  box-shadow: 0 0 6px #1db954;
+  animation: music-livedot-pulse 1s ease-in-out infinite;
+}
+
+@keyframes music-livedot-pulse {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 1; }
+}
+
+.music-dock.is-minimized {
+  width: 230px;
+}
+
+.music-dock-mini {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: var(--space-2) var(--space-3);
+}
+
+.music-dock-mini-status {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* M.10 — primary sync line + folded manual controls. */
+.music-dock-syncline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.music-dock-syncline .music-dock-bpm {
+  flex: 1;
+}
+
+.music-dock-manual-toggle {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px var(--space-3) var(--space-2);
+  cursor: pointer;
+}
+
+.music-dock-manual-toggle:hover { color: var(--text); }
+
+.music-dock-manual {
+  padding-bottom: var(--space-2);
 }
 
 /* SP-9 — local audio file row. */

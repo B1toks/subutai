@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Disc3, FileMusic, GripVertical, ListMusic, Mic, MicOff, MonitorSpeaker, Play, Plus,
-  SkipForward, Square, Trash2, X,
+  ChevronUp, Disc3, FileMusic, GripVertical, ListMusic, Mic, MicOff, Minus,
+  MonitorSpeaker, Play, Plus, SkipForward, Square, Trash2, X,
 } from 'lucide-react';
 import { Icon } from './Icon';
 import { beatEngine } from '../music/beatEngine';
@@ -132,6 +132,11 @@ export function MusicDock({ onClose }: MusicDockProps) {
   // SP-7 — live tempo detected from the audio (mic room sound or the
   // captured tab/system audio).
   const [live, setLive] = useState<{ bpm: number; conf: number } | null>(null);
+  // M.10 — collapse the dock to a compact bar (keeps audio + the beat
+  // grid running, board keeps moving) instead of closing it outright.
+  const [minimized, setMinimized] = useState(false);
+  // M.10 — manual tempo controls (TAP + presets) folded away by default.
+  const [showManual, setShowManual] = useState(false);
   // SP-9 — local audio file mode (our audio = the idea works perfectly).
   const [fileName, setFileName] = useState<string | null>(null);
   const [fileAnalyzing, setFileAnalyzing] = useState(false);
@@ -218,10 +223,17 @@ export function MusicDock({ onClose }: MusicDockProps) {
             localStorage.setItem(BPM_MAP_KEY, JSON.stringify(map));
           } catch { /* private mode */ }
           setAutoBpm('found');
+          // M.10 — auto-start the grid so the board reacts immediately
+          // (no separate Sync press). A tap can still re-align the phase.
+          if (beatEngine.start()) setSyncRunning(true);
         } else {
           setAutoBpm('none');
         }
       });
+    }
+    // M.10 — saved/known BPM: start the grid right away too.
+    if (saved && beatEngine.getBpm() > 0 && beatEngine.start()) {
+      setSyncRunning(true);
     }
     setBpm(beatEngine.getBpm());
 
@@ -266,33 +278,30 @@ export function MusicDock({ onClose }: MusicDockProps) {
     };
   }, []);
 
-  // On-beat board pulse — imperative class toggle on the board wrapper.
+  // M.10 — the on-beat board pulse now lives in App (survives dock
+  // close/minimise), so it's gone from here.
+
+  // SP-7 / M.10 — surface the live tempo AND auto-apply it to the grid
+  // so the board locks to the rhythm with no extra click. We adopt when
+  // the grid isn't running yet, or when the estimate drifts > 2 BPM,
+  // provided the detector is at least "fair" confidence.
   useEffect(() => {
-    return beatEngine.onBeat(() => {
-      const board = document.querySelector('.board-with-coords');
-      if (!board) return;
-      board.classList.remove('beat-tick');
-      void (board as HTMLElement).offsetWidth; // restart the animation
-      board.classList.add('beat-tick');
+    return liveBpm.onBpm((value, conf) => {
+      setLive({ bpm: value, conf });
+      if (conf < 0.3) return;
+      const cur = beatEngine.getBpm();
+      if (!beatEngine.isRunning() || Math.abs(value - cur) > 2) {
+        beatEngine.setBase('wall');
+        beatEngine.adoptBpm(value);
+        setBpm(value);
+        setAutoBpm('found');
+        if (!beatEngine.isRunning()) {
+          beatEngine.start();
+          setSyncRunning(true);
+        }
+      }
     });
   }, []);
-
-  // SP-7 — surface the live mic tempo estimate.
-  useEffect(() => {
-    return liveBpm.onBpm((value, conf) => setLive({ bpm: value, conf }));
-  }, []);
-
-  // Adopt the live-detected tempo into the grid (wall base — the audio
-  // is in the room, not the embed) and start sync.
-  function useLiveBpm() {
-    if (!live) return;
-    beatEngine.setBase('wall');
-    beatEngine.adoptBpm(live.bpm);
-    setBpm(live.bpm);
-    setAutoBpm('found');
-    beatEngine.start();
-    setSyncRunning(true);
-  }
 
   // ── beat controls ──
   function handleTap() {
@@ -590,8 +599,24 @@ export function MusicDock({ onClose }: MusicDockProps) {
       ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' }
       : undefined;
 
+  // M.10 — compact status for the minimised bar.
+  const statusLine = fileName
+    ? `${fileName}${bpm > 0 ? ` · ${bpm} BPM` : ''}`
+    : captureSource === 'display'
+      ? `Tab audio${bpm > 0 ? ` · ${bpm} BPM` : ' · listening'}`
+      : captureSource === 'mic'
+        ? `Mic${bpm > 0 ? ` · ${bpm} BPM` : ' · listening'}`
+        : bpm > 0
+          ? `${bpm} BPM`
+          : 'no source';
+
   return createPortal(
-    <aside className="music-dock" ref={panelRef} style={panelStyle} aria-label="Music dock">
+    <aside
+      className={`music-dock${minimized ? ' is-minimized' : ''}`}
+      ref={panelRef}
+      style={panelStyle}
+      aria-label="Music dock"
+    >
       <div
         className="music-dock-header twitch-drag-handle"
         onPointerDown={onDragStart}
@@ -601,12 +626,42 @@ export function MusicDock({ onClose }: MusicDockProps) {
         <span className="music-dock-title">
           <Icon icon={GripVertical} size="sm" aria-hidden />
           <Icon icon={Disc3} size="md" aria-hidden /> Music
+          {syncRunning && <span className="music-dock-livedot" title="beat grid running" />}
         </span>
-        <button type="button" className="twitch-close-btn" onClick={onClose} aria-label="Close music dock">
-          <Icon icon={X} size="sm" aria-hidden />
-        </button>
+        <span className="music-dock-header-actions">
+          <button
+            type="button"
+            className="twitch-close-btn"
+            onClick={() => setMinimized((v) => !v)}
+            aria-label={minimized ? 'Expand music dock' : 'Minimize music dock'}
+            title={minimized ? 'Expand' : 'Minimize (keeps playing)'}
+          >
+            <Icon icon={minimized ? ChevronUp : Minus} size="sm" aria-hidden />
+          </button>
+          <button type="button" className="twitch-close-btn" onClick={onClose} aria-label="Close music dock">
+            <Icon icon={X} size="sm" aria-hidden />
+          </button>
+        </span>
       </div>
 
+      {minimized ? (
+        <div className="music-dock-mini">
+          <button
+            type="button"
+            className="music-dock-pl-trackplay"
+            onClick={() => {
+              if (audioElRef.current) toggleFilePlay();
+              else if (syncRunning) handleStopSync();
+              else handleSync();
+            }}
+            title={syncRunning ? 'Stop' : 'Start'}
+          >
+            {(audioElRef.current ? filePlaying : syncRunning) ? '❚❚' : '▶'}
+          </button>
+          <span className="music-dock-mini-status" title={statusLine}>{statusLine}</span>
+        </div>
+      ) : (
+      <>
       <div className="music-dock-row">
         <input
           type="text"
@@ -671,28 +726,12 @@ export function MusicDock({ onClose }: MusicDockProps) {
         <div className="twitch-status">Loading player…</div>
       )}
 
-      {/* SP-4 — instant tempo presets ("prepared playlists", safe form). */}
-      <div className="music-dock-presets" role="group" aria-label="Tempo presets">
-        {TEMPO_PRESETS.map((p) => (
-          <button
-            key={p.label}
-            type="button"
-            className={`music-dock-preset${syncRunning && bpm === p.bpm ? ' is-active' : ''}`}
-            onClick={() => handlePreset(p.bpm)}
-            title={`${p.bpm} BPM`}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="music-dock-beat">
-        <button type="button" className="music-dock-tap-btn" onClick={handleTap}>
-          TAP
-        </button>
+      {/* M.10 — primary beat-sync line. BPM auto-starts the grid; this
+          is the single on/off the user usually touches. */}
+      <div className="music-dock-syncline">
         <span className="music-dock-bpm">{tapsHint}</span>
         {syncRunning ? (
-          <button type="button" className="music-dock-beat-btn" onClick={handleStopSync} aria-label="Stop beat sync">
+          <button type="button" className="music-dock-beat-btn is-active" onClick={handleStopSync} aria-label="Stop beat sync">
             <Icon icon={Square} size="sm" aria-hidden /> Stop
           </button>
         ) : (
@@ -707,9 +746,38 @@ export function MusicDock({ onClose }: MusicDockProps) {
           </button>
         )}
       </div>
-      {syncRunning && (
-        <div className="music-dock-hint music-dock-hint-row">
-          Moves land on the beat → PERFECT streaks. ×10 = Rhythm Master 🏆
+
+      {/* M.10 — manual tempo (TAP + presets) folded away; most users
+          never need it now that detection auto-syncs. */}
+      <button
+        type="button"
+        className="music-dock-manual-toggle"
+        onClick={() => setShowManual((v) => !v)}
+        aria-expanded={showManual}
+      >
+        Manual tempo <span className="music-dock-pl-caret">{showManual ? '▾' : '▸'}</span>
+      </button>
+      {showManual && (
+        <div className="music-dock-manual">
+          <div className="music-dock-beat">
+            <button type="button" className="music-dock-tap-btn" onClick={handleTap}>
+              TAP
+            </button>
+            <span className="music-dock-hint">tap 4× to set tempo, or pick a preset</span>
+          </div>
+          <div className="music-dock-presets" role="group" aria-label="Tempo presets">
+            {TEMPO_PRESETS.map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                className={`music-dock-preset${syncRunning && bpm === p.bpm ? ' is-active' : ''}`}
+                onClick={() => handlePreset(p.bpm)}
+                title={`${p.bpm} BPM`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -767,21 +835,21 @@ export function MusicDock({ onClose }: MusicDockProps) {
       </div>
       {micError && <div className="twitch-status twitch-status-error">{micError}</div>}
 
-      {/* SP-7 — live tempo (mic/tab only; file mode has exact offline BPM). */}
+      {/* SP-7 / M.10 — live tempo readout (mic/tab only; file mode has
+          exact offline BPM). Auto-applied to the board — no button. The
+          chip is the detector's confidence (how clear the beat is). */}
       {micOn && captureSource !== 'file' && (
         <div className="music-dock-beat music-dock-live">
           {live ? (
-            <>
-              <span className="music-dock-live-bpm">
-                ♫ {live.bpm} BPM
-                <span className={`music-dock-live-conf conf-${live.conf > 0.5 ? 'high' : live.conf > 0.3 ? 'mid' : 'low'}`}>
-                  {live.conf > 0.5 ? 'strong' : live.conf > 0.3 ? 'fair' : 'weak'}
-                </span>
+            <span className="music-dock-live-bpm">
+              ♫ {live.bpm} BPM · synced
+              <span
+                className={`music-dock-live-conf conf-${live.conf > 0.5 ? 'high' : live.conf > 0.3 ? 'mid' : 'low'}`}
+                title="How clearly the beat is detected — higher means a steadier lock"
+              >
+                {live.conf > 0.5 ? 'strong' : live.conf > 0.3 ? 'fair' : 'weak'}
               </span>
-              <button type="button" className="music-dock-beat-btn is-active" onClick={useLiveBpm}>
-                Use
-              </button>
-            </>
+            </span>
           ) : (
             <span className="music-dock-hint">detecting tempo… play some music</span>
           )}
@@ -953,6 +1021,8 @@ export function MusicDock({ onClose }: MusicDockProps) {
           </div>
         )}
       </div>
+      </>
+      )}
     </aside>,
     document.body,
   );
