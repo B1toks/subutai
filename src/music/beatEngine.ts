@@ -120,6 +120,18 @@ export class BeatEngine {
     this.phaseMs = this.now() % this.intervalMs;
   }
 
+  /** SP-9 — set BOTH tempo and phase explicitly. Used by offline file
+   *  analysis, which knows exactly where beat 1 sits (phaseMs is in the
+   *  same time base as now() — track-time for a file). No tap needed:
+   *  the grid is sample-accurate from the first beat. */
+  setGrid(bpm: number, phaseMs: number) {
+    if (bpm < MIN_BPM || bpm > MAX_BPM) return;
+    this.bpm = bpm;
+    this.intervalMs = 60000 / bpm;
+    const iv = this.intervalMs;
+    this.phaseMs = ((phaseMs % iv) + iv) % iv;
+  }
+
   start(): boolean {
     if (this.intervalMs <= 0) return false;
     this.lastFiredIdx = Math.floor((this.now() - this.phaseMs) / this.intervalMs);

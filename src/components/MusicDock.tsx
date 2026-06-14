@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Disc3, GripVertical, ListMusic, Mic, MicOff, MonitorSpeaker, Play, Plus,
+  Disc3, FileMusic, GripVertical, ListMusic, Mic, MicOff, MonitorSpeaker, Play, Plus,
   SkipForward, Square, Trash2, X,
 } from 'lucide-react';
 import { Icon } from './Icon';
 import { beatEngine } from '../music/beatEngine';
 import { lookupBpm, analyzeTrack } from '../music/autoBpm';
+import { analyzeAudioBuffer } from '../music/fileBpm';
 import { liveBpm } from '../music/liveBpm';
 import { beatMode } from '../music/beatMode';
 import {
@@ -52,6 +53,7 @@ const URL_RE = /open\.spotify\.com\/(?:embed\/)?(track|playlist|album)\/([a-zA-Z
 interface SpotifyController {
   addListener: (event: string, cb: (e: { data: { position: number; duration: number; isPaused: boolean } }) => void) => void;
   loadUri: (uri: string) => void;
+  pause?: () => void;
   destroy: () => void;
 }
 
@@ -125,11 +127,17 @@ export function MusicDock({ onClose }: MusicDockProps) {
   const [loadedUrl, setLoadedUrl] = useState('');
   const [playerState, setPlayerState] = useState<'idle' | 'loading' | 'ready'>('idle');
   const [micOn, setMicOn] = useState(() => micEq.isRunning());
-  const [captureSource, setCaptureSource] = useState<'mic' | 'display' | null>(() => micEq.getSource());
+  const [captureSource, setCaptureSource] = useState<'mic' | 'display' | 'file' | null>(() => micEq.getSource());
   const [micError, setMicError] = useState<string | null>(null);
   // SP-7 — live tempo detected from the audio (mic room sound or the
   // captured tab/system audio).
   const [live, setLive] = useState<{ bpm: number; conf: number } | null>(null);
+  // SP-9 — local audio file mode (our audio = the idea works perfectly).
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [fileAnalyzing, setFileAnalyzing] = useState(false);
+  const [filePlaying, setFilePlaying] = useState(false);
+  const audioElRef = useRef<HTMLAudioElement | null>(null);
+  const fileUrlRef = useRef<string | null>(null);
   // Engine mirrors for the UI (the engine itself lives outside React).
   const [bpm, setBpm] = useState(() => beatEngine.getBpm());
   const [syncRunning, setSyncRunning] = useState(() => beatEngine.isRunning());
@@ -252,6 +260,9 @@ export function MusicDock({ onClose }: MusicDockProps) {
     return () => {
       controllerRef.current?.destroy();
       controllerRef.current = null;
+      // SP-9 — release the local file element + object URL.
+      audioElRef.current?.pause();
+      if (fileUrlRef.current) URL.revokeObjectURL(fileUrlRef.current);
     };
   }, []);
 
@@ -392,11 +403,87 @@ export function MusicDock({ onClose }: MusicDockProps) {
   }
 
   function stopCapture() {
+    // SP-9 — if a local file was the source, pause it too (its graph is
+    // about to be torn down with the AudioContext).
+    if (micEq.getSource() === 'file') audioElRef.current?.pause();
     micEq.stop();
     liveBpm.stop();
     setLive(null);
     setMicOn(false);
     setCaptureSource(null);
+  }
+
+  // ── SP-9: local audio file ──
+  // Our audio = full control. Decode → accurate offline BPM + phase →
+  // sample-locked grid driven by the element's own clock. The same
+  // element feeds the equalizer (real spectrum) and plays audibly.
+  async function onPickFile(file: File) {
+    // Pause any Spotify embed so two sources don't overlap.
+    controllerRef.current?.pause?.();
+    // Fresh element per file — sidesteps the once-per-element limit on
+    // createMediaElementSource.
+    audioElRef.current?.pause();
+    if (fileUrlRef.current) URL.revokeObjectURL(fileUrlRef.current);
+
+    const el = new Audio();
+    el.src = URL.createObjectURL(file);
+    fileUrlRef.current = el.src;
+    audioElRef.current = el;
+    el.addEventListener('play', () => setFilePlaying(true));
+    el.addEventListener('pause', () => setFilePlaying(false));
+    const feed = () => beatEngine.feedPlayback(el.currentTime * 1000, el.paused);
+    el.addEventListener('play', feed);
+    el.addEventListener('pause', feed);
+    el.addEventListener('seeked', feed);
+    el.addEventListener('timeupdate', feed);
+
+    setFileName(file.name);
+    setLoadedUrl('');
+    setAutoBpm('idle');
+
+    // Route the element through the equalizer graph (audible + analysed).
+    const wired = micEq.startFromElement(el);
+    if (wired.ok) {
+      setMicOn(true);
+      setCaptureSource('file');
+      void wired.ctx.resume();
+    }
+
+    // Offline analysis on a throwaway decode context.
+    setFileAnalyzing(true);
+    beatEngine.setBase('track');
+    try {
+      const bytes = await file.arrayBuffer();
+      const decodeCtx = new AudioContext();
+      const audioBuf = await decodeCtx.decodeAudioData(bytes);
+      void decodeCtx.close();
+      const result = await analyzeAudioBuffer(audioBuf);
+      if (result) {
+        beatEngine.setGrid(result.bpm, result.offsetMs);
+        setBpm(result.bpm);
+        setAutoBpm('found');
+      } else {
+        setAutoBpm('none');
+      }
+    } catch {
+      setAutoBpm('none');
+    }
+    setFileAnalyzing(false);
+
+    try {
+      await el.play();
+    } catch { /* autoplay blocked — user hits play */ }
+    if (beatEngine.getBpm() > 0) {
+      beatEngine.start();
+      setSyncRunning(true);
+    }
+  }
+
+  function toggleFilePlay() {
+    const el = audioElRef.current;
+    if (!el) return;
+    if (el.paused) void el.play();
+    else el.pause();
   }
 
   async function startCapture(source: 'mic' | 'display') {
@@ -541,6 +628,40 @@ export function MusicDock({ onClose }: MusicDockProps) {
         </button>
       </div>
 
+      {/* SP-9 — local audio file: the path where the idea just works
+          (accurate offline BPM, exact sync, real spectrum, no DRM). */}
+      <label className="music-dock-file">
+        <input
+          type="file"
+          accept="audio/*"
+          className="music-dock-file-input"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void onPickFile(f);
+            e.currentTarget.value = '';
+          }}
+        />
+        <span className="music-dock-file-btn">
+          <Icon icon={FileMusic} size="sm" aria-hidden /> Load audio file
+        </span>
+      </label>
+      {fileName && (
+        <div className="music-dock-file-now">
+          <button
+            type="button"
+            className="music-dock-pl-trackplay"
+            onClick={toggleFilePlay}
+            title={filePlaying ? 'Pause' : 'Play'}
+          >
+            {filePlaying ? '❚❚' : '▶'}
+          </button>
+          <span className="music-dock-file-name" title={fileName}>{fileName}</span>
+          <span className="music-dock-file-status">
+            {fileAnalyzing ? 'analyzing…' : bpm > 0 ? `${bpm} BPM · locked` : 'no beat'}
+          </span>
+        </div>
+      )}
+
       <div
         ref={embedHostRef}
         className="music-dock-embed-host"
@@ -646,8 +767,8 @@ export function MusicDock({ onClose }: MusicDockProps) {
       </div>
       {micError && <div className="twitch-status twitch-status-error">{micError}</div>}
 
-      {/* SP-7 — live tempo detected from whatever's playing. */}
-      {micOn && (
+      {/* SP-7 — live tempo (mic/tab only; file mode has exact offline BPM). */}
+      {micOn && captureSource !== 'file' && (
         <div className="music-dock-beat music-dock-live">
           {live ? (
             <>

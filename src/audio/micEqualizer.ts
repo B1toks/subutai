@@ -34,7 +34,7 @@ const GAIN_STEP_UP = 1.05;
 const GAIN_STEP_DOWN = 0.95;
 const POWER_CURVE_GAMMA = 0.7;
 
-export type AudioSource = 'mic' | 'display';
+export type AudioSource = 'mic' | 'display' | 'file';
 
 export type MicStartResult =
   | { ok: true }
@@ -49,6 +49,7 @@ export class MicEqualizer {
   private analyser: AnalyserNode | null = null;
   private gain: GainNode | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
+  private elementSource: MediaElementAudioSourceNode | null = null;
   private stream: MediaStream | null = null;
   private rafId: number | null = null;
   private bands: number[] = new Array(BAND_COUNT).fill(0);
@@ -195,6 +196,43 @@ export class MicEqualizer {
     this.emitState(true);
   }
 
+  /**
+   * SP-9 — analyse a local file played through an <audio> element. The
+   * element's own output is muted (it routes through our graph instead)
+   * so we split: source → destination (audible, untouched volume) AND
+   * source → gain → analyser (visual only, auto-gain safe). Reuses the
+   * existing ctx if one is open (e.g. created by an AudioController),
+   * otherwise makes its own. Returns the AudioContext so the caller can
+   * resume() it after the user gesture.
+   */
+  startFromElement(el: HTMLMediaElement): { ok: true; ctx: AudioContext } | { ok: false } {
+    if (this.ctx) this.stop();
+    try {
+      this.ctx = new AudioContext();
+      this.gain = this.ctx.createGain();
+      this.gain.gain.value = 1.0;
+      this.analyser = this.ctx.createAnalyser();
+      this.analyser.fftSize = FFT_SIZE;
+      this.analyser.smoothingTimeConstant = SMOOTHING;
+
+      const src = this.ctx.createMediaElementSource(el);
+      // Audible path — straight to output, unaffected by auto-gain.
+      src.connect(this.ctx.destination);
+      // Visual path — boosted/auto-gained into the analyser only.
+      src.connect(this.gain).connect(this.analyser);
+      this.elementSource = src;
+
+      this.activeSource = 'file';
+      this.peakHistory = [];
+      this.startTicking();
+      this.emitState(true);
+      return { ok: true, ctx: this.ctx };
+    } catch {
+      this.stop();
+      return { ok: false };
+    }
+  }
+
   setAutoGain(enabled: boolean) {
     this.autoGainEnabled = enabled;
   }
@@ -218,6 +256,7 @@ export class MicEqualizer {
     }
     try {
       this.source?.disconnect();
+      this.elementSource?.disconnect();
       this.gain?.disconnect();
     } catch {
       // already disconnected
@@ -230,6 +269,7 @@ export class MicEqualizer {
     this.analyser = null;
     this.gain = null;
     this.source = null;
+    this.elementSource = null;
     this.stream = null;
     this.activeSource = null;
     this.peakHistory = [];
