@@ -3624,6 +3624,33 @@ body.checkmate-flash::after {
   padding: var(--space-2) 0;
 }
 
+/* SP-7 — live mic BPM readout. */
+.music-dock-live {
+  border-top: 1px dashed var(--btn-border);
+}
+
+.music-dock-live-bpm {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.music-dock-live-conf {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: var(--radius-full, 999px);
+}
+
+.music-dock-live-conf.conf-high { background: rgba(29, 185, 84, 0.2); color: #1db954; }
+.music-dock-live-conf.conf-mid { background: rgba(212, 168, 67, 0.18); color: var(--accent-primary); }
+.music-dock-live-conf.conf-low { background: var(--bg-elevated); color: var(--text-muted); }
+
 @media (max-width: 720px) {
   .music-dock { left: 8px; right: 8px; width: auto; }
 }

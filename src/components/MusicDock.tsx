@@ -6,6 +6,7 @@ import {
 import { Icon } from './Icon';
 import { beatEngine } from '../music/beatEngine';
 import { lookupBpm, analyzeTrack } from '../music/autoBpm';
+import { liveBpm } from '../music/liveBpm';
 import { beatMode } from '../music/beatMode';
 import {
   loadPlaylists, savePlaylist, deletePlaylist, setTrackBpm, newPlaylistId,
@@ -118,6 +119,8 @@ export function MusicDock({ onClose }: MusicDockProps) {
   const [playerState, setPlayerState] = useState<'idle' | 'loading' | 'ready'>('idle');
   const [micOn, setMicOn] = useState(() => micEq.isRunning());
   const [micError, setMicError] = useState<string | null>(null);
+  // SP-7 — live tempo detected from the mic (any audio in the room).
+  const [live, setLive] = useState<{ bpm: number; conf: number } | null>(null);
   // Engine mirrors for the UI (the engine itself lives outside React).
   const [bpm, setBpm] = useState(() => beatEngine.getBpm());
   const [syncRunning, setSyncRunning] = useState(() => beatEngine.isRunning());
@@ -246,6 +249,23 @@ export function MusicDock({ onClose }: MusicDockProps) {
     });
   }, []);
 
+  // SP-7 — surface the live mic tempo estimate.
+  useEffect(() => {
+    return liveBpm.onBpm((value, conf) => setLive({ bpm: value, conf }));
+  }, []);
+
+  // Adopt the live-detected tempo into the grid (wall base — the audio
+  // is in the room, not the embed) and start sync.
+  function useLiveBpm() {
+    if (!live) return;
+    beatEngine.setBase('wall');
+    beatEngine.adoptBpm(live.bpm);
+    setBpm(live.bpm);
+    setAutoBpm('found');
+    beatEngine.start();
+    setSyncRunning(true);
+  }
+
   // ── beat controls ──
   function handleTap() {
     beatEngine.tap();
@@ -358,12 +378,15 @@ export function MusicDock({ onClose }: MusicDockProps) {
     setMicError(null);
     if (micEq.isRunning()) {
       micEq.stop();
+      liveBpm.stop();
+      setLive(null);
       setMicOn(false);
       return;
     }
     const result: MicStartResult = await micEq.start();
     if (result.ok) {
       setMicOn(true);
+      liveBpm.start(); // SP-7 — start listening for the tempo
     } else {
       setMicOn(false);
       setMicError(
@@ -573,6 +596,27 @@ export function MusicDock({ onClose }: MusicDockProps) {
         </span>
       </div>
       {micError && <div className="twitch-status twitch-status-error">{micError}</div>}
+
+      {/* SP-7 — live tempo detected from whatever's playing in the room. */}
+      {micOn && (
+        <div className="music-dock-beat music-dock-live">
+          {live ? (
+            <>
+              <span className="music-dock-live-bpm">
+                ♫ {live.bpm} BPM
+                <span className={`music-dock-live-conf conf-${live.conf > 0.5 ? 'high' : live.conf > 0.3 ? 'mid' : 'low'}`}>
+                  {live.conf > 0.5 ? 'strong' : live.conf > 0.3 ? 'fair' : 'weak'}
+                </span>
+              </span>
+              <button type="button" className="music-dock-beat-btn is-active" onClick={useLiveBpm}>
+                Use
+              </button>
+            </>
+          ) : (
+            <span className="music-dock-hint">detecting tempo from the room… play some music</span>
+          )}
+        </div>
+      )}
 
       {/* SP-5 — pre-analyzed playlists. Assemble track URLs, analyze BPM
           ahead of time, then play track-by-track with the grid pre-armed. */}
