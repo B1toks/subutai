@@ -3131,45 +3131,60 @@ body.checkmate-flash::after {
 .eq-left { left: 0; align-items: flex-end; }     /* grow left / out */
 .eq-right { right: 0; align-items: flex-start; } /* grow right / out */
 
+/* M.11 — refined "neon spectrum" bar. 3-stop gradient: translucent at
+   the board edge → solid accent → bright near-white tip, so each bar
+   reads as a glowing needle with a hot cap. Thin (4px), rounded, with
+   an amplitude-scaled two-layer glow. */
 .eq-bar {
   display: block;
   border-radius: 999px;
-  opacity: calc(0.35 + var(--amplitude, 0) * 0.65);
+  opacity: calc(0.45 + var(--amplitude, 0) * 0.55);
   box-shadow:
-    0 0 calc(var(--amplitude, 0) * 12px)
-      color-mix(in srgb, var(--accent-primary) 70%, transparent),
-    0 0 calc(var(--amplitude, 0) * 28px)
-      color-mix(in srgb, var(--accent-primary) 28%, transparent);
+    0 0 calc(3px + var(--amplitude, 0) * 14px)
+      color-mix(in srgb, var(--accent-primary) 80%, transparent),
+    0 0 calc(var(--amplitude, 0) * 32px)
+      color-mix(in srgb, var(--accent-primary) 32%, transparent);
   transition:
-    height 70ms cubic-bezier(0.2, 0.85, 0.35, 1),
-    width 70ms cubic-bezier(0.2, 0.85, 0.35, 1),
-    opacity 110ms ease,
-    box-shadow 110ms ease;
+    height 80ms cubic-bezier(0.18, 0.9, 0.3, 1),
+    width 80ms cubic-bezier(0.18, 0.9, 0.3, 1),
+    opacity 120ms ease,
+    box-shadow 120ms ease;
 }
 
-/* Gradient brightens from the board edge toward the growing tip. */
-.eq-top .eq-bar { background: linear-gradient(to top, color-mix(in srgb, var(--accent-primary) 80%, transparent), var(--danger-coral)); }
-.eq-bottom .eq-bar { background: linear-gradient(to bottom, color-mix(in srgb, var(--accent-primary) 80%, transparent), var(--danger-coral)); }
-.eq-left .eq-bar { background: linear-gradient(to left, color-mix(in srgb, var(--accent-primary) 80%, transparent), var(--danger-coral)); }
-.eq-right .eq-bar { background: linear-gradient(to right, color-mix(in srgb, var(--accent-primary) 80%, transparent), var(--danger-coral)); }
+/* --eq-c0 transparent base · --eq-c1 accent body · --eq-c2 hot tip. */
+.perimeter-eq {
+  --eq-c0: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+  --eq-c1: var(--accent-primary);
+  --eq-c2: color-mix(in srgb, var(--accent-gold-bright, var(--accent-primary)) 55%, white);
+}
 
-.eq-bar-vertical { width: 5px; height: calc(var(--eq-base) + var(--amplitude, 0) * (var(--eq-reach) - 14px)); }
-.eq-bar-horizontal { height: 5px; width: calc(var(--eq-base) + var(--amplitude, 0) * (var(--eq-reach) - 14px)); }
+.eq-top .eq-bar { background: linear-gradient(to top, var(--eq-c0) 0%, var(--eq-c1) 55%, var(--eq-c2) 100%); }
+.eq-bottom .eq-bar { background: linear-gradient(to bottom, var(--eq-c0) 0%, var(--eq-c1) 55%, var(--eq-c2) 100%); }
+.eq-left .eq-bar { background: linear-gradient(to left, var(--eq-c0) 0%, var(--eq-c1) 55%, var(--eq-c2) 100%); }
+.eq-right .eq-bar { background: linear-gradient(to right, var(--eq-c0) 0%, var(--eq-c1) 55%, var(--eq-c2) 100%); }
+
+.eq-bar-vertical { width: 4px; height: calc(var(--eq-base) + var(--amplitude, 0) * (var(--eq-reach) - 12px)); }
+.eq-bar-horizontal { height: 4px; width: calc(var(--eq-base) + var(--amplitude, 0) * (var(--eq-reach) - 12px)); }
 
 .eq-bar.is-peak {
+  --eq-c2: white;
   box-shadow:
-    0 0 18px color-mix(in srgb, var(--danger-coral) 80%, transparent),
-    0 0 36px color-mix(in srgb, var(--danger-coral) 45%, transparent),
-    0 0 5px rgba(255, 255, 255, 0.7);
+    0 0 16px color-mix(in srgb, var(--accent-primary) 85%, transparent),
+    0 0 34px color-mix(in srgb, var(--accent-primary) 45%, transparent),
+    0 0 6px rgba(255, 255, 255, 0.85);
 }
 
-/* Bass halo on the board frame while the visualizer runs. */
+/* M.11 — clean perimeter frame + bass halo while the visualizer runs.
+   The inset ring traces the board edge so the ring reads as a deliberate
+   frame even at rest; the outer halo throbs with the bass. */
 .board-with-coords.has-viz {
   box-shadow:
-    0 0 calc(var(--bass-amplitude, 0) * 52px)
-      color-mix(in srgb, var(--accent-primary) 48%, transparent),
-    0 0 calc(var(--bass-amplitude, 0) * 104px)
-      color-mix(in srgb, var(--accent-primary) 20%, transparent);
+    inset 0 0 0 1px color-mix(in srgb, var(--accent-primary) 35%, transparent),
+    0 0 calc(8px + var(--bass-amplitude, 0) * 52px)
+      color-mix(in srgb, var(--accent-primary) 50%, transparent),
+    0 0 calc(var(--bass-amplitude, 0) * 110px)
+      color-mix(in srgb, var(--accent-primary) 22%, transparent);
+  border-radius: var(--radius-md, 8px);
   transition: box-shadow 80ms ease-out;
 }
 
@@ -3177,10 +3192,9 @@ body.checkmate-flash::after {
   .perimeter-eq { --eq-reach: 48px; }
 }
 @media (max-width: 560px) {
-  .perimeter-eq { --eq-reach: 30px; --eq-base: 4px; }
-  .eq-bar-vertical, .eq-bar-horizontal { /* thinner on tight screens */ }
-  .eq-bar-vertical { width: 4px; }
-  .eq-bar-horizontal { height: 4px; }
+  .perimeter-eq { --eq-reach: 28px; --eq-base: 4px; }
+  .eq-bar-vertical { width: 3px; }
+  .eq-bar-horizontal { height: 3px; }
 }
 
 /* ── M.10: stronger, "throbbing" board beat pulse — scale + brightness
@@ -3199,29 +3213,44 @@ body.checkmate-flash::after {
   .board-with-coords.beat-tick { animation: none; }
 }
 
-/* ── SP: music dock ── */
+/* ── SP / M.11: music dock — refreshed styling ── */
 .music-dock {
   position: fixed;
   left: 12px;
   bottom: 12px;
-  width: 320px;
+  width: 330px;
+  max-height: calc(100vh - 24px);
   display: flex;
   flex-direction: column;
-  background: var(--bg-panel);
-  border: 1px solid var(--btn-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-elevated, 0 12px 40px rgba(0, 0, 0, 0.5));
+  /* subtle top-lit gradient instead of a flat panel */
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-elevated) 60%, var(--bg-panel)) 0%, var(--bg-panel) 90px),
+    var(--bg-panel);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 14%, var(--btn-border));
+  border-radius: var(--radius-lg, 14px);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 18px 50px rgba(0, 0, 0, 0.55);
   z-index: 890;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  backdrop-filter: blur(2px);
+  scrollbar-width: thin;
+}
+
+.music-dock::-webkit-scrollbar { width: 8px; }
+.music-dock::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--accent-primary) 30%, transparent);
+  border-radius: 999px;
 }
 
 .music-dock-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--btn-border);
-  background: var(--bg-panel-deep);
+  padding: 10px var(--space-3);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent-primary) 10%, var(--btn-border));
+  background: linear-gradient(180deg, color-mix(in srgb, #1db954 8%, transparent), transparent);
 }
 
 .music-dock-title {
@@ -3230,6 +3259,7 @@ body.checkmate-flash::after {
   gap: 8px;
   font-weight: 700;
   font-size: 14px;
+  letter-spacing: 0.01em;
   color: #1db954; /* spotify green — brand color, intentionally untokenised */
 }
 
@@ -3303,23 +3333,32 @@ body.checkmate-flash::after {
 .music-dock-beat-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   border: 1px solid var(--btn-border);
   background: var(--bg-card);
   color: var(--text);
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 13px;
   font-weight: 600;
-  padding: 6px 12px;
+  padding: 7px 12px;
   cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.music-dock-beat-btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, #1db954 60%, var(--btn-border));
+  background: var(--bg-elevated);
 }
 
 .music-dock-beat-btn.is-active {
   border-color: #1db954;
-  color: #1db954;
+  color: #fff;
+  background: color-mix(in srgb, #1db954 22%, transparent);
+  box-shadow: 0 0 10px color-mix(in srgb, #1db954 30%, transparent);
 }
 
-.music-dock-beat-btn:disabled { opacity: 0.5; cursor: default; }
+.music-dock-beat-btn:disabled { opacity: 0.45; cursor: default; }
 
 .music-dock-hint {
   font-size: 11px;
