@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef } from 'react';
 import { micEq } from '../audio/micEqualizer';
+import { eqSettings } from '../music/eqSettings';
 
 /* M.14 — perimeter equalizer, "behind the board" edition.
  *
@@ -52,18 +53,27 @@ function PerimeterEqualizerImpl() {
     const target = new Float32Array(TOTAL);
     let raf = 0;
 
+    // M.15 — user "temperature": how hard the wave reacts. Read into a
+    // mutable closure var (subscribed) so the per-frame map stays a plain
+    // multiply — no React state in the hot path.
+    let sens = eqSettings.getSensitivity();
+    const offSens = eqSettings.onChange((v) => {
+      sens = v;
+    });
+
     // micEq pushes ~30fps; we just stash the smoothed targets here.
     const off = micEq.onUpdate((bands) => {
       const n = bands.length || 1;
       // Map: each bar reads an energetic band by its position on its side
       // (loud mid-side, fading to corners). Mild tilt lifts the corner
-      // bars so all four sides stay alive.
+      // bars so all four sides stay alive. `sens` scales the punch so hard
+      // tracks slam the bars to full reach.
       for (let i = 0; i < TOTAL; i++) {
         const within = i % BARS_PER_SIDE;
         const idx = bandForBar(within, n);
         const edge = Math.abs((within / (BARS_PER_SIDE - 1)) * 2 - 1);
         const tilt = 1 + edge * 0.6;
-        raw[i] = Math.min(1, (bands[idx] ?? 0) * tilt);
+        raw[i] = Math.min(1, (bands[idx] ?? 0) * tilt * sens);
       }
       // M.14 — spatial pass: 5-tap weighted blend so neighbours melt into
       // one flowing wave (smoother crest) instead of separate sticks.
@@ -78,24 +88,35 @@ function PerimeterEqualizerImpl() {
       if (parent) {
         let bass = 0;
         for (let i = 0; i < BASS_BANDS && i < bands.length; i++) bass += bands[i];
-        parent.style.setProperty(
-          '--bass-amplitude',
-          (bass / Math.max(1, Math.min(BASS_BANDS, bands.length))).toFixed(3),
-        );
+        const avg = bass / Math.max(1, Math.min(BASS_BANDS, bands.length));
+        // Halo follows the same temperature, capped so it glows hard but
+        // doesn't wash the whole board out.
+        parent.style.setProperty('--bass-amplitude', Math.min(1.2, avg * sens).toFixed(3));
       }
     });
 
     // Temporal pass: ease the displayed value toward the target on its
     // own rAF, decoupled from the audio callback, for a fluid wave.
+    // M.15 — only touch the DOM when a bar actually moved (≥WRITE_EPS) or
+    // crosses the peak threshold. With 112 bars this skips most style
+    // writes when the wave is calm/idle — fewer recalcs, same look.
+    const written = new Float32Array(TOTAL).fill(-1);
+    const peaked = new Uint8Array(TOTAL);
+    const WRITE_EPS = 0.0025;
     const tick = () => {
       for (let i = 0; i < TOTAL; i++) {
         display[i] += (target[i] - display[i]) * EASE;
         const v = display[i];
         const bar = bars[i];
-        if (bar) {
+        if (!bar) continue;
+        if (Math.abs(v - written[i]) >= WRITE_EPS) {
           bar.style.setProperty('--amplitude', v.toFixed(3));
-          if (v > PEAK_THRESHOLD) bar.classList.add('is-peak');
-          else bar.classList.remove('is-peak');
+          written[i] = v;
+        }
+        const isPeak = v > PEAK_THRESHOLD ? 1 : 0;
+        if (isPeak !== peaked[i]) {
+          bar.classList.toggle('is-peak', isPeak === 1);
+          peaked[i] = isPeak;
         }
       }
       raf = requestAnimationFrame(tick);
@@ -104,6 +125,7 @@ function PerimeterEqualizerImpl() {
 
     return () => {
       off();
+      offSens();
       cancelAnimationFrame(raf);
       parent?.classList.remove('has-viz');
       parent?.style.removeProperty('--bass-amplitude');

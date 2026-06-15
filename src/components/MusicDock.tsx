@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  ChevronUp, Disc3, FileMusic, GripVertical, ListMusic, Mic, MicOff, Minus,
-  MonitorSpeaker, PanelLeft, Play, Plus, SkipForward, Square, Trash2, X,
+  Activity, ChevronUp, Disc3, FileMusic, GripVertical, ListMusic, Mic, MicOff,
+  Minus, MonitorSpeaker, PanelLeft, Play, Plus, SkipForward, Square, Trash2, X,
 } from 'lucide-react';
 import { Icon } from './Icon';
 import { beatEngine } from '../music/beatEngine';
@@ -10,6 +10,7 @@ import { lookupBpm, analyzeTrack } from '../music/autoBpm';
 import { analyzeAudioBuffer } from '../music/fileBpm';
 import { liveBpm } from '../music/liveBpm';
 import { beatMode } from '../music/beatMode';
+import { eqSettings, EQ_SENS_MIN, EQ_SENS_MAX } from '../music/eqSettings';
 import {
   loadPlaylists, savePlaylist, deletePlaylist, setTrackBpm, newPlaylistId,
   type SavedPlaylist, type PlaylistTrack,
@@ -127,6 +128,8 @@ export function MusicDock({ onClose }: MusicDockProps) {
   const [loadedUrl, setLoadedUrl] = useState('');
   const [playerState, setPlayerState] = useState<'idle' | 'loading' | 'ready'>('idle');
   const [micOn, setMicOn] = useState(() => micEq.isRunning());
+  // M.15 — equalizer "temperature": how hard the perimeter wave reacts.
+  const [eqSens, setEqSens] = useState(() => eqSettings.getSensitivity());
   const [captureSource, setCaptureSource] = useState<'mic' | 'display' | 'file' | null>(() => micEq.getSource());
   const [micError, setMicError] = useState<string | null>(null);
   // SP-7 — live tempo detected from the audio (mic room sound or the
@@ -918,6 +921,33 @@ export function MusicDock({ onClose }: MusicDockProps) {
           ) : (
             <span className="music-dock-hint">detecting tempo… play some music</span>
           )}
+        </div>
+      )}
+
+      {/* M.15 — equalizer "temperature": calm idle wave → hard tracks
+          slam the perimeter to full reach. Persisted via eqSettings. */}
+      {micOn && (
+        <div className="music-dock-eq-sens">
+          <label className="music-dock-eq-sens-label" htmlFor="eq-sens">
+            <Icon icon={Activity} size="sm" aria-hidden />
+            EQ sensitivity
+            <span className="music-dock-eq-sens-val">{eqSens.toFixed(1)}×</span>
+          </label>
+          <input
+            id="eq-sens"
+            type="range"
+            className="music-dock-eq-sens-range"
+            min={EQ_SENS_MIN}
+            max={EQ_SENS_MAX}
+            step={0.1}
+            value={eqSens}
+            onChange={(e) => {
+              const v = Number.parseFloat(e.target.value);
+              eqSettings.setSensitivity(v);
+              setEqSens(v);
+            }}
+            aria-label="Equalizer sensitivity"
+          />
         </div>
       )}
 
