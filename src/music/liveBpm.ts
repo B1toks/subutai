@@ -142,21 +142,25 @@ class LiveBpmDetector {
     }
     if (best < 0 || bestCount < 3) return null;
 
-    // M.12 — octave-error fix for fast genres (hardstyle etc.). A 150 BPM
-    // kick is often heard as 75 (half-time) by the histogram. If the
-    // detected tempo is in the slow band and DOUBLE it has comparable
-    // support and lands in range, prefer the faster reading.
-    if (best < 100) {
-      const dbl = best * 2;
-      if (dbl <= BPM_HI) {
-        const dblCount =
-          (bins.get(dbl - 1) ?? 0) + (bins.get(dbl) ?? 0) + (bins.get(dbl + 1) ?? 0);
-        if (dblCount >= bestCount * 0.6) {
-          return { bpm: dbl, confidence: (bestCount + dblCount) / total };
-        }
+    // M.14 — octave-robust pick. A 150 BPM hardstyle kick is often heard
+    // as 75 (half-time) by a plain histogram. Consider half / detected /
+    // double, keep those in range, and take the strongest-supported with
+    // a mild preference for the 120-175 "dancefloor" band where hardstyle
+    // / DnB / EDM kicks live — so the faster, correct reading wins.
+    const support = (b: number) =>
+      (bins.get(b - 1) ?? 0) + (bins.get(b) ?? 0) + (bins.get(b + 1) ?? 0);
+    const cands = [Math.round(best / 2), best, best * 2].filter((b) => b >= BPM_LO && b <= BPM_HI);
+    let pick = best;
+    let pickScore = -1;
+    for (const c of cands) {
+      const pref = c >= 120 && c <= 175 ? 1.3 : 1;
+      const sc = support(c) * pref;
+      if (sc > pickScore) {
+        pickScore = sc;
+        pick = c;
       }
     }
-    return { bpm: best, confidence: bestCount / total };
+    return { bpm: pick, confidence: support(pick) / total };
   }
 
   /** Test seam: drive the detector with synthetic frames on a fake clock. */

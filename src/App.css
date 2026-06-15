@@ -1773,7 +1773,10 @@ body.checkmate-flash::after {
 }
 
 .piece-slide-wrap.is-sliding-in {
-  animation: piece-slide-in 240ms cubic-bezier(0.4, 0, 0.2, 1);
+  /* M.14 — 260ms (matches BEAT_SLIDE_MS) with a soft decelerating
+     ease-out so the piece "lands" gently; in Beat Mode the glide is
+     timed to finish exactly on the beat. */
+  animation: piece-slide-in 260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Hover + selected lift — gated behind [data-3d="on"]. The translateZ

@@ -64,6 +64,28 @@ class BeatModeStore {
     const ms = beatEngine.msToNextBeat();
     return ms >= SNAP_FLOOR_MS ? ms : 0;
   }
+
+  /**
+   * M.14 — snap PLAN so the piece *glides into place exactly on the beat*
+   * instead of the slide starting on the beat (which arrived a slide-
+   * length late and felt laggy).
+   *   landMs — when the beat lands (ring fills over this; piece arrives).
+   *   holdMs — when to COMMIT the move so a `slideMs` glide ends on the
+   *            beat (= landMs - slideMs for a gliding move, else landMs).
+   * Picks a beat far enough away to fit the glide; null when off.
+   */
+  snapPlan(slideMs: number): { holdMs: number; landMs: number } | null {
+    if (!this.enabled || !beatEngine.isRunning()) return null;
+    const interval = beatEngine.getIntervalMs();
+    if (interval <= 0) return null;
+    let land = beatEngine.msToNextBeat();
+    // Too close to the beat → no satisfying snap, play it now.
+    if (land < SNAP_FLOOR_MS && slideMs === 0) return null;
+    // Ensure there's room for the glide to land ON a beat (not before).
+    const need = slideMs + 50;
+    while (land < need) land += interval;
+    return { holdMs: Math.max(0, Math.round(land - slideMs)), landMs: Math.round(land) };
+  }
 }
 
 export const beatMode = new BeatModeStore();

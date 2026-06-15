@@ -237,6 +237,10 @@ function bumpEvalForMove(
   return prevEval + delta;
 }
 
+// M.14 — beat-mode glide length. MUST match the .piece-slide-in CSS
+// animation duration so the slide lands exactly on the beat.
+const BEAT_SLIDE_MS = 260;
+
 // S2.5 — mm:ss elapsed-time display for the per-side clocks.
 function formatClock(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
@@ -3032,27 +3036,39 @@ function App() {
         ? { ...move, promotion: 'queen' }
         : move;
 
-    // SP-3 Beat Mode — in classic solo play, hold the move so it lands
-    // on the next beat. The commit closure below captures this render's
-    // state/log; nothing mutates them during the <1-beat hold (it's the
-    // human's turn), so deferring is safe. Game logic is unchanged — only
-    // the timing of the commit shifts. Roulette/MP are excluded.
-    const snapMs =
-      gameMode === 'classic' && !isMultiplayer ? beatMode.snapDelayMs() : 0;
-    if (snapMs > 0) {
-      beatSnapPendingRef.current = true;
-      // M.12 — clear, satisfying snap: light up the destination with a
-      // ring that fills over exactly the wait, so it's obvious the move
-      // lands ON the next beat (not lagging). Keep the piece selected so
-      // the origin stays highlighted too.
-      setBeatSnap({ from: resolvedMove.from!, to: resolvedMove.to!, ms: snapMs });
-      window.setTimeout(() => {
-        beatSnapPendingRef.current = false;
-        setBeatSnap(null);
-        setSelected(null);
-        commitMove();
-      }, snapMs);
-      return;
+    // SP-3 / M.14 Beat Mode — in classic solo play the piece GLIDES into
+    // place exactly on the beat. The commit closure captures this render's
+    // state/log; nothing mutates them during the <1-beat hold (human's
+    // turn), so deferring is safe. Roulette/MP excluded.
+    //
+    // Earlier the move committed ON the beat and the slide started then,
+    // so the piece arrived a slide-length late and felt laggy. Now we
+    // figure out whether this move will visually slide (both tiles
+    // unrotated in the current topology) and, if so, commit a slide-
+    // length EARLY so the glide LANDS on the beat. The ring keeps filling
+    // until the beat, popping as the piece touches down.
+    if (gameMode === 'classic' && !isMultiplayer) {
+      const from = resolvedMove.from!;
+      const to = resolvedMove.to!;
+      const willSlide =
+        from !== to &&
+        tilePixelCenter(to, displayTopology, layout).angle === 0 &&
+        tilePixelCenter(from, displayTopology, layout).angle === 0;
+      const slideMs = willSlide ? BEAT_SLIDE_MS : 0;
+      const plan = beatMode.snapPlan(slideMs);
+      if (plan) {
+        beatSnapPendingRef.current = true;
+        setBeatSnap({ from, to, ms: plan.landMs });
+        // Commit (start the glide) so it lands on the beat.
+        window.setTimeout(() => {
+          beatSnapPendingRef.current = false;
+          setSelected(null);
+          commitMove();
+        }, plan.holdMs);
+        // Clear the ring once the piece has touched down (on the beat).
+        window.setTimeout(() => setBeatSnap(null), plan.landMs);
+        return;
+      }
     }
     commitMove();
     return;

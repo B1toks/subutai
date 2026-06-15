@@ -83,19 +83,20 @@ function estimateBpm(onsets: number[]): { bpm: number; confidence: number } | nu
   if (onsets.length < 8) return null;
   const bins = new Map<number, number>();
   let total = 0;
-  // Compare each onset to the next few (not just the immediate next) so
-  // a missed beat doesn't break the interval chain.
-  for (let i = 0; i < onsets.length; i++) {
-    for (let j = i + 1; j <= i + 4 && j < onsets.length; j++) {
-      const iv = onsets[j] - onsets[i];
-      if (iv <= 0) continue;
-      let bpm = 60000 / iv;
-      while (bpm < BPM_LO) bpm *= 2;
-      while (bpm > BPM_HI) bpm /= 2;
-      const q = Math.round(bpm);
-      bins.set(q, (bins.get(q) ?? 0) + 1);
-      total++;
-    }
+  // M.14 — CONSECUTIVE intervals only. The old i→i+4 comparison reinforced
+  // sub-divisions (a 150 BPM track's 2-step + 4-step both land on 75),
+  // which systematically mis-read fast genres as half-time. Consecutive
+  // intervals give the true beat period; the octave pick below repairs
+  // the occasional missed-beat outlier.
+  for (let i = 1; i < onsets.length; i++) {
+    const iv = onsets[i] - onsets[i - 1];
+    if (iv <= 0) continue;
+    let bpm = 60000 / iv;
+    while (bpm < BPM_LO) bpm *= 2;
+    while (bpm > BPM_HI) bpm /= 2;
+    const q = Math.round(bpm);
+    bins.set(q, (bins.get(q) ?? 0) + 1);
+    total++;
   }
   if (total === 0) return null;
   let best = -1;
@@ -108,17 +109,23 @@ function estimateBpm(onsets: number[]): { bpm: number; confidence: number } | nu
     }
   }
   if (best < 0) return null;
-  // M.12 — half-time octave-error fix for fast genres (hardstyle etc.).
-  if (best < 100) {
-    const dbl = best * 2;
-    if (dbl <= BPM_HI) {
-      const dblCount = (bins.get(dbl - 1) ?? 0) + (bins.get(dbl) ?? 0) + (bins.get(dbl + 1) ?? 0);
-      if (dblCount >= bestCount * 0.6) {
-        return { bpm: dbl, confidence: (bestCount + dblCount) / total };
-      }
+  // M.14 — octave-robust pick (see liveBpm): half / detected / double,
+  // strongest support, mild preference for the 120-175 dancefloor band
+  // so fast genres (hardstyle ~150) aren't read as half-time (~75).
+  const support = (b: number) =>
+    (bins.get(b - 1) ?? 0) + (bins.get(b) ?? 0) + (bins.get(b + 1) ?? 0);
+  const cands = [Math.round(best / 2), best, best * 2].filter((b) => b >= BPM_LO && b <= BPM_HI);
+  let pick = best;
+  let pickScore = -1;
+  for (const c of cands) {
+    const pref = c >= 120 && c <= 175 ? 1.3 : 1;
+    const sc = support(c) * pref;
+    if (sc > pickScore) {
+      pickScore = sc;
+      pick = c;
     }
   }
-  return { bpm: best, confidence: bestCount / total };
+  return { bpm: pick, confidence: support(pick) / total };
 }
 
 /** Circular-mean phase of onsets against the beat interval → offsetMs. */

@@ -19,7 +19,10 @@ export type BandsListener = (bands: number[]) => void;
 
 const BAND_COUNT = 60;
 const FFT_SIZE = 256;             // 128 frequency bins post-FFT
-const SMOOTHING = 0.82;           // analyser-side smoothing
+const SMOOTHING = 0.6;            // M.14 — was 0.82; lower = snappier, less lag
+                                  // (the perimeter EQ does its own spatial+
+                                  // temporal smoothing, so heavy analyser
+                                  // smoothing here just added latency)
 const UPDATE_INTERVAL_MS = 33;    // ~30fps emit cap
 
 // Auto-gain calibration knobs.

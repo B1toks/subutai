@@ -181,6 +181,11 @@ export class BeatEngine {
     return Math.round(this.intervalMs - offset);
   }
 
+  /** Beat period in ms (0 when no grid). */
+  getIntervalMs(): number {
+    return this.intervalMs;
+  }
+
   /** Distance from "now" to the nearest beat, scored. */
   scoreNow(): BeatScore {
     if (!this.running || this.intervalMs <= 0) return 'off';

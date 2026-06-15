@@ -19,7 +19,9 @@ const TOTAL = BARS_PER_SIDE * 4;
 const SIDES = ['top', 'right', 'bottom', 'left'] as const;
 const PEAK_THRESHOLD = 0.78;
 const BASS_BANDS = 8;
-const EASE = 0.35; // temporal smoothing — lower = smoother/slower
+// M.14 — was 0.35 (smooth but laggy). 0.5 keeps the wave fluid while
+// shaving ~3 frames of latency; the analyser smoothing was also lowered.
+const EASE = 0.5;
 
 function PerimeterEqualizerImpl() {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -38,12 +40,15 @@ function PerimeterEqualizerImpl() {
     // micEq pushes ~30fps; we just stash the smoothed targets here.
     const off = micEq.onUpdate((bands) => {
       const n = bands.length || 1;
-      // Spatial pass: 3-tap blend so neighbours flow into each other.
+      // M.14 — spatial pass: 5-tap weighted blend so neighbours melt into
+      // one flowing wave (wider, smoother crest) instead of separate sticks.
       for (let i = 0; i < TOTAL; i++) {
-        const a = bands[(i - 1 + n) % n] ?? 0;
-        const b = bands[i % n] ?? 0;
-        const c = bands[(i + 1) % n] ?? 0;
-        target[i] = a * 0.25 + b * 0.5 + c * 0.25;
+        const v2 = bands[(i - 2 + n) % n] ?? 0;
+        const v1 = bands[(i - 1 + n) % n] ?? 0;
+        const v0 = bands[i % n] ?? 0;
+        const w1 = bands[(i + 1) % n] ?? 0;
+        const w2 = bands[(i + 2) % n] ?? 0;
+        target[i] = v2 * 0.1 + v1 * 0.2 + v0 * 0.4 + w1 * 0.2 + w2 * 0.1;
       }
       if (parent) {
         let bass = 0;
