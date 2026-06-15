@@ -3221,14 +3221,16 @@ body.checkmate-flash::after {
 .eq-top .eq-bar,
 .eq-bottom .eq-bar {
   height: var(--eq-reach);
-  transform: scaleY(calc(0.05 + var(--amplitude, 0) * 0.95));
+  /* M.15 — lower floor (0.03) for more contrast; amplitude can exceed 1
+     at high temperature so peaks overshoot the base reach. */
+  transform: scaleY(calc(0.03 + var(--amplitude, 0) * 0.97));
 }
 .eq-top .eq-bar { transform-origin: bottom; }
 .eq-bottom .eq-bar { transform-origin: top; }
 .eq-left .eq-bar,
 .eq-right .eq-bar {
   width: var(--eq-reach);
-  transform: scaleX(calc(0.05 + var(--amplitude, 0) * 0.95));
+  transform: scaleX(calc(0.03 + var(--amplitude, 0) * 0.97));
 }
 .eq-left .eq-bar { transform-origin: right; }
 .eq-right .eq-bar { transform-origin: left; }
@@ -3250,9 +3252,14 @@ body.checkmate-flash::after {
   border-radius: var(--radius-md, 8px);
   transition: box-shadow 80ms ease-out;
 }
-/* Board content sits ABOVE the perimeter wave (which is z-index:0). */
+/* Board content sits ABOVE the perimeter wave (which is z-index:0).
+   M.15 — opaque backing so translucent highlights (last-move tints) and
+   the full-screen sound grid never bleed THROUGH the playing surface;
+   the grid stays decoration strictly behind the board. */
 .board-with-coords > .board {
   z-index: 1;
+  background: var(--tile-dark);
+  border-radius: var(--radius-md, 8px);
 }
 
 @media (max-width: 900px) {

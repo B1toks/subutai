@@ -78,8 +78,10 @@ function PerimeterEqualizerImpl() {
         const tilt = 1 + edge * 0.6;
         // M.15 — gamma: expand dynamics so peaks shoot to full reach while
         // quiet passages stay low (instead of everything floating mid-way).
+        // Cap at 1.8 (not 1) so at high "temperature" the bars overshoot
+        // the base reach and visibly leap up/down instead of pinning flat.
         const b = Math.min(1, (bands[idx] ?? 0) * tilt);
-        raw[i] = Math.min(1, Math.pow(b, GAMMA) * sens);
+        raw[i] = Math.min(1.8, Math.pow(b, GAMMA) * sens);
       }
       // M.14 — spatial pass: 5-tap weighted blend so neighbours melt into
       // one flowing wave (smoother crest) instead of separate sticks.

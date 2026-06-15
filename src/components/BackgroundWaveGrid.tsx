@@ -42,14 +42,25 @@ function BackgroundWaveGridImpl() {
     resize();
     window.addEventListener('resize', resize);
 
-    // Audio energy (bass), eased toward the latest frame's value.
+    // M.15 — overall "melodiousness": the WHOLE spectrum, weighted toward
+    // the mids where melody/vocals live, so the grid follows the tune (not
+    // just the kick). Eased toward the latest frame's value.
     let energy = 0;
     let energyTarget = 0;
     const off = micEq.onUpdate((bands) => {
-      let bass = 0;
-      const n = Math.min(10, bands.length);
-      for (let i = 0; i < n; i++) bass += bands[i];
-      energyTarget = n ? bass / n : 0;
+      const n = bands.length;
+      if (!n) {
+        energyTarget = 0;
+        return;
+      }
+      let sum = 0;
+      let wsum = 0;
+      for (let i = 0; i < n; i++) {
+        const w = 0.5 + Math.sin((i / n) * Math.PI) * 0.9; // mid-weighted hump
+        sum += bands[i] * w;
+        wsum += w;
+      }
+      energyTarget = wsum ? sum / wsum : 0;
     });
 
     let t = 0;
