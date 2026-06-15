@@ -558,7 +558,20 @@
   z-index: 9000;
 }
 
+/* M.15 — full-screen sound-grid: a fixed canvas above the app-shell
+   gradient but below the UI (.app-root is lifted to z-index:1). */
+.bg-wave-grid {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 0;
+}
+
 .app-root {
+  position: relative;
+  z-index: 1;
   width: 100%;
   max-width: 1100px;
   margin: 0 auto;
@@ -3186,12 +3199,14 @@ body.checkmate-flash::after {
      the per-frame easing). */
 }
 
-/* M.14 — full GREY palette (semi-transparent so it reads as a backdrop):
-   --eq-c0 fades into the board edge · --eq-c1 body · --eq-c2 light tip. */
+/* M.15 — GREY palette, now fading AWAY from the board: visible at the
+   board edge (--eq-c0), receding to fully transparent at the far tip
+   (--eq-c2). The further from the board, the more it sinks into the
+   background — so it never hard-clips or collides with the dock buttons. */
 .perimeter-eq {
-  --eq-c0: rgba(150, 160, 175, 0.04);
-  --eq-c1: rgba(165, 176, 192, 0.42);
-  --eq-c2: rgba(205, 213, 226, 0.78);
+  --eq-c0: rgba(202, 211, 224, 0.5);
+  --eq-c1: rgba(184, 194, 209, 0.2);
+  --eq-c2: rgba(184, 194, 209, 0);
 }
 
 .eq-top .eq-bar { background: linear-gradient(to top, var(--eq-c0) 0%, var(--eq-c1) 55%, var(--eq-c2) 100%); }
@@ -3219,7 +3234,7 @@ body.checkmate-flash::after {
 .eq-right .eq-bar { transform-origin: left; }
 
 .eq-bar.is-peak {
-  --eq-c2: rgba(225, 231, 240, 0.92);
+  --eq-c0: rgba(226, 233, 243, 0.72);
   opacity: 0.92;
 }
 
@@ -3501,6 +3516,28 @@ body.checkmate-flash::after {
   height: 4px;
   cursor: pointer;
   accent-color: var(--accent-primary);
+}
+.music-dock-grid-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.04));
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.music-dock-grid-btn:hover {
+  color: var(--text-primary);
+}
+.music-dock-grid-btn.is-active {
+  color: var(--accent-primary);
+  border-color: color-mix(in srgb, var(--accent-primary) 55%, transparent);
+  background: color-mix(in srgb, var(--accent-primary) 14%, transparent);
 }
 
 .music-dock-embed-host {

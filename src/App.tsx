@@ -91,6 +91,8 @@ import { NotationParseError, parseMemoryNotation } from './memory/notation';
 import { moveVoting } from './twitch/moveVoting';
 import { micEq } from './audio/micEqualizer';
 import { PerimeterEqualizer } from './components/PerimeterEqualizer';
+import { BackgroundWaveGrid } from './components/BackgroundWaveGrid';
+import { vizMode } from './music/vizMode';
 import { beatBridge } from './music/beatBridge';
 import { beatEngine } from './music/beatEngine';
 import { beatMode } from './music/beatMode';
@@ -547,6 +549,9 @@ function App() {
   const [showMusicDock, setShowMusicDock] = useState(false);
   const [vizOn, setVizOn] = useState(false);
   useEffect(() => micEq.onState(setVizOn), []);
+  // M.15 — optional full-screen sound-grid background (toggled in the dock).
+  const [bgGridOn, setBgGridOn] = useState(() => vizMode.isBgGrid());
+  useEffect(() => vizMode.onChange(setBgGridOn), []);
   // M.10 — on-beat board pulse lives at App level (not in the dock) so
   // the board keeps reacting even when the music dock is closed or
   // minimised, as long as the beat grid is running.
@@ -3657,6 +3662,7 @@ function App() {
       data-game-active={gameInProgress ? '1' : '0'}
       ref={shellRef}
     >
+    {bgGridOn && <BackgroundWaveGrid />}
     {flashEffect && (
       <div
         className={`screen-flash-effect screen-flash-${flashEffect}`}

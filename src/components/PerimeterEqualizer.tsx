@@ -27,6 +27,9 @@ const BASS_BANDS = 8;
 // M.14 — was 0.35 (smooth but laggy). 0.5 keeps the wave fluid while
 // shaving ~3 frames of latency; the analyser smoothing was also lowered.
 const EASE = 0.5;
+// M.15 — dynamics expansion. >1 suppresses quiet bands and lets the loud
+// hits punch to full reach ("піки вистрілюють, тихе лишається тихим").
+const GAMMA = 1.7;
 
 /** Band each bar reads, by its index within its side (0..BARS_PER_SIDE-1).
  *  Middle of the side → low bass band (loud); ends → low-mid bands (still
@@ -73,7 +76,10 @@ function PerimeterEqualizerImpl() {
         const idx = bandForBar(within, n);
         const edge = Math.abs((within / (BARS_PER_SIDE - 1)) * 2 - 1);
         const tilt = 1 + edge * 0.6;
-        raw[i] = Math.min(1, (bands[idx] ?? 0) * tilt * sens);
+        // M.15 — gamma: expand dynamics so peaks shoot to full reach while
+        // quiet passages stay low (instead of everything floating mid-way).
+        const b = Math.min(1, (bands[idx] ?? 0) * tilt);
+        raw[i] = Math.min(1, Math.pow(b, GAMMA) * sens);
       }
       // M.14 — spatial pass: 5-tap weighted blend so neighbours melt into
       // one flowing wave (smoother crest) instead of separate sticks.

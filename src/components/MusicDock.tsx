@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Activity, ChevronUp, Disc3, FileMusic, GripVertical, ListMusic, Mic, MicOff,
-  Minus, MonitorSpeaker, PanelLeft, Play, Plus, SkipForward, Square, Trash2, X,
+  ChevronUp, Disc3, FileMusic, Flame, GripVertical, ListMusic, Mic, MicOff,
+  Minus, MonitorSpeaker, PanelLeft, Play, Plus, SkipForward, Square, Trash2,
+  Waves, X,
 } from 'lucide-react';
 import { Icon } from './Icon';
 import { beatEngine } from '../music/beatEngine';
@@ -11,6 +12,7 @@ import { analyzeAudioBuffer } from '../music/fileBpm';
 import { liveBpm } from '../music/liveBpm';
 import { beatMode } from '../music/beatMode';
 import { eqSettings, EQ_SENS_MIN, EQ_SENS_MAX } from '../music/eqSettings';
+import { vizMode } from '../music/vizMode';
 import {
   loadPlaylists, savePlaylist, deletePlaylist, setTrackBpm, newPlaylistId,
   type SavedPlaylist, type PlaylistTrack,
@@ -130,6 +132,8 @@ export function MusicDock({ onClose }: MusicDockProps) {
   const [micOn, setMicOn] = useState(() => micEq.isRunning());
   // M.15 — equalizer "temperature": how hard the perimeter wave reacts.
   const [eqSens, setEqSens] = useState(() => eqSettings.getSensitivity());
+  // M.15 — full-screen sound-grid background toggle.
+  const [bgGrid, setBgGrid] = useState(() => vizMode.isBgGrid());
   const [captureSource, setCaptureSource] = useState<'mic' | 'display' | 'file' | null>(() => micEq.getSource());
   const [micError, setMicError] = useState<string | null>(null);
   // SP-7 — live tempo detected from the audio (mic room sound or the
@@ -313,17 +317,27 @@ export function MusicDock({ onClose }: MusicDockProps) {
   useEffect(() => {
     return liveBpm.onBpm((value, conf) => {
       setLive({ bpm: value, conf });
-      if (conf < 0.3) return;
-      const cur = beatEngine.getBpm();
-      if (!beatEngine.isRunning() || Math.abs(value - cur) > 2) {
+      // M.15 — the board's on-beat pulse only fires while the grid runs.
+      // The old single 0.3 gate meant a track the detector found hard
+      // ("weak") never started the grid, so the pulse silently did
+      // nothing. Now: get the grid MOVING on a weaker first lock (0.2),
+      // but only RE-ADOPT a drifting tempo on a firmer reading (0.35) so
+      // noise can't keep yanking the BPM around once we're locked.
+      const FIRST_LOCK_CONF = 0.2;
+      const REASSESS_CONF = 0.35;
+      if (!beatEngine.isRunning()) {
+        if (conf < FIRST_LOCK_CONF) return;
         beatEngine.setBase('wall');
         beatEngine.adoptBpm(value);
         setBpm(value);
         setAutoBpm('found');
-        if (!beatEngine.isRunning()) {
-          beatEngine.start();
-          setSyncRunning(true);
-        }
+        beatEngine.start();
+        setSyncRunning(true);
+      } else if (conf >= REASSESS_CONF && Math.abs(value - beatEngine.getBpm()) > 2) {
+        beatEngine.setBase('wall');
+        beatEngine.adoptBpm(value);
+        setBpm(value);
+        setAutoBpm('found');
       }
     });
   }, []);
@@ -929,7 +943,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
       {micOn && (
         <div className="music-dock-eq-sens">
           <label className="music-dock-eq-sens-label" htmlFor="eq-sens">
-            <Icon icon={Activity} size="sm" aria-hidden />
+            <Icon icon={Flame} size="sm" aria-hidden />
             EQ sensitivity
             <span className="music-dock-eq-sens-val">{eqSens.toFixed(1)}×</span>
           </label>
@@ -948,6 +962,20 @@ export function MusicDock({ onClose }: MusicDockProps) {
             }}
             aria-label="Equalizer sensitivity"
           />
+          <button
+            type="button"
+            className={`music-dock-grid-btn${bgGrid ? ' is-active' : ''}`}
+            onClick={() => {
+              const next = !bgGrid;
+              vizMode.setBgGrid(next);
+              setBgGrid(next);
+            }}
+            aria-pressed={bgGrid}
+            title="Full-screen sound grid behind the app"
+          >
+            <Icon icon={Waves} size="sm" aria-hidden />
+            {bgGrid ? 'Sound grid on' : 'Sound grid'}
+          </button>
         </div>
       )}
 
