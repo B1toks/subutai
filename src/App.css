@@ -2798,6 +2798,24 @@ body.checkmate-flash::after {
   overflow: hidden;
 }
 
+/* M.13 — docked to the right edge as a full-height stream column. */
+.twitch-panel.is-docked-right {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: auto;
+  width: 340px;
+  border-radius: 0;
+  border-top: none;
+  border-bottom: none;
+  border-right: none;
+}
+
+.twitch-header-actions {
+  display: inline-flex;
+  gap: 2px;
+}
+
 .twitch-panel-header {
   display: flex;
   align-items: center;
@@ -3105,7 +3123,10 @@ body.checkmate-flash::after {
 .eq-side {
   position: absolute;
   display: flex;
-  gap: 4px;
+  gap: 0;
+  /* M.12 — one static glow on the whole side (cheap) instead of a
+     box-shadow per bar recomputed every frame (the lag source). */
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--accent-primary) 50%, transparent));
 }
 
 /* top / bottom strips span the board width; bars anchored at the board
@@ -3115,7 +3136,6 @@ body.checkmate-flash::after {
   left: var(--eq-reach);
   right: var(--eq-reach);
   height: var(--eq-reach);
-  justify-content: space-between;
 }
 .eq-top { top: 0; align-items: flex-end; }      /* grow up / out */
 .eq-bottom { bottom: 0; align-items: flex-start; } /* grow down / out */
@@ -3126,10 +3146,14 @@ body.checkmate-flash::after {
   bottom: var(--eq-reach);
   width: var(--eq-reach);
   flex-direction: column;
-  justify-content: space-between;
 }
 .eq-left { left: 0; align-items: flex-end; }     /* grow left / out */
 .eq-right { right: 0; align-items: flex-start; } /* grow right / out */
+
+/* M.12 — bars fill the side edge-to-edge (flex:1, 1px gap) so the
+   smoothed heights read as one continuous wave, not separate sticks. */
+.eq-top .eq-bar, .eq-bottom .eq-bar { flex: 1 1 0; min-width: 0; }
+.eq-left .eq-bar, .eq-right .eq-bar { flex: 1 1 0; min-height: 0; }
 
 /* M.11 — refined "neon spectrum" bar. 3-stop gradient: translucent at
    the board edge → solid accent → bright near-white tip, so each bar
@@ -3137,18 +3161,12 @@ body.checkmate-flash::after {
    an amplitude-scaled two-layer glow. */
 .eq-bar {
   display: block;
-  border-radius: 999px;
-  opacity: calc(0.45 + var(--amplitude, 0) * 0.55);
-  box-shadow:
-    0 0 calc(3px + var(--amplitude, 0) * 14px)
-      color-mix(in srgb, var(--accent-primary) 80%, transparent),
-    0 0 calc(var(--amplitude, 0) * 32px)
-      color-mix(in srgb, var(--accent-primary) 32%, transparent);
-  transition:
-    height 80ms cubic-bezier(0.18, 0.9, 0.3, 1),
-    width 80ms cubic-bezier(0.18, 0.9, 0.3, 1),
-    opacity 120ms ease,
-    box-shadow 120ms ease;
+  border-radius: 2px;
+  opacity: calc(0.5 + var(--amplitude, 0) * 0.5);
+  /* No per-bar box-shadow — the side container's drop-shadow handles
+     the glow far more cheaply (M.12 perf fix). Height/width are driven
+     by the smoothing rAF, so no CSS transition needed (it would fight
+     the per-frame easing). */
 }
 
 /* --eq-c0 transparent base · --eq-c1 accent body · --eq-c2 hot tip. */
@@ -3163,15 +3181,28 @@ body.checkmate-flash::after {
 .eq-left .eq-bar { background: linear-gradient(to left, var(--eq-c0) 0%, var(--eq-c1) 55%, var(--eq-c2) 100%); }
 .eq-right .eq-bar { background: linear-gradient(to right, var(--eq-c0) 0%, var(--eq-c1) 55%, var(--eq-c2) 100%); }
 
-.eq-bar-vertical { width: 4px; height: calc(var(--eq-base) + var(--amplitude, 0) * (var(--eq-reach) - 12px)); }
-.eq-bar-horizontal { height: 4px; width: calc(var(--eq-base) + var(--amplitude, 0) * (var(--eq-reach) - 12px)); }
+/* M.13 — bars are FULL-reach and scaled by amplitude via transform
+   (compositor-only: no per-frame layout/paint, which was the real lag).
+   transform-origin pins the scale to the board edge so they grow out. */
+.eq-bar { will-change: transform; }
+.eq-top .eq-bar,
+.eq-bottom .eq-bar {
+  height: var(--eq-reach);
+  transform: scaleY(calc(0.05 + var(--amplitude, 0) * 0.95));
+}
+.eq-top .eq-bar { transform-origin: bottom; }
+.eq-bottom .eq-bar { transform-origin: top; }
+.eq-left .eq-bar,
+.eq-right .eq-bar {
+  width: var(--eq-reach);
+  transform: scaleX(calc(0.05 + var(--amplitude, 0) * 0.95));
+}
+.eq-left .eq-bar { transform-origin: right; }
+.eq-right .eq-bar { transform-origin: left; }
 
 .eq-bar.is-peak {
   --eq-c2: white;
-  box-shadow:
-    0 0 16px color-mix(in srgb, var(--accent-primary) 85%, transparent),
-    0 0 34px color-mix(in srgb, var(--accent-primary) 45%, transparent),
-    0 0 6px rgba(255, 255, 255, 0.85);
+  opacity: 1;
 }
 
 /* M.11 — clean perimeter frame + bass halo while the visualizer runs.
@@ -3193,8 +3224,6 @@ body.checkmate-flash::after {
 }
 @media (max-width: 560px) {
   .perimeter-eq { --eq-reach: 28px; --eq-base: 4px; }
-  .eq-bar-vertical { width: 3px; }
-  .eq-bar-horizontal { height: 3px; }
 }
 
 /* ── M.10: stronger, "throbbing" board beat pulse — scale + brightness
@@ -3211,6 +3240,65 @@ body.checkmate-flash::after {
 
 @media (prefers-reduced-motion: reduce) {
   .board-with-coords.beat-tick { animation: none; }
+}
+
+/* ── M.13: Beat-Mode move snap — a ring on the destination that fills
+   over EXACTLY the wait to the next beat, then snaps with a pop the
+   instant the move lands. Makes it unmistakable the piece moves ON the
+   beat (not lagging). --snap-ms is set inline per tile to the real
+   wait. ── */
+.tile.beat-snap-to::after,
+.tile.beat-snap-from::after {
+  content: '';
+  position: absolute;
+  inset: 8%;
+  border-radius: 14%;
+  pointer-events: none;
+  z-index: 3;
+}
+
+/* Destination: a conic "countdown" ring that sweeps to full over the
+   wait, plus a soft pulsing fill — clearly "charging to the beat". */
+.tile.beat-snap-to::after {
+  border: 2px solid color-mix(in srgb, var(--accent-primary) 55%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent-primary) 30%, transparent) inset,
+    0 0 10px color-mix(in srgb, var(--accent-primary) 45%, transparent);
+  background:
+    conic-gradient(
+      color-mix(in srgb, var(--accent-primary) 38%, transparent) var(--snap-fill, 0%),
+      transparent 0
+    );
+  animation: snap-fill var(--snap-ms, 300ms) linear forwards;
+}
+
+.tile.beat-snap-from::after {
+  border: 2px dashed color-mix(in srgb, var(--accent-primary) 45%, transparent);
+  animation: snap-origin var(--snap-ms, 300ms) ease-out forwards;
+}
+
+@property --snap-fill {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+
+@keyframes snap-fill {
+  0%   { --snap-fill: 0%; transform: scale(0.9); opacity: 0.85; }
+  85%  { --snap-fill: 100%; transform: scale(1); opacity: 1; }
+  /* final 15%: the "landing" pop — bright flash right on the beat */
+  100% { --snap-fill: 100%; transform: scale(1.12); opacity: 0;
+         box-shadow: 0 0 18px var(--accent-primary); }
+}
+
+@keyframes snap-origin {
+  0%   { opacity: 0.9; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.85); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile.beat-snap-to::after,
+  .tile.beat-snap-from::after { animation: none; }
 }
 
 /* ── SP / M.11: music dock — refreshed styling ── */
@@ -3693,6 +3781,24 @@ body.checkmate-flash::after {
 
 .music-dock.is-minimized {
   width: 230px;
+}
+
+/* M.13 — docked to the left edge as a full-height stream column. */
+.music-dock.is-docked-left {
+  left: 0;
+  top: 0;
+  bottom: 0;
+  right: auto;
+  width: 340px;
+  max-height: 100vh;
+  border-radius: 0;
+  border-top: none;
+  border-bottom: none;
+  border-left: none;
+}
+
+.twitch-close-btn.is-on {
+  color: #1db954;
 }
 
 .music-dock-mini {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ChevronUp, Disc3, FileMusic, GripVertical, ListMusic, Mic, MicOff, Minus,
-  MonitorSpeaker, Play, Plus, SkipForward, Square, Trash2, X,
+  MonitorSpeaker, PanelLeft, Play, Plus, SkipForward, Square, Trash2, X,
 } from 'lucide-react';
 import { Icon } from './Icon';
 import { beatEngine } from '../music/beatEngine';
@@ -135,6 +135,11 @@ export function MusicDock({ onClose }: MusicDockProps) {
   // M.10 — collapse the dock to a compact bar (keeps audio + the beat
   // grid running, board keeps moving) instead of closing it outright.
   const [minimized, setMinimized] = useState(false);
+  // M.13 — dock to the LEFT edge as a full-height column (Spotify left,
+  // Twitch chat right). Persisted so the stream layout sticks.
+  const [dockedLeft, setDockedLeft] = useState(() => {
+    try { return localStorage.getItem('subutai_music_docked') === '1'; } catch { return false; }
+  });
   // M.10 — manual tempo controls (TAP + presets) folded away by default.
   const [showManual, setShowManual] = useState(false);
   // SP-9 — local audio file mode (our audio = the idea works perfectly).
@@ -611,10 +616,24 @@ export function MusicDock({ onClose }: MusicDockProps) {
               ? "couldn't detect — tap 4+ times"
               : 'tap 4+ times to the beat';
 
+  // M.12/13 — docked-left takes a fixed side column (CSS class); minimised
+  // pins bottom-left; otherwise free-floating at the dragged position.
   const panelStyle: React.CSSProperties | undefined =
-    pos && window.innerWidth > 720
-      ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' }
-      : undefined;
+    dockedLeft && !minimized
+      ? undefined
+      : minimized
+        ? { left: 12, bottom: 12, top: 'auto', right: 'auto' }
+        : pos && window.innerWidth > 720
+          ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' }
+          : undefined;
+
+  function toggleDock() {
+    setDockedLeft((v) => {
+      const next = !v;
+      try { localStorage.setItem('subutai_music_docked', next ? '1' : '0'); } catch { /* private mode */ }
+      return next;
+    });
+  }
 
   // M.10 — compact status for the minimised bar.
   const statusLine = fileName
@@ -629,7 +648,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
 
   return createPortal(
     <aside
-      className={`music-dock${minimized ? ' is-minimized' : ''}`}
+      className={`music-dock${minimized ? ' is-minimized' : ''}${dockedLeft && !minimized ? ' is-docked-left' : ''}`}
       ref={panelRef}
       style={panelStyle}
       aria-label="Music dock"
@@ -646,6 +665,17 @@ export function MusicDock({ onClose }: MusicDockProps) {
           {syncRunning && <span className="music-dock-livedot" title="beat grid running" />}
         </span>
         <span className="music-dock-header-actions">
+          {!minimized && (
+            <button
+              type="button"
+              className={`twitch-close-btn${dockedLeft ? ' is-on' : ''}`}
+              onClick={toggleDock}
+              aria-label={dockedLeft ? 'Float music dock' : 'Dock to left edge'}
+              title={dockedLeft ? 'Float (free position)' : 'Dock to the left side'}
+            >
+              <Icon icon={PanelLeft} size="sm" aria-hidden />
+            </button>
+          )}
           <button
             type="button"
             className="twitch-close-btn"

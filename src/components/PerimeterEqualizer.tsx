@@ -1,21 +1,25 @@
 import { memo, useEffect, useRef } from 'react';
 import { micEq } from '../audio/micEqualizer';
 
-/* SP — perimeter equalizer ring, ported from the music-beat-sync
- * branch (M.3/M.4) and rewritten to be self-driving: instead of the
- * parent re-rendering 30×/s with a `bands` prop, the component
- * subscribes to micEq itself and pushes amplitudes straight into the
- * bar elements' --amplitude custom props. React renders the 60 spans
- * exactly once; everything after that is imperative style writes.
+/* M.12 — perimeter equalizer, "wave" edition.
  *
- * Renders inside .board-with-coords (the ring is absolutely
- * positioned at inset −48px) and also drives the parent's
- * --bass-amplitude for the board halo. */
+ * Self-driving: subscribes to micEq and writes amplitudes straight into
+ * the bars' --amplitude vars (React renders the spans once). Two passes
+ * smooth the signal into a continuous wave instead of jittery sticks:
+ *   • spatial — each bar blends with its neighbours (3-tap)
+ *   • temporal — the displayed value eases toward the target each frame
+ * Wider, gap-less bars (CSS) + this smoothing read as one flowing band.
+ *
+ * Perf: the per-frame cost is just N var writes; the expensive
+ * amplitude-driven box-shadow was dropped from the CSS, so this stays
+ * cheap even at 30fps. */
 
-const BARS_PER_SIDE = 15;
+const BARS_PER_SIDE = 16;
+const TOTAL = BARS_PER_SIDE * 4;
 const SIDES = ['top', 'right', 'bottom', 'left'] as const;
-const PEAK_THRESHOLD = 0.75;
+const PEAK_THRESHOLD = 0.78;
 const BASS_BANDS = 8;
+const EASE = 0.35; // temporal smoothing — lower = smoother/slower
 
 function PerimeterEqualizerImpl() {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -23,17 +27,24 @@ function PerimeterEqualizerImpl() {
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    const bars = root.querySelectorAll<HTMLElement>('.eq-bar');
+    const bars = Array.from(root.querySelectorAll<HTMLElement>('.eq-bar'));
     const parent = root.parentElement;
     parent?.classList.add('has-viz');
 
+    const display = new Float32Array(TOTAL); // eased values actually shown
+    const target = new Float32Array(TOTAL);
+    let raf = 0;
+
+    // micEq pushes ~30fps; we just stash the smoothed targets here.
     const off = micEq.onUpdate((bands) => {
       const n = bands.length || 1;
-      bars.forEach((bar, i) => {
-        const amplitude = bands[i % n] ?? 0;
-        bar.style.setProperty('--amplitude', amplitude.toFixed(3));
-        bar.classList.toggle('is-peak', amplitude > PEAK_THRESHOLD);
-      });
+      // Spatial pass: 3-tap blend so neighbours flow into each other.
+      for (let i = 0; i < TOTAL; i++) {
+        const a = bands[(i - 1 + n) % n] ?? 0;
+        const b = bands[i % n] ?? 0;
+        const c = bands[(i + 1) % n] ?? 0;
+        target[i] = a * 0.25 + b * 0.5 + c * 0.25;
+      }
       if (parent) {
         let bass = 0;
         for (let i = 0; i < BASS_BANDS && i < bands.length; i++) bass += bands[i];
@@ -44,8 +55,26 @@ function PerimeterEqualizerImpl() {
       }
     });
 
+    // Temporal pass: ease the displayed value toward the target on its
+    // own rAF, decoupled from the audio callback, for a fluid wave.
+    const tick = () => {
+      for (let i = 0; i < TOTAL; i++) {
+        display[i] += (target[i] - display[i]) * EASE;
+        const v = display[i];
+        const bar = bars[i];
+        if (bar) {
+          bar.style.setProperty('--amplitude', v.toFixed(3));
+          if (v > PEAK_THRESHOLD) bar.classList.add('is-peak');
+          else bar.classList.remove('is-peak');
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+
     return () => {
       off();
+      cancelAnimationFrame(raf);
       parent?.classList.remove('has-viz');
       parent?.style.removeProperty('--bass-amplitude');
     };

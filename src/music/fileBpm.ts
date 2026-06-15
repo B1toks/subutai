@@ -21,7 +21,7 @@ export interface FileBpmResult {
 }
 
 const BPM_LO = 70;
-const BPM_HI = 180;
+const BPM_HI = 200; // M.12 — covers hardstyle / fast genres
 const HOP_SEC = 0.01; // 10 ms envelope resolution
 const LOWPASS_HZ = 150;
 
@@ -108,6 +108,16 @@ function estimateBpm(onsets: number[]): { bpm: number; confidence: number } | nu
     }
   }
   if (best < 0) return null;
+  // M.12 — half-time octave-error fix for fast genres (hardstyle etc.).
+  if (best < 100) {
+    const dbl = best * 2;
+    if (dbl <= BPM_HI) {
+      const dblCount = (bins.get(dbl - 1) ?? 0) + (bins.get(dbl) ?? 0) + (bins.get(dbl + 1) ?? 0);
+      if (dblCount >= bestCount * 0.6) {
+        return { bpm: dbl, confidence: (bestCount + dblCount) / total };
+      }
+    }
+  }
   return { bpm: best, confidence: bestCount / total };
 }
 

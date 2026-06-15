@@ -675,6 +675,9 @@ function App() {
   // SP-3 — true while a Beat-Mode move is queued to land on the next
   // beat; blocks board input so the snap can't be raced.
   const beatSnapPendingRef = useRef(false);
+  // M.12 — the queued snap target (from/to + ms to the beat) so the UI
+  // can show a ring filling to the beat for a crisp, on-beat landing.
+  const [beatSnap, setBeatSnap] = useState<{ from: SquareId; to: SquareId; ms: number } | null>(null);
   // Stage P addendum 7: wall-clock when the current game began. Used to
   // compute durationMs on save. Set in startNewGame (and on initial mount
   // for the first game).
@@ -3038,9 +3041,15 @@ function App() {
       gameMode === 'classic' && !isMultiplayer ? beatMode.snapDelayMs() : 0;
     if (snapMs > 0) {
       beatSnapPendingRef.current = true;
-      setSelected(null); // deselect immediately so the hold feels intentional
+      // M.12 — clear, satisfying snap: light up the destination with a
+      // ring that fills over exactly the wait, so it's obvious the move
+      // lands ON the next beat (not lagging). Keep the piece selected so
+      // the origin stays highlighted too.
+      setBeatSnap({ from: resolvedMove.from!, to: resolvedMove.to!, ms: snapMs });
       window.setTimeout(() => {
         beatSnapPendingRef.current = false;
+        setBeatSnap(null);
+        setSelected(null);
         commitMove();
       }, snapMs);
       return;
@@ -4167,6 +4176,8 @@ function App() {
                 sacrificeSquare === sq ? 'is-sacrifice' : '',
                 hintMove && 'from' in hintMove && hintMove.from === sq ? 'hint-from' : '',
                 hintMove && 'from' in hintMove && hintMove.to === sq ? 'hint-to' : '',
+                beatSnap && beatSnap.to === sq ? 'beat-snap-to' : '',
+                beatSnap && beatSnap.from === sq ? 'beat-snap-from' : '',
               ]
                 .filter(Boolean)
                 .join(' ')}
@@ -4175,6 +4186,9 @@ function App() {
                 height: tileBase,
                 transform: `translate(${tx}px, ${ty}px) rotate(${angle}deg) scale(${scale})`,
                 ...(threatCount > 0 ? { '--threat-n': threatCount } as React.CSSProperties : {}),
+                ...(beatSnap && (beatSnap.to === sq || beatSnap.from === sq)
+                  ? ({ '--snap-ms': `${beatSnap.ms}ms` } as React.CSSProperties)
+                  : {}),
               }}
               onClick={() => onSquareClick(sq)}
               onContextMenu={handleTileContextMenu}

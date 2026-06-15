@@ -22,7 +22,7 @@ const MIN_ONSETS = 12;
 const REFRACTORY_MS = 120; // ≤500 BPM — ignore double-triggers
 const EMIT_THROTTLE_MS = 1000;
 const BPM_LO = 70;
-const BPM_HI = 180;
+const BPM_HI = 200; // M.12 — was 180; covers hardstyle / fast genres
 
 type BpmListener = (bpm: number, confidence: number) => void;
 
@@ -141,6 +141,21 @@ class LiveBpmDetector {
       }
     }
     if (best < 0 || bestCount < 3) return null;
+
+    // M.12 — octave-error fix for fast genres (hardstyle etc.). A 150 BPM
+    // kick is often heard as 75 (half-time) by the histogram. If the
+    // detected tempo is in the slow band and DOUBLE it has comparable
+    // support and lands in range, prefer the faster reading.
+    if (best < 100) {
+      const dbl = best * 2;
+      if (dbl <= BPM_HI) {
+        const dblCount =
+          (bins.get(dbl - 1) ?? 0) + (bins.get(dbl) ?? 0) + (bins.get(dbl + 1) ?? 0);
+        if (dblCount >= bestCount * 0.6) {
+          return { bpm: dbl, confidence: (bestCount + dblCount) / total };
+        }
+      }
+    }
     return { bpm: best, confidence: bestCount / total };
   }
 

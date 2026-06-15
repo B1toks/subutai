@@ -59,6 +59,11 @@ class MoveVotingStore {
   private roundCbs: RoundCb[] = [];
   private scoresCbs: ScoresCb[] = [];
   private clearTimer: ReturnType<typeof setTimeout> | null = null;
+  // M.13 — coalesce round emits. Busy channels fire 50+ votes/sec; one
+  // setRound per vote was a render storm that froze the panel and made
+  // the scoring look "stuck". We batch and flush at most ~7×/sec.
+  private emitDirty = false;
+  private emitTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     // Votes arrive through the same anonymous chat connection the
@@ -200,7 +205,7 @@ class MoveVotingStore {
     this.votes.set(msg.nick, idx);
     this.voterMeta.set(msg.nick, { displayName: msg.displayName, color: msg.color });
     round.counts[idx]++;
-    this.emitRound();
+    this.emitRoundThrottled(); // M.13 — coalesce vote-count updates
   }
 
   private addPoints(nick: string, displayName: string, color: string, pts: number) {
@@ -214,9 +219,28 @@ class MoveVotingStore {
     }
   }
 
+  /** Immediate emit — for state TRANSITIONS (round open / reveal / clear)
+   *  that must reach the UI right away. */
   private emitRound() {
+    this.emitDirty = false;
     const snapshot = this.round ? { ...this.round, counts: [...this.round.counts] } : null;
     for (const cb of this.roundCbs) cb(snapshot);
+  }
+
+  /** Throttled emit — for high-frequency vote COUNT updates. Coalesces
+   *  a flood of votes into ~7 UI updates/sec via a shared interval. */
+  private emitRoundThrottled() {
+    this.emitDirty = true;
+    if (this.emitTimer !== null) return;
+    this.emitTimer = setInterval(() => {
+      if (this.emitDirty) {
+        this.emitRound();
+      } else {
+        // Idle — stop the interval until the next vote arrives.
+        if (this.emitTimer !== null) clearInterval(this.emitTimer);
+        this.emitTimer = null;
+      }
+    }, 140);
   }
 
   private emitScores() {
