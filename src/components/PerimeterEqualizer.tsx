@@ -1,27 +1,41 @@
 import { memo, useEffect, useRef } from 'react';
 import { micEq } from '../audio/micEqualizer';
 
-/* M.12 — perimeter equalizer, "wave" edition.
+/* M.14 — perimeter equalizer, "behind the board" edition.
  *
  * Self-driving: subscribes to micEq and writes amplitudes straight into
- * the bars' --amplitude vars (React renders the spans once). Two passes
- * smooth the signal into a continuous wave instead of jittery sticks:
- *   • spatial — each bar blends with its neighbours (3-tap)
- *   • temporal — the displayed value eases toward the target each frame
- * Wider, gap-less bars (CSS) + this smoothing read as one flowing band.
+ * the bars' --amplitude vars (React renders the spans once). Three steps:
+ *   • map    — each bar samples an ENERGETIC band by its position on the
+ *              side: loud bass in the middle, fading to quiet treble at
+ *              the corners. (The old straight 0..TOTAL→band mapping dumped
+ *              the near-silent treble bins onto the left side, so the left
+ *              looked dead — this fixes that and keeps all four sides
+ *              equally alive, with no hard corner Ls.)
+ *   • spatial — each bar blends with its neighbours (5-tap) → one wave.
+ *   • temporal — the displayed value eases toward the target each frame.
+ * The CSS now renders many thin GREY sticks BEHIND the board, so the
+ * wave peeks out from under the board edges.
  *
- * Perf: the per-frame cost is just N var writes; the expensive
- * amplitude-driven box-shadow was dropped from the CSS, so this stays
- * cheap even at 30fps. */
+ * Perf: per-frame cost is just N var writes; no per-bar box-shadow. */
 
-const BARS_PER_SIDE = 16;
+const BARS_PER_SIDE = 28;
 const TOTAL = BARS_PER_SIDE * 4;
 const SIDES = ['top', 'right', 'bottom', 'left'] as const;
-const PEAK_THRESHOLD = 0.78;
+const PEAK_THRESHOLD = 0.82;
 const BASS_BANDS = 8;
 // M.14 — was 0.35 (smooth but laggy). 0.5 keeps the wave fluid while
 // shaving ~3 frames of latency; the analyser smoothing was also lowered.
 const EASE = 0.5;
+
+/** Band each bar reads, by its index within its side (0..BARS_PER_SIDE-1).
+ *  Middle of the side → low bass band (loud); ends → low-mid bands (still
+ *  energetic, but the CSS mask fades them out so corners stay soft). */
+function bandForBar(withinSide: number, bandCount: number): number {
+  const edge = Math.abs((withinSide / (BARS_PER_SIDE - 1)) * 2 - 1); // 0 mid, 1 corner
+  // Keep within the energetic lower third of the spectrum so every bar
+  // actually moves; mid-side hugs the sub-bass.
+  return Math.min(bandCount - 1, Math.round(edge * Math.min(22, bandCount - 1)));
+}
 
 function PerimeterEqualizerImpl() {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -34,20 +48,31 @@ function PerimeterEqualizerImpl() {
     parent?.classList.add('has-viz');
 
     const display = new Float32Array(TOTAL); // eased values actually shown
+    const raw = new Float32Array(TOTAL); // mapped, pre-smoothing
     const target = new Float32Array(TOTAL);
     let raf = 0;
 
     // micEq pushes ~30fps; we just stash the smoothed targets here.
     const off = micEq.onUpdate((bands) => {
       const n = bands.length || 1;
-      // M.14 — spatial pass: 5-tap weighted blend so neighbours melt into
-      // one flowing wave (wider, smoother crest) instead of separate sticks.
+      // Map: each bar reads an energetic band by its position on its side
+      // (loud mid-side, fading to corners). Mild tilt lifts the corner
+      // bars so all four sides stay alive.
       for (let i = 0; i < TOTAL; i++) {
-        const v2 = bands[(i - 2 + n) % n] ?? 0;
-        const v1 = bands[(i - 1 + n) % n] ?? 0;
-        const v0 = bands[i % n] ?? 0;
-        const w1 = bands[(i + 1) % n] ?? 0;
-        const w2 = bands[(i + 2) % n] ?? 0;
+        const within = i % BARS_PER_SIDE;
+        const idx = bandForBar(within, n);
+        const edge = Math.abs((within / (BARS_PER_SIDE - 1)) * 2 - 1);
+        const tilt = 1 + edge * 0.6;
+        raw[i] = Math.min(1, (bands[idx] ?? 0) * tilt);
+      }
+      // M.14 — spatial pass: 5-tap weighted blend so neighbours melt into
+      // one flowing wave (smoother crest) instead of separate sticks.
+      for (let i = 0; i < TOTAL; i++) {
+        const v2 = raw[(i - 2 + TOTAL) % TOTAL];
+        const v1 = raw[(i - 1 + TOTAL) % TOTAL];
+        const v0 = raw[i];
+        const w1 = raw[(i + 1) % TOTAL];
+        const w2 = raw[(i + 2) % TOTAL];
         target[i] = v2 * 0.1 + v1 * 0.2 + v0 * 0.4 + w1 * 0.2 + w2 * 0.1;
       }
       if (parent) {

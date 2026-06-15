@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ChevronUp, Disc3, FileMusic, GripVertical, ListMusic, Mic, MicOff, Minus,
@@ -574,8 +574,12 @@ export function MusicDock({ onClose }: MusicDockProps) {
       const d = dragRef.current;
       if (!d) return;
       const w = panel.offsetWidth;
+      // M.14 — clamp the TOP so the whole panel stays on-screen (was a
+      // flat innerHeight-48: a low drag left most of the panel below the
+      // fold, and on expand-from-minimised it grew off the bottom).
+      const maxY = Math.max(0, window.innerHeight - panel.offsetHeight);
       const x = Math.max(0, Math.min(ev.clientX - d.dx, window.innerWidth - w));
-      const y = Math.max(0, Math.min(ev.clientY - d.dy, window.innerHeight - 48));
+      const y = Math.max(0, Math.min(ev.clientY - d.dy, maxY));
       lastPosRef.current = { x, y };
       setPos({ x, y });
     };
@@ -599,6 +603,20 @@ export function MusicDock({ onClose }: MusicDockProps) {
       localStorage.removeItem(POS_KEY);
     } catch { /* private mode */ }
   }
+
+  // M.14 — when the panel expands (e.g. restored from the minimised
+  // bottom-left bar), its full height may run past the bottom of the
+  // viewport from a low saved `pos`. Measure the real height after layout
+  // and lift it back into view so the user never has to drag it up.
+  useLayoutEffect(() => {
+    if (minimized || (dockedLeft && window.innerWidth > 720) || !pos) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const maxY = Math.max(12, window.innerHeight - panel.offsetHeight - 12);
+    if (pos.y > maxY) {
+      setPos((p) => (p ? { ...p, y: maxY } : p));
+    }
+  }, [minimized, dockedLeft, pos]);
 
   const savedBpm = loadedUrl ? readBpmMap()[loadedUrl] : undefined;
   // SP-8 — a playlist/album can't be per-track-analyzed; steer to live/tap.
