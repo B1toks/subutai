@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Cast, GripVertical, PanelRight, X } from 'lucide-react';
 import { Icon } from './Icon';
@@ -60,6 +60,28 @@ function EmoteText({ text, emotes }: { text: string; emotes: EmoteMap | null }) 
     </span>
   );
 }
+
+/* M.13 — memoised chat row. The feed re-renders every 300ms flush; on a
+ * busy channel that's 60 emote-laden rows re-rendering several times a
+ * second, which saturated the main thread and froze the panel (so the
+ * scoring "stopped"). memo() means only the NEW rows in a batch render —
+ * existing message objects keep their reference, so React skips them. */
+const TwitchMessageRow = memo(function TwitchMessageRow({
+  msg,
+  emotes,
+}: {
+  msg: TwitchChatMessage;
+  emotes: EmoteMap | null;
+}) {
+  return (
+    <div className="twitch-msg">
+      <span className="twitch-msg-nick" style={msg.color ? { color: msg.color } : undefined}>
+        {msg.displayName}
+      </span>
+      <EmoteText text={msg.text} emotes={emotes} />
+    </div>
+  );
+});
 
 /**
  * T3/T4/T5 — Twitch overlay: live chat (with 7TV emotes), per-move
@@ -416,17 +438,7 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
             {messages.length === 0 ? (
               <div className="twitch-feed-empty">Waiting for chat…</div>
             ) : (
-              messages.map((m) => (
-                <div key={m.id} className="twitch-msg">
-                  <span
-                    className="twitch-msg-nick"
-                    style={m.color ? { color: m.color } : undefined}
-                  >
-                    {m.displayName}
-                  </span>
-                  <EmoteText text={m.text} emotes={emotes} />
-                </div>
-              ))
+              messages.map((m) => <TwitchMessageRow key={m.id} msg={m} emotes={emotes} />)
             )}
           </div>
         </>
