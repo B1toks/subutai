@@ -1482,6 +1482,39 @@
   animation: board-rotate-wobble 650ms ease-out;
 }
 
+/* M.15 — flat (2D) rotate now has its own motion (it used to be invisible
+   on the board itself, only the seam pulse fired). A grounded swing:
+   dip + shudder ±2° + settle. The [data-3d] rule above out-specifies this
+   in 3D mode, so they don't both fire. */
+@keyframes board-swing-2d {
+  0%   { transform: scale(1) rotate(0deg); }
+  18%  { transform: scale(0.97) rotate(-2.2deg); }
+  44%  { transform: scale(0.985) rotate(1.8deg); }
+  72%  { transform: scale(0.996) rotate(-0.7deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+.board.is-rotated {
+  animation: board-swing-2d var(--rotate-ms, 560ms) cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* In Beat Mode the swing is one beat long (--rotate-ms = beat period) and
+   springier — it overshoots and settles, so the rotate reads as ON the
+   beat. */
+@keyframes board-swing-beat {
+  0%   { transform: scale(1) rotate(0deg); }
+  26%  { transform: scale(0.94) rotate(-4.2deg); }
+  56%  { transform: scale(1.012) rotate(3.2deg); }
+  82%  { transform: scale(0.995) rotate(-1.1deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+.board.is-rotated.is-rotated-beat {
+  animation-name: board-swing-beat;
+  animation-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .board.is-rotated { animation: none; }
+}
+
 .tile {
   position: absolute;
   left: 0;
@@ -3502,14 +3535,17 @@ body.checkmate-flash::after {
 .music-dock-eq-sens {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   margin-top: 8px;
+  /* M.15 — match the space-3 left/right inset of every other dock row so
+     the flame icon lines up in the same column as the other rows. */
+  padding: 0 var(--space-3);
 }
 .music-dock-eq-sens-label {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11px;
+  gap: 8px;
+  font-size: 13px;
   color: var(--text-muted);
 }
 .music-dock-eq-sens-val {
@@ -3527,10 +3563,10 @@ body.checkmate-flash::after {
 .music-dock-grid-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 6px;
-  padding: 6px 10px;
-  font-size: 12px;
+  gap: 8px;
+  margin-top: 2px;
+  padding: 7px 10px;
+  font-size: 13px;
   border-radius: var(--radius-sm, 6px);
   border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
   background: var(--bg-elevated, rgba(255, 255, 255, 0.04));

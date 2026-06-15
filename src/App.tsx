@@ -4073,9 +4073,21 @@ function App() {
           equalizer listens. Self-driving (no App re-renders). */}
       {vizOn && <PerimeterEqualizer />}
       <div
-        className={`board${previewTopology || previewLocked ? ' previewing' : ''}${recentRotation ? ' is-rotated' : ''}`}
+        className={`board${previewTopology || previewLocked ? ' previewing' : ''}${recentRotation ? ' is-rotated' : ''}${
+          recentRotation && beatMode.isEnabled() && beatEngine.isRunning() ? ' is-rotated-beat' : ''
+        }`}
         data-topology={displayTopology}
-        style={{ width: boardSize, height: boardSize }}
+        style={
+          {
+            width: boardSize,
+            height: boardSize,
+            // M.15 — in Beat Mode the rotate "swings" in time: one beat
+            // long, springy. --rotate-ms = the live beat period.
+            ...(recentRotation && beatMode.isEnabled() && beatEngine.getIntervalMs() > 0
+              ? { '--rotate-ms': `${Math.round(beatEngine.getIntervalMs())}ms` }
+              : null),
+          } as React.CSSProperties
+        }
       >
         {squares.map((sq) => {
           const piece = state.pieces[sq as SquareId];

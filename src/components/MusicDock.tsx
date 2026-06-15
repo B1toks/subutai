@@ -2,8 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createPortal } from 'react-dom';
 import {
   ChevronUp, Disc3, FileMusic, Flame, GripVertical, ListMusic, Mic, MicOff,
-  Minus, MonitorSpeaker, PanelLeft, Play, Plus, SkipForward, Square, Trash2,
-  Waves, X,
+  Minus, MonitorSpeaker, Music2, PanelLeft, Play, Plus, SkipForward, Square,
+  Trash2, Waves, X,
 } from 'lucide-react';
 import { Icon } from './Icon';
 import { beatEngine } from '../music/beatEngine';
@@ -924,7 +924,8 @@ export function MusicDock({ onClose }: MusicDockProps) {
         <div className="music-dock-beat music-dock-live">
           {live ? (
             <span className="music-dock-live-bpm">
-              ♫ {live.bpm} BPM · synced
+              <Icon icon={Music2} size="sm" aria-hidden />
+              {live.bpm} BPM · synced
               <span
                 className={`music-dock-live-conf conf-${live.conf > 0.5 ? 'high' : live.conf > 0.3 ? 'mid' : 'low'}`}
                 title="How clearly the beat is detected — higher means a steadier lock"
