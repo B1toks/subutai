@@ -40,7 +40,10 @@ const RELEASE = 0.4;
 //   3. SOFT KNEE — gentle compression v/(1+v/KNEE) that never hard-clips and,
 //      crucially, keeps loud bands spread apart (a tanh wall flattened them).
 const NOISE_FLOOR = 0.05;
-const KNEE = 1.7;
+const KNEE = 2.2; // M.16 — raised so bars reach taller (was reading "minimal")
+// M.16 — baseline gain so bars are PRESENT even at low sensitivity (the
+// wave read as "тихий і мінімальний"). The slider still scales on top.
+const BASE_GAIN = 1.6;
 
 /** M.16 — band each bar reads, swept across the energetic low-mid spectrum
  *  so EVERY bar reads a DIFFERENT band. Adjacent bars then differ and the
@@ -90,7 +93,7 @@ function PerimeterEqualizerImpl() {
         // gate → gain → soft knee. The gate keeps quiet bands at 0 (contrast),
         // the knee stops loud bands pinning into a flat top.
         const gated = Math.max(0, (bands[idx] ?? 0) * boost - NOISE_FLOOR);
-        const v = gated * sens;
+        const v = gated * sens * BASE_GAIN;
         raw[i] = v / (1 + v / KNEE);
       }
       // M.16 — LIGHT 3-tap blend only (was a heavy 5-tap that melted every

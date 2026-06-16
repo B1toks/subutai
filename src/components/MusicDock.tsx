@@ -573,6 +573,23 @@ export function MusicDock({ onClose }: MusicDockProps) {
     if (result.ok) {
       setMicOn(true);
       setCaptureSource(source);
+      // M.16 — live capture drives the grid on WALL time. If a loaded track
+      // had put the grid on the track clock, that clock is FROZEN here (no
+      // Spotify playback_update while we're capturing tab audio) → beats
+      // never advance and the board never reacts ("ловить але не перекидає
+      // на дошку"). Switch to wall, preserving tempo + run state.
+      if (beatEngine.getBase() !== 'wall') {
+        const keepBpm = beatEngine.getBpm();
+        const wasRunning = beatEngine.isRunning();
+        beatEngine.setBase('wall'); // resets the grid
+        if (keepBpm > 0) {
+          beatEngine.adoptBpm(keepBpm);
+          if (wasRunning) {
+            beatEngine.start();
+            setSyncRunning(true);
+          }
+        }
+      }
       liveBpm.start(); // SP-7 — start listening for the tempo
     } else {
       setMicOn(false);
