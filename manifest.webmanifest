@@ -1,0 +1,32 @@
+{
+  "name": "Subutai — Auxetic Chess960",
+  "short_name": "Subutai",
+  "description": "Chess960 on a living board: every 2×2 block can rotate mid-game, rewiring the geometry.",
+  "id": "/subutai/",
+  "start_url": "/subutai/",
+  "scope": "/subutai/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0e0a06",
+  "theme_color": "#0e0a06",
+  "icons": [
+    {
+      "src": "/subutai/pwa-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/subutai/pwa-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/subutai/pwa-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

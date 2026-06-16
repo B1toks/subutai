@@ -11,15 +11,61 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <title>subutai</title>
+
+    <!-- Sprint 4.4 — SEO + social cards -->
+    <title>Subutai — Auxetic Chess960</title>
+    <meta
+      name="description"
+      content="Chess960 on a living board: every 2×2 block can rotate mid-game, rewiring the geometry. Play vs AI, hot-seat, or online. Free, no install."
+    />
+    <link rel="canonical" href="https://b1toks.github.io/subutai/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Subutai" />
+    <meta property="og:title" content="Subutai — Auxetic Chess960" />
+    <meta
+      property="og:description"
+      content="Chess960 on a living board: every 2×2 block can rotate mid-game. The signature move is twisting the board itself."
+    />
+    <meta property="og:url" content="https://b1toks.github.io/subutai/" />
+    <meta property="og:image" content="https://b1toks.github.io/subutai/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Subutai — Auxetic Chess960" />
+    <meta
+      name="twitter:description"
+      content="Chess960 on a living board: every 2×2 block can rotate mid-game."
+    />
+    <meta name="twitter:image" content="https://b1toks.github.io/subutai/og-image.png" />
+
+    <!-- Sprint 4.4 — PWA -->
+    <link rel="manifest" href="/subutai/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/subutai/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Sprint 4.5 — fonts load async (print-media swap): the 6-family
+         stylesheet was render-blocking and dominated FCP/LCP on mobile
+         throttling. display=swap means system fonts paint first. -->
     <link
       href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Cinzel+Decorative:wght@700;900&family=Cormorant+Garamond:ital,wght@0,400;0,700;1,400&family=Inter:wght@400;500;700&family=JetBrains+Mono&family=Orbitron:wght@500;700&display=swap"
       rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
     />
-    <script type="module" crossorigin src="/subutai/assets/index-C8O93-7G.js"></script>
-    <link rel="stylesheet" crossorigin href="/subutai/assets/index-DDxGuZWk.css">
+    <noscript>
+      <link
+        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Cinzel+Decorative:wght@700;900&family=Cormorant+Garamond:ital,wght@0,400;0,700;1,400&family=Inter:wght@400;500;700&family=JetBrains+Mono&family=Orbitron:wght@500;700&display=swap"
+        rel="stylesheet"
+      />
+    </noscript>
+    <script type="module" crossorigin src="/subutai/assets/index-bvpXVUAo.js"></script>
+    <link rel="modulepreload" crossorigin href="/subutai/assets/jsx-runtime-BN4ZKciC.js">
+    <link rel="modulepreload" crossorigin href="/subutai/assets/client-D5IW_BzO.js">
+    <link rel="modulepreload" crossorigin href="/subutai/assets/Icon-DRZXYAHM.js">
+    <link rel="modulepreload" crossorigin href="/subutai/assets/board-DzbCztPX.js">
+    <link rel="modulepreload" crossorigin href="/subutai/assets/search-By7Dh5d5.js">
+    <link rel="modulepreload" crossorigin href="/subutai/assets/engine-C69HnjZC.js">
+    <link rel="stylesheet" crossorigin href="/subutai/assets/index-DwwGwBzg.css">
   </head>
   <body>
     <div id="root"></div>
