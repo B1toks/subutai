@@ -7278,12 +7278,10 @@ body.checkmate-flash::after {
   box-shadow: var(--glow-accent);
 }
 
-/* Brand title: monospace, soft tracking — no uppercase shouting */
+/* Brand title — M.16: keep ONE wordmark across every theme. Only the
+   colour / glow adapts per theme; font-family + letter-spacing stay on the
+   base rule so "subutai" is always the same inscription. */
 [data-theme="cyberpunk"] .app-header h1 {
-  /* Sprint 4.0 — keep cyberpunk's monospace display family + neon
-     glow; size / weight / letter-spacing inherited from the base
-     rule so the logo stays the same wordmark. */
-  font-family: var(--font-display);
   text-shadow: 0 0 12px rgba(93, 200, 214, 0.55);
 }
 
@@ -7381,11 +7379,8 @@ body.checkmate-flash::after {
 
 /* Engraved-style title — Cinzel Decorative + warm gold ink shadow */
 [data-theme="fantasy"] .app-header h1 {
-  /* Sprint 4.0 — fantasy keeps the engraved family + gold-ink shadow;
-     size / weight inherited from the base. letter-spacing nudged
-     wider for the decorative face. */
-  font-family: 'Cinzel Decorative', 'Cinzel', serif;
-  letter-spacing: 0.08em;
+  /* M.16 — only colour + gold-ink shadow; font / spacing stay on the base
+     rule so the wordmark is identical to every other theme. */
   color: var(--accent-primary);
   text-shadow:
     0 1px 0 rgba(0, 0, 0, 0.8),

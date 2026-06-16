@@ -27,8 +27,10 @@ const BASS_BANDS = 8;
 // M.15 — asymmetric easing: SNAP up on a hit, ease DOWN smoothly. This is
 // the classic "alive VU meter" trick — every beat/note punches instantly,
 // then falls gracefully, instead of a symmetric blur that feels stuck.
-const ATTACK = 0.9; // toward the target when rising (fast)
-const RELEASE = 0.16; // toward the target when falling (slow tail)
+const ATTACK = 0.92; // toward the target when rising (snap up on a hit)
+// M.16 — was 0.16 (too slow → bars hung high and looked frozen). Faster fall
+// so each bar visibly DROPS between hits and leaps back = "пригали скакали".
+const RELEASE = 0.4;
 // M.16 — response curve, take 3. The old gamma+tanh made every band SATURATE
 // at high sensitivity → a flat line of equal bars ("рівні полоси"). New shape:
 //   1. NOISE GATE — subtract a floor so quiet bands drop to 0. This is what
@@ -37,17 +39,16 @@ const RELEASE = 0.16; // toward the target when falling (slow tail)
 //   2. gain = sensitivity (linear).
 //   3. SOFT KNEE — gentle compression v/(1+v/KNEE) that never hard-clips and,
 //      crucially, keeps loud bands spread apart (a tanh wall flattened them).
-const NOISE_FLOOR = 0.08;
+const NOISE_FLOOR = 0.05;
 const KNEE = 1.7;
 
-/** Band each bar reads, by its index within its side (0..BARS_PER_SIDE-1).
- *  Middle of the side → low bass band (loud); ends → low-mid bands (still
- *  energetic, but the CSS mask fades them out so corners stay soft). */
+/** M.16 — band each bar reads, swept across the energetic low-mid spectrum
+ *  so EVERY bar reads a DIFFERENT band. Adjacent bars then differ and the
+ *  wave jumps like a spectrum analyser, instead of the old mapping where the
+ *  whole middle of each side hugged the same sub-bass band and read flat. */
 function bandForBar(withinSide: number, bandCount: number): number {
-  const edge = Math.abs((withinSide / (BARS_PER_SIDE - 1)) * 2 - 1); // 0 mid, 1 corner
-  // Keep within the energetic lower third of the spectrum so every bar
-  // actually moves; mid-side hugs the sub-bass.
-  return Math.min(bandCount - 1, Math.round(edge * Math.min(22, bandCount - 1)));
+  const span = Math.min(30, bandCount - 1);
+  return Math.round((withinSide / (BARS_PER_SIDE - 1)) * span);
 }
 
 function PerimeterEqualizerImpl() {
@@ -83,24 +84,22 @@ function PerimeterEqualizerImpl() {
       for (let i = 0; i < TOTAL; i++) {
         const within = i % BARS_PER_SIDE;
         const idx = bandForBar(within, n);
-        const edge = Math.abs((within / (BARS_PER_SIDE - 1)) * 2 - 1);
-        const tilt = 1 + edge * 0.6;
-        // M.16 — gate → gain → soft knee (see constants). The gate keeps the
-        // wave's contrast (quiet bands stay at 0) so it never flattens into
-        // equal bars at high sensitivity.
-        const gated = Math.max(0, (bands[idx] ?? 0) * tilt - NOISE_FLOOR);
+        // Lift higher (naturally quieter) bands so the whole sweep stays
+        // lively, not just the bass end.
+        const boost = 1 + (idx / n) * 1.6;
+        // gate → gain → soft knee. The gate keeps quiet bands at 0 (contrast),
+        // the knee stops loud bands pinning into a flat top.
+        const gated = Math.max(0, (bands[idx] ?? 0) * boost - NOISE_FLOOR);
         const v = gated * sens;
         raw[i] = v / (1 + v / KNEE);
       }
-      // M.14 — spatial pass: 5-tap weighted blend so neighbours melt into
-      // one flowing wave (smoother crest) instead of separate sticks.
+      // M.16 — LIGHT 3-tap blend only (was a heavy 5-tap that melted every
+      // bar into one flat level). Just enough to kill single-frame jitter
+      // while keeping each bar independent so they jump.
       for (let i = 0; i < TOTAL; i++) {
-        const v2 = raw[(i - 2 + TOTAL) % TOTAL];
         const v1 = raw[(i - 1 + TOTAL) % TOTAL];
-        const v0 = raw[i];
         const w1 = raw[(i + 1) % TOTAL];
-        const w2 = raw[(i + 2) % TOTAL];
-        target[i] = v2 * 0.1 + v1 * 0.2 + v0 * 0.4 + w1 * 0.2 + w2 * 0.1;
+        target[i] = v1 * 0.16 + raw[i] * 0.68 + w1 * 0.16;
       }
       if (parent) {
         let bass = 0;
