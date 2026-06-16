@@ -517,6 +517,11 @@
   position: relative;
   width: 100%;
   min-height: 100vh;
+  /* M.15 — decorative bits (perimeter equalizer, halos) extend past the
+     board edge; clip them horizontally so they can never add a phantom
+     horizontal scrollbar on narrow screens. Vertical stays visible.
+     Portalled panels (dock/Twitch) live outside .app-shell, unaffected. */
+  overflow-x: clip;
   /* Sprint 3.9 — dynamic viewport unit handles iOS Safari's address-
      bar resize so the bottom of the layout doesn't get cropped when
      the bar collapses. Falls back to 100vh on older browsers. */
@@ -3299,7 +3304,9 @@ body.checkmate-flash::after {
   .perimeter-eq { --eq-reach: 32px; }
 }
 @media (max-width: 560px) {
-  .perimeter-eq { --eq-reach: 20px; --eq-base: 2px; }
+  /* M.15 — keep the reach inside the board's side margin on phones so the
+     bars never poke past the viewport (the board nearly fills the width). */
+  .perimeter-eq { --eq-reach: 14px; --eq-base: 2px; }
 }
 
 /* ── M.10: stronger, "throbbing" board beat pulse — scale + brightness

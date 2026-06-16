@@ -24,12 +24,18 @@ const TOTAL = BARS_PER_SIDE * 4;
 const SIDES = ['top', 'right', 'bottom', 'left'] as const;
 const PEAK_THRESHOLD = 0.82;
 const BASS_BANDS = 8;
-// M.14 — was 0.35 (smooth but laggy). 0.5 keeps the wave fluid while
-// shaving ~3 frames of latency; the analyser smoothing was also lowered.
-const EASE = 0.5;
+// M.15 — asymmetric easing: SNAP up on a hit, ease DOWN smoothly. This is
+// the classic "alive VU meter" trick — every beat/note punches instantly,
+// then falls gracefully, instead of a symmetric blur that feels stuck.
+const ATTACK = 0.9; // toward the target when rising (fast)
+const RELEASE = 0.16; // toward the target when falling (slow tail)
 // M.15 — dynamics expansion. >1 suppresses quiet bands and lets the loud
 // hits punch to full reach ("піки вистрілюють, тихе лишається тихим").
 const GAMMA = 1.7;
+// M.15 — SOFT ceiling (tanh) instead of a hard clamp. Values approach PEAK
+// but never pin there, so even at max volume / high "temperature" the bars
+// keep their relative differences and stay lively (no flat line at the top).
+const PEAK = 1.95;
 
 /** Band each bar reads, by its index within its side (0..BARS_PER_SIDE-1).
  *  Middle of the side → low bass band (loud); ends → low-mid bands (still
@@ -76,12 +82,11 @@ function PerimeterEqualizerImpl() {
         const idx = bandForBar(within, n);
         const edge = Math.abs((within / (BARS_PER_SIDE - 1)) * 2 - 1);
         const tilt = 1 + edge * 0.6;
-        // M.15 — gamma: expand dynamics so peaks shoot to full reach while
-        // quiet passages stay low (instead of everything floating mid-way).
-        // Cap at 1.8 (not 1) so at high "temperature" the bars overshoot
-        // the base reach and visibly leap up/down instead of pinning flat.
+        // M.15 — gamma expands dynamics (quiet stays low, peaks punch);
+        // tanh soft-ceiling lets loud hits keep climbing toward PEAK without
+        // ever pinning, so the wave never flat-lines at the top.
         const b = Math.min(1, (bands[idx] ?? 0) * tilt);
-        raw[i] = Math.min(1.8, Math.pow(b, GAMMA) * sens);
+        raw[i] = PEAK * Math.tanh((Math.pow(b, GAMMA) * sens) / PEAK);
       }
       // M.14 — spatial pass: 5-tap weighted blend so neighbours melt into
       // one flowing wave (smoother crest) instead of separate sticks.
@@ -113,7 +118,8 @@ function PerimeterEqualizerImpl() {
     const WRITE_EPS = 0.0025;
     const tick = () => {
       for (let i = 0; i < TOTAL; i++) {
-        display[i] += (target[i] - display[i]) * EASE;
+        const d = target[i] - display[i];
+        display[i] += d * (d > 0 ? ATTACK : RELEASE);
         const v = display[i];
         const bar = bars[i];
         if (!bar) continue;
