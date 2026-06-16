@@ -317,27 +317,31 @@ export function MusicDock({ onClose }: MusicDockProps) {
   useEffect(() => {
     return liveBpm.onBpm((value, conf) => {
       setLive({ bpm: value, conf });
-      // M.15 — the board's on-beat pulse only fires while the grid runs.
-      // The old single 0.3 gate meant a track the detector found hard
-      // ("weak") never started the grid, so the pulse silently did
-      // nothing. Now: get the grid MOVING on a weaker first lock (0.2),
-      // but only RE-ADOPT a drifting tempo on a firmer reading (0.35) so
-      // noise can't keep yanking the BPM around once we're locked.
-      const FIRST_LOCK_CONF = 0.2;
-      const REASSESS_CONF = 0.35;
-      if (!beatEngine.isRunning()) {
-        if (conf < FIRST_LOCK_CONF) return;
+      // M.15.1 — accuracy + Beat-Mode alignment first (reverts the 0.2
+      // "first lock" that locked weak/wrong readings and the drift>2
+      // re-adopt that kept re-randomising the phase via adoptBpm(),
+      // wiping the user's tap alignment so moves landed OFF the beat).
+      //  • only trust a "fair" reading (>=0.3),
+      //  • lock the grid ONCE, then leave the phase alone,
+      //  • re-lock only on a BIG jump (a genuinely different track).
+      if (conf < 0.3) return;
+      // M.15.1 — phase-align to a real detected kick (setGrid) instead of
+      // adoptBpm's arbitrary phase, so the board (and Beat-Mode snaps) land
+      // ON the beat with no manual tap. Fall back to adoptBpm if no onset.
+      const onset = liveBpm.getLastOnset();
+      const lockGrid = () => {
         beatEngine.setBase('wall');
-        beatEngine.adoptBpm(value);
+        if (onset > 0) beatEngine.setGrid(value, onset);
+        else beatEngine.adoptBpm(value);
         setBpm(value);
         setAutoBpm('found');
+      };
+      if (!beatEngine.isRunning()) {
+        lockGrid();
         beatEngine.start();
         setSyncRunning(true);
-      } else if (conf >= REASSESS_CONF && Math.abs(value - beatEngine.getBpm()) > 2) {
-        beatEngine.setBase('wall');
-        beatEngine.adoptBpm(value);
-        setBpm(value);
-        setAutoBpm('found');
+      } else if (Math.abs(value - beatEngine.getBpm()) > 8) {
+        lockGrid();
       }
     });
   }, []);

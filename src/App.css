@@ -3171,7 +3171,8 @@ body.checkmate-flash::after {
   pointer-events: none;
   /* M.14 — BEHIND the board: the wave peeks out from under the edges. */
   z-index: 0;
-  --eq-reach: 44px;
+  /* M.15.1 — more reach so the livelier bars have room to actually travel. */
+  --eq-reach: 58px;
   --eq-base: 3px;
 }
 
@@ -3301,7 +3302,7 @@ body.checkmate-flash::after {
 }
 
 @media (max-width: 900px) {
-  .perimeter-eq { --eq-reach: 32px; }
+  .perimeter-eq { --eq-reach: 42px; }
 }
 @media (max-width: 560px) {
   /* M.15 — keep the reach inside the board's side margin on phones so the

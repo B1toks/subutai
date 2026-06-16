@@ -46,6 +46,14 @@ class LiveBpmDetector {
     return this.bpm;
   }
 
+  /** M.15.1 — performance.now() of the most recent detected kick/onset.
+   *  Used to PHASE-align the beat grid to real kicks so Beat Mode lands on
+   *  the beat with no manual tap (adoptBpm alone picks an arbitrary phase).
+   *  0 when nothing detected yet. */
+  getLastOnset(): number {
+    return this.onsets.length ? this.onsets[this.onsets.length - 1] : 0;
+  }
+
   start(): void {
     if (this.off) return;
     this.reset();

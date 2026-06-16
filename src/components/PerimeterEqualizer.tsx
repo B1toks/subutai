@@ -29,9 +29,12 @@ const BASS_BANDS = 8;
 // then falls gracefully, instead of a symmetric blur that feels stuck.
 const ATTACK = 0.9; // toward the target when rising (fast)
 const RELEASE = 0.16; // toward the target when falling (slow tail)
-// M.15 — dynamics expansion. >1 suppresses quiet bands and lets the loud
-// hits punch to full reach ("піки вистрілюють, тихе лишається тихим").
-const GAMMA = 1.7;
+// M.15.1 — this was 1.7, which (x^1.7 < x) CRUSHED every band: a typical
+// loud band of ~0.4 became ~0.21, so the bars never grew and read as
+// "limited". A gamma BELOW 1 lifts the whole range — bars get tall and
+// lively at normal volume; the tanh ceiling + asymmetric easing still
+// give the punch and keep peaks from pinning.
+const GAMMA = 0.8;
 // M.15 — SOFT ceiling (tanh) instead of a hard clamp. Values approach PEAK
 // but never pin there, so even at max volume / high "temperature" the bars
 // keep their relative differences and stay lively (no flat line at the top).
