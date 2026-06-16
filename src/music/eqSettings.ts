@@ -11,7 +11,9 @@
 
 const KEY = 'subutai_eq_sensitivity';
 export const EQ_SENS_MIN = 0.6;
-export const EQ_SENS_MAX = 3.2;
+// M.16 — was 3.2, which pushed every band into the soft knee and flattened
+// the wave into equal bars. 2.4 keeps the top of the range still dynamic.
+export const EQ_SENS_MAX = 2.4;
 export const EQ_SENS_DEFAULT = 1.5;
 
 const clamp = (v: number) =>

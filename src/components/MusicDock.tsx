@@ -359,6 +359,22 @@ export function MusicDock({ onClose }: MusicDockProps) {
   }
 
   function handleSync() {
+    // M.16 — Sync used to silently do nothing when the engine had no tempo
+    // (the live detector was too "weak" to auto-adopt). Now it falls back to
+    // the shown / auto BPM so the grid ALWAYS engages on press; phase-aligns
+    // to a real detected kick when live capture is running.
+    if (beatEngine.getBpm() <= 0) {
+      const fallback =
+        bpm > 0 ? bpm : liveBpm.getBpm() || (loadedUrl ? readBpmMap()[loadedUrl] ?? 0 : 0);
+      if (fallback > 0) {
+        const liveOwns = micEq.getSource() === 'mic' || micEq.getSource() === 'display';
+        beatEngine.setBase(liveOwns || !loadedUrl ? 'wall' : 'track');
+        const onset = liveBpm.getLastOnset();
+        if (liveOwns && onset > 0) beatEngine.setGrid(fallback, onset);
+        else beatEngine.adoptBpm(fallback);
+        setBpm(fallback);
+      }
+    }
     if (!beatEngine.start()) return;
     setSyncRunning(true);
     if (beatEngine.getBpm() > 0 && loadedUrl) {

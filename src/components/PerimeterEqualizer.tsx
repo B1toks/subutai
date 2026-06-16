@@ -29,16 +29,16 @@ const BASS_BANDS = 8;
 // then falls gracefully, instead of a symmetric blur that feels stuck.
 const ATTACK = 0.9; // toward the target when rising (fast)
 const RELEASE = 0.16; // toward the target when falling (slow tail)
-// M.15.1 — this was 1.7, which (x^1.7 < x) CRUSHED every band: a typical
-// loud band of ~0.4 became ~0.21, so the bars never grew and read as
-// "limited". A gamma BELOW 1 lifts the whole range — bars get tall and
-// lively at normal volume; the tanh ceiling + asymmetric easing still
-// give the punch and keep peaks from pinning.
-const GAMMA = 0.8;
-// M.15 — SOFT ceiling (tanh) instead of a hard clamp. Values approach PEAK
-// but never pin there, so even at max volume / high "temperature" the bars
-// keep their relative differences and stay lively (no flat line at the top).
-const PEAK = 1.95;
+// M.16 — response curve, take 3. The old gamma+tanh made every band SATURATE
+// at high sensitivity → a flat line of equal bars ("рівні полоси"). New shape:
+//   1. NOISE GATE — subtract a floor so quiet bands drop to 0. This is what
+//      keeps the wave's peaks-and-valleys visible (contrast) at ANY gain,
+//      instead of a uniformly-raised flat band.
+//   2. gain = sensitivity (linear).
+//   3. SOFT KNEE — gentle compression v/(1+v/KNEE) that never hard-clips and,
+//      crucially, keeps loud bands spread apart (a tanh wall flattened them).
+const NOISE_FLOOR = 0.08;
+const KNEE = 1.7;
 
 /** Band each bar reads, by its index within its side (0..BARS_PER_SIDE-1).
  *  Middle of the side → low bass band (loud); ends → low-mid bands (still
@@ -85,11 +85,12 @@ function PerimeterEqualizerImpl() {
         const idx = bandForBar(within, n);
         const edge = Math.abs((within / (BARS_PER_SIDE - 1)) * 2 - 1);
         const tilt = 1 + edge * 0.6;
-        // M.15 — gamma expands dynamics (quiet stays low, peaks punch);
-        // tanh soft-ceiling lets loud hits keep climbing toward PEAK without
-        // ever pinning, so the wave never flat-lines at the top.
-        const b = Math.min(1, (bands[idx] ?? 0) * tilt);
-        raw[i] = PEAK * Math.tanh((Math.pow(b, GAMMA) * sens) / PEAK);
+        // M.16 — gate → gain → soft knee (see constants). The gate keeps the
+        // wave's contrast (quiet bands stay at 0) so it never flattens into
+        // equal bars at high sensitivity.
+        const gated = Math.max(0, (bands[idx] ?? 0) * tilt - NOISE_FLOOR);
+        const v = gated * sens;
+        raw[i] = v / (1 + v / KNEE);
       }
       // M.14 — spatial pass: 5-tap weighted blend so neighbours melt into
       // one flowing wave (smoother crest) instead of separate sticks.
