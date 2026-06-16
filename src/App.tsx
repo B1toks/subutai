@@ -43,6 +43,7 @@ import {
   Bot,
   Crosshair,
   Dices,
+  Disc3,
   Eye,
   Flag,
   GraduationCap,
@@ -88,6 +89,14 @@ import { MemoryPanel } from './memory/MemoryPanel';
 import type { SavedGame } from './memory/types';
 import { NotationParseError, parseMemoryNotation } from './memory/notation';
 import { moveVoting } from './twitch/moveVoting';
+import { micEq } from './audio/micEqualizer';
+import { PerimeterEqualizer } from './components/PerimeterEqualizer';
+import { BackgroundWaveGrid } from './components/BackgroundWaveGrid';
+import { vizMode } from './music/vizMode';
+import { beatBridge } from './music/beatBridge';
+import { beatEngine } from './music/beatEngine';
+import { beatMode } from './music/beatMode';
+import { BeatCombo } from './components/BeatCombo';
 import { scaleBudgetMs } from './utils/deviceTier';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
@@ -110,6 +119,10 @@ const StatsPage = lazy(() =>
 // T3 — Twitch overlay is code-split: only streamers pay for it.
 const TwitchPanel = lazy(() =>
   import('./components/TwitchPanel').then((m) => ({ default: m.TwitchPanel })),
+);
+// SP — Spotify dock, same deal.
+const MusicDock = lazy(() =>
+  import('./components/MusicDock').then((m) => ({ default: m.MusicDock })),
 );
 
 type GameStatus =
@@ -225,6 +238,10 @@ function bumpEvalForMove(
   }
   return prevEval + delta;
 }
+
+// M.14 — beat-mode glide length. MUST match the .piece-slide-in CSS
+// animation duration so the slide lands exactly on the beat.
+const BEAT_SLIDE_MS = 260;
 
 // S2.5 — mm:ss elapsed-time display for the per-side clocks.
 function formatClock(ms: number): string {
@@ -527,6 +544,26 @@ function App() {
   // T3 — Twitch overlay visibility (session-only; channel persists in
   // the panel itself).
   const [showTwitch, setShowTwitch] = useState(false);
+  // SP — Spotify dock visibility + whether the mic equalizer runs
+  // (the perimeter ring mounts only while it does).
+  const [showMusicDock, setShowMusicDock] = useState(false);
+  const [vizOn, setVizOn] = useState(false);
+  useEffect(() => micEq.onState(setVizOn), []);
+  // M.15 — optional full-screen sound-grid background (toggled in the dock).
+  const [bgGridOn, setBgGridOn] = useState(() => vizMode.isBgGrid());
+  useEffect(() => vizMode.onChange(setBgGridOn), []);
+  // M.10 — on-beat board pulse lives at App level (not in the dock) so
+  // the board keeps reacting even when the music dock is closed or
+  // minimised, as long as the beat grid is running.
+  useEffect(() => {
+    return beatEngine.onBeat(() => {
+      const board = document.querySelector('.board-with-coords');
+      if (!board) return;
+      board.classList.remove('beat-tick');
+      void (board as HTMLElement).offsetWidth; // restart the animation
+      board.classList.add('beat-tick');
+    });
+  }, []);
   // S2.5 — per-side elapsed clocks. Pure UX (no flag-fall): the active
   // side's clock accumulates wall time while the game is live. Reset on
   // every new game log.
@@ -644,6 +681,12 @@ function App() {
       : rouletteSpinCountLocal;
   const formationInputRef = useRef<HTMLInputElement>(null);
   const aiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // SP-3 — true while a Beat-Mode move is queued to land on the next
+  // beat; blocks board input so the snap can't be raced.
+  const beatSnapPendingRef = useRef(false);
+  // M.12 — the queued snap target (from/to + ms to the beat) so the UI
+  // can show a ring filling to the beat for a crisp, on-beat landing.
+  const [beatSnap, setBeatSnap] = useState<{ from: SquareId; to: SquareId; ms: number } | null>(null);
   // Stage P addendum 7: wall-clock when the current game began. Used to
   // compute durationMs on save. Set in startNewGame (and on initial mount
   // for the first game).
@@ -2853,6 +2896,9 @@ function App() {
 
   function onSquareClick(square: string) {
     if (watchingGame) return; // replay mode is read-only.
+    // SP-3 Beat Mode — a move is queued to land on the next beat; ignore
+    // further board input until it commits so the snap can't be raced.
+    if (beatSnapPendingRef.current) return;
 
     // Multiplayer: bypass the local engine pipeline entirely. Selection +
     // legalMoves are the same shared values; the only difference is the
@@ -2995,11 +3041,53 @@ function App() {
         ? { ...move, promotion: 'queen' }
         : move;
 
+    // SP-3 / M.14 Beat Mode — in classic solo play the piece GLIDES into
+    // place exactly on the beat. The commit closure captures this render's
+    // state/log; nothing mutates them during the <1-beat hold (human's
+    // turn), so deferring is safe. Roulette/MP excluded.
+    //
+    // Earlier the move committed ON the beat and the slide started then,
+    // so the piece arrived a slide-length late and felt laggy. Now we
+    // figure out whether this move will visually slide (both tiles
+    // unrotated in the current topology) and, if so, commit a slide-
+    // length EARLY so the glide LANDS on the beat. The ring keeps filling
+    // until the beat, popping as the piece touches down.
+    if (gameMode === 'classic' && !isMultiplayer) {
+      const from = resolvedMove.from!;
+      const to = resolvedMove.to!;
+      const willSlide =
+        from !== to &&
+        tilePixelCenter(to, displayTopology, layout).angle === 0 &&
+        tilePixelCenter(from, displayTopology, layout).angle === 0;
+      const slideMs = willSlide ? BEAT_SLIDE_MS : 0;
+      const plan = beatMode.snapPlan(slideMs);
+      if (plan) {
+        beatSnapPendingRef.current = true;
+        setBeatSnap({ from, to, ms: plan.landMs });
+        // Commit (start the glide) so it lands on the beat.
+        window.setTimeout(() => {
+          beatSnapPendingRef.current = false;
+          setSelected(null);
+          commitMove();
+        }, plan.holdMs);
+        // Clear the ring once the piece has touched down (on the beat).
+        window.setTimeout(() => setBeatSnap(null), plan.landMs);
+        return;
+      }
+    }
+    commitMove();
+    return;
+
+    // ── commit closure ──────────────────────────────────────────────
+    function commitMove() {
     const san = computeSAN(state, resolvedMove);
     const moverType = state.pieces[resolvedMove.from!]!.type;
     const afterMove = applyMove(state, resolvedMove);
     setLog((prev) => appendMove(prev, resolvedMove, san, state.topologyState));
     setLastMove({ from: resolvedMove.from, to: resolvedMove.to });
+    // SP-2 — score the move against the beat grid (no-op when music
+    // sync is off). Display-only combo; leaderboard points untouched.
+    beatBridge.reportMove();
     // Defer classify so the click feels instant — main thread is still
     // single-threaded but the DOM paints first, then the analysis lands
     // ~300 ms later as if the engine is "thinking".
@@ -3074,6 +3162,7 @@ function App() {
       setSelected(null);
     }
     checkGameOver(afterMove);
+    } // end commitMove
   }
 
   function handlePromotion(pieceType: PieceType) {
@@ -3095,6 +3184,7 @@ function App() {
     setPendingPromotion(null);
     setLog((prev) => appendMove(prev, move, san, state.topologyState));
     setLastMove({ from: move.from, to: move.to });
+    beatBridge.reportMove(); // SP-2 — promotion path counts too
     // B3 — material-delta bump instead of static-fallback flicker.
     setSearchEvalFromWhite((prev) => bumpEvalForMove(prev, state, move));
     setSearchMateInPlies(null);
@@ -3572,6 +3662,7 @@ function App() {
       data-game-active={gameInProgress ? '1' : '0'}
       ref={shellRef}
     >
+    {bgGridOn && <BackgroundWaveGrid />}
     {flashEffect && (
       <div
         className={`screen-flash-effect screen-flash-${flashEffect}`}
@@ -3614,6 +3705,17 @@ function App() {
           )}
         </div>
         <div className="header-controls">
+          <Tooltip text={showMusicDock ? 'Hide music dock' : 'Spotify + beat sync'} side="bottom">
+            <button
+              type="button"
+              className={`header-action-btn${showMusicDock ? ' is-active' : ''}`}
+              onClick={() => setShowMusicDock((v) => !v)}
+              aria-label="Toggle music dock"
+              aria-pressed={showMusicDock}
+            >
+              <Icon icon={Disc3} size="md" aria-hidden />
+            </button>
+          </Tooltip>
           <Tooltip text={showTwitch ? 'Hide Twitch chat' : 'Twitch chat + predictions'} side="bottom">
             <button
               type="button"
@@ -3967,10 +4069,25 @@ function App() {
         style={{ width: boardSize }}
         data-tour="board"
       >
+      {/* SP — mic-driven spectrum ring; mounts only while the
+          equalizer listens. Self-driving (no App re-renders). */}
+      {vizOn && <PerimeterEqualizer />}
       <div
-        className={`board${previewTopology || previewLocked ? ' previewing' : ''}${recentRotation ? ' is-rotated' : ''}`}
+        className={`board${previewTopology || previewLocked ? ' previewing' : ''}${recentRotation ? ' is-rotated' : ''}${
+          recentRotation && beatMode.isEnabled() && beatEngine.isRunning() ? ' is-rotated-beat' : ''
+        }`}
         data-topology={displayTopology}
-        style={{ width: boardSize, height: boardSize }}
+        style={
+          {
+            width: boardSize,
+            height: boardSize,
+            // M.15 — in Beat Mode the rotate "swings" in time: one beat
+            // long, springy. --rotate-ms = the live beat period.
+            ...(recentRotation && beatMode.isEnabled() && beatEngine.getIntervalMs() > 0
+              ? { '--rotate-ms': `${Math.round(beatEngine.getIntervalMs())}ms` }
+              : null),
+          } as React.CSSProperties
+        }
       >
         {squares.map((sq) => {
           const piece = state.pieces[sq as SquareId];
@@ -4093,6 +4210,8 @@ function App() {
                 sacrificeSquare === sq ? 'is-sacrifice' : '',
                 hintMove && 'from' in hintMove && hintMove.from === sq ? 'hint-from' : '',
                 hintMove && 'from' in hintMove && hintMove.to === sq ? 'hint-to' : '',
+                beatSnap && beatSnap.to === sq ? 'beat-snap-to' : '',
+                beatSnap && beatSnap.from === sq ? 'beat-snap-from' : '',
               ]
                 .filter(Boolean)
                 .join(' ')}
@@ -4101,6 +4220,9 @@ function App() {
                 height: tileBase,
                 transform: `translate(${tx}px, ${ty}px) rotate(${angle}deg) scale(${scale})`,
                 ...(threatCount > 0 ? { '--threat-n': threatCount } as React.CSSProperties : {}),
+                ...(beatSnap && (beatSnap.to === sq || beatSnap.from === sq)
+                  ? ({ '--snap-ms': `${beatSnap.ms}ms` } as React.CSSProperties)
+                  : {}),
               }}
               onClick={() => onSquareClick(sq)}
               onContextMenu={handleTileContextMenu}
@@ -5168,6 +5290,16 @@ function App() {
       {/* T3 — Twitch chat + predictions overlay. gameKey resets the
           vote round per game; the result is derived once the status
           leaves 'active'. */}
+      {/* SP — Spotify dock: embed player + tap-tempo beat sync + mic
+          equalizer controls. */}
+      {showMusicDock && (
+        <Suspense fallback={null}>
+          <MusicDock onClose={() => setShowMusicDock(false)} />
+        </Suspense>
+      )}
+      {/* SP-2 — on-beat combo overlay; renders null while idle. */}
+      <BeatCombo />
+
       {showTwitch && (
         <Suspense fallback={null}>
           <TwitchPanel

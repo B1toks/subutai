@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Cast, GripVertical, X } from 'lucide-react';
+import { Cast, GripVertical, PanelRight, X } from 'lucide-react';
 import { Icon } from './Icon';
 import { twitchChat, type TwitchChatMessage, type TwitchChatStatus } from '../twitch/chat';
 import {
@@ -61,6 +61,28 @@ function EmoteText({ text, emotes }: { text: string; emotes: EmoteMap | null }) 
   );
 }
 
+/* M.13 — memoised chat row. The feed re-renders every 300ms flush; on a
+ * busy channel that's 60 emote-laden rows re-rendering several times a
+ * second, which saturated the main thread and froze the panel (so the
+ * scoring "stopped"). memo() means only the NEW rows in a batch render —
+ * existing message objects keep their reference, so React skips them. */
+const TwitchMessageRow = memo(function TwitchMessageRow({
+  msg,
+  emotes,
+}: {
+  msg: TwitchChatMessage;
+  emotes: EmoteMap | null;
+}) {
+  return (
+    <div className="twitch-msg">
+      <span className="twitch-msg-nick" style={msg.color ? { color: msg.color } : undefined}>
+        {msg.displayName}
+      </span>
+      <EmoteText text={msg.text} emotes={emotes} />
+    </div>
+  );
+});
+
 /**
  * T3/T4/T5 — Twitch overlay: live chat (with 7TV emotes), per-move
  * vote rounds (predict / chat-plays-the-AI), result calls, and a
@@ -85,6 +107,10 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
   const [scores, setScores] = useState<ViewerScore[]>(() => moveVoting.getScores());
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [emotes, setEmotes] = useState<EmoteMap | null>(null);
+  // M.13 — dock to the RIGHT edge (Spotify left, chat right stream layout).
+  const [dockedRight, setDockedRight] = useState(() => {
+    try { return localStorage.getItem('subutai_twitch_docked') === '1'; } catch { return false; }
+  });
   const predictionsRef = useRef<PredictionState>(emptyPredictions());
   const feedRef = useRef<HTMLDivElement | null>(null);
 
@@ -254,8 +280,9 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
     ? Math.max(0, Math.ceil((round.endsAt - roundNow) / 1000))
     : 0;
 
-  const panelStyle: React.CSSProperties | undefined =
-    pos && window.innerWidth > 720
+  const panelStyle: React.CSSProperties | undefined = dockedRight
+    ? undefined
+    : pos && window.innerWidth > 720
       ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' }
       : undefined;
 
@@ -264,7 +291,12 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
   // "fixed relative to the transformed box" and break both the default
   // placement and drag math.
   return createPortal(
-    <aside className="twitch-panel" ref={panelRef} style={panelStyle} aria-label="Twitch chat">
+    <aside
+      className={`twitch-panel${dockedRight ? ' is-docked-right' : ''}`}
+      ref={panelRef}
+      style={panelStyle}
+      aria-label="Twitch chat"
+    >
       <div
         className="twitch-panel-header twitch-drag-handle"
         onPointerDown={onDragStart}
@@ -278,9 +310,26 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
             <span className="twitch-channel-name">#{twitchChat.getChannel()}</span>
           )}
         </span>
-        <button type="button" className="twitch-close-btn" onClick={onClose} aria-label="Close Twitch panel">
-          <Icon icon={X} size="sm" aria-hidden />
-        </button>
+        <span className="twitch-header-actions">
+          <button
+            type="button"
+            className={`twitch-close-btn${dockedRight ? ' is-on' : ''}`}
+            onClick={() => {
+              setDockedRight((v) => {
+                const next = !v;
+                try { localStorage.setItem('subutai_twitch_docked', next ? '1' : '0'); } catch { /* private */ }
+                return next;
+              });
+            }}
+            aria-label={dockedRight ? 'Float Twitch panel' : 'Dock to right edge'}
+            title={dockedRight ? 'Float (free position)' : 'Dock to the right side'}
+          >
+            <Icon icon={PanelRight} size="sm" aria-hidden />
+          </button>
+          <button type="button" className="twitch-close-btn" onClick={onClose} aria-label="Close Twitch panel">
+            <Icon icon={X} size="sm" aria-hidden />
+          </button>
+        </span>
       </div>
 
       {!connected && (
@@ -389,17 +438,7 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
             {messages.length === 0 ? (
               <div className="twitch-feed-empty">Waiting for chat…</div>
             ) : (
-              messages.map((m) => (
-                <div key={m.id} className="twitch-msg">
-                  <span
-                    className="twitch-msg-nick"
-                    style={m.color ? { color: m.color } : undefined}
-                  >
-                    {m.displayName}
-                  </span>
-                  <EmoteText text={m.text} emotes={emotes} />
-                </div>
-              ))
+              messages.map((m) => <TwitchMessageRow key={m.id} msg={m} emotes={emotes} />)
             )}
           </div>
         </>

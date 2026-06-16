@@ -54,44 +54,78 @@ export function playMove(ctx: AudioContext, out: GainNode) {
   bodyOsc.stop(t + 0.06);
 }
 
-/** Heavier wooden clash — sub-bass thump + band-pass noise at ~800 Hz
- *  for the wood-on-wood crash overtone. */
+/** M.14 — warm wooden "pick up & set down". The old voice ran WHITE
+ *  noise through a narrow 800 Hz band-pass, which read as a sharp hiss
+ *  ("ципкий/шиплячий"). This is rounder: a soft sub thump for weight,
+ *  PINK noise through a gentle low-pass (no resonant whistle) for the
+ *  felt-on-wood brush, and two quiet wooden body partials for the
+ *  "clack" of a piece landing — all with a soft 4 ms attack so nothing
+ *  clicks. Reads as picking a piece up and placing it, not a crack. */
 export function playCapture(ctx: AudioContext, out: GainNode) {
   const t = ctx.currentTime;
 
+  // Sub thump — weight, slightly higher & rounder than before.
   const sub = ctx.createOscillator();
   sub.type = 'sine';
-  sub.frequency.value = 90;
-  sub.frequency.exponentialRampToValueAtTime(55, t + 0.15);
+  sub.frequency.value = 110;
+  sub.frequency.exponentialRampToValueAtTime(62, t + 0.16);
 
+  // Pink (not white) noise — warmer; low-passed, not band-passed.
   const noise = ctx.createBufferSource();
   const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.12), ctx.sampleRate);
   const d = buf.getChannelData(0);
+  let lastPink = 0;
   for (let i = 0; i < d.length; i++) {
-    d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (d.length * 0.4));
+    const white = Math.random() * 2 - 1;
+    lastPink = (lastPink + 0.045 * white) / 1.045;
+    d[i] = lastPink * Math.exp(-i / (d.length * 0.32));
   }
   noise.buffer = buf;
 
   const filter = ctx.createBiquadFilter();
-  filter.type = 'bandpass';
-  filter.frequency.value = 800;
-  filter.Q.value = 1.5;
+  filter.type = 'lowpass';
+  filter.frequency.value = 900; // gentle felt brush, no resonant whistle
+  filter.Q.value = 0.6;
+
+  // Two detuned sine partials — the soft wooden "clack" of landing.
+  const body1 = ctx.createOscillator();
+  body1.type = 'sine';
+  body1.frequency.value = 190;
+  body1.frequency.exponentialRampToValueAtTime(150, t + 0.09);
+  const body2 = ctx.createOscillator();
+  body2.type = 'sine';
+  body2.frequency.value = 285;
+  body2.frequency.exponentialRampToValueAtTime(225, t + 0.09);
 
   const subGain = ctx.createGain();
   const noiseGain = ctx.createGain();
+  const bodyGain = ctx.createGain();
 
-  subGain.gain.setValueAtTime(0.35, t);
-  subGain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+  // Soft attacks (~4 ms) so nothing clicks; gentle exponential tails.
+  subGain.gain.setValueAtTime(0.0001, t);
+  subGain.gain.linearRampToValueAtTime(0.32, t + 0.004);
+  subGain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
 
-  noiseGain.gain.setValueAtTime(0.25, t);
-  noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+  noiseGain.gain.setValueAtTime(0.0001, t);
+  noiseGain.gain.linearRampToValueAtTime(0.13, t + 0.004);
+  noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+
+  bodyGain.gain.setValueAtTime(0.0001, t);
+  bodyGain.gain.linearRampToValueAtTime(0.1, t + 0.004);
+  bodyGain.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
 
   sub.connect(subGain).connect(out);
   noise.connect(filter).connect(noiseGain).connect(out);
+  body1.connect(bodyGain).connect(out);
+  body2.connect(bodyGain);
 
   sub.start(t);
-  sub.stop(t + 0.25);
+  sub.stop(t + 0.26);
   noise.start(t);
+  body1.start(t);
+  body1.stop(t + 0.15);
+  body2.start(t);
+  body2.stop(t + 0.15);
 }
 
 /** Single sharp tonal alert — opponent put in check. Sine sweep
