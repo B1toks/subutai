@@ -1,7 +1,22 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cmd //c \"npx tsc -b --noEmit\")"
+      "Bash(cmd //c \"npx tsc -b --noEmit\")",
+      "Bash(wait)",
+      "Bash(mkdir -p src/hooks)",
+      "Bash(awk '/^C:\\\\\\\\projects\\\\\\\\chess\\\\\\\\src\\\\\\\\App.tsx$/{flag=1; print; next} /^C:/{flag=0} flag')",
+      "Bash(grep -E \"^C:\\\\\\\\\\\\\\\\projects\\\\\\\\\\\\\\\\chess\\\\\\\\\\\\\\\\src\\\\\\\\\\\\\\\\\\(audio|components\\)\")",
+      "PowerShell(git -C C:\\\\projects\\\\sarovara_ai status)",
+      "PowerShell(git -C C:\\\\projects\\\\sarovara_ai log --oneline -5)",
+      "PowerShell(git -C C:\\\\projects\\\\sarovara_ai fetch origin)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" --max-time 3 http://localhost:3000/)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(git -C \"C:/Users/Alex/Downloads/honchar-portfolio\" add app/layout.tsx app/page.tsx components/ui/ProjectModal.tsx components/ui/Sections.tsx components/ui/Terminal.tsx components/AnalyticsClient.tsx)",
+      "Bash(git -C \"C:/Users/Alex/Downloads/honchar-portfolio\" status --short)",
+      "Bash(git clone *)"
+    ],
+    "additionalDirectories": [
+      "C:\\projects\\chess\\src"
     ]
   }
 }
