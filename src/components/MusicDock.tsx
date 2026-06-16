@@ -331,9 +331,11 @@ export function MusicDock({ onClose }: MusicDockProps) {
       //  • lock the grid ONCE, then leave the phase alone,
       //  • re-lock only on a BIG jump (a genuinely different track).
       if (conf < 0.3) return;
-      // M.15.1 — phase-align to a real detected kick (setGrid) instead of
-      // adoptBpm's arbitrary phase, so the board (and Beat-Mode snaps) land
-      // ON the beat with no manual tap. Fall back to adoptBpm if no onset.
+      // M.16 — phase-align to a real detected kick (setGrid) instead of
+      // adoptBpm's arbitrary phase, so the grid lands ON the beat with no
+      // manual tap. Because EVERY re-lock is kick-aligned, we can now follow
+      // tempo changes responsively (>3 BPM) without the old off-beat drift —
+      // a steady beat re-locks to the same phase, a real change snaps cleanly.
       const onset = liveBpm.getLastOnset();
       const lockGrid = () => {
         beatEngine.setBase('wall');
@@ -346,7 +348,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
         lockGrid();
         beatEngine.start();
         setSyncRunning(true);
-      } else if (Math.abs(value - beatEngine.getBpm()) > 8) {
+      } else if (Math.abs(value - beatEngine.getBpm()) > 3) {
         lockGrid();
       }
     });

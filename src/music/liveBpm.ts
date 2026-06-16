@@ -17,10 +17,13 @@
 import { micEq } from '../audio/micEqualizer';
 
 const BASS_BANDS = 8;
-const HISTORY_SEC = 8;
-const MIN_ONSETS = 12;
+// M.16 — shorter history + fewer min onsets so the estimate REACTS to a
+// tempo / track change in a few seconds instead of ~8s of stale onsets
+// dragging the average. Emit a bit more often too.
+const HISTORY_SEC = 5;
+const MIN_ONSETS = 8;
 const REFRACTORY_MS = 120; // ≤500 BPM — ignore double-triggers
-const EMIT_THROTTLE_MS = 1000;
+const EMIT_THROTTLE_MS = 700;
 const BPM_LO = 70;
 const BPM_HI = 200; // M.12 — was 180; covers hardstyle / fast genres
 
