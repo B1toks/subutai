@@ -37,6 +37,8 @@ class LiveBpmDetector {
   private bpm = 0;
   private confidence = 0;
   private lastEmit = 0;
+  /** M.16.1 — last few raw estimates, for the stability median. */
+  private bpmHistory: number[] = [];
   private listeners = new Set<BpmListener>();
   /** Injectable clock so the detector is testable without a real mic. */
   private nowMs: () => number = () => performance.now();
@@ -83,6 +85,7 @@ class LiveBpmDetector {
     this.bpm = 0;
     this.confidence = 0;
     this.lastEmit = 0;
+    this.bpmHistory = [];
   }
 
   /** Process one equalizer frame (60 bands, 0..1, ~30fps). */
@@ -112,11 +115,31 @@ class LiveBpmDetector {
       this.lastEmit = now;
       const est = this.estimate();
       if (est) {
-        this.bpm = est.bpm;
-        this.confidence = est.confidence;
+        // M.16.1 — stability filter. A single raw estimate jitters frame to
+        // frame (reads as "weak" / wobbly). Emit the MEDIAN of the last few
+        // estimates for a steadier, more accurate lock — but if the newest
+        // estimate jumps hard (a real track / tempo change), reset the
+        // window so we still react fast (the >3 BPM re-lock catches it).
+        const prevMedian = this.bpmHistory.length
+          ? [...this.bpmHistory].sort((a, b) => a - b)[this.bpmHistory.length >> 1]
+          : est.bpm;
+        if (Math.abs(est.bpm - prevMedian) > prevMedian * 0.12) {
+          this.bpmHistory = [est.bpm];
+        } else {
+          this.bpmHistory.push(est.bpm);
+          if (this.bpmHistory.length > 4) this.bpmHistory.shift();
+        }
+        const sorted = [...this.bpmHistory].sort((a, b) => a - b);
+        const stable = sorted[sorted.length >> 1];
+        // Steadier readings ⇒ nudge confidence up so a clean beat stops
+        // reading as "weak" once it has held for a couple of windows.
+        const conf =
+          this.bpmHistory.length >= 3 ? Math.min(1, est.confidence + 0.15) : est.confidence;
+        this.bpm = stable;
+        this.confidence = conf;
         this.listeners.forEach((cb) => {
           try {
-            cb(est.bpm, est.confidence);
+            cb(stable, conf);
           } catch {
             /* listener errors must not break the detector */
           }

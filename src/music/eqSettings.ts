@@ -10,11 +10,12 @@
  */
 
 const KEY = 'subutai_eq_sensitivity';
-export const EQ_SENS_MIN = 0.6;
-// M.16 — was 3.2, which pushed every band into the soft knee and flattened
-// the wave into equal bars. 2.4 keeps the top of the range still dynamic.
-export const EQ_SENS_MAX = 2.4;
-export const EQ_SENS_DEFAULT = 1.5;
+// M.16.1 — full usable span: MIN gives barely-there bars, MAX pushes them to
+// full overshoot. With the gentle knee (3.6) the range is spread evenly so
+// the limit isn't hit until the top (was saturating at ~1.4).
+export const EQ_SENS_MIN = 0.3;
+export const EQ_SENS_MAX = 3.4;
+export const EQ_SENS_DEFAULT = 1.2;
 
 const clamp = (v: number) =>
   Math.max(EQ_SENS_MIN, Math.min(EQ_SENS_MAX, v));
