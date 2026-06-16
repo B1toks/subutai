@@ -40,6 +40,12 @@ const URL_KEY = 'subutai_spotify_url';
 const BPM_MAP_KEY = 'subutai_spotify_bpm';
 const POS_KEY = 'subutai_music_pos';
 
+// M.16 — tab/system-audio capture only exists on desktop browsers; Android
+// and installed-PWA WebViews lack getDisplayMedia, so we hide that source.
+const canCaptureTab =
+  typeof navigator !== 'undefined' &&
+  typeof navigator.mediaDevices?.getDisplayMedia === 'function';
+
 /* SP-4 — tempo presets: the "prepared playlists" half of the idea, in
  * its safe form. One tap arms a beat grid at a known tempo — no track,
  * no lookup, works with the mic equalizer, external speakers, or as a
@@ -891,17 +897,22 @@ export function MusicDock({ onClose }: MusicDockProps) {
 
       {/* SP-8 — two capture sources. "Tab audio" grabs the digital
           stream (Spotify embed, any tab) — works on headphones, no
-          speakers, no mic degradation. "Mic" listens to the room. */}
+          speakers, no mic degradation. "Mic" listens to the room.
+          M.16 — getDisplayMedia is unavailable on Android / installed-PWA
+          WebViews, so the Tab-audio button is hidden there (it would just
+          fail); Mic + local file remain. */}
       <div className="music-dock-source-row">
-        <button
-          type="button"
-          className={`music-dock-beat-btn${captureSource === 'display' ? ' is-active' : ''}`}
-          onClick={() => void startCapture('display')}
-          aria-pressed={captureSource === 'display'}
-        >
-          <Icon icon={MonitorSpeaker} size="sm" aria-hidden />
-          {captureSource === 'display' ? 'Tab audio on' : 'Tab audio'}
-        </button>
+        {canCaptureTab && (
+          <button
+            type="button"
+            className={`music-dock-beat-btn${captureSource === 'display' ? ' is-active' : ''}`}
+            onClick={() => void startCapture('display')}
+            aria-pressed={captureSource === 'display'}
+          >
+            <Icon icon={MonitorSpeaker} size="sm" aria-hidden />
+            {captureSource === 'display' ? 'Tab audio on' : 'Tab audio'}
+          </button>
+        )}
         <button
           type="button"
           className={`music-dock-beat-btn${captureSource === 'mic' ? ' is-active' : ''}`}
