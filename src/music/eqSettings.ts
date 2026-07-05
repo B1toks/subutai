@@ -10,10 +10,11 @@
  */
 
 const KEY = 'subutai_eq_sensitivity';
-// M.16.1 — full usable span: MIN gives barely-there bars, MAX pushes them to
-// full overshoot. With the gentle knee (3.6) the range is spread evenly so
-// the limit isn't hit until the top (was saturating at ~1.4).
-export const EQ_SENS_MIN = 0.3;
+// M.20 — MIN dropped 0.3 → 0.05: the bottom of the range is now truly
+// tiny bars. The dock slider walks this range LOGARITHMICALLY, so the
+// old minimum (0.3 — the "calm but alive" look the user wants to keep)
+// sits ~40% along the track with real selection room on both sides.
+export const EQ_SENS_MIN = 0.05;
 export const EQ_SENS_MAX = 3.4;
 export const EQ_SENS_DEFAULT = 1.2;
 

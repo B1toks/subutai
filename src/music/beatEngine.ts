@@ -94,6 +94,7 @@ export class BeatEngine {
     // 4-tap calibration still recomputes both below.
     if (this.intervalMs > 0 && this.taps.length < TAPS_FOR_BPM) {
       this.phaseMs = t % this.intervalMs;
+      this.reanchor(); // M.24 — phase shift moves the beat index too
     }
 
     if (this.taps.length >= TAPS_FOR_BPM) {
@@ -107,6 +108,7 @@ export class BeatEngine {
         this.bpm = bpm;
         this.intervalMs = avg;
         this.phaseMs = this.taps[this.taps.length - 1] % avg;
+        this.reanchor(); // M.24
       }
     }
   }
@@ -118,6 +120,7 @@ export class BeatEngine {
     this.bpm = bpm;
     this.intervalMs = 60000 / bpm;
     this.phaseMs = this.now() % this.intervalMs;
+    this.reanchor();
   }
 
   /** SP-9 — set BOTH tempo and phase explicitly. Used by offline file
@@ -130,6 +133,19 @@ export class BeatEngine {
     this.intervalMs = 60000 / bpm;
     const iv = this.intervalMs;
     this.phaseMs = ((phaseMs % iv) + iv) % iv;
+    this.reanchor();
+  }
+
+  /** M.24 — re-base the fired-beat index after ANY grid change. The
+   *  index is absolute (now/interval); when the tempo drops, the index
+   *  computed under the LARGER interval is far smaller than the one
+   *  accumulated under the old grid, and checkBeats() (which only fires
+   *  on idx > lastFiredIdx) would go silent for minutes until wall time
+   *  "caught up" — the reported "BPM падає і дошка перестає стукати".
+   *  Re-anchoring makes the very next grid point fire normally. */
+  private reanchor() {
+    if (this.intervalMs <= 0) return;
+    this.lastFiredIdx = Math.floor((this.now() - this.phaseMs) / this.intervalMs);
   }
 
   start(): boolean {

@@ -31,20 +31,31 @@ const ATTACK = 0.92; // toward the target when rising (snap up on a hit)
 // M.16 — was 0.16 (too slow → bars hung high and looked frozen). Faster fall
 // so each bar visibly DROPS between hits and leaps back = "пригали скакали".
 const RELEASE = 0.4;
-// M.16 — response curve, take 3. The old gamma+tanh made every band SATURATE
-// at high sensitivity → a flat line of equal bars ("рівні полоси"). New shape:
-//   1. NOISE GATE — subtract a floor so quiet bands drop to 0. This is what
-//      keeps the wave's peaks-and-valleys visible (contrast) at ANY gain,
-//      instead of a uniformly-raised flat band.
-//   2. gain = sensitivity (linear).
-//   3. SOFT KNEE — gentle compression v/(1+v/KNEE) that never hard-clips and,
-//      crucially, keeps loud bands spread apart (a tanh wall flattened them).
+// M.18 — response curve, take 4: AGC + gamma. Every fixed-gain shape
+// (gamma+tanh in M.15, soft knee in M.16) had the same failure mode: at
+// high sensitivity every loud band ended up pinned near the same ceiling
+// and the wave read as a flat wall ("впирається").
+// The architectural fix is to stop fighting absolute levels entirely:
+//   1. NOISE GATE — subtract a floor so quiet bands drop to 0 (contrast,
+//      and true silence keeps the ring flat instead of amplifying hiss).
+//   2. AGC — normalise by a running peak (rises instantly, decays slowly),
+//      so the LOUDEST band of the moment is always ~full reach and the
+//      rest spread below it. No gain setting can pin the whole ring.
+//   3. GAMMA — sensitivity now shapes CONTRAST instead of gain: low sens
+//      → only the peaks poke out (exponent > 1); high sens → quiet bands
+//      lift toward the top but the ORDER is preserved (exponent < 1), so
+//      the wave stays a wave at any slider position.
 const NOISE_FLOOR = 0.05;
-// M.16.1 — GENTLE knee so the soft ceiling is only reached near the TOP of
-// the sensitivity range, not at ~1.4. No baseline gain: sensitivity is the
-// sole multiplier, so the slider spans from tiny bars (min) to full-overshoot
-// (max) across its whole length instead of saturating early.
-const KNEE = 3.6;
+const AGC_DECAY = 0.994; // running peak halves in ~4s at 30fps
+const AGC_FLOOR = 0.06; // don't normalise noise up to full scale
+// M.18.1 — headroom + gamma floor. Normalising the loudest band to
+// EXACTLY 1.0 still parked a run of near-peak bands at the ceiling
+// ("трішки впираються"): with a strong lift exponent, 0.7..1.0 inputs
+// all land at 0.84..1.0. Headroom re-aims the typical peak at ~0.87 so
+// only genuine transients kiss full reach, and the exponent floor stops
+// the top end from compressing into sameness at max sensitivity.
+const AGC_HEADROOM = 1.12;
+const GAMMA_MIN = 0.62;
 
 /** M.16 — band each bar reads, swept across the energetic low-mid spectrum
  *  so EVERY bar reads a DIFFERENT band. Adjacent bars then differ and the
@@ -78,24 +89,39 @@ function PerimeterEqualizerImpl() {
       sens = v;
     });
 
+    // M.18 — AGC state: the loudest gated band seen recently.
+    let agcPeak = AGC_FLOOR;
+
     // micEq pushes ~30fps; we just stash the smoothed targets here.
     const off = micEq.onUpdate((bands) => {
       const n = bands.length || 1;
-      // Map: each bar reads an energetic band by its position on its side
-      // (loud mid-side, fading to corners). Mild tilt lifts the corner
-      // bars so all four sides stay alive. `sens` scales the punch so hard
-      // tracks slam the bars to full reach.
+      // Pass 1 — map + gate: each bar reads an energetic band by its
+      // position on its side; the gate keeps quiet bands at 0.
+      let frameMax = 0;
       for (let i = 0; i < TOTAL; i++) {
         const within = i % BARS_PER_SIDE;
         const idx = bandForBar(within, n);
         // Lift higher (naturally quieter) bands so the whole sweep stays
         // lively, not just the bass end.
         const boost = 1 + (idx / n) * 1.6;
-        // gate → gain → soft knee. The gate keeps quiet bands at 0 (contrast),
-        // the knee stops loud bands pinning into a flat top.
         const gated = Math.max(0, (bands[idx] ?? 0) * boost - NOISE_FLOOR);
-        const v = gated * sens;
-        raw[i] = v / (1 + v / KNEE);
+        raw[i] = gated;
+        if (gated > frameMax) frameMax = gated;
+      }
+      // Pass 2 — AGC + gamma. The peak rises instantly on a hit and decays
+      // slowly, so the wave always uses the full reach with contrast, and
+      // no sensitivity setting can pin every bar into a flat ceiling.
+      agcPeak = Math.max(frameMax, agcPeak * AGC_DECAY, AGC_FLOOR);
+      const exponent = Math.max(GAMMA_MIN, 1.9 / (0.5 + sens));
+      // M.20 — below the old minimum (0.3) the gamma alone still let the
+      // top band reach most of full height. The quiet zone now also scales
+      // the AMPLITUDE down, so the slider's bottom end is genuinely tiny
+      // ticks; at 0.3 the scale is exactly 1 — the loved look is untouched.
+      const quietScale = sens < 0.3 ? Math.pow(sens / 0.3, 0.7) : 1;
+      const ref = agcPeak * AGC_HEADROOM;
+      for (let i = 0; i < TOTAL; i++) {
+        const norm = Math.min(1.1, raw[i] / ref);
+        raw[i] = norm > 0 ? Math.min(1.05, Math.pow(norm, exponent)) * quietScale : 0;
       }
       // M.16 — LIGHT 3-tap blend only (was a heavy 5-tap that melted every
       // bar into one flat level). Just enough to kill single-frame jitter

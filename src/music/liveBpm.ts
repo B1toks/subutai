@@ -26,6 +26,30 @@ const REFRACTORY_MS = 120; // ≤500 BPM — ignore double-triggers
 const EMIT_THROTTLE_MS = 700;
 const BPM_LO = 70;
 const BPM_HI = 200; // M.12 — was 180; covers hardstyle / fast genres
+// M.18 — output stabilisers. The M.17 interval-sum refinement is accurate
+// but CONTINUOUS, so every emit differed by fractions of a BPM and the
+// readout (and any >N re-lock downstream) wobbled. The deadband keeps the
+// published value sticky until the estimate really moves; the octave
+// hysteresis keeps borderline tracks from flip-flopping half/double time.
+const EMIT_DEADBAND = 0.8;
+const OCTAVE_STICKINESS = 1.5; // pref multiplier for staying near the lock
+// M.19 — silence is measured on the FULL spectrum, not the bass. A
+// filtered build-up / breakdown can have zero low end for 10+ seconds
+// while pads and hats keep playing — that's music, not silence, and
+// pausing the board pulse there killed the vibe right before the drop.
+// Only when the WHOLE spectrum sits near the floor for a while (music
+// actually stopped / paused) does the pulse rest.
+const SILENCE_MS = 5000;
+const QUIET_ABS_FLOOR = 0.006;
+const QUIET_REL = 0.06; // of the recent full-spectrum peak
+// M.19 — flywheel. During low-energy passages the onset evidence is
+// garbage: sparse half-density hits read as half-time and used to flush
+// the lock ("бпм занадто сильно дропається" mid-track). Once locked, the
+// tempo COASTS while the bass energy sits below this fraction of its
+// recent peak — no new estimates are accepted, the grid keeps rolling.
+// When the energy returns (the drop), the onset window is trimmed so the
+// first fresh estimates come from the drop, not the breakdown tail.
+const COAST_BASS_RATIO = 0.3;
 
 type BpmListener = (bpm: number, confidence: number) => void;
 
@@ -39,6 +63,21 @@ class LiveBpmDetector {
   private lastEmit = 0;
   /** M.16.1 — last few raw estimates, for the stability median. */
   private bpmHistory: number[] = [];
+  /** M.17 — consecutive out-of-band estimates seen so far. */
+  private outlierStreak = 0;
+  /** M.18 — last time the bass level was above the quiet floor. */
+  private lastLoudMs = 0;
+  /** M.19 — ~1s smoothed bass level (instant frames whipsaw between kicks). */
+  private bassAvgSlow = 0;
+  /** M.19 — slow-decaying peak OF THE SMOOTHED level: the flywheel's
+   *  reference. (Comparing the average against the instantaneous kick
+   *  peak was wrong scale — a 4-on-the-floor groove averages ~13% of its
+   *  kick peak, which read as "low energy" and froze the flywheel on.) */
+  private bassAvgPeak = 0.03;
+  /** M.19 — slow-decaying FULL-spectrum peak, the silence reference. */
+  private overallPeak = 0.04;
+  /** M.19 — whether the flywheel was coasting on the previous frame. */
+  private coasting = false;
   private listeners = new Set<BpmListener>();
   /** Injectable clock so the detector is testable without a real mic. */
   private nowMs: () => number = () => performance.now();
@@ -57,6 +96,45 @@ class LiveBpmDetector {
    *  0 when nothing detected yet. */
   getLastOnset(): number {
     return this.onsets.length ? this.onsets[this.onsets.length - 1] : 0;
+  }
+
+  /** M.18 — true while the capture is running but hears (near-)silence.
+   *  App uses this to pause the on-beat board pulse: the grid keeps
+   *  time, the visual heartbeat waits for the music to come back. */
+  isSilent(): boolean {
+    return this.nowMs() - this.lastLoudMs > SILENCE_MS;
+  }
+
+  /** M.24.1 — align the detector's published belief with an external
+   *  authoritative lock (the essentia tracker). Without this, the sticky
+   *  deadband value from BEFORE the correction survives it, reads as a
+   *  fake ">8 BPM shift" on the next emit, and reverts essentia's fix.
+   *  Clearing the history re-anchors the deadband AND the octave
+   *  hysteresis to the corrected tempo. */
+  syncTo(bpm: number): void {
+    this.bpm = bpm;
+    this.bpmHistory = [];
+    this.outlierStreak = 0;
+  }
+
+  /** M.18.1 — true when the last few published estimates agree within a
+   *  few BPM. MusicDock gates grid re-locks on this: while the detector
+   *  is thrashing (weak signal, track transition) the grid HOLDS its
+   *  current tempo instead of chasing every wild estimate — that chase
+   *  was resetting the beat phase every emit, so the board never got a
+   *  full beat in and stopped pulsing. */
+  isStable(): boolean {
+    if (this.bpmHistory.length < 3) return false;
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const b of this.bpmHistory) {
+      if (b < lo) lo = b;
+      if (b > hi) hi = b;
+    }
+    // M.20 — was 3: raw refined estimates spread 3-4 BPM on real signal,
+    // so re-locks never passed. 5 still rejects a thrash (spread 10+)
+    // while letting normal working wobble through.
+    return hi - lo < 5;
   }
 
   start(): void {
@@ -86,6 +164,12 @@ class LiveBpmDetector {
     this.confidence = 0;
     this.lastEmit = 0;
     this.bpmHistory = [];
+    this.outlierStreak = 0;
+    this.lastLoudMs = 0;
+    this.bassAvgSlow = 0;
+    this.bassAvgPeak = 0.03;
+    this.overallPeak = 0.04;
+    this.coasting = false;
   }
 
   /** Process one equalizer frame (60 bands, 0..1, ~30fps). */
@@ -94,6 +178,11 @@ class LiveBpmDetector {
     const n = Math.min(BASS_BANDS, bands.length);
     for (let i = 0; i < n; i++) bass += bands[i];
     bass /= n || 1;
+    // M.19 — full-spectrum level for silence detection (pads/hats keep a
+    // bass-less build-up "loud"; only a truly stopped track goes quiet).
+    let overall = 0;
+    for (let i = 0; i < bands.length; i++) overall += bands[i];
+    overall /= bands.length || 1;
 
     const flux = Math.max(0, bass - this.prevBass);
     this.prevBass = bass;
@@ -101,15 +190,37 @@ class LiveBpmDetector {
     this.fluxAvg = this.fluxAvg * 0.95 + flux * 0.05;
 
     const now = this.nowMs();
+    this.overallPeak = Math.max(overall, this.overallPeak * 0.999, 0.015);
+    if (overall > Math.max(QUIET_ABS_FLOOR, this.overallPeak * QUIET_REL)) {
+      this.lastLoudMs = now;
+    }
+    // M.19 — flywheel energy tracking + coast transitions.
+    this.bassAvgSlow = this.bassAvgSlow * 0.97 + bass * 0.03;
+    this.bassAvgPeak = Math.max(this.bassAvgSlow, this.bassAvgPeak * 0.999, 0.02);
+    const coastingNow =
+      this.bpm > 0 && this.bassAvgSlow < this.bassAvgPeak * COAST_BASS_RATIO;
+    if (this.coasting && !coastingNow) {
+      // The drop is back — judge the tempo by what's playing NOW, not by
+      // the breakdown's sparse tail. History (the held tempo) survives so
+      // the octave hysteresis anchors the re-estimate.
+      this.onsets = this.onsets.filter((o) => now - o < 1200);
+      this.outlierStreak = 0;
+    }
+    this.coasting = coastingNow;
     if (flux > this.fluxAvg * 1.6 && flux > 0.02) {
       const last = this.onsets[this.onsets.length - 1];
       if (last === undefined || now - last > REFRACTORY_MS) {
         this.onsets.push(now);
+        this.lastLoudMs = now; // M.18.1 — hearing kicks ⇒ not silent
       }
     }
 
     const cutoff = now - HISTORY_SEC * 1000;
     while (this.onsets.length && this.onsets[0] < cutoff) this.onsets.shift();
+
+    // M.19 — while coasting, the held tempo IS the answer: skip estimation
+    // entirely so breakdown noise can't dive the readout or flush the lock.
+    if (this.coasting) return;
 
     if (this.onsets.length >= MIN_ONSETS && now - this.lastEmit > EMIT_THROTTLE_MS) {
       this.lastEmit = now;
@@ -124,13 +235,29 @@ class LiveBpmDetector {
           ? [...this.bpmHistory].sort((a, b) => a - b)[this.bpmHistory.length >> 1]
           : est.bpm;
         if (Math.abs(est.bpm - prevMedian) > prevMedian * 0.12) {
-          this.bpmHistory = [est.bpm];
+          // M.17 — two-strike reset. A single outlier estimate is far more
+          // often a glitch (a fill, dropped frames, crowd noise) than a real
+          // tempo change, and flushing the history on it made the lock
+          // wobble. A REAL change keeps producing outliers, so flush on the
+          // second consecutive one — one emit (~0.7s) later, which the
+          // >3 BPM re-lock in MusicDock absorbs without drama.
+          this.outlierStreak++;
+          if (this.outlierStreak >= 2) {
+            this.bpmHistory = [est.bpm];
+            this.outlierStreak = 0;
+          }
         } else {
+          this.outlierStreak = 0;
           this.bpmHistory.push(est.bpm);
           if (this.bpmHistory.length > 4) this.bpmHistory.shift();
         }
         const sorted = [...this.bpmHistory].sort((a, b) => a - b);
-        const stable = sorted[sorted.length >> 1];
+        const median = sorted[sorted.length >> 1];
+        // M.18 — deadband: the refined estimate is continuous, so the raw
+        // median wobbles by fractions of a BPM every emit. Publish a STICKY
+        // value — hold the previous one until the median really moves.
+        const stable =
+          this.bpm > 0 && Math.abs(median - this.bpm) < EMIT_DEADBAND ? this.bpm : median;
         // Steadier readings ⇒ nudge confidence up so a clean beat stops
         // reading as "weak" once it has held for a couple of windows.
         const conf =
@@ -177,24 +304,91 @@ class LiveBpmDetector {
     if (best < 0 || bestCount < 3) return null;
 
     // M.14 — octave-robust pick. A 150 BPM hardstyle kick is often heard
-    // as 75 (half-time) by a plain histogram. Consider half / detected /
-    // double, keep those in range, and take the strongest-supported with
-    // a mild preference for the 120-175 "dancefloor" band where hardstyle
-    // / DnB / EDM kicks live — so the faster, correct reading wins.
+    // as 75 (half-time) by a plain histogram. Consider the whole family,
+    // keep those in range, and take the strongest-supported with a mild
+    // preference for the 120-175 "dancefloor" band where hardstyle / DnB
+    // / EDM kicks live — so the faster, correct reading wins.
+    // M.21 — the family now includes METRICAL errors (2/3, 3/4, 4/3, 3/2)
+    // and every candidate must survive a vector-strength check against
+    // the actual onset times (see fileBpm.ts) — a fractional-tempo grid
+    // scatters the onsets and is rejected before scoring.
     const support = (b: number) =>
       (bins.get(b - 1) ?? 0) + (bins.get(b) ?? 0) + (bins.get(b + 1) ?? 0);
-    const cands = [Math.round(best / 2), best, best * 2].filter((b) => b >= BPM_LO && b <= BPM_HI);
+    const rawCands = [
+      best / 2,
+      (best * 2) / 3,
+      (best * 3) / 4,
+      best,
+      (best * 4) / 3,
+      (best * 3) / 2,
+      best * 2,
+    ];
+    const allCands = [...new Set(rawCands.map((b) => Math.round(b)))].filter(
+      (b) => b >= BPM_LO && b <= BPM_HI,
+    );
+    let maxVs = 0;
+    const vsByCand = new Map<number, number>();
+    for (const c of allCands) {
+      const interval = 60000 / c;
+      let sx = 0;
+      let sy = 0;
+      for (const t of this.onsets) {
+        const a = (2 * Math.PI * (t % interval)) / interval;
+        sx += Math.cos(a);
+        sy += Math.sin(a);
+      }
+      const v = Math.sqrt(sx * sx + sy * sy) / (this.onsets.length || 1);
+      vsByCand.set(c, v);
+      if (v > maxVs) maxVs = v;
+    }
+    const survivors = allCands.filter((c) => (vsByCand.get(c) ?? 0) >= maxVs * 0.7);
+    const cands = survivors.length ? survivors : allCands;
     let pick = best;
     let pickScore = -1;
     for (const c of cands) {
-      const pref = c >= 120 && c <= 175 ? 1.3 : 1;
+      let pref = c >= 120 && c <= 175 ? 1.3 : 1;
+      // M.18 — octave hysteresis: a borderline track whose half/double
+      // support see-saws frame to frame used to flip-flop 87↔175. Once
+      // locked, staying in the same octave needs no extra evidence —
+      // LEAVING it does.
+      if (this.bpm > 0 && Math.abs(c - this.bpm) < this.bpm * 0.06) pref *= OCTAVE_STICKINESS;
       const sc = support(c) * pref;
       if (sc > pickScore) {
         pickScore = sc;
         pick = c;
       }
     }
-    return { bpm: pick, confidence: support(pick) / total };
+    // M.17 — confidence counts the whole octave FAMILY, not just the
+    // picked bin. Folding leaves half/double-time intervals in their own
+    // bins (a steady 150 BPM kick reads as 75 + 150), so counting only
+    // the winner made a perfectly correct lock look "weak" and kept it
+    // from passing MusicDock's 0.3 auto-adopt gate. Octave-consistent
+    // votes are evidence FOR the lock — count them.
+    let familySupport = 0;
+    for (const b of new Set([Math.round(pick / 2), pick, pick * 2])) {
+      if (b >= BPM_LO && b <= BPM_HI) familySupport += support(b);
+    }
+
+    // M.17 — refine the integer bin label with a beat-count fit. Onsets
+    // are quantised to ~33ms equalizer frames, so a single 400ms (150 BPM)
+    // interval measures as 396 or 429ms and the histogram systematically
+    // lands 1-2 BPM off. Summing every interval that fits the picked tempo
+    // (k whole beats each — tolerates missed kicks) cancels the per-frame
+    // error: total-time / total-beats is only wrong at the two endpoints.
+    const period = 60000 / pick;
+    let spanMs = 0;
+    let beats = 0;
+    for (let i = 1; i < this.onsets.length; i++) {
+      const iv = this.onsets[i] - this.onsets[i - 1];
+      const k = Math.round(iv / period);
+      if (k >= 1 && Math.abs(iv - k * period) < period * 0.15) {
+        spanMs += iv;
+        beats += k;
+      }
+    }
+    const refined =
+      beats >= 4 && spanMs > 0 ? Math.round(((60000 * beats) / spanMs) * 10) / 10 : pick;
+    return { bpm: refined, confidence: Math.min(1, familySupport / total) };
   }
 
   /** Test seam: drive the detector with synthetic frames on a fake clock. */

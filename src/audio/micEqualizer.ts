@@ -65,6 +65,16 @@ export class MicEqualizer {
   private stateListeners = new Set<(running: boolean) => void>();
   // SP-8 — which capture is active (mic vs tab/system audio).
   private activeSource: AudioSource | null = null;
+  // M.23 — raw-PCM ring buffer of the live capture, feeding the essentia
+  // beat tracker. FFT bands are enough for the visuals, but real beat
+  // tracking needs the actual samples.
+  private tap: ScriptProcessorNode | null = null;
+  private tapMute: GainNode | null = null;
+  private ring: Float32Array | null = null;
+  private ringPos = 0;
+  private ringFilled = 0;
+  private ringRate = 0;
+  private ringEndWallMs = 0;
 
   isRunning(): boolean {
     return this.ctx !== null;
@@ -195,8 +205,60 @@ export class MicEqualizer {
 
     this.activeSource = source;
     this.peakHistory = [];
+    this.attachPcmTap(this.source); // M.23 — raw samples for beat tracking
     this.startTicking();
     this.emitState(true);
+  }
+
+  /** M.23 — keep the last ~25s of RAW capture samples in a ring buffer.
+   *  Tapped PRE-gain so auto-gain can't pump the analysis signal. The
+   *  ScriptProcessor must reach ctx.destination to fire, so it routes
+   *  through a zero-gain — inaudible, no feedback. */
+  private attachPcmTap(node: AudioNode) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const RING_SEC = 25;
+    this.ringRate = ctx.sampleRate;
+    this.ring = new Float32Array(Math.ceil(RING_SEC * ctx.sampleRate));
+    this.ringPos = 0;
+    this.ringFilled = 0;
+    const proc = ctx.createScriptProcessor(4096, 1, 1);
+    proc.onaudioprocess = (ev) => {
+      const input = ev.inputBuffer.getChannelData(0);
+      const ring = this.ring;
+      if (!ring) return;
+      for (let i = 0; i < input.length; i++) {
+        ring[this.ringPos] = input[i];
+        this.ringPos = (this.ringPos + 1) % ring.length;
+      }
+      this.ringFilled = Math.min(ring.length, this.ringFilled + input.length);
+      this.ringEndWallMs = performance.now();
+    };
+    const mute = ctx.createGain();
+    mute.gain.value = 0;
+    node.connect(proc);
+    proc.connect(mute).connect(ctx.destination);
+    this.tap = proc;
+    this.tapMute = mute;
+  }
+
+  /** M.23 — copy of the most recent `seconds` of raw capture PCM, with
+   *  the wall-clock time of its last sample (for phase anchoring). Null
+   *  until a capture is running and the ring has data. */
+  getRecentPcm(
+    seconds: number,
+  ): { pcm: Float32Array; sampleRate: number; endWallMs: number } | null {
+    const ring = this.ring;
+    if (!ring || this.ringFilled === 0 || !this.ringRate) return null;
+    const want = Math.min(Math.floor(seconds * this.ringRate), this.ringFilled);
+    if (want <= 0) return null;
+    const out = new Float32Array(want);
+    let start = this.ringPos - want;
+    while (start < 0) start += ring.length;
+    for (let i = 0; i < want; i++) {
+      out[i] = ring[(start + i) % ring.length];
+    }
+    return { pcm: out, sampleRate: this.ringRate, endWallMs: this.ringEndWallMs };
   }
 
   /**
@@ -261,6 +323,8 @@ export class MicEqualizer {
       this.source?.disconnect();
       this.elementSource?.disconnect();
       this.gain?.disconnect();
+      this.tap?.disconnect();
+      this.tapMute?.disconnect();
     } catch {
       // already disconnected
     }
@@ -276,6 +340,12 @@ export class MicEqualizer {
     this.stream = null;
     this.activeSource = null;
     this.peakHistory = [];
+    this.tap = null;
+    this.tapMute = null;
+    this.ring = null;
+    this.ringPos = 0;
+    this.ringFilled = 0;
+    this.ringRate = 0;
     this.bands = new Array(BAND_COUNT).fill(0);
     this.listeners.forEach((cb) => cb(this.bands));
     this.emitState(false);
@@ -359,3 +429,9 @@ export class MicEqualizer {
 }
 
 export const micEq = new MicEqualizer();
+
+// Dev seam (same pattern as __liveBpm): lets manual testing stub the PCM
+// ring without a real capture stream.
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  (window as unknown as { __micEq?: MicEqualizer }).__micEq = micEq;
+}

@@ -9,6 +9,8 @@ import { Icon } from './Icon';
 import { beatEngine } from '../music/beatEngine';
 import { lookupBpm, analyzeTrack } from '../music/autoBpm';
 import { analyzeAudioBuffer } from '../music/fileBpm';
+import { analyzeWithEssentia } from '../music/essentiaBpm';
+import { liveEssentia } from '../music/liveEssentia';
 import { liveBpm } from '../music/liveBpm';
 import { beatMode } from '../music/beatMode';
 import { eqSettings, EQ_SENS_MIN, EQ_SENS_MAX } from '../music/eqSettings';
@@ -140,6 +142,8 @@ export function MusicDock({ onClose }: MusicDockProps) {
   const [eqSens, setEqSens] = useState(() => eqSettings.getSensitivity());
   // M.15 — full-screen sound-grid background toggle.
   const [bgGrid, setBgGrid] = useState(() => vizMode.isBgGrid());
+  // M.21 — board pulse mode toggle (always vs on-move).
+  const [pulseOnMove, setPulseOnMove] = useState(() => vizMode.getPulseMode() === 'onmove');
   const [captureSource, setCaptureSource] = useState<'mic' | 'display' | 'file' | null>(() => micEq.getSource());
   const [micError, setMicError] = useState<string | null>(null);
   // SP-7 — live tempo detected from the audio (mic room sound or the
@@ -320,22 +324,43 @@ export function MusicDock({ onClose }: MusicDockProps) {
   // so the board locks to the rhythm with no extra click. We adopt when
   // the grid isn't running yet, or when the estimate drifts > 2 BPM,
   // provided the detector is at least "fair" confidence.
+  // M.23 — the essentia beat tracker OWNS the grid whenever it speaks
+  // with confidence: each result both sets the tempo and re-phases the
+  // grid onto a real, recently-heard beat tick (PLL-style correction
+  // every ~12s). The histogram detector below stays for the instant
+  // first lock and as fallback; its re-locks stand down for a while
+  // after every essentia lock.
+  const essentiaLockRef = useRef(0);
+  useEffect(() => {
+    return liveEssentia.onResult((r) => {
+      if (r.confidence < 0.35) return;
+      essentiaLockRef.current = performance.now();
+      beatEngine.setBase('wall');
+      beatEngine.setGrid(r.bpm, r.lastBeatWallMs);
+      // M.24.1 — bring the histogram's belief along, or its stale sticky
+      // value reads as a fake "big shift" and reverts this correction.
+      liveBpm.syncTo(r.bpm);
+      setBpm(r.bpm);
+      setAutoBpm('found');
+      setLive({ bpm: r.bpm, conf: r.confidence });
+      if (!beatEngine.isRunning()) {
+        beatEngine.start();
+        setSyncRunning(true);
+      }
+    });
+  }, []);
+
   useEffect(() => {
     return liveBpm.onBpm((value, conf) => {
       setLive({ bpm: value, conf });
-      // M.15.1 — accuracy + Beat-Mode alignment first (reverts the 0.2
-      // "first lock" that locked weak/wrong readings and the drift>2
-      // re-adopt that kept re-randomising the phase via adoptBpm(),
-      // wiping the user's tap alignment so moves landed OFF the beat).
+      // M.15.1 — accuracy + Beat-Mode alignment first:
       //  • only trust a "fair" reading (>=0.3),
       //  • lock the grid ONCE, then leave the phase alone,
       //  • re-lock only on a BIG jump (a genuinely different track).
       if (conf < 0.3) return;
       // M.16 — phase-align to a real detected kick (setGrid) instead of
       // adoptBpm's arbitrary phase, so the grid lands ON the beat with no
-      // manual tap. Because EVERY re-lock is kick-aligned, we can now follow
-      // tempo changes responsively (>3 BPM) without the old off-beat drift —
-      // a steady beat re-locks to the same phase, a real change snaps cleanly.
+      // manual tap.
       const onset = liveBpm.getLastOnset();
       const lockGrid = () => {
         beatEngine.setBase('wall');
@@ -344,12 +369,34 @@ export function MusicDock({ onClose }: MusicDockProps) {
         setBpm(value);
         setAutoBpm('found');
       };
+      // M.20 — FIRST lock engages on confidence alone: gating it on
+      // stability too meant a fair-confidence reading never reached the
+      // board at all on wobblier material ("детектить, але не передається").
       if (!beatEngine.isRunning()) {
         lockGrid();
         beatEngine.start();
         setSyncRunning(true);
-      } else if (Math.abs(value - beatEngine.getBpm()) > 3) {
+        return;
+      }
+      const drift = Math.abs(value - beatEngine.getBpm());
+      // M.24.1 — division of labour, take 2. The old rule ("essentia owns
+      // the grid for 30s after each lock") also muzzled the histogram when
+      // a DROP / track change landed right after an essentia pass — the
+      // fast detector saw the new tempo in ~2s but had to sit on it until
+      // the window expired, and the whole drop went by unsynced.
+      // Now: SMALL corrections stay essentia's job (its phase is better),
+      // but a BIG stable shift (>8 BPM — a different groove, not jitter)
+      // re-locks IMMEDIATELY and pokes essentia to confirm out of cycle.
+      const bigShift = drift > 8;
+      const essentiaFresh = performance.now() - essentiaLockRef.current < 15_000;
+      if (essentiaFresh && !bigShift) return;
+      // M.18.1 — RE-locks stay stability-gated: the grid HOLDS its tempo
+      // through a thrash and snaps once the new tempo has settled.
+      if (!liveBpm.isStable()) return;
+      if (drift > 3) {
         lockGrid();
+        // Wake the accurate tracker now — don't wait out its 12s cycle.
+        if (bigShift) liveEssentia.analyzeNow();
       }
     });
   }, []);
@@ -484,6 +531,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
     if (micEq.getSource() === 'file') audioElRef.current?.pause();
     micEq.stop();
     liveBpm.stop();
+    liveEssentia.stop(); // M.23
     setLive(null);
     setMicOn(false);
     setCaptureSource(null);
@@ -533,7 +581,28 @@ export function MusicDock({ onClose }: MusicDockProps) {
       const decodeCtx = new AudioContext();
       const audioBuf = await decodeCtx.decodeAudioData(bytes);
       void decodeCtx.close();
-      const result = await analyzeAudioBuffer(audioBuf);
+      // M.22 — two analyzers race in parallel: our histogram (fast, no
+      // deps) and essentia.js RhythmExtractor2013 in a worker (heavier,
+      // far more robust on shuffle/breakdown material). Prefer essentia
+      // when it's confident; the histogram is the always-there fallback,
+      // so a WASM load failure can never break file mode.
+      const [ours, essentia] = await Promise.all([
+        analyzeAudioBuffer(audioBuf),
+        analyzeWithEssentia(audioBuf).catch(() => null),
+      ]);
+      // M.23 — essentia leads outright (it out-tracks the histogram on
+      // real material even at modest confidence; 0.5 was rejecting good
+      // reads and falling back to the buggier histogram). The histogram
+      // only steps in when the worker failed or is truly guessing.
+      const result = essentia && essentia.confidence >= 0.25 ? essentia : (ours ?? essentia);
+      console.info(
+        '[bpm/file] essentia:',
+        essentia ? `${essentia.bpm} (conf ${essentia.confidence.toFixed(2)})` : 'null',
+        '· histogram:',
+        ours ? `${ours.bpm} (conf ${ours.confidence.toFixed(2)})` : 'null',
+        '· chosen:',
+        result === essentia ? 'essentia' : 'histogram',
+      );
       if (result) {
         beatEngine.setGrid(result.bpm, result.offsetMs);
         setBpm(result.bpm);
@@ -593,6 +662,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
         }
       }
       liveBpm.start(); // SP-7 — start listening for the tempo
+      liveEssentia.start(); // M.23 — the accurate tracker joins ~10s in
     } else {
       setMicOn(false);
       const messages: Record<string, string> = {
@@ -996,18 +1066,24 @@ export function MusicDock({ onClose }: MusicDockProps) {
           <label className="music-dock-eq-sens-label" htmlFor="eq-sens">
             <Icon icon={Flame} size="sm" aria-hidden />
             EQ sensitivity
-            <span className="music-dock-eq-sens-val">{eqSens.toFixed(1)}×</span>
+            <span className="music-dock-eq-sens-val">
+              {eqSens < 1 ? eqSens.toFixed(2) : eqSens.toFixed(1)}×
+            </span>
           </label>
+          {/* M.20 — the track is LOGARITHMIC in sensitivity: sens =
+              MIN·(MAX/MIN)^t. The whole quiet zone gets real slider
+              distance instead of being squeezed into the first pixels. */}
           <input
             id="eq-sens"
             type="range"
             className="music-dock-eq-sens-range"
-            min={EQ_SENS_MIN}
-            max={EQ_SENS_MAX}
-            step={0.1}
-            value={eqSens}
+            min={0}
+            max={1}
+            step={0.01}
+            value={Math.log(eqSens / EQ_SENS_MIN) / Math.log(EQ_SENS_MAX / EQ_SENS_MIN)}
             onChange={(e) => {
-              const v = Number.parseFloat(e.target.value);
+              const t = Number.parseFloat(e.target.value);
+              const v = EQ_SENS_MIN * Math.pow(EQ_SENS_MAX / EQ_SENS_MIN, t);
               eqSettings.setSensitivity(v);
               setEqSens(v);
             }}
@@ -1026,6 +1102,23 @@ export function MusicDock({ onClose }: MusicDockProps) {
           >
             <Icon icon={Waves} size="sm" aria-hidden />
             {bgGrid ? 'Sound grid on' : 'Sound grid'}
+          </button>
+          {/* M.21.1 — pulse mode: classic every-beat heartbeat vs TAP mode
+              (experiment) — the board pulses only when YOU tap it in time;
+              on-beat taps earn points (BeatCombo shows the tally). */}
+          <button
+            type="button"
+            className={`music-dock-grid-btn${pulseOnMove ? ' is-active' : ''}`}
+            onClick={() => {
+              const next = pulseOnMove ? 'always' : 'onmove';
+              vizMode.setPulseMode(next);
+              setPulseOnMove(next === 'onmove');
+            }}
+            aria-pressed={pulseOnMove}
+            title="Tap the board in rhythm — it pulses and you earn beat points"
+          >
+            <Icon icon={Flame} size="sm" aria-hidden />
+            {pulseOnMove ? 'Pulse: tap' : 'Pulse: beat'}
           </button>
         </div>
       )}

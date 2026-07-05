@@ -3171,8 +3171,12 @@ body.checkmate-flash::after {
   pointer-events: none;
   /* M.14 — BEHIND the board: the wave peeks out from under the edges. */
   z-index: 0;
-  /* M.16 — more reach + presence (the wave read as "тихий і мінімальний"). */
-  --eq-reach: 76px;
+  /* M.18 — no more fixed ceiling: the wave can travel up to half a board
+     length outward on every side (a full board-width of total spread), so
+     peaks fly across the screen instead of stopping at a 76px fence. The
+     tip gradient already fades to transparent, so long bars sink into the
+     background instead of colliding with the UI. */
+  --eq-reach: calc(var(--board-size, 560px) * 0.5);
   --eq-base: 3px;
 }
 
@@ -3302,7 +3306,8 @@ body.checkmate-flash::after {
 }
 
 @media (max-width: 900px) {
-  .perimeter-eq { --eq-reach: 42px; }
+  /* M.18 — proportional, not fixed: still dramatic on tablets. */
+  .perimeter-eq { --eq-reach: calc(var(--board-size, 520px) * 0.3); }
 }
 @media (max-width: 560px) {
   /* M.15 — keep the reach inside the board's side margin on phones so the
@@ -4120,6 +4125,8 @@ body.checkmate-flash::after {
 
 .beat-combo-label { color: var(--text); font-size: 15px; }
 .beat-combo-streak { color: var(--accent-primary); font-size: 17px; }
+/* M.21 — beat points: "+45 · 320" — quieter than the label/streak. */
+.beat-combo-points { color: var(--text-secondary, #9aa4b5); font-size: 13px; margin-left: 6px; }
 
 .beat-combo-perfect .beat-combo-label { color: var(--accent-gold-bright); }
 .beat-combo-off {

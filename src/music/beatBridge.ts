@@ -13,6 +13,7 @@
  */
 
 import { beatEngine, type BeatScore } from './beatEngine';
+import { vizMode } from './vizMode';
 
 export type ComboTier = 'none' | 'good' | 'great' | 'awesome' | 'master';
 
@@ -21,6 +22,10 @@ export interface BeatMoveEvent {
   streak: number;
   tier: ComboTier;
   achievement: boolean;
+  /** M.21 — points earned by THIS move (0 when off-beat). */
+  points: number;
+  /** M.21 — session-total beat points. */
+  totalPoints: number;
 }
 
 const ACHIEVEMENTS_KEY = 'subutai_achievements';
@@ -38,6 +43,10 @@ type Listener = (e: BeatMoveEvent) => void;
 
 class BeatBridge {
   private streak = 0;
+  /** M.21 — session-total beat points (display-only, like the combo). */
+  private totalPoints = 0;
+  /** M.21.1 — tap refractory (anti multi-finger mash). */
+  private lastTapMs = 0;
   private listeners = new Set<Listener>();
 
   onMove(cb: Listener): () => void {
@@ -56,9 +65,28 @@ class BeatBridge {
   }
 
   /** Called by App when a human move lands. No-op (returns null) when
-   *  no beat grid is running. */
+   *  no beat grid is running, or in tap mode — there the TAP is the
+   *  scored gesture, and the pointerdown that produced this move has
+   *  already been counted (double-scoring would double the pulse too). */
   reportMove(): BeatMoveEvent | null {
     if (!beatEngine.isRunning()) return null;
+    if (vizMode.getPulseMode() === 'onmove') return null;
+    return this.scoreHit(50, 20);
+  }
+
+  /** M.21.1 — tap mode: any tap/click on the board is scored against the
+   *  beat. Smaller base than a real move (10/25) — tapping is cheap. A
+   *  short refractory blocks multi-finger mashing; honest off-beat taps
+   *  still reset the streak, which is the real anti-spam. */
+  reportTap(): BeatMoveEvent | null {
+    if (!beatEngine.isRunning()) return null;
+    const now = performance.now();
+    if (now - this.lastTapMs < 150) return null;
+    this.lastTapMs = now;
+    return this.scoreHit(25, 10);
+  }
+
+  private scoreHit(perfectBase: number, goodBase: number): BeatMoveEvent | null {
     const score = beatEngine.scoreNow();
     if (score === 'off') {
       this.streak = 0;
@@ -67,7 +95,19 @@ class BeatBridge {
     }
     const tier = comboTier(this.streak);
     const achievement = this.streak === 10 && this.earnRhythmMaster();
-    const event: BeatMoveEvent = { score, streak: this.streak, tier, achievement };
+    // M.21 — beat points: base per accuracy, boosted by the streak so a
+    // held groove is worth chasing. perfect ×10 streak ⇒ base×1.9.
+    const base = score === 'perfect' ? perfectBase : score === 'good' ? goodBase : 0;
+    const points = base > 0 ? Math.round(base * (1 + Math.min(9, this.streak - 1) * 0.1)) : 0;
+    this.totalPoints += points;
+    const event: BeatMoveEvent = {
+      score,
+      streak: this.streak,
+      tier,
+      achievement,
+      points,
+      totalPoints: this.totalPoints,
+    };
     this.listeners.forEach((cb) => {
       try {
         cb(event);

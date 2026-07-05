@@ -44,13 +44,26 @@ function BackgroundWaveGridImpl() {
 
     // M.15 — overall "melodiousness": the WHOLE spectrum, weighted toward
     // the mids where melody/vocals live, so the grid follows the tune (not
-    // just the kick). Eased toward the latest frame's value.
+    // just the kick).
+    // M.20 — AGC (same recipe as the perimeter EQ): raw mid-weighted energy
+    // for a typical track averaged ~0.1-0.3, so the grid barely breathed.
+    // Normalising against a slow-decaying peak makes it visibly surf ANY
+    // genre/volume, and the asymmetric easing below (snap up, fall slow)
+    // turns hits into punches instead of a low-pass blur.
     let energy = 0;
     let energyTarget = 0;
+    // M.21 — SPEED is driven by the ABSOLUTE energy, not the AGC-normalised
+    // one. Normalising made a calm ambient track read ~0.9 and the grid
+    // raced on quiet music ("занадто швидко рухається"). Size/opacity keep
+    // the AGC punch; motion speed follows how loud the music actually is.
+    let rawEnergy = 0;
+    let rawTarget = 0;
+    let agcPeak = 0.05;
     const off = micEq.onUpdate((bands) => {
       const n = bands.length;
       if (!n) {
         energyTarget = 0;
+        rawTarget = 0;
         return;
       }
       let sum = 0;
@@ -60,16 +73,24 @@ function BackgroundWaveGridImpl() {
         sum += bands[i] * w;
         wsum += w;
       }
-      energyTarget = wsum ? sum / wsum : 0;
+      // Gate BEFORE the AGC — otherwise silence gets its noise floor
+      // normalised up to half-amplitude and the idle grid looks busy.
+      const e = Math.max(0, (wsum ? sum / wsum : 0) - 0.015);
+      rawTarget = e;
+      agcPeak = Math.max(e, agcPeak * 0.996, 0.02);
+      energyTarget = Math.min(1.15, e / (agcPeak * 1.1));
     });
 
     let t = 0;
     let raf = 0;
     const render = () => {
-      energy += (energyTarget - energy) * 0.12;
-      // Idle drift always advances; audio speeds it up and swells the wave.
-      t += 0.018 + energy * 0.06;
-      const amp = 5 + energy * 48; // crest height in px
+      // M.20 — attack/release: rise fast on a hit, decay gracefully.
+      energy += (energyTarget - energy) * (energyTarget > energy ? 0.5 : 0.06);
+      rawEnergy += (rawTarget - rawEnergy) * 0.12;
+      // Idle drift always advances; LOUDNESS speeds it up (pre-M.20 feel),
+      // while the AGC-normalised energy swells the wave.
+      t += 0.018 + rawEnergy * 0.06;
+      const amp = 5 + energy * 60; // crest height in px
       const cols = Math.ceil(W / SPACING) + 1;
       const rows = Math.ceil(H / SPACING) + 1;
 
