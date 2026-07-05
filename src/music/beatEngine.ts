@@ -26,12 +26,21 @@ const GOOD_MS = 170;
 const MIN_BPM = 40;
 const MAX_BPM = 220;
 
+const OFFSET_KEY = 'subutai_beat_offset';
+const MAX_OFFSET_MS = 400;
+
 export class BeatEngine {
   private base: 'wall' | 'track' = 'wall';
   private bpm = 0;
   private intervalMs = 0;
   /** A beat sits at phaseMs + k·intervalMs in source-time. */
   private phaseMs = 0;
+  /** M.25 — user sync offset. Output latency (Bluetooth: 100-300ms) is
+   *  unmeasurable from JS, so even a perfect detected grid can FEEL
+   *  early/late. This constant shifts every beat-derived moment (pulse,
+   *  score, snap) by the same amount; positive = beats fire later.
+   *  Persisted — it's a property of the user's audio setup, not a track. */
+  private userOffsetMs = 0;
   private running = false;
   private taps: number[] = [];
   private listeners = new Set<BeatListener>();
@@ -48,8 +57,43 @@ export class BeatEngine {
   private trackPosAt = 0; // performance.now() of the snapshot
   private trackPaused = true;
 
+  constructor() {
+    try {
+      const raw = localStorage.getItem(OFFSET_KEY);
+      if (raw !== null) {
+        const v = Number.parseFloat(raw);
+        if (Number.isFinite(v)) {
+          this.userOffsetMs = Math.max(-MAX_OFFSET_MS, Math.min(MAX_OFFSET_MS, v));
+        }
+      }
+    } catch {
+      /* private mode */
+    }
+  }
+
   getBpm(): number {
     return this.bpm;
+  }
+
+  getUserOffset(): number {
+    return this.userOffsetMs;
+  }
+
+  /** M.25 — see userOffsetMs. Clamped ±400ms, persisted, re-anchored so
+   *  the change takes effect on the very next beat. */
+  setUserOffset(ms: number) {
+    this.userOffsetMs = Math.max(-MAX_OFFSET_MS, Math.min(MAX_OFFSET_MS, ms));
+    try {
+      localStorage.setItem(OFFSET_KEY, String(this.userOffsetMs));
+    } catch {
+      /* private mode */
+    }
+    this.reanchor();
+  }
+
+  /** Effective beat anchor: detected phase shifted by the user offset. */
+  private anchorMs(): number {
+    return this.phaseMs + this.userOffsetMs;
   }
 
   isRunning(): boolean {
@@ -145,12 +189,12 @@ export class BeatEngine {
    *  Re-anchoring makes the very next grid point fire normally. */
   private reanchor() {
     if (this.intervalMs <= 0) return;
-    this.lastFiredIdx = Math.floor((this.now() - this.phaseMs) / this.intervalMs);
+    this.lastFiredIdx = Math.floor((this.now() - this.anchorMs()) / this.intervalMs);
   }
 
   start(): boolean {
     if (this.intervalMs <= 0) return false;
-    this.lastFiredIdx = Math.floor((this.now() - this.phaseMs) / this.intervalMs);
+    this.lastFiredIdx = Math.floor((this.now() - this.anchorMs()) / this.intervalMs);
     this.running = true;
     this.tick();
     this.intervalId = setInterval(() => this.checkBeats(), 250);
@@ -193,7 +237,8 @@ export class BeatEngine {
   msToNextBeat(): number {
     if (!this.running || this.intervalMs <= 0) return 0;
     const t = this.now();
-    const offset = (((t - this.phaseMs) % this.intervalMs) + this.intervalMs) % this.intervalMs;
+    const offset =
+      (((t - this.anchorMs()) % this.intervalMs) + this.intervalMs) % this.intervalMs;
     return Math.round(this.intervalMs - offset);
   }
 
@@ -206,7 +251,8 @@ export class BeatEngine {
   scoreNow(): BeatScore {
     if (!this.running || this.intervalMs <= 0) return 'off';
     const t = this.now();
-    const offset = (((t - this.phaseMs) % this.intervalMs) + this.intervalMs) % this.intervalMs;
+    const offset =
+      (((t - this.anchorMs()) % this.intervalMs) + this.intervalMs) % this.intervalMs;
     const dist = Math.min(offset, this.intervalMs - offset);
     if (dist < PERFECT_MS) return 'perfect';
     if (dist < GOOD_MS) return 'good';
@@ -215,7 +261,7 @@ export class BeatEngine {
 
   private checkBeats() {
     if (!this.running) return;
-    const idx = Math.floor((this.now() - this.phaseMs) / this.intervalMs);
+    const idx = Math.floor((this.now() - this.anchorMs()) / this.intervalMs);
     if (idx > this.lastFiredIdx) {
       // Catch up at most a couple of beats after a background-tab stall;
       // a long gap shouldn't machine-gun the visuals.

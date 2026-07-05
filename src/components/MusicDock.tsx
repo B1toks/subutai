@@ -144,6 +144,8 @@ export function MusicDock({ onClose }: MusicDockProps) {
   const [bgGrid, setBgGrid] = useState(() => vizMode.isBgGrid());
   // M.21 — board pulse mode toggle (always vs on-move).
   const [pulseOnMove, setPulseOnMove] = useState(() => vizMode.getPulseMode() === 'onmove');
+  // M.25 — user sync offset (output-latency compensation).
+  const [beatOffset, setBeatOffset] = useState(() => beatEngine.getUserOffset());
   const [captureSource, setCaptureSource] = useState<'mic' | 'display' | 'file' | null>(() => micEq.getSource());
   const [micError, setMicError] = useState<string | null>(null);
   // SP-7 — live tempo detected from the audio (mic room sound or the
@@ -1120,6 +1122,31 @@ export function MusicDock({ onClose }: MusicDockProps) {
             <Icon icon={Flame} size="sm" aria-hidden />
             {pulseOnMove ? 'Pulse: tap' : 'Pulse: beat'}
           </button>
+          {/* M.25 — sync offset: Bluetooth / output latency is invisible
+              to JS, so a perfect grid can still FEEL early. Positive =
+              board reacts later. The one knob every DJ app ships. */}
+          <label className="music-dock-eq-sens-label" htmlFor="beat-offset">
+            Sync offset
+            <span className="music-dock-eq-sens-val">
+              {beatOffset >= 0 ? '+' : ''}
+              {beatOffset}ms
+            </span>
+          </label>
+          <input
+            id="beat-offset"
+            type="range"
+            className="music-dock-eq-sens-range"
+            min={-300}
+            max={300}
+            step={10}
+            value={beatOffset}
+            onChange={(e) => {
+              const v = Number.parseInt(e.target.value, 10);
+              beatEngine.setUserOffset(v);
+              setBeatOffset(v);
+            }}
+            aria-label="Beat sync offset (output latency compensation)"
+          />
         </div>
       )}
 
