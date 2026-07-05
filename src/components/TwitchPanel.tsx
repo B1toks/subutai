@@ -365,7 +365,7 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
         <>
           {/* T4 — move-vote mode selector */}
           <div className="twitch-mode-row" role="radiogroup" aria-label="Move voting mode">
-            {(['off', 'predict', 'chat'] as VoteMode[]).map((m) => (
+            {(['off', 'predict', 'chat', 'chatvsbot'] as VoteMode[]).map((m) => (
               <button
                 key={m}
                 type="button"
@@ -374,7 +374,13 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
                 className={`twitch-mode-pill${voteMode === m ? ' is-active' : ''}`}
                 onClick={() => pickMode(m)}
               >
-                {m === 'off' ? 'Off' : m === 'predict' ? 'Predict' : 'Chat plays'}
+                {m === 'off'
+                  ? 'Off'
+                  : m === 'predict'
+                    ? 'Predict'
+                    : m === 'chat'
+                      ? 'Vs streamer'
+                      : 'Vs bot'}
               </button>
             ))}
           </div>
@@ -389,18 +395,43 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
                     : 'Chat picked:'
                   : round.mode === 'predict'
                     ? `Which move will the AI play? · ${secondsLeft}s`
-                    : `Chat — pick the AI's move! · ${secondsLeft}s`}
+                    : round.mode === 'chatvsbot'
+                      ? `Chat — type your move! (e4, Nf3, O-O) · ${secondsLeft}s`
+                      : `Chat — pick the AI's move! · ${secondsLeft}s`}
               </div>
-              {round.candidates.map((c, i) => (
-                <div
-                  key={i}
-                  className={`twitch-round-option${round.revealIdx === i ? ' is-winner' : ''}`}
-                >
-                  <span className="twitch-round-cmd">!{i + 1}</span>
-                  <span className="twitch-round-san">{c.san}</span>
-                  <span className="twitch-round-count">{round.counts[i]}</span>
-                </div>
-              ))}
+              {round.freeform ? (
+                round.candidates.length === 0 ? (
+                  <div className="twitch-round-option twitch-round-empty">
+                    <span className="twitch-round-san">waiting for moves…</span>
+                  </div>
+                ) : (
+                  // T6 — freeform slate: show the top proposals by votes.
+                  round.candidates
+                    .map((c, i) => ({ c, i }))
+                    .sort((a, b) => round.counts[b.i] - round.counts[a.i])
+                    .slice(0, 6)
+                    .map(({ c, i }) => (
+                      <div
+                        key={c.san}
+                        className={`twitch-round-option${round.revealIdx === i ? ' is-winner' : ''}`}
+                      >
+                        <span className="twitch-round-san">{c.san}</span>
+                        <span className="twitch-round-count">{round.counts[i]}</span>
+                      </div>
+                    ))
+                )
+              ) : (
+                round.candidates.map((c, i) => (
+                  <div
+                    key={i}
+                    className={`twitch-round-option${round.revealIdx === i ? ' is-winner' : ''}`}
+                  >
+                    <span className="twitch-round-cmd">!{i + 1}</span>
+                    <span className="twitch-round-san">{c.san}</span>
+                    <span className="twitch-round-count">{round.counts[i]}</span>
+                  </div>
+                ))
+              )}
             </div>
           )}
 
@@ -425,7 +456,9 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
 
           <div className="twitch-predict-bar" aria-label="Result calls">
             <span className="twitch-predict-hint">
-              Result: !white !black !draw (+3) · Moves: !1–!4 (+1)
+              {voteMode === 'chatvsbot'
+                ? 'Result: !white !black !draw (+3) · Moves: e4 / Nf3 / O-O (+1)'
+                : 'Result: !white !black !draw (+3) · Moves: !1–!4 (+1)'}
             </span>
             <span className="twitch-predict-counts">
               <span className="predict-chip predict-white">♙ {counts.white}</span>

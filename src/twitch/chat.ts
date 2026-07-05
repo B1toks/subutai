@@ -179,3 +179,9 @@ export class TwitchChatClient {
 }
 
 export const twitchChat = new TwitchChatClient();
+
+// Dev seam (same pattern as __liveBpm): lets manual testing inject
+// synthetic chat traffic without a live channel.
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  (window as unknown as { __twitchChat?: TwitchChatClient }).__twitchChat = twitchChat;
+}
