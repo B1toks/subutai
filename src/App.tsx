@@ -88,7 +88,7 @@ import { localStorageAdapter } from './memory/storage';
 import { MemoryPanel } from './memory/MemoryPanel';
 import type { SavedGame } from './memory/types';
 import { NotationParseError, parseMemoryNotation } from './memory/notation';
-import { moveVoting } from './twitch/moveVoting';
+import { moveVoting, type VoteMode } from './twitch/moveVoting';
 import { micEq } from './audio/micEqualizer';
 import { PerimeterEqualizer } from './components/PerimeterEqualizer';
 import { BackgroundWaveGrid } from './components/BackgroundWaveGrid';
@@ -96,6 +96,7 @@ import { vizMode } from './music/vizMode';
 import { beatBridge } from './music/beatBridge';
 import { beatEngine } from './music/beatEngine';
 import { beatMode } from './music/beatMode';
+import { liveBpm } from './music/liveBpm';
 import { BeatCombo } from './components/BeatCombo';
 import { scaleBudgetMs } from './utils/deviceTier';
 
@@ -544,6 +545,10 @@ function App() {
   // T3 — Twitch overlay visibility (session-only; channel persists in
   // the panel itself).
   const [showTwitch, setShowTwitch] = useState(false);
+  // T6 — mirrored vote mode so the chat-vs-bot scheduler effect below can
+  // react when the streamer flips the mode pill in the Twitch panel.
+  const [twitchVoteMode, setTwitchVoteMode] = useState<VoteMode>(() => moveVoting.getMode());
+  useEffect(() => moveVoting.onMode(setTwitchVoteMode), []);
   // SP — Spotify dock visibility + whether the mic equalizer runs
   // (the perimeter ring mounts only while it does).
   const [showMusicDock, setShowMusicDock] = useState(false);
@@ -556,13 +561,47 @@ function App() {
   // the board keeps reacting even when the music dock is closed or
   // minimised, as long as the beat grid is running.
   useEffect(() => {
-    return beatEngine.onBeat(() => {
+    const pulseBoard = () => {
       const board = document.querySelector('.board-with-coords');
       if (!board) return;
       board.classList.remove('beat-tick');
       void (board as HTMLElement).offsetWidth; // restart the animation
       board.classList.add('beat-tick');
+    };
+    const offBeat = beatEngine.onBeat(() => {
+      // M.21 — 'onmove' pulse mode: the ambient heartbeat rests; the
+      // board reacts only when the PLAYER hits the beat (below).
+      if (vizMode.getPulseMode() === 'onmove') return;
+      // M.18 — live capture hearing silence ⇒ pause the visual heartbeat.
+      // The grid keeps counting (a track pause/drop doesn't lose the lock);
+      // only the pulse waits for the music to come back. File/Spotify
+      // playback doesn't run the live detector, so it's unaffected.
+      if (liveBpm.isRunning() && liveBpm.isSilent()) return;
+      pulseBoard();
     });
+    // M.21 — in tap mode an on-beat hit IS the pulse: the board answers
+    // the player, not the metronome.
+    const offMove = beatBridge.onMove((e) => {
+      if (vizMode.getPulseMode() !== 'onmove') return;
+      if (e.score === 'off') return;
+      pulseBoard();
+    });
+    // M.21.1 — tap mode: ANY tap on the board is a rhythm hit. Scored in
+    // beatBridge (points + streak); the onMove subscription above turns a
+    // successful hit into the pulse. pointerdown (not click) so the hit
+    // registers at touch time — rhythm can't wait for pointerup.
+    const onPointerDown = (ev: PointerEvent) => {
+      if (vizMode.getPulseMode() !== 'onmove') return;
+      const target = ev.target as Element | null;
+      if (!target?.closest('.board-with-coords')) return;
+      beatBridge.reportTap();
+    };
+    document.addEventListener('pointerdown', onPointerDown, { passive: true });
+    return () => {
+      offBeat();
+      offMove();
+      document.removeEventListener('pointerdown', onPointerDown);
+    };
   }, []);
   // S2.5 — per-side elapsed clocks. Pure UX (no flag-fall): the active
   // side's clock accumulates wall time while the game is live. Reset on
@@ -2485,10 +2524,15 @@ function App() {
         // window; in chat mode it substitutes the chat-elected move.
         // Classic only — roulette's slot rules don't fit the candidate
         // model.
+        const logLenBeforeGate = logLengthRef.current;
         const move =
           gameMode === 'classic'
             ? await moveVoting.gate(boardState, moves, chosen)
             : chosen;
+        // T6 — the 15s vote window can outlive the game it started in
+        // (new game / restore). Any log rewrite shifts the length; bail
+        // instead of committing a move onto a different position.
+        if (logLengthRef.current !== logLenBeforeGate) return;
 
         const next =
           move.kind === 'topologyToggle'
@@ -2734,6 +2778,62 @@ function App() {
     isAutoMode,
     autoStopped,
     isMultiplayer,
+  ]);
+
+  // T6 — "chat vs bot": chat plays the human (white) side by majority.
+  // Mirrors the AI vote gate but on the HUMAN turn: open a free-form
+  // round (chat types SAN / coordinates), then commit the elected move
+  // through the same classic-mode path a click would take. The cleanup
+  // cancels the round whenever the position changes under it — which is
+  // exactly what happens when the streamer overrides by moving manually.
+  useEffect(() => {
+    if (twitchVoteMode !== 'chatvsbot') return;
+    if (isMultiplayer || isLocalMode || isAutoMode || watchingGame) return;
+    if (gameMode !== 'classic' || gameStatus !== 'active') return;
+    if (currentPlayer !== 'human') return;
+    let stale = false;
+    void moveVoting.gateHumanMove(state, legalMoves).then((move) => {
+      if (stale || !move || !move.from || !move.to) return;
+      const san = computeSAN(state, move);
+      const afterMove = applyMove(state, move);
+      setLog((prev) => appendMove(prev, move, san, state.topologyState));
+      setLastMove({ from: move.from, to: move.to });
+      beatBridge.reportMove();
+      setSearchEvalFromWhite((prev) => bumpEvalForMove(prev, state, move));
+      setSearchMateInPlies(null);
+      const moveIdx = logLengthRef.current;
+      void classifyAsync(state, move, afterMove, {
+        budgetMs: scaleBudgetMs(1000),
+        maxDepth: 7,
+        allowSelfCheck: false,
+      }).then((analysis) => {
+        setLog((prev) => updateMoveAnalysisAt(prev, moveIdx, analysis));
+        applyClassifyVisuals(moveIdx, analysis, move.to);
+      });
+      setState(afterMove);
+      setLegalMoves(getLegalMoves(afterMove));
+      setSelected(null);
+      checkGameOver(afterMove);
+    });
+    return () => {
+      stale = true;
+      moveVoting.cancelRound();
+    };
+  // Commit helpers close over this render's state; the effect re-fires on
+  // any position change, so the captures stay fresh (same contract as the
+  // AI scheduler above).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    twitchVoteMode,
+    isMultiplayer,
+    isLocalMode,
+    isAutoMode,
+    watchingGame,
+    gameMode,
+    gameStatus,
+    currentPlayer,
+    state,
+    legalMoves,
   ]);
 
   // Stage T1: trigger the en-passant explosion overlay whenever a new
