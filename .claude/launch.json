@@ -9,6 +9,13 @@
       "autoPort": true
     },
     {
+      "name": "subutai-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "preview"],
+      "port": 4173,
+      "autoPort": true
+    },
+    {
       "name": "honchar-portfolio",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "C:/Users/Alex/Downloads/honchar-portfolio"],
