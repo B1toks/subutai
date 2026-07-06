@@ -11,6 +11,7 @@ import { lookupBpm, analyzeTrack } from '../music/autoBpm';
 import { analyzeAudioBuffer } from '../music/fileBpm';
 import { analyzeWithEssentia } from '../music/essentiaBpm';
 import { liveEssentia } from '../music/liveEssentia';
+import { beatPll } from '../music/beatPll';
 import { liveBpm } from '../music/liveBpm';
 import { beatMode } from '../music/beatMode';
 import { eqSettings, EQ_SENS_MIN, EQ_SENS_MAX } from '../music/eqSettings';
@@ -534,6 +535,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
     micEq.stop();
     liveBpm.stop();
     liveEssentia.stop(); // M.23
+    beatPll.stop(); // M.27
     setLive(null);
     setMicOn(false);
     setCaptureSource(null);
@@ -665,6 +667,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
       }
       liveBpm.start(); // SP-7 — start listening for the tempo
       liveEssentia.start(); // M.23 — the accurate tracker joins ~10s in
+      beatPll.start(); // M.27 — phase glue between essentia passes
     } else {
       setMicOn(false);
       const messages: Record<string, string> = {

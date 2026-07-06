@@ -23,42 +23,61 @@ export interface LiveBeatResult {
 
 type Listener = (r: LiveBeatResult) => void;
 
-const FIRST_AFTER_MS = 10_000;
-const ANALYZE_EVERY_MS = 12_000;
-const WINDOW_SEC = 20;
+// M.26 — twice the correction cadence: 6s cycle over a 14s window (was
+// 12s/20s). Drops and tempo changes get confirmed in seconds, not a
+// half-cycle later. Devices where one pass takes >2.5s fall back to the
+// old 12s cadence automatically — accuracy is not worth a hot phone.
+const FIRST_AFTER_MS = 10_500;
+const ANALYZE_EVERY_MS = 6_000;
+const SLOW_DEVICE_EVERY_MS = 12_000;
+const SLOW_PASS_MS = 2_500;
+const WINDOW_SEC = 14;
 const MIN_BUFFER_SEC = 10;
 const TARGET_SR = 44100;
 const WORKER_TIMEOUT_MS = 20_000;
 
 class LiveEssentiaTracker {
-  private firstTimer: ReturnType<typeof setTimeout> | null = null;
-  private timer: ReturnType<typeof setInterval> | null = null;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private running = false;
   private worker: Worker | null = null;
   private busy = false;
   private lastAnalyzeMs = 0;
+  /** M.26 — the last pass took long: this device gets the relaxed cadence. */
+  private slowDevice = false;
   private listeners = new Set<Listener>();
 
   isRunning(): boolean {
-    return this.firstTimer !== null || this.timer !== null;
+    return this.running;
   }
 
   start(): void {
-    if (this.isRunning()) return;
-    this.firstTimer = setTimeout(() => {
-      this.firstTimer = null;
-      void this.analyze();
-      this.timer = setInterval(() => void this.analyze(), ANALYZE_EVERY_MS);
-    }, FIRST_AFTER_MS);
+    if (this.running) return;
+    this.running = true;
+    this.schedule(FIRST_AFTER_MS);
   }
 
   stop(): void {
-    if (this.firstTimer) clearTimeout(this.firstTimer);
-    if (this.timer) clearInterval(this.timer);
-    this.firstTimer = null;
+    this.running = false;
+    if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.worker?.terminate();
     this.worker = null;
     this.busy = false;
+  }
+
+  /** M.26 — self-scheduling chain (not setInterval): the next pass is
+   *  planned only after the previous one finished, with the cadence
+   *  adapted to how heavy the pass was on this device. */
+  private schedule(delayMs: number): void {
+    if (!this.running) return;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = setTimeout(async () => {
+      this.timer = null;
+      const t0 = performance.now();
+      await this.analyze();
+      this.slowDevice = performance.now() - t0 > SLOW_PASS_MS;
+      this.schedule(this.slowDevice ? SLOW_DEVICE_EVERY_MS : ANALYZE_EVERY_MS);
+    }, delayMs);
   }
 
   onResult(cb: Listener): () => void {

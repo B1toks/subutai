@@ -96,6 +96,29 @@ export class BeatEngine {
     return this.phaseMs + this.userOffsetMs;
   }
 
+  /** M.27 — signed distance (ms) from a source-time moment to its
+   *  NEAREST beat of the RAW detected grid (user offset intentionally
+   *  excluded: the PLL aligns the detected grid to detected onsets in
+   *  capture-time; the user offset compensates OUTPUT latency on top and
+   *  must never be "corrected away"). Positive = the moment is after the
+   *  beat, so the grid should move later to meet it. */
+  phaseErrorAt(tMs: number): number {
+    if (this.intervalMs <= 0) return 0;
+    const p = this.intervalMs;
+    const off = (((tMs - this.phaseMs) % p) + p) % p;
+    return off > p / 2 ? off - p : off;
+  }
+
+  /** M.27 — PLL micro-nudge. Small by contract (clamped ±15ms): a nudge
+   *  never crosses more than one beat boundary, so lastFiredIdx stays
+   *  coherent without re-anchoring (worst case one beat fires ≤15ms
+   *  shifted — inaudible; re-anchoring here could double-fire a beat
+   *  right at a boundary). */
+  nudgePhase(deltaMs: number) {
+    if (this.intervalMs <= 0) return;
+    this.phaseMs += Math.max(-15, Math.min(15, deltaMs));
+  }
+
   isRunning(): boolean {
     return this.running;
   }

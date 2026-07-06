@@ -52,6 +52,7 @@ const QUIET_REL = 0.06; // of the recent full-spectrum peak
 const COAST_BASS_RATIO = 0.3;
 
 type BpmListener = (bpm: number, confidence: number) => void;
+type OnsetListener = (atMs: number) => void;
 
 class LiveBpmDetector {
   private off: (() => void) | null = null;
@@ -79,6 +80,8 @@ class LiveBpmDetector {
   /** M.19 — whether the flywheel was coasting on the previous frame. */
   private coasting = false;
   private listeners = new Set<BpmListener>();
+  /** M.27 — PLL subscribers: fired on every detected kick/onset. */
+  private onsetListeners = new Set<OnsetListener>();
   /** Injectable clock so the detector is testable without a real mic. */
   private nowMs: () => number = () => performance.now();
 
@@ -156,6 +159,14 @@ class LiveBpmDetector {
     };
   }
 
+  /** M.27 — subscribe to raw onset (kick) times; feeds the beat PLL. */
+  onOnset(cb: OnsetListener): () => void {
+    this.onsetListeners.add(cb);
+    return () => {
+      this.onsetListeners.delete(cb);
+    };
+  }
+
   private reset(): void {
     this.onsets = [];
     this.prevBass = 0;
@@ -212,6 +223,13 @@ class LiveBpmDetector {
       if (last === undefined || now - last > REFRACTORY_MS) {
         this.onsets.push(now);
         this.lastLoudMs = now; // M.18.1 — hearing kicks ⇒ not silent
+        this.onsetListeners.forEach((cb) => {
+          try {
+            cb(now);
+          } catch {
+            /* listener errors must not break the detector */
+          }
+        });
       }
     }
 
