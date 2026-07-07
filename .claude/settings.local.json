@@ -89,7 +89,11 @@
       "Bash(ls -la \"/c/Users/Alex/AppData/Local/Temp/claude/C--projects-chess/2a001041-ff9c-4db9-8ae4-987898e7b1d1/scratchpad/\"*.js)",
       "Bash(node -e \"require\\('docx'\\);console.log\\('docx ready'\\)\")",
       "PowerShell(npx tsc -b 2>$null; \"tsc: $LASTEXITCODE\"; npx eslint src/ui/dockLayout.ts src/components/MusicDock.tsx src/components/TwitchPanel.tsx 2>$null; \"eslint\\(mine\\): $LASTEXITCODE\"; npm run build:gh 2>$null | Select-Object -Last 3; \"build: $LASTEXITCODE\")",
-      "PowerShell(git commit -m \"chore: checkpoint before music dock tutorial \\(r4\\)\" --allow-empty)"
+      "PowerShell(git commit -m \"chore: checkpoint before music dock tutorial \\(r4\\)\" --allow-empty)",
+      "Bash(rm -rf checkp)",
+      "PowerShell(git add src/components/MusicDock.tsx src/App.css)",
+      "PowerShell(git commit -F \"C:\\\\Users\\\\Alex\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projects-chess\\\\4e87c811-ea28-47e3-af87-1d394eaa8800\\\\scratchpad\\\\r4-msg.txt\")",
+      "PowerShell(git commit -m \"chore: checkpoint before encouragement system \\(r5\\)\" --allow-empty)"
     ],
     "additionalDirectories": [
       "C:\\projects\\chess\\src"
