@@ -74,7 +74,15 @@
       "PowerShell(gh api repos/MTG/essentia/contents/src/algorithms/spectral/tensorflowinputtempocnn.cpp --jq \".content\" | ForEach-Object { [System.Text.Encoding]::UTF8.GetString\\([Convert]::FromBase64String\\($_ -replace \"`n\",\"\"\\)\\) })",
       "PowerShell($sp = \"C:\\\\Users\\\\Alex\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projects-chess\\\\4e87c811-ea28-47e3-af87-1d394eaa8800\\\\scratchpad\"; gh api -H \"Accept: application/vnd.github.raw\" repos/MTG/essentia/contents/src/algorithms/spectral/tensorflowinputtempocnn.cpp > \"$sp\\\\tcnn-input.cpp\"; \"saved: $\\(\\(Get-Item \"$sp\\\\tcnn-input.cpp\"\\).Length\\) bytes\")",
       "PowerShell(npx tsc -b 2>$null; \"tsc: $LASTEXITCODE\"; npx eslint src/music/essentiaBpm.worker.ts src/music/liveEssentia.ts src/types/essentia.d.ts 2>$null; \"eslint: $LASTEXITCODE\"; npm run build:gh 2>$null | Select-Object -Last 5; \"build: $LASTEXITCODE\")",
-      "PowerShell(git commit -m \"chore: checkpoint before chat-mode/UX roadmap work\")"
+      "PowerShell(git commit -m \"chore: checkpoint before chat-mode/UX roadmap work\")",
+      "Bash(xargs grep -l \"SVG\\\\|canvas\\\\|board\\\\|square\")",
+      "Bash(xargs grep -l \"className.*board\")",
+      "Bash(xargs grep -l \"EvalBar\")",
+      "PowerShell(git add docs/ROADMAP.md)",
+      "PowerShell(git commit -m \"docs: release roadmap - chat arrows, predict-the-streamer, docked panels, tutorials, victory scene\")",
+      "PowerShell(npx tsc -b 2>$null; \"tsc: $LASTEXITCODE\"; npx eslint src/App.tsx 2>$null | Select-String \"variant|voteRound|error\" | Select-Object -First 10; \"eslint done\")",
+      "PowerShell(git add -A .claude/settings.local.json 2>$null)",
+      "PowerShell(git commit -m \"chore: checkpoint before predict-the-streamer \\(r2\\)\" --allow-empty)"
     ],
     "additionalDirectories": [
       "C:\\projects\\chess\\src"
