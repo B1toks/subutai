@@ -84,7 +84,12 @@
       "PowerShell(git add -A .claude/settings.local.json 2>$null)",
       "PowerShell(git commit -m \"chore: checkpoint before predict-the-streamer \\(r2\\)\" --allow-empty)",
       "PowerShell(npx tsc -b 2>$null; \"tsc: $LASTEXITCODE\"; npx eslint src/twitch/moveVoting.ts src/components/TwitchPanel.tsx 2>$null; \"eslint: $LASTEXITCODE\")",
-      "PowerShell(git commit -m \"chore: checkpoint before docked panels \\(r3\\)\" --allow-empty)"
+      "PowerShell(git commit -m \"chore: checkpoint before docked panels \\(r3\\)\" --allow-empty)",
+      "PowerShell(npx tsc -b 2>$null; \"tsc: $LASTEXITCODE\"; npx eslint src/App.tsx src/ui/dockLayout.ts src/components/MusicDock.tsx src/components/TwitchPanel.tsx 2>$null; \"eslint: $LASTEXITCODE\")",
+      "Bash(ls -la \"/c/Users/Alex/AppData/Local/Temp/claude/C--projects-chess/2a001041-ff9c-4db9-8ae4-987898e7b1d1/scratchpad/\"*.js)",
+      "Bash(node -e \"require\\('docx'\\);console.log\\('docx ready'\\)\")",
+      "PowerShell(npx tsc -b 2>$null; \"tsc: $LASTEXITCODE\"; npx eslint src/ui/dockLayout.ts src/components/MusicDock.tsx src/components/TwitchPanel.tsx 2>$null; \"eslint\\(mine\\): $LASTEXITCODE\"; npm run build:gh 2>$null | Select-Object -Last 3; \"build: $LASTEXITCODE\")",
+      "PowerShell(git commit -m \"chore: checkpoint before music dock tutorial \\(r4\\)\" --allow-empty)"
     ],
     "additionalDirectories": [
       "C:\\projects\\chess\\src"
