@@ -21,6 +21,7 @@ import { searchPosition, ttClear } from './ai/search';
 import { type MoveClass, type MoveAnalysis } from './analysis/classify';
 import { classifyAsync } from './analysis/classifyClient';
 import { NamePicker } from './components/NamePicker';
+import { useToast } from './components/Toast';
 import { GameSummary } from './components/GameSummary';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { FeedbackModal } from './components/FeedbackModal';
@@ -292,6 +293,22 @@ function evalToColors(evalCp: number): { c1: string; c2: string } {
 }
 
 const HUMAN_COLOR: Color = 'white';
+
+/* R5 — encouragement in a losing position. When the human (white) has
+ * been meaningfully behind for a couple of moves, drop a supportive nudge
+ * instead of letting them spiral into a resign. Rotate-flavoured lines
+ * fire only when a board rotate is actually available and also pulse the
+ * Rotate button — in this variant a single rotate can swing the eval hard.
+ * Gated behind the coaching-tools switch and rate-limited. */
+const ENCOURAGE_GENERIC = [
+  "Don't resign — keep playing. One slip from the bot and you're right back in it.",
+  'Hang in there — a single strong move can turn this whole game around.',
+  "You're behind, not beaten. Make the bot earn every square.",
+];
+const ENCOURAGE_ROTATE = [
+  'Tough spot — sometimes one rotate flips the whole position. Try it.',
+  'Feeling stuck? A board rotate can change everything from here.',
+];
 
 /** Reshape a live MatchDoc into the GameLog the single-player render code
  *  already knows how to consume. The stored move shape happens to be a
@@ -810,6 +827,13 @@ function App() {
     window.addEventListener('resize', recompute);
     return () => window.removeEventListener('resize', recompute);
   }, [dock]);
+
+  // R5 — encouragement in a losing position.
+  const toast = useToast();
+  const encourageBadStreakRef = useRef(0);
+  const encourageLastMoveRef = useRef(-99);
+  const encourageCheckedMoveRef = useRef(-1);
+  const [encourageRotate, setEncourageRotate] = useState(false);
 
   useEffect(() => {
     if (formationInputMode) formationInputRef.current?.focus();
@@ -3384,6 +3408,57 @@ function App() {
     return !isSquareAttacked(toggled, king, opp as 'white' | 'black', toggled.topologyState);
   }, [currentPlayer, state, gameMode, allowedPieceTypes, rouletteActionsLeft]);
 
+  // R5 — nudge the player when they've been clearly behind for a couple of
+  // moves, so a hard position reads as "keep fighting" rather than "resign".
+  // Checked once per human turn (eval is from white's = the human's side);
+  // rate-limited, gated on the coaching-tools switch, solo classic only.
+  useEffect(() => {
+    if (isMultiplayer || isLocalMode || watchingGame) return;
+    if (gameMode !== 'classic' || gameStatus !== 'active') return;
+    if (!helpToolsEnabled) return;
+    if (currentPlayer !== 'human') return;
+    const moveIdx = log.moves.length;
+    if (moveIdx === 0) {
+      // fresh game — clear the streak/cooldown so nudges don't carry over
+      encourageBadStreakRef.current = 0;
+      encourageLastMoveRef.current = -99;
+      encourageCheckedMoveRef.current = -1;
+      return;
+    }
+    if (moveIdx === encourageCheckedMoveRef.current) return; // one check per turn
+    const ev = searchEvalFromWhite;
+    if (ev === null) return; // eval still pending — re-runs when it lands
+    encourageCheckedMoveRef.current = moveIdx;
+    const HARD = -2.5; // pawns: the human is down ~a piece or worse
+    if (ev > HARD) {
+      encourageBadStreakRef.current = 0;
+      return;
+    }
+    encourageBadStreakRef.current += 1;
+    if (encourageBadStreakRef.current < 2) return; // must be sustained
+    if (moveIdx - encourageLastMoveRef.current < 6) return; // cooldown
+    encourageLastMoveRef.current = moveIdx;
+    const useRotate = canRotate && Math.random() < 0.6;
+    const pool = useRotate ? ENCOURAGE_ROTATE : ENCOURAGE_GENERIC;
+    toast.show(pool[Math.floor(Math.random() * pool.length)], 'info', 5200);
+    if (useRotate) {
+      setEncourageRotate(true);
+      window.setTimeout(() => setEncourageRotate(false), 5200);
+    }
+  }, [
+    searchEvalFromWhite,
+    currentPlayer,
+    gameStatus,
+    gameMode,
+    isMultiplayer,
+    isLocalMode,
+    watchingGame,
+    helpToolsEnabled,
+    canRotate,
+    log.moves.length,
+    toast,
+  ]);
+
   const layout = useMemo(
     () => computeBoardLayout(displayTopology, boardSize),
     [displayTopology, boardSize],
@@ -4206,7 +4281,7 @@ function App() {
           </button>
           <button
             type="button"
-            className="rotate-btn-icon"
+            className={`rotate-btn-icon${encourageRotate && canRotate ? ' is-hint-pulsing' : ''}`}
             onClick={handleRotate}
             disabled={!canRotate}
             aria-label={`Rotate ${state.topologyState} to ${state.topologyState === 'A' ? 'B' : 'A'}`}
@@ -4771,7 +4846,7 @@ function App() {
           </button>
           <button
             type="button"
-            className="rotate-btn-icon"
+            className={`rotate-btn-icon${encourageRotate && canRotate ? ' is-hint-pulsing' : ''}`}
             onClick={handleRotate}
             disabled={!canRotate}
             aria-label={`Rotate ${state.topologyState} to ${state.topologyState === 'A' ? 'B' : 'A'}`}
@@ -4987,7 +5062,7 @@ function App() {
         >
           <button
             type="button"
-            className={`rotate-btn-icon${(showRotateHint || (hintMove && 'rotate' in hintMove)) && canRotate ? ' is-hint-pulsing' : ''}`}
+            className={`rotate-btn-icon${(showRotateHint || (hintMove && 'rotate' in hintMove) || encourageRotate) && canRotate ? ' is-hint-pulsing' : ''}`}
             onClick={handleRotate}
             disabled={!canRotate}
             data-tour="rotate"
