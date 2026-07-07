@@ -551,6 +551,22 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* R3 — when a side panel is docked INTO the layout, reserve its column
+   so the centred content slides clear instead of hiding behind it.
+   Desktop only: below the breakpoint the panels are full-width bottom
+   bars (the --dock-* vars still carry px but we ignore them here, and
+   the board sizing zeroes them too). The transition on .app-shell
+   padding above gives the "interface nudges over" feel. */
+@media (min-width: 721px) {
+  .app-shell {
+    /* Plain var(), NOT calc(env() + var()): desktop has no safe-area
+       insets, and transitioning a calc()+env()+var() expression fails to
+       interpolate (the padding stuck at 0). A bare var animates cleanly. */
+    padding-left: var(--dock-left, 0px);
+    padding-right: var(--dock-right, 0px);
+  }
+}
+
 .app-shell::after {
   content: '';
   position: fixed;

@@ -13,6 +13,7 @@ import {
 } from '../twitch/predictions';
 import { moveVoting, type ViewerScore, type VoteMode, type VoteRound } from '../twitch/moveVoting';
 import { loadEmoteMap, type EmoteMap } from '../twitch/seventv';
+import { dockLayout, DOCK_WIDTH } from '../ui/dockLayout';
 
 const CHANNEL_KEY = 'subutai_twitch_channel';
 const POS_KEY = 'subutai_twitch_pos';
@@ -113,6 +114,20 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
   });
   const predictionsRef = useRef<PredictionState>(emptyPredictions());
   const feedRef = useRef<HTMLDivElement | null>(null);
+
+  // R3 — reserve a right column in the app layout while docked on desktop
+  // so the board and shell slide clear of the stream panel. Mobile
+  // (full-width bottom) reserves nothing. Cleanup zeroes on unmount/float.
+  useEffect(() => {
+    const reserve = () =>
+      dockLayout.setRight(dockedRight && window.innerWidth > 720 ? DOCK_WIDTH : 0);
+    reserve();
+    window.addEventListener('resize', reserve);
+    return () => {
+      window.removeEventListener('resize', reserve);
+      dockLayout.setRight(0);
+    };
+  }, [dockedRight]);
 
   // ── chat plumbing (buffered: big channels push 50+ msg/s) ──
   const pendingRef = useRef<TwitchChatMessage[]>([]);

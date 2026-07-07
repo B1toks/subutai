@@ -89,6 +89,7 @@ import { MemoryPanel } from './memory/MemoryPanel';
 import type { SavedGame } from './memory/types';
 import { NotationParseError, parseMemoryNotation } from './memory/notation';
 import { moveVoting, type VoteMode, type VoteRound, type GuessWinner } from './twitch/moveVoting';
+import { dockLayout, type DockState } from './ui/dockLayout';
 import { micEq } from './audio/micEqualizer';
 import { PerimeterEqualizer } from './components/PerimeterEqualizer';
 import { BackgroundWaveGrid } from './components/BackgroundWaveGrid';
@@ -788,17 +789,27 @@ function App() {
   // is still "current" (visuals fire) or stale (log patched, visuals skipped).
   const logLengthRef = useRef<number>(0);
 
+  // R3 — reserved side columns when the Twitch / music panels are docked
+  // into the layout (not floating). The board sizes down by them so it
+  // never hides behind a panel; the shell pads by them so content slides.
+  const [dock, setDock] = useState<DockState>(() => dockLayout.get());
+  useEffect(() => dockLayout.on(setDock), []);
+
   const [boardSize, setBoardSize] = useState(() =>
     Math.min(window.innerWidth - 32, 520),
   );
 
   useEffect(() => {
-    function onResize() {
-      setBoardSize(Math.min(window.innerWidth - 32, 520));
+    function recompute() {
+      // Side docks reserve space only on desktop; below the breakpoint
+      // the panels become full-width bottom bars and reserve nothing.
+      const reserved = window.innerWidth > 720 ? dock.left + dock.right : 0;
+      setBoardSize(Math.min(window.innerWidth - 32 - reserved, 520));
     }
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
+    recompute();
+    window.addEventListener('resize', recompute);
+    return () => window.removeEventListener('resize', recompute);
+  }, [dock]);
 
   useEffect(() => {
     if (formationInputMode) formationInputRef.current?.focus();
@@ -3805,6 +3816,11 @@ function App() {
       // New Game / Lock buttons again.
       data-opponent-mode={opponentMode}
       data-game-active={gameInProgress ? '1' : '0'}
+      // R3 — reserved widths of docked side panels; CSS pads the shell by
+      // them (media-gated to desktop) so content slides clear.
+      style={
+        { '--dock-left': `${dock.left}px`, '--dock-right': `${dock.right}px` } as React.CSSProperties
+      }
       ref={shellRef}
     >
     {bgGridOn && <BackgroundWaveGrid />}

@@ -21,6 +21,7 @@ import {
   type SavedPlaylist, type PlaylistTrack,
 } from '../music/playlists';
 import { micEq, type MicStartResult } from '../audio/micEqualizer';
+import { dockLayout, DOCK_WIDTH } from '../ui/dockLayout';
 
 /* SP-2 — the Spotify dock, IFrame-API edition.
  *
@@ -754,6 +755,21 @@ export function MusicDock({ onClose }: MusicDockProps) {
       setPos((p) => (p ? { ...p, y: maxY } : p));
     }
   }, [minimized, dockedLeft, pos]);
+
+  // R3 — reserve a left column in the app layout while docked on desktop,
+  // so the board and shell slide clear instead of hiding behind the dock.
+  // Minimised (bottom-left bar) and mobile (full-width bottom) reserve
+  // nothing. Cleanup zeroes it on unmount (dock closed) or when floating.
+  useEffect(() => {
+    const reserve = () =>
+      dockLayout.setLeft(dockedLeft && !minimized && window.innerWidth > 720 ? DOCK_WIDTH : 0);
+    reserve();
+    window.addEventListener('resize', reserve);
+    return () => {
+      window.removeEventListener('resize', reserve);
+      dockLayout.setLeft(0);
+    };
+  }, [dockedLeft, minimized]);
 
   const savedBpm = loadedUrl ? readBpmMap()[loadedUrl] : undefined;
   // SP-8 — a playlist/album can't be per-track-analyzed; steer to live/tap.
