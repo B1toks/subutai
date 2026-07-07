@@ -63,6 +63,41 @@ const TEMPO_PRESETS: { label: string; bpm: number }[] = [
 ];
 const URL_RE = /open\.spotify\.com\/(?:embed\/)?(track|playlist|album)\/([a-zA-Z0-9]+)/;
 
+/* R4 — first-press coach-marks: the music dock is dense, so the first
+ * time a viewer touches each key control we surface a one-line "what /
+ * when" explainer, then never again (localStorage flag per key). Copy is
+ * kept in the plain-spoken register of the existing inline hints. */
+const MUSIC_COACH: Record<string, { title: string; body: string }> = {
+  play: {
+    title: 'Sync',
+    body: 'Starts the beat grid — moves land on the beat of whatever track or captured audio is loaded.',
+  },
+  tap: {
+    title: 'Tap tempo',
+    body: 'Tap on the beat 4+ times to set the BPM by hand when auto-detect can’t find it.',
+  },
+  beatmode: {
+    title: 'Beat Mode',
+    body: 'Holds each move until the next beat, so your play stays locked to the groove.',
+  },
+  capture: {
+    title: 'Capture audio',
+    body: 'Grab tab or mic sound so the grid locks onto music playing outside the app.',
+  },
+  eq: {
+    title: 'Reactivity',
+    body: 'How hard the board’s ring pulses to the sound. Push it up for punchier, down for calm.',
+  },
+  offset: {
+    title: 'Sync offset',
+    body: 'Nudge the beat earlier or later to cancel output latency — the fix when it feels off on Bluetooth.',
+  },
+  playlists: {
+    title: 'Playlists',
+    body: 'Save analyzed tracks and play them back to back with their BPM remembered.',
+  },
+};
+
 interface SpotifyController {
   addListener: (event: string, cb: (e: { data: { position: number; duration: number; isPaused: boolean } }) => void) => void;
   loadUri: (uri: string) => void;
@@ -189,6 +224,17 @@ export function MusicDock({ onClose }: MusicDockProps) {
   const [analyzing, setAnalyzing] = useState<{ done: number; total: number } | null>(null);
   // Active playlist playback: id + current track index.
   const [nowPlaying, setNowPlaying] = useState<{ id: string; idx: number } | null>(null);
+  // R4 — key of the coach-mark currently shown (first press of a control).
+  const [coach, setCoach] = useState<string | null>(null);
+  const coachOnce = useCallback((key: string) => {
+    try {
+      if (localStorage.getItem(`subutai_music_tut_${key}`) === '1') return;
+      localStorage.setItem(`subutai_music_tut_${key}`, '1');
+    } catch {
+      /* private mode — still show it, just won't be remembered */
+    }
+    setCoach(key);
+  }, []);
 
   const embedHostRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<SpotifyController | null>(null);
@@ -862,6 +908,17 @@ export function MusicDock({ onClose }: MusicDockProps) {
         </span>
       </div>
 
+      {/* R4 — first-press coach-mark for whatever control was just used. */}
+      {coach && MUSIC_COACH[coach] && (
+        <div className="music-coach" role="status">
+          <div className="music-coach-title">{MUSIC_COACH[coach].title}</div>
+          <div className="music-coach-body">{MUSIC_COACH[coach].body}</div>
+          <button type="button" className="music-coach-got" onClick={() => setCoach(null)}>
+            Got it
+          </button>
+        </div>
+      )}
+
       {minimized ? (
         <div className="music-dock-mini">
           <button
@@ -956,7 +1013,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
           <button
             type="button"
             className="music-dock-beat-btn"
-            onClick={handleSync}
+            onClick={() => { coachOnce('play'); handleSync(); }}
             disabled={bpm <= 0}
             aria-label="Start beat sync"
           >
@@ -978,7 +1035,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
       {showManual && (
         <div className="music-dock-manual">
           <div className="music-dock-beat">
-            <button type="button" className="music-dock-tap-btn" onClick={handleTap}>
+            <button type="button" className="music-dock-tap-btn" onClick={() => { coachOnce('tap'); handleTap(); }}>
               TAP
             </button>
             <span className="music-dock-hint">tap 4× to set tempo, or pick a preset</span>
@@ -1007,6 +1064,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
           type="button"
           className={`music-dock-beat-btn${beatModeOn ? ' is-active' : ''}`}
           onClick={() => {
+            coachOnce('beatmode');
             const next = !beatModeOn;
             beatMode.set(next);
             setBeatModeOn(next);
@@ -1032,7 +1090,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
           <button
             type="button"
             className={`music-dock-beat-btn${captureSource === 'display' ? ' is-active' : ''}`}
-            onClick={() => void startCapture('display')}
+            onClick={() => { coachOnce('capture'); void startCapture('display'); }}
             aria-pressed={captureSource === 'display'}
           >
             <Icon icon={MonitorSpeaker} size="sm" aria-hidden />
@@ -1042,7 +1100,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
         <button
           type="button"
           className={`music-dock-beat-btn${captureSource === 'mic' ? ' is-active' : ''}`}
-          onClick={() => void startCapture('mic')}
+          onClick={() => { coachOnce('capture'); void startCapture('mic'); }}
           aria-pressed={captureSource === 'mic'}
         >
           <Icon icon={captureSource === 'mic' ? Mic : MicOff} size="sm" aria-hidden />
@@ -1102,6 +1160,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
             max={1}
             step={0.01}
             value={Math.log(eqSens / EQ_SENS_MIN) / Math.log(EQ_SENS_MAX / EQ_SENS_MIN)}
+            onPointerDown={() => coachOnce('eq')}
             onChange={(e) => {
               const t = Number.parseFloat(e.target.value);
               const v = EQ_SENS_MIN * Math.pow(EQ_SENS_MAX / EQ_SENS_MIN, t);
@@ -1159,6 +1218,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
             max={300}
             step={10}
             value={beatOffset}
+            onPointerDown={() => coachOnce('offset')}
             onChange={(e) => {
               const v = Number.parseInt(e.target.value, 10);
               beatEngine.setUserOffset(v);
@@ -1175,7 +1235,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
         <button
           type="button"
           className="music-dock-pl-toggle"
-          onClick={() => setShowPlaylists((v) => !v)}
+          onClick={() => { coachOnce('playlists'); setShowPlaylists((v) => !v); }}
           aria-expanded={showPlaylists}
         >
           <Icon icon={ListMusic} size="sm" aria-hidden />

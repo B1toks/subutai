@@ -3495,6 +3495,53 @@ body.checkmate-flash::after {
   .tile.beat-snap-from::after { animation: none; }
 }
 
+/* R4 — first-press coach-mark inside the music dock. Slides in under
+   the header the first time each control is used. */
+.music-coach {
+  margin: 6px 10px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(29, 185, 84, 0.16), rgba(29, 185, 84, 0.06));
+  border: 1px solid rgba(29, 185, 84, 0.4);
+  animation: music-coach-in 0.28s ease-out both;
+}
+
+.music-coach-title {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #1db954;
+  margin-bottom: 3px;
+}
+
+.music-coach-body {
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: var(--text-secondary, #cbd5e1);
+}
+
+.music-coach-got {
+  margin-top: 8px;
+  padding: 4px 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #0a0a0e;
+  background: #1db954;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.music-coach-got:hover { background: #1ed760; }
+
+@keyframes music-coach-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .music-coach { animation: none; }
+}
+
 /* ── SP / M.11: music dock — refreshed styling ── */
 .music-dock {
   position: fixed;
