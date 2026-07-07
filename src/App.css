@@ -1780,6 +1780,49 @@ body.checkmate-flash::after {
 .annotation-color-yellow { stroke: #eab308; fill: #eab308; }
 .annotation-color-blue   { stroke: #3b82f6; fill: #3b82f6; }
 
+/* R1 — variant arrows: live vote round drawn on the board. Dashed while
+   the vote is open (dashes march toward the target — the round feels
+   alive), solid for the revealed winner, faded for the losers. */
+.variant-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 11;
+}
+
+.variant-arrow {
+  stroke-linecap: round;
+  fill: none;
+  opacity: 0.85;
+  animation: variant-dash-march 1.1s linear infinite;
+}
+
+.variant-arrow-winner {
+  opacity: 1;
+  animation: none;
+}
+
+.variant-arrow-loser {
+  opacity: 0.18;
+  animation: none;
+}
+
+.variant-arrow-label {
+  font-weight: 800;
+  font-family: inherit;
+  stroke: rgba(10, 10, 14, 0.65);
+  stroke-width: 3;
+  paint-order: stroke fill;
+}
+
+@keyframes variant-dash-march {
+  to { stroke-dashoffset: -38; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .variant-arrow { animation: none; }
+}
+
 /* Sprint 3.7 (rev 2) — hover-insight ::after overlays removed; the
    restored Threat / Support toggles drive the existing CSS classes
    (.threatened, .threatening-piece, .support-overlay arrows). */

@@ -88,7 +88,7 @@ import { localStorageAdapter } from './memory/storage';
 import { MemoryPanel } from './memory/MemoryPanel';
 import type { SavedGame } from './memory/types';
 import { NotationParseError, parseMemoryNotation } from './memory/notation';
-import { moveVoting, type VoteMode } from './twitch/moveVoting';
+import { moveVoting, type VoteMode, type VoteRound } from './twitch/moveVoting';
 import { micEq } from './audio/micEqualizer';
 import { PerimeterEqualizer } from './components/PerimeterEqualizer';
 import { BackgroundWaveGrid } from './components/BackgroundWaveGrid';
@@ -549,6 +549,11 @@ function App() {
   // react when the streamer flips the mode pill in the Twitch panel.
   const [twitchVoteMode, setTwitchVoteMode] = useState<VoteMode>(() => moveVoting.getMode());
   useEffect(() => moveVoting.onMode(setTwitchVoteMode), []);
+  // R1 — live vote round mirrored for the on-board variant arrows: each
+  // candidate is drawn as a dashed arrow in its own color (matching the
+  // !1..!4 slots), growing thicker as its votes come in.
+  const [voteRound, setVoteRound] = useState<VoteRound | null>(() => moveVoting.getRound());
+  useEffect(() => moveVoting.onRound(setVoteRound), []);
   // SP — Spotify dock visibility + whether the mic equalizer runs
   // (the perimeter ring mounts only while it does).
   const [showMusicDock, setShowMusicDock] = useState(false);
@@ -4521,6 +4526,100 @@ function App() {
             })}
           </svg>
         )}
+        {voteRound && (() => {
+          // R1 — variant arrows: the live vote round on the board. Slate
+          // rounds (predict / vs-streamer) keep candidate order — the color
+          // IS the ballot slot (!1 green, !2 red, !3 yellow, !4 blue), so
+          // arrows must not reshuffle as counts change. Freeform rounds
+          // (chat-vs-bot) have an unbounded slate — show the top 4 by
+          // votes, labelled with the count instead of a slot number.
+          const VARIANT_COLORS = ['green', 'red', 'yellow', 'blue'] as const;
+          const withIdx = voteRound.candidates
+            .map((c, idx) => ({ c, idx, count: voteRound.counts[idx] ?? 0 }))
+            .filter((x) => x.c.move.from && x.c.move.to);
+          const shown = voteRound.freeform
+            ? [...withIdx].sort((a, b) => b.count - a.count || a.idx - b.idx).slice(0, 4)
+            : withIdx.slice(0, 4);
+          if (shown.length === 0) return null;
+          const maxCount = Math.max(1, ...shown.map((x) => x.count));
+          const revealed = voteRound.revealIdx !== null;
+          return (
+            <svg
+              className="variant-overlay"
+              width={boardSize}
+              height={boardSize}
+              viewBox={`0 0 ${boardSize} ${boardSize}`}
+              aria-hidden
+            >
+              <defs>
+                {VARIANT_COLORS.map((c) => (
+                  <marker
+                    key={c}
+                    id={`variant-arrowhead-${c}`}
+                    viewBox="0 0 10 10"
+                    refX="6"
+                    refY="5"
+                    markerWidth="3.2"
+                    markerHeight="3.2"
+                    orient="auto"
+                  >
+                    <path d="M 0 0 L 10 5 L 0 10 z" className={`annotation-color-${c}`} />
+                  </marker>
+                ))}
+              </defs>
+              {shown.map(({ c, idx, count }, slot) => {
+                const from = c.move.from as SquareId;
+                const to = c.move.to as SquareId;
+                const color = VARIANT_COLORS[voteRound.freeform ? slot : idx];
+                const fromC = tilePixelCenter(from, displayTopology, layout);
+                const toC = tilePixelCenter(to, displayTopology, layout);
+                const dx = toC.cx - fromC.cx;
+                const dy = toC.cy - fromC.cy;
+                const dist = Math.hypot(dx, dy) || 1;
+                const inset = tileBase * 0.32;
+                const endX = toC.cx - (dx / dist) * inset;
+                const endY = toC.cy - (dy / dist) * inset;
+                // Vote share drives the stroke: even a losing option stays
+                // readable, the leader visibly bulks up.
+                const width = tileBase * (0.09 + 0.1 * (count / maxCount));
+                const isWinner = revealed && voteRound.revealIdx === idx;
+                const cls = revealed
+                  ? isWinner
+                    ? 'variant-arrow variant-arrow-winner'
+                    : 'variant-arrow variant-arrow-loser'
+                  : 'variant-arrow';
+                // Label sits a third of the way along the arrow, nudged
+                // perpendicular so it doesn't ride the line itself.
+                const lx = fromC.cx + dx * 0.33 - (dy / dist) * tileBase * 0.28;
+                const ly = fromC.cy + dy * 0.33 + (dx / dist) * tileBase * 0.28;
+                const label = voteRound.freeform ? `×${count}` : `!${idx + 1}`;
+                return (
+                  <g key={`${from}-${to}-${idx}`}>
+                    <line
+                      x1={fromC.cx}
+                      y1={fromC.cy}
+                      x2={endX}
+                      y2={endY}
+                      className={`${cls} annotation-color-${color}`}
+                      style={{ strokeWidth: width, strokeDasharray: isWinner ? 'none' : `${tileBase * 0.22} ${tileBase * 0.16}` }}
+                      markerEnd={`url(#variant-arrowhead-${color})`}
+                    />
+                    <text
+                      x={lx}
+                      y={ly}
+                      className={`variant-arrow-label annotation-color-${color}`}
+                      style={{ fontSize: tileBase * 0.3 }}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                    >
+                      {label}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+          );
+        })()}
       </div>
       {/* Sprint 4.2 — coords overlay lives OUTSIDE .board so the labels
           stay still while the board itself can rotate / preview-rotate.
