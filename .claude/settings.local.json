@@ -82,7 +82,9 @@
       "PowerShell(git commit -m \"docs: release roadmap - chat arrows, predict-the-streamer, docked panels, tutorials, victory scene\")",
       "PowerShell(npx tsc -b 2>$null; \"tsc: $LASTEXITCODE\"; npx eslint src/App.tsx 2>$null | Select-String \"variant|voteRound|error\" | Select-Object -First 10; \"eslint done\")",
       "PowerShell(git add -A .claude/settings.local.json 2>$null)",
-      "PowerShell(git commit -m \"chore: checkpoint before predict-the-streamer \\(r2\\)\" --allow-empty)"
+      "PowerShell(git commit -m \"chore: checkpoint before predict-the-streamer \\(r2\\)\" --allow-empty)",
+      "PowerShell(npx tsc -b 2>$null; \"tsc: $LASTEXITCODE\"; npx eslint src/twitch/moveVoting.ts src/components/TwitchPanel.tsx 2>$null; \"eslint: $LASTEXITCODE\")",
+      "PowerShell(git commit -m \"chore: checkpoint before docked panels \\(r3\\)\" --allow-empty)"
     ],
     "additionalDirectories": [
       "C:\\projects\\chess\\src"
