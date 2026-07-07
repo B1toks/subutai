@@ -56,7 +56,25 @@
       "PowerShell($conn = Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue; if \\($conn\\) { $conn | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -Confirm:$false }; Start-Sleep -Milliseconds 500 }; \"ok\")",
       "PowerShell(git add .claude/settings.local.json)",
       "PowerShell(git commit -m \"chore: checkpoint before TempoCNN work\")",
-      "PowerShell(git tag pre-tempocnn)"
+      "PowerShell(git tag pre-tempocnn)",
+      "WebFetch(domain:essentia.upf.edu)",
+      "WebFetch(domain:mtg.github.io)",
+      "PowerShell($sp = \"C:\\\\Users\\\\Alex\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projects-chess\\\\4e87c811-ea28-47e3-af87-1d394eaa8800\\\\scratchpad\"; Invoke-WebRequest -Uri \"https://essentia.upf.edu/models/tempo/tempocnn/deeptemp-k16-3-tfjs.zip\" -OutFile \"$sp\\\\deeptemp-k16-3-tfjs.zip\"; Invoke-WebRequest -Uri \"https://essentia.upf.edu/models/tempo/tempocnn/deeptemp-k16-3.json\" -OutFile \"$sp\\\\deeptemp-k16-3.json\"; Expand-Archive \"$sp\\\\deeptemp-k16-3-tfjs.zip\" -DestinationPath \"$sp\\\\deeptemp-k16-3\" -Force; Get-ChildItem -Recurse \"$sp\\\\deeptemp-k16-3\" | Select-Object FullName, Length)",
+      "PowerShell($sp = \"C:\\\\Users\\\\Alex\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projects-chess\\\\4e87c811-ea28-47e3-af87-1d394eaa8800\\\\scratchpad\"; Get-ChildItem -Recurse \"$sp\\\\deeptemp-k16-3\" | ForEach-Object { $_.FullName.Substring\\($sp.Length\\) + \"  \" + $_.Length }; $mj = Get-ChildItem -Recurse \"$sp\\\\deeptemp-k16-3\" -Filter model.json | Select-Object -First 1; $j = Get-Content $mj.FullName -Raw | ConvertFrom-Json; $j.modelTopology.node | Where-Object { $_.op -eq 'Placeholder' } | ForEach-Object { $_.name + \" :: \" + \\($_.attr.shape.shape.dim.size -join \",\"\\) }; \"--- outputs guess ---\"; $j.modelTopology.node | Select-Object -Last 5 | ForEach-Object { $_.name + \" \\(\" + $_.op + \"\\)\" })",
+      "PowerShell(Select-String -Path \"node_modules\\\\essentia.js\\\\dist\\\\essentia-wasm.es.js\" -Pattern \"TensorflowInputTempoCNN\" -SimpleMatch -List | Select-Object -First 1 | ForEach-Object { \"FOUND in essentia-wasm.es.js\" })",
+      "PowerShell(node \"C:\\\\Users\\\\Alex\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projects-chess\\\\4e87c811-ea28-47e3-af87-1d394eaa8800\\\\scratchpad\\\\check-tempocnn.mjs\")",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "PowerShell($sp = \"C:\\\\Users\\\\Alex\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projects-chess\\\\4e87c811-ea28-47e3-af87-1d394eaa8800\\\\scratchpad\"; New-Item -ItemType Directory -Force \"public\\\\models\\\\deeptemp-k16-3\" | Out-Null; Copy-Item \"$sp\\\\deeptemp-k16-3\\\\deeptemp-k16-3-tfjs\\\\model.json\",\"$sp\\\\deeptemp-k16-3\\\\deeptemp-k16-3-tfjs\\\\group1-shard1of1.bin\" \"public\\\\models\\\\deeptemp-k16-3\\\\\"; Get-ChildItem \"public\\\\models\\\\deeptemp-k16-3\")",
+      "PowerShell($sp = \"C:\\\\Users\\\\Alex\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projects-chess\\\\4e87c811-ea28-47e3-af87-1d394eaa8800\\\\scratchpad\"; Invoke-WebRequest -Uri \"https://essentia.upf.edu/models/tempo/tempocnn/deeptemp-k16-3-tfjs.zip\" -OutFile \"$sp\\\\deeptemp-k16-3-tfjs.zip\"; Expand-Archive \"$sp\\\\deeptemp-k16-3-tfjs.zip\" -DestinationPath \"$sp\\\\deeptemp-k16-3\" -Force; $files = Get-ChildItem -Recurse \"$sp\\\\deeptemp-k16-3\" -File; $files | ForEach-Object { $_.FullName.Substring\\($sp.Length\\) + \"  \" + $_.Length }; New-Item -ItemType Directory -Force \"public\\\\models\\\\deeptemp-k16-3\" | Out-Null; $files | Where-Object { $_.Name -match 'model.json|shard' } | Copy-Item -Destination \"public\\\\models\\\\deeptemp-k16-3\\\\\"; Get-ChildItem \"public\\\\models\\\\deeptemp-k16-3\" | Select-Object Name, Length)",
+      "PowerShell(npm install @tensorflow/tfjs)",
+      "PowerShell(npx tsc -b 2>$null; \"tsc exit: $LASTEXITCODE\")",
+      "PowerShell(npm run lint 2>$null; \"lint exit: $LASTEXITCODE\"; npm run build:gh 2>$null; \"build exit: $LASTEXITCODE\")",
+      "WebFetch(domain:api.github.com)",
+      "PowerShell(gh api \"search/code?q=repo:MTG/essentia+TensorflowInputTempoCNN\" --jq \".items[].path\" 2>$null; \"exit: $LASTEXITCODE\")",
+      "PowerShell(gh api repos/MTG/essentia/contents/src/algorithms/spectral/tensorflowinputtempocnn.cpp --jq \".content\" | ForEach-Object { [System.Text.Encoding]::UTF8.GetString\\([Convert]::FromBase64String\\($_ -replace \"`n\",\"\"\\)\\) })",
+      "PowerShell($sp = \"C:\\\\Users\\\\Alex\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projects-chess\\\\4e87c811-ea28-47e3-af87-1d394eaa8800\\\\scratchpad\"; gh api -H \"Accept: application/vnd.github.raw\" repos/MTG/essentia/contents/src/algorithms/spectral/tensorflowinputtempocnn.cpp > \"$sp\\\\tcnn-input.cpp\"; \"saved: $\\(\\(Get-Item \"$sp\\\\tcnn-input.cpp\"\\).Length\\) bytes\")",
+      "PowerShell(npx tsc -b 2>$null; \"tsc: $LASTEXITCODE\"; npx eslint src/music/essentiaBpm.worker.ts src/music/liveEssentia.ts src/types/essentia.d.ts 2>$null; \"eslint: $LASTEXITCODE\"; npm run build:gh 2>$null | Select-Object -Last 5; \"build: $LASTEXITCODE\")",
+      "PowerShell(git commit -m \"chore: checkpoint before chat-mode/UX roadmap work\")"
     ],
     "additionalDirectories": [
       "C:\\projects\\chess\\src"
