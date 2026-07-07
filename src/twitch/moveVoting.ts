@@ -12,6 +12,11 @@
  *     side. Free-form rounds — viewers type any legal move ("e4",
  *     "Nf3", "O-O", "e2e4"); the majority move is played against the
  *     engine. The streamer can always move manually as an override.
+ *   guess (R2) — "guess the streamer": while the streamer thinks, chat
+ *     types the move they expect (free-form, same input as chatvsbot).
+ *     The round doesn't gate anything — it resolves whenever the
+ *     streamer actually moves; correct guessers get +2 and their nicks
+ *     flash on the board.
  *
  * The store is a singleton living outside React: App's AI scheduler
  * awaits `gate()`, the Twitch panel renders rounds via subscriptions,
@@ -23,7 +28,7 @@ import type { BoardState, Move } from '../engine';
 import { computeSAN } from '../recording/log';
 import { twitchChat, type TwitchChatMessage } from './chat';
 
-export type VoteMode = 'off' | 'predict' | 'chat' | 'chatvsbot';
+export type VoteMode = 'off' | 'predict' | 'chat' | 'chatvsbot' | 'guess';
 
 export interface VoteCandidate {
   move: Move;
@@ -41,6 +46,16 @@ export interface VoteRound {
   /** T6 — chatvsbot rounds have no fixed slate: candidates grow as
    *  chat proposes distinct legal moves. */
   freeform?: boolean;
+  /** R2 — guess rounds have no clock: they stay open until the
+   *  streamer moves (endsAt is ignored). */
+  openEnded?: boolean;
+}
+
+/** R2 — who called the streamer's move. */
+export interface GuessWinner {
+  nick: string;
+  displayName: string;
+  color: string;
 }
 
 export interface ViewerScore {
@@ -298,40 +313,7 @@ class MoveVotingStore {
     const pieceMoves = legalMoves.filter((m) => m.from && m.to);
     if (pieceMoves.length === 0) return null;
 
-    this.sanIndex.clear();
-    // Two passes: coordinate keys are unique by construction and always
-    // land; short aliases can collide ("bxc3" pawn vs bishop, two knights
-    // reaching f3) — those are collected first, then a collision either
-    // resolves to the pawn reading (what lowercase means in chat) or the
-    // alias is dropped and voters fall back to the coordinate form.
-    const aliasMap = new Map<string, VoteCandidate[]>();
-    for (const m of pieceMoves) {
-      const cand: VoteCandidate = { move: m, san: computeSAN(boardState, m) };
-      const promo = m.kind === 'promotion' && m.promotion ? PROMO_LETTER[m.promotion] : '';
-      this.sanIndex.set(`${m.from}${m.to}${promo}`.toLowerCase(), cand);
-      if (promo === 'q') this.sanIndex.set(`${m.from}${m.to}`.toLowerCase(), cand);
-      for (const alias of moveAliases(boardState, m)) {
-        const list = aliasMap.get(alias);
-        if (list) list.push(cand);
-        else aliasMap.set(alias, [cand]);
-      }
-    }
-    for (const [alias, cands] of aliasMap) {
-      if (cands.length === 1) {
-        if (!this.sanIndex.has(alias)) this.sanIndex.set(alias, cands[0]);
-        continue;
-      }
-      // Prefer the pawn move when exactly one candidate is a pawn move —
-      // "bxc3" typed lowercase means the b-pawn, not the bishop.
-      const pawnCands = cands.filter(
-        (c) => c.move.from != null && boardState.pieces[c.move.from]?.type === 'pawn',
-      );
-      if (pawnCands.length === 1 && !this.sanIndex.has(alias)) {
-        this.sanIndex.set(alias, pawnCands[0]);
-      }
-      // Otherwise ambiguous (two knights to one square) — drop the alias;
-      // the coordinate form still works and stays visible in the hint.
-    }
+    this.indexLegalMoves(boardState, pieceMoves);
 
     this.votes.clear();
     this.voterMeta.clear();
@@ -382,6 +364,112 @@ class MoveVotingStore {
     }, REVEAL_HOLD_MS);
 
     return round.candidates[finalIdx].move;
+  }
+
+  /** Build the typed-text → candidate index for a free-form round.
+   *  Two passes: coordinate keys are unique by construction and always
+   *  land; short aliases can collide ("bxc3" pawn vs bishop, two knights
+   *  reaching f3) — those are collected first, then a collision either
+   *  resolves to the pawn reading (what lowercase means in chat) or the
+   *  alias is dropped and voters fall back to the coordinate form. */
+  private indexLegalMoves(boardState: BoardState, pieceMoves: Move[]) {
+    this.sanIndex.clear();
+    const aliasMap = new Map<string, VoteCandidate[]>();
+    for (const m of pieceMoves) {
+      const cand: VoteCandidate = { move: m, san: computeSAN(boardState, m) };
+      const promo = m.kind === 'promotion' && m.promotion ? PROMO_LETTER[m.promotion] : '';
+      this.sanIndex.set(`${m.from}${m.to}${promo}`.toLowerCase(), cand);
+      if (promo === 'q') this.sanIndex.set(`${m.from}${m.to}`.toLowerCase(), cand);
+      for (const alias of moveAliases(boardState, m)) {
+        const list = aliasMap.get(alias);
+        if (list) list.push(cand);
+        else aliasMap.set(alias, [cand]);
+      }
+    }
+    for (const [alias, cands] of aliasMap) {
+      if (cands.length === 1) {
+        if (!this.sanIndex.has(alias)) this.sanIndex.set(alias, cands[0]);
+        continue;
+      }
+      // Prefer the pawn move when exactly one candidate is a pawn move —
+      // "bxc3" typed lowercase means the b-pawn, not the bishop.
+      const pawnCands = cands.filter(
+        (c) => c.move.from != null && boardState.pieces[c.move.from]?.type === 'pawn',
+      );
+      if (pawnCands.length === 1 && !this.sanIndex.has(alias)) {
+        this.sanIndex.set(alias, pawnCands[0]);
+      }
+      // Otherwise ambiguous (two knights to one square) — drop the alias;
+      // the coordinate form still works and stays visible in the hint.
+    }
+  }
+
+  /**
+   * R2 — open a "guess the streamer" round. Free-form input like
+   * chatvsbot, but nothing awaits it: it has no clock and resolves only
+   * when the streamer moves (resolveGuessRound) or the position changes
+   * under it (cancelRound — App's effect cleanup, same as chatvsbot).
+   */
+  openGuessRound(boardState: BoardState, legalMoves: Move[]) {
+    if (this.mode !== 'guess') return;
+    if (twitchChat.getStatus() !== 'connected') return;
+    if (this.round) return;
+    const pieceMoves = legalMoves.filter((m) => m.from && m.to);
+    if (pieceMoves.length === 0) return;
+    this.indexLegalMoves(boardState, pieceMoves);
+    this.votes.clear();
+    this.voterMeta.clear();
+    this.round = {
+      mode: 'guess',
+      candidates: [],
+      counts: [],
+      endsAt: 0,
+      revealIdx: null,
+      freeform: true,
+      openEnded: true,
+    };
+    this.emitRound();
+  }
+
+  /**
+   * R2 — the streamer moved: resolve the open guess round against the
+   * move actually played. Correct guessers get +2 (a human is harder to
+   * read than a slate) and are returned so the App can flash their
+   * nicks. The played move joins the slate even if nobody guessed it —
+   * the reveal banner then shows what chat missed.
+   */
+  resolveGuessRound(played: Move, san: string): GuessWinner[] {
+    const round = this.round;
+    if (!round || round.mode !== 'guess' || round.revealIdx !== null) return [];
+    let idx = round.candidates.findIndex(
+      (c) =>
+        c.move.from === played.from &&
+        c.move.to === played.to &&
+        (c.move.kind !== 'promotion' || c.move.promotion === played.promotion),
+    );
+    if (idx === -1) {
+      idx = round.candidates.length;
+      round.candidates.push({ move: played, san });
+      round.counts.push(0);
+    }
+    const winners: GuessWinner[] = [];
+    for (const [nick, vIdx] of this.votes) {
+      if (vIdx === idx) {
+        const meta = this.voterMeta.get(nick);
+        const w = { nick, displayName: meta?.displayName ?? nick, color: meta?.color ?? '' };
+        winners.push(w);
+        this.addPoints(w.nick, w.displayName, w.color, 2);
+      }
+    }
+    this.emitScores();
+    this.round = { ...round, revealIdx: idx };
+    this.emitRound();
+    if (this.clearTimer) clearTimeout(this.clearTimer);
+    this.clearTimer = setTimeout(() => {
+      this.round = null;
+      this.emitRound();
+    }, REVEAL_HOLD_MS);
+    return winners;
   }
 
   /** T6 — abort an open (unrevealed) round: the position changed under

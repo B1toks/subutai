@@ -365,7 +365,7 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
         <>
           {/* T4 — move-vote mode selector */}
           <div className="twitch-mode-row" role="radiogroup" aria-label="Move voting mode">
-            {(['off', 'predict', 'chat', 'chatvsbot'] as VoteMode[]).map((m) => (
+            {(['off', 'predict', 'chat', 'chatvsbot', 'guess'] as VoteMode[]).map((m) => (
               <button
                 key={m}
                 type="button"
@@ -380,7 +380,9 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
                     ? 'Predict'
                     : m === 'chat'
                       ? 'Vs streamer'
-                      : 'Vs bot'}
+                      : m === 'chatvsbot'
+                        ? 'Vs bot'
+                        : 'Guess'}
               </button>
             ))}
           </div>
@@ -392,12 +394,16 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
                 {round.revealIdx !== null
                   ? round.mode === 'predict'
                     ? 'The engine played:'
-                    : 'Chat picked:'
+                    : round.mode === 'guess'
+                      ? 'The streamer played:'
+                      : 'Chat picked:'
                   : round.mode === 'predict'
                     ? `Which move will the AI play? · ${secondsLeft}s`
                     : round.mode === 'chatvsbot'
                       ? `Chat — type your move! (e4, Nf3, O-O) · ${secondsLeft}s`
-                      : `Chat — pick the AI's move! · ${secondsLeft}s`}
+                      : round.mode === 'guess'
+                        ? 'Guess the streamer’s move! (e4, Nf3, O-O)'
+                        : `Chat — pick the AI's move! · ${secondsLeft}s`}
               </div>
               {round.freeform ? (
                 round.candidates.length === 0 ? (

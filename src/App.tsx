@@ -88,7 +88,7 @@ import { localStorageAdapter } from './memory/storage';
 import { MemoryPanel } from './memory/MemoryPanel';
 import type { SavedGame } from './memory/types';
 import { NotationParseError, parseMemoryNotation } from './memory/notation';
-import { moveVoting, type VoteMode, type VoteRound } from './twitch/moveVoting';
+import { moveVoting, type VoteMode, type VoteRound, type GuessWinner } from './twitch/moveVoting';
 import { micEq } from './audio/micEqualizer';
 import { PerimeterEqualizer } from './components/PerimeterEqualizer';
 import { BackgroundWaveGrid } from './components/BackgroundWaveGrid';
@@ -554,6 +554,16 @@ function App() {
   // !1..!4 slots), growing thicker as its votes come in.
   const [voteRound, setVoteRound] = useState<VoteRound | null>(() => moveVoting.getRound());
   useEffect(() => moveVoting.onRound(setVoteRound), []);
+  // R2 — chatters who called the streamer's move; their nicks flash over
+  // the board for a few seconds after each correct guess.
+  const [guessWinners, setGuessWinners] = useState<GuessWinner[]>([]);
+  const guessWinnersTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const announceGuessWinners = useCallback((winners: GuessWinner[]) => {
+    if (winners.length === 0) return;
+    setGuessWinners(winners);
+    if (guessWinnersTimer.current) clearTimeout(guessWinnersTimer.current);
+    guessWinnersTimer.current = setTimeout(() => setGuessWinners([]), 4_500);
+  }, []);
   // SP — Spotify dock visibility + whether the mic equalizer runs
   // (the perimeter ring mounts only while it does).
   const [showMusicDock, setShowMusicDock] = useState(false);
@@ -2841,6 +2851,32 @@ function App() {
     legalMoves,
   ]);
 
+  // R2 — "guess the streamer": while it's the human's turn, an open-ended
+  // free-form round collects chat's guesses. Nothing awaits it — the
+  // resolution happens inside the human commit paths (resolveGuessRound),
+  // and the cleanup cancels a still-unrevealed round when the position
+  // changes some other way (undo, reset, mode flip). A revealed round is
+  // left alone; its banner clears itself.
+  useEffect(() => {
+    if (twitchVoteMode !== 'guess') return;
+    if (isMultiplayer || isLocalMode || isAutoMode || watchingGame) return;
+    if (gameMode !== 'classic' || gameStatus !== 'active') return;
+    if (currentPlayer !== 'human') return;
+    moveVoting.openGuessRound(state, legalMoves);
+    return () => moveVoting.cancelRound();
+  }, [
+    twitchVoteMode,
+    isMultiplayer,
+    isLocalMode,
+    isAutoMode,
+    watchingGame,
+    gameMode,
+    gameStatus,
+    currentPlayer,
+    state,
+    legalMoves,
+  ]);
+
   // Stage T1: trigger the en-passant explosion overlay whenever a new
   // EP move lands in the log — works for both solo + MP because the log
   // alias covers both. Captured pawn sits at (file of `to`, rank of `from`).
@@ -3186,6 +3222,8 @@ function App() {
     // ── commit closure ──────────────────────────────────────────────
     function commitMove() {
     const san = computeSAN(state, resolvedMove);
+    // R2 — settle the chat's "guess the streamer" round on the actual move.
+    announceGuessWinners(moveVoting.resolveGuessRound(resolvedMove, san));
     const moverType = state.pieces[resolvedMove.from!]!.type;
     const afterMove = applyMove(state, resolvedMove);
     setLog((prev) => appendMove(prev, resolvedMove, san, state.topologyState));
@@ -3281,6 +3319,8 @@ function App() {
     );
     if (!move) return;
     const san = computeSAN(state, move);
+    // R2 — promotion commits bypass commitMove; settle the guess round here too.
+    announceGuessWinners(moveVoting.resolveGuessRound(move, san));
     const next = applyMove(state, move);
     setState(next);
     const nextMoves = getLegalMoves(next);
@@ -4620,6 +4660,25 @@ function App() {
             </svg>
           );
         })()}
+        {guessWinners.length > 0 && (
+          <div className="guess-winners-overlay" aria-live="polite">
+            <div className="guess-winners-title">🎯 Called it!</div>
+            {guessWinners.slice(0, 5).map((w) => (
+              <div
+                key={w.nick}
+                className="guess-winner-nick"
+                style={w.color ? { color: w.color } : undefined}
+              >
+                {w.displayName}
+              </div>
+            ))}
+            {guessWinners.length > 5 && (
+              <div className="guess-winner-nick guess-winner-more">
+                +{guessWinners.length - 5} more
+              </div>
+            )}
+          </div>
+        )}
       </div>
       {/* Sprint 4.2 — coords overlay lives OUTSIDE .board so the labels
           stay still while the board itself can rotate / preview-rotate.
