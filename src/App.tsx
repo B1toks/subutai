@@ -849,12 +849,19 @@ function App() {
       worstHumanEvalRef.current = searchEvalFromWhite;
     }
   }, [searchEvalFromWhite]);
-  // Dev seam — preview the cinematic without playing out a comeback.
+  // Console seam — play the victory cinematic on demand without having to
+  // grind out a real comeback. Attached in production too (harmless hidden
+  // global) so it works on the live site: open DevTools and run
+  // `subutaiVictory()` or `subutaiVictory('blue')`.
   useEffect(() => {
-    if (!import.meta.env.DEV || typeof window === 'undefined') return;
-    (window as unknown as { __triggerVictory?: (t?: VictoryTheme) => void }).__triggerVictory = (
-      t: VictoryTheme = 'red',
-    ) => setVictoryTheme(t);
+    if (typeof window === 'undefined') return;
+    const trigger = (t: VictoryTheme = 'red') => setVictoryTheme(t === 'blue' ? 'blue' : 'red');
+    const w = window as unknown as {
+      subutaiVictory?: (t?: VictoryTheme) => void;
+      __triggerVictory?: (t?: VictoryTheme) => void;
+    };
+    w.subutaiVictory = trigger;
+    w.__triggerVictory = trigger; // legacy alias used in dev tooling
   }, []);
 
   useEffect(() => {

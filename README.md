@@ -14,11 +14,37 @@ A **Chess 960 variant** with dynamically rotating 2×2 board segments and custom
 - Custom castling rules adapted to the rotation mechanic
 - All standard rules + segment-rotation logic + global state synchronization
 
+## Streaming & interactive layer
+
+Subutai doubles as a stream toy — the audience plays along and the board reacts to music.
+
+### Twitch chat modes
+
+Open the Twitch panel, connect a channel, and pick a mode. Candidate moves are drawn on the board as colored dashed arrows (`!1` green, `!2` red, `!3` yellow, `!4` blue); the arrow thickens with its share of the vote.
+
+- **Predict** — the engine picks its move; chat votes which of `!1`–`!4` is the real one. Correct guessers score.
+- **Vs streamer** — chat votes 4 candidate moves; the top vote becomes the AI's move.
+- **Vs bot** — chat plays the human side, typing any legal move (`e4`, `Nf3`, `O-O`, `e2e4`); the majority is played.
+- **Guess** — while *you* think, chat types the move they expect you to make. The moment you move, everyone who called it scores +2 and their names flash over the board.
+
+### Music & beat sync
+
+The music dock loads a Spotify/track URL, a local file, or captures tab/mic audio, detects BPM (histogram → essentia.js → TempoCNN neural net), and locks a beat grid. Turn on **Beat Mode** to snap moves to the beat. First-time controls explain themselves with a one-line coach-mark. Dock the Twitch and music panels into the layout and the board slides over to make room.
+
+### Victory cinematic
+
+Win a game after being clearly behind and a ~9-second pixel cutscene fires — cold build-up, a bass-drop strobe pulsing *on the beat* of whatever's playing, then a freeze on **VICTORY**. To play it on demand, open the browser DevTools console and run:
+
+```js
+subutaiVictory()        // red theme
+subutaiVictory('blue')  // electric-blue theme
+```
+
 ## Tech
 
-- **React 18** + **TypeScript**
+- **React 19** + **TypeScript**
 - **Vite** — dev server + build
-- **Tailwind CSS** + **ShadCN UI** — interface chrome
+- **essentia.js** (WASM) + **TensorFlow.js** — live BPM / TempoCNN tempo detection
 - Pure-state board representation (no DOM-driven game state)
 
 ## Run locally
