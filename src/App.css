@@ -3495,6 +3495,40 @@ body.checkmate-flash::after {
   .tile.beat-snap-from::after { animation: none; }
 }
 
+/* R6 — pixel victory cinematic overlay. Full-screen canvas above
+   everything; click anywhere to skip. */
+.victory-scene {
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  cursor: pointer;
+  animation: victory-fade-in 0.2s ease-out both;
+}
+
+.victory-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+.victory-skip {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+@keyframes victory-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 /* R4 — first-press coach-mark inside the music dock. Slides in under
    the header the first time each control is used. */
 .music-coach {

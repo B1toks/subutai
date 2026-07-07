@@ -22,6 +22,7 @@ import { type MoveClass, type MoveAnalysis } from './analysis/classify';
 import { classifyAsync } from './analysis/classifyClient';
 import { NamePicker } from './components/NamePicker';
 import { useToast } from './components/Toast';
+import type { VictoryTheme } from './components/VictoryScene';
 import { GameSummary } from './components/GameSummary';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { FeedbackModal } from './components/FeedbackModal';
@@ -126,6 +127,10 @@ const TwitchPanel = lazy(() =>
 // SP — Spotify dock, same deal.
 const MusicDock = lazy(() =>
   import('./components/MusicDock').then((m) => ({ default: m.MusicDock })),
+);
+// R6 — pixel victory cinematic; loaded only when a tense win triggers it.
+const VictoryScene = lazy(() =>
+  import('./components/VictoryScene').then((m) => ({ default: m.VictoryScene })),
 );
 
 type GameStatus =
@@ -834,6 +839,23 @@ function App() {
   const encourageLastMoveRef = useRef(-99);
   const encourageCheckedMoveRef = useRef(-1);
   const [encourageRotate, setEncourageRotate] = useState(false);
+
+  // R6 — worst eval the human faced this game (most negative from white's
+  // side). A tense, come-from-behind win triggers the victory cinematic.
+  const worstHumanEvalRef = useRef(0);
+  const [victoryTheme, setVictoryTheme] = useState<VictoryTheme | null>(null);
+  useEffect(() => {
+    if (searchEvalFromWhite !== null && searchEvalFromWhite < worstHumanEvalRef.current) {
+      worstHumanEvalRef.current = searchEvalFromWhite;
+    }
+  }, [searchEvalFromWhite]);
+  // Dev seam — preview the cinematic without playing out a comeback.
+  useEffect(() => {
+    if (!import.meta.env.DEV || typeof window === 'undefined') return;
+    (window as unknown as { __triggerVictory?: (t?: VictoryTheme) => void }).__triggerVictory = (
+      t: VictoryTheme = 'red',
+    ) => setVictoryTheme(t);
+  }, []);
 
   useEffect(() => {
     if (formationInputMode) formationInputRef.current?.focus();
@@ -1867,6 +1889,8 @@ function App() {
     setRouletteSpinCount(0);
     setSearchEvalFromWhite(null);
     setSearchMateInPlies(null);
+    worstHumanEvalRef.current = 0; // R6 — reset the tense-win detector
+    setVictoryTheme(null);
     setSummaryOpen(false);
     setLastGamePoints(null);
     setGameOutcome(null);
@@ -3458,6 +3482,16 @@ function App() {
     log.moves.length,
     toast,
   ]);
+
+  // R6 — fire the pixel victory cinematic on a TENSE win: the human won
+  // after being clearly behind at some point (worst eval ≤ -2 pawns). A
+  // clean, never-in-danger win just gets the usual summary. Solo only.
+  useEffect(() => {
+    if (gameOutcome !== 'human-win') return;
+    if (isMultiplayer || isLocalMode) return;
+    if (worstHumanEvalRef.current > -2.0) return; // was never really in danger
+    setVictoryTheme(Math.random() < 0.5 ? 'red' : 'blue');
+  }, [gameOutcome, isMultiplayer, isLocalMode]);
 
   const layout = useMemo(
     () => computeBoardLayout(displayTopology, boardSize),
@@ -5648,6 +5682,13 @@ function App() {
       )}
       {/* SP-2 — on-beat combo overlay; renders null while idle. */}
       <BeatCombo />
+
+      {/* R6 — pixel victory cinematic on a come-from-behind win. */}
+      {victoryTheme && (
+        <Suspense fallback={null}>
+          <VictoryScene theme={victoryTheme} onDone={() => setVictoryTheme(null)} />
+        </Suspense>
+      )}
 
       {showTwitch && (
         <Suspense fallback={null}>
