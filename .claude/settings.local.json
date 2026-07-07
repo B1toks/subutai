@@ -93,7 +93,16 @@
       "Bash(rm -rf checkp)",
       "PowerShell(git add src/components/MusicDock.tsx src/App.css)",
       "PowerShell(git commit -F \"C:\\\\Users\\\\Alex\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projects-chess\\\\4e87c811-ea28-47e3-af87-1d394eaa8800\\\\scratchpad\\\\r4-msg.txt\")",
-      "PowerShell(git commit -m \"chore: checkpoint before encouragement system \\(r5\\)\" --allow-empty)"
+      "PowerShell(git commit -m \"chore: checkpoint before encouragement system \\(r5\\)\" --allow-empty)",
+      "PowerShell(npx tsc -b 2>$null; \"tsc: $LASTEXITCODE\"; npx eslint src/App.tsx 2>$null | Select-String \"encourage|toast|error \" | Select-Object -First 8; \"eslint done\")",
+      "PowerShell(npm run build:gh 2>$null | Select-Object -Last 2; \"build: $LASTEXITCODE\")",
+      "PowerShell(git add src/App.tsx)",
+      "PowerShell(git commit -F \"C:\\\\Users\\\\Alex\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projects-chess\\\\4e87c811-ea28-47e3-af87-1d394eaa8800\\\\scratchpad\\\\r5-msg.txt\")",
+      "PowerShell(\"main -> $\\(git rev-parse --short main\\)\"; \"HEAD -> $\\(git rev-parse --short HEAD\\)\"; git status --short | Select-Object -First 10; git merge-base --is-ancestor main HEAD; \"main is ancestor of HEAD: $\\($LASTEXITCODE -eq 0\\)\")",
+      "PowerShell(git branch -f main e7fcad9)",
+      "PowerShell(git checkout main 2>&1)",
+      "PowerShell(\"---\")",
+      "PowerShell(git add -A .claude/settings.local.json 2>$null; git commit -m \"chore: checkpoint before victory animation \\(r6\\)\" --allow-empty | Select-Object -First 1; \"branch: $\\(git branch --show-current\\)\")"
     ],
     "additionalDirectories": [
       "C:\\projects\\chess\\src"
