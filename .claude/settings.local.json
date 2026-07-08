@@ -106,7 +106,10 @@
       "PowerShell(npx tsc -b 2>$null; \"tsc: $LASTEXITCODE\"; npx eslint src/components/VictoryScene.tsx 2>$null; \"eslint\\(VictoryScene\\): $LASTEXITCODE\")",
       "PowerShell(npm run lint 2>$null | Select-String \"VictoryScene\"; \"lint VictoryScene issues above \\(empty=clean\\)\"; npm run build:gh 2>$null | Select-String \"VictoryScene|built in|error\"; \"build: $LASTEXITCODE\")",
       "PowerShell(git add src/components/VictoryScene.tsx src/App.tsx src/App.css; git commit -F \"C:\\\\Users\\\\Alex\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projects-chess\\\\4e87c811-ea28-47e3-af87-1d394eaa8800\\\\scratchpad\\\\r6-msg.txt\" | Select-Object -First 2; \"branch: $\\(git branch --show-current\\)\"; git log --oneline -1)",
-      "PowerShell(git add -A .claude/settings.local.json 2>$null; git commit -m \"chore: checkpoint before release prep \\(r7\\)\" --allow-empty | Select-Object -First 1; \"branch: $\\(git branch --show-current\\)\")"
+      "PowerShell(git add -A .claude/settings.local.json 2>$null; git commit -m \"chore: checkpoint before release prep \\(r7\\)\" --allow-empty | Select-Object -First 1; \"branch: $\\(git branch --show-current\\)\")",
+      "PowerShell(npx tsc -b 2>$null; \"tsc: $LASTEXITCODE\"; npm run build:gh 2>$null | Select-String \"built in|error\"; \"build: $LASTEXITCODE\")",
+      "PowerShell(git add src/App.tsx README.md; git commit -F \"C:\\\\Users\\\\Alex\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projects-chess\\\\4e87c811-ea28-47e3-af87-1d394eaa8800\\\\scratchpad\\\\r7-msg.txt\" | Select-Object -First 2; \"branch: $\\(git branch --show-current\\)\"; git log --oneline -8)",
+      "PowerShell(git add -A .claude/settings.local.json 2>$null; git commit -m \"chore: checkpoint before UX pass \\(r8\\)\" --allow-empty | Select-Object -First 1; \"branch: $\\(git branch --show-current\\)\")"
     ],
     "additionalDirectories": [
       "C:\\projects\\chess\\src"
