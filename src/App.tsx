@@ -577,15 +577,42 @@ function App() {
   // !1..!4 slots), growing thicker as its votes come in.
   const [voteRound, setVoteRound] = useState<VoteRound | null>(() => moveVoting.getRound());
   useEffect(() => moveVoting.onRound(setVoteRound), []);
-  // R2 — chatters who called the streamer's move; their nicks flash over
-  // the board for a few seconds after each correct guess.
-  const [guessWinners, setGuessWinners] = useState<GuessWinner[]>([]);
+  // R2/R9 — chatters who called the streamer's move burst over the board
+  // as a chaotic word-cloud of nicks (no plate): each nick gets a random
+  // spot, size, tilt and stagger, floats up and fades. Randomisation is
+  // rolled ONCE per reveal here, so re-renders don't reshuffle the cloud.
+  const [guessCloud, setGuessCloud] = useState<
+    {
+      key: string;
+      name: string;
+      color: string;
+      x: number; // % across the board
+      y: number;
+      size: number; // rem
+      rot: number; // deg
+      delay: number; // ms
+    }[]
+  >([]);
   const guessWinnersTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const announceGuessWinners = useCallback((winners: GuessWinner[]) => {
     if (winners.length === 0) return;
-    setGuessWinners(winners);
+    const shown = winners.slice(0, 24); // a storm of 24 nicks is plenty
+    // Fewer winners read bigger; a packed cloud shrinks so nicks coexist.
+    const base = shown.length <= 3 ? 1.7 : shown.length <= 8 ? 1.3 : 1.0;
+    setGuessCloud(
+      shown.map((w, i) => ({
+        key: `${w.nick}-${i}`,
+        name: w.displayName,
+        color: w.color,
+        x: 12 + Math.random() * 76,
+        y: 14 + Math.random() * 62,
+        size: base * (0.8 + Math.random() * 0.7),
+        rot: -14 + Math.random() * 28,
+        delay: Math.random() * 450,
+      })),
+    );
     if (guessWinnersTimer.current) clearTimeout(guessWinnersTimer.current);
-    guessWinnersTimer.current = setTimeout(() => setGuessWinners([]), 4_500);
+    guessWinnersTimer.current = setTimeout(() => setGuessCloud([]), 5_200);
   }, []);
   // SP — Spotify dock visibility + whether the mic equalizer runs
   // (the perimeter ring mounts only while it does).
@@ -817,8 +844,11 @@ function App() {
   const [dock, setDock] = useState<DockState>(() => dockLayout.get());
   useEffect(() => dockLayout.on(setDock), []);
 
+  // R9 — floored at 240px: a hidden/headless tab can report innerWidth 0
+  // during init, and without the floor boardSize goes NEGATIVE (tile math,
+  // dash arrays and overlays all silently break until the next resize).
   const [boardSize, setBoardSize] = useState(() =>
-    Math.min(window.innerWidth - 32, 520),
+    Math.max(240, Math.min(window.innerWidth - 32, 520)),
   );
 
   useEffect(() => {
@@ -826,7 +856,7 @@ function App() {
       // Side docks reserve space only on desktop; below the breakpoint
       // the panels become full-width bottom bars and reserve nothing.
       const reserved = window.innerWidth > 720 ? dock.left + dock.right : 0;
-      setBoardSize(Math.min(window.innerWidth - 32 - reserved, 520));
+      setBoardSize(Math.max(240, Math.min(window.innerWidth - 32 - reserved, 520)));
     }
     recompute();
     window.addEventListener('resize', recompute);
@@ -4785,7 +4815,17 @@ function App() {
                       x2={endX}
                       y2={endY}
                       className={`${cls} annotation-color-${color}`}
-                      style={{ strokeWidth: width, strokeDasharray: isWinner ? 'none' : `${tileBase * 0.22} ${tileBase * 0.16}` }}
+                      style={
+                        {
+                          strokeWidth: width,
+                          strokeDasharray: isWinner
+                            ? 'none'
+                            : `${tileBase * 0.22} ${tileBase * 0.16}`,
+                          // R9 — the march animation must shift by EXACTLY
+                          // one dash+gap cycle or the loop restart jumps.
+                          '--dash-cycle': `${tileBase * 0.38}px`,
+                        } as React.CSSProperties
+                      }
                       markerEnd={`url(#variant-arrowhead-${color})`}
                     />
                     <text
@@ -4804,23 +4844,26 @@ function App() {
             </svg>
           );
         })()}
-        {guessWinners.length > 0 && (
-          <div className="guess-winners-overlay" aria-live="polite">
-            <div className="guess-winners-title">🎯 Called it!</div>
-            {guessWinners.slice(0, 5).map((w) => (
-              <div
-                key={w.nick}
-                className="guess-winner-nick"
-                style={w.color ? { color: w.color } : undefined}
+        {guessCloud.length > 0 && (
+          <div className="guess-cloud" aria-live="polite">
+            {guessCloud.map((n) => (
+              <span
+                key={n.key}
+                className="guess-cloud-nick"
+                style={
+                  {
+                    left: `${n.x}%`,
+                    top: `${n.y}%`,
+                    fontSize: `${n.size}rem`,
+                    animationDelay: `${n.delay}ms`,
+                    '--nick-rot': `${n.rot}deg`,
+                    ...(n.color ? { color: n.color } : null),
+                  } as React.CSSProperties
+                }
               >
-                {w.displayName}
-              </div>
+                {n.name}
+              </span>
             ))}
-            {guessWinners.length > 5 && (
-              <div className="guess-winner-nick guess-winner-more">
-                +{guessWinners.length - 5} more
-              </div>
-            )}
           </div>
         )}
       </div>

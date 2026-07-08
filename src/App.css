@@ -1850,56 +1850,71 @@ body.checkmate-flash::after {
   paint-order: stroke fill;
 }
 
+/* R9 — shift by exactly one dash+gap cycle (set per-line from tileBase);
+   any other distance makes the loop restart visibly jump. */
 @keyframes variant-dash-march {
-  to { stroke-dashoffset: -38; }
+  to { stroke-dashoffset: calc(-1 * var(--dash-cycle, 24px)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .variant-arrow { animation: none; }
 }
 
-/* R2 — "guess the streamer" winner nicks, flashed over the board. */
-.guess-winners-overlay {
+/* R2/R9 — "guess the streamer" winners burst over the board as a chaotic
+   word-cloud of nicks: random spot / size / tilt per nick (rolled once in
+   the App when the round resolves), pop in staggered, drift up, fade. */
+.guess-cloud {
   position: absolute;
-  top: 8%;
-  left: 50%;
-  transform: translateX(-50%);
+  inset: 0;
   z-index: 12;
   pointer-events: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 10px 18px;
-  border-radius: 14px;
-  background: rgba(12, 12, 16, 0.82);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
-  animation: guess-winners-pop 0.35s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  overflow: hidden;
 }
 
-.guess-winners-title {
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #eab308;
-}
-
-.guess-winner-nick {
-  font-size: 1.05rem;
+.guess-cloud-nick {
+  position: absolute;
+  transform: translate(-50%, -50%) rotate(var(--nick-rot, 0deg));
   font-weight: 800;
   color: #e5e7eb;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.85),
+    0 0 14px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  animation: guess-nick-float 4.6s ease-out both;
 }
 
-.guess-winner-more {
-  font-size: 0.85rem;
-  opacity: 0.7;
+@keyframes guess-nick-float {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(var(--nick-rot, 0deg)) scale(0.3);
+  }
+  8% {
+    opacity: 1;
+    transform: translate(-50%, -50%) rotate(var(--nick-rot, 0deg)) scale(1.15);
+  }
+  14% {
+    transform: translate(-50%, -50%) rotate(var(--nick-rot, 0deg)) scale(1);
+  }
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% - 26px)) rotate(var(--nick-rot, 0deg)) scale(0.96);
+  }
 }
 
-@keyframes guess-winners-pop {
-  from { opacity: 0; transform: translateX(-50%) translateY(-12px) scale(0.85); }
-  to   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+@media (prefers-reduced-motion: reduce) {
+  .guess-cloud-nick {
+    animation: guess-nick-fade 4.6s ease-out both;
+  }
+  @keyframes guess-nick-fade {
+    0% { opacity: 0; }
+    10% { opacity: 1; }
+    75% { opacity: 1; }
+    100% { opacity: 0; }
+  }
 }
 
 /* Sprint 3.7 (rev 2) — hover-insight ::after overlays removed; the
