@@ -75,7 +75,7 @@ export function ThemeToggle() {
     if (stamps.length >= 8 && now - lastEggAtRef.current > 10_000) {
       lastEggAtRef.current = now;
       cycleStampsRef.current = [];
-      toast.show("Theme Hopper — can't decide?", 'success', 3500);
+      toast.show("Theme Hopper: can't decide?", 'success', 3500);
       return;
     }
 
@@ -89,7 +89,7 @@ export function ThemeToggle() {
       type="button"
       className="theme-toggle"
       onClick={cycle}
-      title={`Theme: ${LABELS[theme]} — click for ${nextLabel}`}
+      title={`Theme: ${LABELS[theme]}. Click for ${nextLabel}`}
       aria-label={`Theme: ${LABELS[theme]}. Click to switch to ${nextLabel}.`}
     >
       <Icon icon={ICONS[theme]} size="md" aria-hidden />

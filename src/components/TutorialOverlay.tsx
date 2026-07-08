@@ -32,7 +32,7 @@ const STEPS: TourStep[] = [
     icon: Swords,
     title: 'A fresh start every game',
     body:
-      'The back rank is shuffled Chess960-style — no opening theory, just ' +
+      'The back rank is shuffled Chess960-style: no opening theory, just ' +
       'pure play. Pieces move exactly like in regular chess.',
   },
   {
@@ -41,7 +41,7 @@ const STEPS: TourStep[] = [
     title: 'The signature move: Rotate',
     body:
       'This button twists every 2×2 block of the board 90°, rewiring which ' +
-      'squares touch. It costs your turn — a tempo sacrifice that can open ' +
+      'squares touch. It costs your turn: a tempo sacrifice that can open ' +
       'files, save your king, or spring an ambush.',
   },
   {
@@ -50,7 +50,7 @@ const STEPS: TourStep[] = [
     title: 'Look before you twist',
     body:
       'Hover the eye to preview what the rotation would do. Click it to ' +
-      'lock the preview while you think. Preview is free — only Rotate ' +
+      'lock the preview while you think. Preview is free; only Rotate ' +
       'spends the turn.',
   },
   {
@@ -59,7 +59,7 @@ const STEPS: TourStep[] = [
     title: 'Coaching tools',
     body:
       'The cap toggles your helper kit: a support map (who defends whom), ' +
-      'a threat map, and — the star of the set — the 💡 Hint button: the ' +
+      'a threat map, and the star of the set, the 💡 Hint button: the ' +
       'engine suggests a strong move, and even tells you when rotating ' +
       'the board is the best play. Switch the kit off for a pure game.',
   },
@@ -69,7 +69,7 @@ const STEPS: TourStep[] = [
     title: 'Two ways to play',
     body:
       'Classic: standard rules, checkmate wins. Roulette: each turn you ' +
-      'spin a bag of piece types and get two actions — capture the enemy ' +
+      'spin a bag of piece types and get two actions. Capture the enemy ' +
       'king to win. No check rules, pure chaos.',
   },
   {

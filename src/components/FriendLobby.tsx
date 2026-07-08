@@ -138,8 +138,7 @@ export function FriendLobby({
           <Icon icon={ArrowLeft} size="sm" aria-hidden /> Back
         </button>
         <h2 className="friend-lobby-title">
-          <Icon icon={Users} size="lg" aria-hidden /> Play vs Friend{' '}
-          <span className="beta-tag">BETA</span>
+          <Icon icon={Users} size="lg" aria-hidden /> Play vs Friend
         </h2>
         <span className="friend-lobby-spacer" />
       </div>

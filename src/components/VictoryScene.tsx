@@ -303,7 +303,7 @@ export function VictoryScene({ theme, onDone }: Props) {
       onClick={() => doneRef.current()}
       role="button"
       tabIndex={0}
-      aria-label="Victory — click to skip"
+      aria-label="Victory. Click to skip"
     >
       <canvas ref={canvasRef} className="victory-canvas" />
       <div className="victory-skip">click to skip</div>

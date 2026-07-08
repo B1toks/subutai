@@ -435,7 +435,7 @@ export function useMultiplayerSync(
       const pawnBoost = totalSpins < 3;
       const rolled = rollRouletteBag(liveBoard, myColor, pawnBoost);
       if (!rolled) {
-        setError('No pieces left to spin — game ending.');
+        setError('No pieces left to spin. Game ending.');
         return;
       }
       await runTransaction(db, async (tx) => {
@@ -459,7 +459,7 @@ export function useMultiplayerSync(
       });
     } catch (err) {
       console.error('[mp] spin failed', err);
-      setError('Spin failed — try again.');
+      setError('Spin failed. Try again.');
     } finally {
       setBusy(false);
     }

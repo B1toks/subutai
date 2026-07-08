@@ -306,12 +306,12 @@ const HUMAN_COLOR: Color = 'white';
  * Rotate button — in this variant a single rotate can swing the eval hard.
  * Gated behind the coaching-tools switch and rate-limited. */
 const ENCOURAGE_GENERIC = [
-  "Don't resign — keep playing. One slip from the bot and you're right back in it.",
-  'Hang in there — a single strong move can turn this whole game around.',
+  "Don't resign, keep playing. One slip from the bot and you're right back in it.",
+  'Hang in there: a single strong move can turn this whole game around.',
   "You're behind, not beaten. Make the bot earn every square.",
 ];
 const ENCOURAGE_ROTATE = [
-  'Tough spot — sometimes one rotate flips the whole position. Try it.',
+  'Tough spot? Sometimes one rotate flips the whole position. Try it.',
   'Feeling stuck? A board rotate can change everything from here.',
 ];
 
@@ -849,20 +849,30 @@ function App() {
       worstHumanEvalRef.current = searchEvalFromWhite;
     }
   }, [searchEvalFromWhite]);
-  // Console seam — play the victory cinematic on demand without having to
-  // grind out a real comeback. Attached in production too (harmless hidden
-  // global) so it works on the live site: open DevTools and run
-  // `subutaiVictory()` or `subutaiVictory('blue')`.
+  // Console seams — preview the big moments on demand without having to
+  // play them out for real. Attached in production too (harmless hidden
+  // globals) so they work on the live site's DevTools:
+  //   subutaiVictory()  / subutaiVictory('blue')  — the victory cinematic
+  //   subutaiEncourage()                          — a losing-position nudge
+  //                                                 (+ pulses the Rotate btn)
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const trigger = (t: VictoryTheme = 'red') => setVictoryTheme(t === 'blue' ? 'blue' : 'red');
+    const encourage = () => {
+      const pool = Math.random() < 0.5 ? ENCOURAGE_ROTATE : ENCOURAGE_GENERIC;
+      toast.show(pool[Math.floor(Math.random() * pool.length)], 'info', 5200);
+      setEncourageRotate(true);
+      window.setTimeout(() => setEncourageRotate(false), 5200);
+    };
     const w = window as unknown as {
       subutaiVictory?: (t?: VictoryTheme) => void;
       __triggerVictory?: (t?: VictoryTheme) => void;
+      subutaiEncourage?: () => void;
     };
     w.subutaiVictory = trigger;
     w.__triggerVictory = trigger; // legacy alias used in dev tooling
-  }, []);
+    w.subutaiEncourage = encourage;
+  }, [toast]);
 
   useEffect(() => {
     if (formationInputMode) formationInputRef.current?.focus();
@@ -3982,26 +3992,28 @@ function App() {
           )}
         </div>
         <div className="header-controls">
-          <Tooltip text={showMusicDock ? 'Hide music dock' : 'Spotify + beat sync'} side="bottom">
+          <Tooltip text={showMusicDock ? 'Hide music dock' : 'Spotify + beat sync (beta)'} side="bottom">
             <button
               type="button"
               className={`header-action-btn${showMusicDock ? ' is-active' : ''}`}
               onClick={() => setShowMusicDock((v) => !v)}
-              aria-label="Toggle music dock"
+              aria-label="Toggle music dock (beta)"
               aria-pressed={showMusicDock}
             >
               <Icon icon={Disc3} size="md" aria-hidden />
+              <span className="beta-corner" aria-hidden>β</span>
             </button>
           </Tooltip>
-          <Tooltip text={showTwitch ? 'Hide Twitch chat' : 'Twitch chat + predictions'} side="bottom">
+          <Tooltip text={showTwitch ? 'Hide Twitch chat' : 'Twitch chat + predictions (beta)'} side="bottom">
             <button
               type="button"
               className={`header-action-btn${showTwitch ? ' is-active' : ''}`}
               onClick={() => setShowTwitch((v) => !v)}
-              aria-label="Toggle Twitch chat"
+              aria-label="Toggle Twitch chat (beta)"
               aria-pressed={showTwitch}
             >
               <Icon icon={Cast} size="md" aria-hidden />
+              <span className="beta-corner" aria-hidden>β</span>
             </button>
           </Tooltip>
           <Tooltip text="Leaderboard" side="bottom">
@@ -5018,7 +5030,7 @@ function App() {
                     </button>
                   </Tooltip>
                   {gameMode === 'classic' && (
-                    <Tooltip text="Hint — engine suggests a move" side="top">
+                    <Tooltip text="Hint: engine suggests a move" side="top">
                       <button
                         type="button"
                         className={`action-btn${hintMove ? ' active' : ''}`}
@@ -5283,7 +5295,6 @@ function App() {
                 >
                   <Icon icon={Users} size="md" aria-hidden />
                   <span>vs Friend</span>
-                  <span className="beta-tag-small">BETA</span>
                 </button>
                 {/* Sprint 4.1 — Local hot-seat. Both colours play from this
                     device; the AI scheduler short-circuits via the
@@ -5292,11 +5303,10 @@ function App() {
                   type="button"
                   className={`opp-tab${opponentMode === 'local' ? ' is-active' : ''}`}
                   onClick={() => requestOpponentChange('local')}
-                  title="Hot-seat — both players on this device"
+                  title="Hot-seat: both players on this device"
                 >
                   <Icon icon={UsersRound} size="md" aria-hidden />
                   <span>Local</span>
-                  <span className="beta-tag-small">BETA</span>
                 </button>
               </div>
             );
@@ -5373,7 +5383,7 @@ function App() {
             title={isMultiplayer ? 'Review opens from the end-of-match screen' : undefined}
           >
             <Icon icon={BarChart3} size="md" aria-hidden />
-            Review {isMultiplayer ? '— after the match' : log.moves.length > 0 ? 'this game' : '— no moves yet'}
+            Review {isMultiplayer ? '(after the match)' : log.moves.length > 0 ? 'this game' : '(no moves yet)'}
           </button>
         </section>
       </aside>

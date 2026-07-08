@@ -38,7 +38,7 @@ const NEXT_STATE: Record<MusicState, MusicState> = {
 const STATE_TOAST: Record<Exclude<MusicState, 'off'>, string> = {
   warm: 'Music: Warm ☀',
   dark: 'Music: Dark ☾',
-  adaptive: 'Music: Adaptive ⚖ — follows the board',
+  adaptive: 'Music: Adaptive ⚖ (follows the board)',
 };
 
 export function MusicToggle() {

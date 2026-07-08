@@ -70,7 +70,7 @@ const URL_RE = /open\.spotify\.com\/(?:embed\/)?(track|playlist|album)\/([a-zA-Z
 const MUSIC_COACH: Record<string, { title: string; body: string }> = {
   play: {
     title: 'Sync',
-    body: 'Starts the beat grid — moves land on the beat of whatever track or captured audio is loaded.',
+    body: 'Starts the beat grid: moves land on the beat of whatever track or captured audio is loaded.',
   },
   tap: {
     title: 'Tap tempo',
@@ -90,7 +90,7 @@ const MUSIC_COACH: Record<string, { title: string; body: string }> = {
   },
   offset: {
     title: 'Sync offset',
-    body: 'Nudge the beat earlier or later to cancel output latency — the fix when it feels off on Bluetooth.',
+    body: 'Nudge the beat earlier or later to cancel output latency. The fix when it feels off on Bluetooth.',
   },
   playlists: {
     title: 'Playlists',
@@ -720,10 +720,10 @@ export function MusicDock({ onClose }: MusicDockProps) {
       const messages: Record<string, string> = {
         denied:
           source === 'display'
-            ? 'Screen-share was cancelled — pick a tab/window and tick "Share audio".'
-            : 'Microphone access denied — allow it in the browser.',
+            ? 'Screen-share was cancelled. Pick a tab/window and tick "Share audio".'
+            : 'Microphone access denied. Allow it in the browser.',
         'no-device': 'No microphone found.',
-        'no-audio-track': 'No audio was shared — tick "Share tab audio" in the picker.',
+        'no-audio-track': 'No audio was shared. Tick "Share tab audio" in the picker.',
         insecure: 'Audio capture needs HTTPS (or localhost).',
         unsupported: 'Tab-audio capture is not supported in this browser.',
         unknown: 'Could not start audio capture.',
@@ -826,11 +826,11 @@ export function MusicDock({ onClose }: MusicDockProps) {
       : bpm > 0
         ? `${bpm} BPM${autoBpm === 'found' ? ' · auto · tap once to align' : ''}`
         : savedBpm
-          ? `saved ${savedBpm} BPM — tap to set the phase`
+          ? `saved ${savedBpm} BPM, tap to set the phase`
           : loadedIsCollection
-            ? 'playlist — use Tab audio for live tempo, or tap'
+            ? 'playlist: use Tab audio for live tempo, or tap'
             : autoBpm === 'none'
-              ? "couldn't detect — tap 4+ times"
+              ? "couldn't detect, tap 4+ times"
               : 'tap 4+ times to the beat';
 
   // M.12/13 — docked-left takes a fixed side column (CSS class); minimised
@@ -1109,9 +1109,9 @@ export function MusicDock({ onClose }: MusicDockProps) {
       </div>
       <div className="music-dock-hint music-dock-hint-row">
         {captureSource === 'display'
-          ? 'capturing tab/system audio — equalizer + live tempo'
+          ? 'capturing tab/system audio: equalizer + live tempo'
           : captureSource === 'mic'
-            ? 'listening to the room — equalizer + live tempo'
+            ? 'listening to the room: equalizer + live tempo'
             : 'Tab audio = internal sound (headphones ok) · Mic = room sound'}
       </div>
       {micError && <div className="twitch-status twitch-status-error">{micError}</div>}
@@ -1127,7 +1127,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
               {live.bpm} BPM · synced
               <span
                 className={`music-dock-live-conf conf-${live.conf > 0.5 ? 'high' : live.conf > 0.3 ? 'mid' : 'low'}`}
-                title="How clearly the beat is detected — higher means a steadier lock"
+                title="How clearly the beat is detected. Higher means a steadier lock"
               >
                 {live.conf > 0.5 ? 'strong' : live.conf > 0.3 ? 'fair' : 'weak'}
               </span>
@@ -1195,7 +1195,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
               setPulseOnMove(next === 'onmove');
             }}
             aria-pressed={pulseOnMove}
-            title="Tap the board in rhythm — it pulses and you earn beat points"
+            title="Tap the board in rhythm: it pulses and you earn beat points"
           >
             <Icon icon={Flame} size="sm" aria-hidden />
             {pulseOnMove ? 'Pulse: tap' : 'Pulse: beat'}
@@ -1315,7 +1315,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
                                 max={220}
                                 step={0.1}
                                 onChange={(e) => editTrackBpm(pl.id, i, e.target.value)}
-                                title="BPM (editable — fix it if auto-detect missed)"
+                                title="BPM (editable: fix it if auto-detect missed)"
                               />
                             </span>
                           </li>

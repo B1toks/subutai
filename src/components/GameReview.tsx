@@ -215,7 +215,7 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
         toast.show('Share link copied to clipboard', 'success');
       })
       .catch(() => {
-        toast.show('Could not copy link — try again', 'error');
+        toast.show('Could not copy link. Try again', 'error');
       });
   }
 

@@ -773,6 +773,25 @@
   cursor: not-allowed;
 }
 
+/* R8 — tiny corner beta marker on icon-only header buttons (music,
+   Twitch). The tabs' inline BETA pills moved here: Friend/Local have
+   graduated, the stream layer is the part still cooking. */
+.beta-corner {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  padding: 0 3px;
+  background: linear-gradient(135deg, var(--danger-coral-light), var(--danger-coral));
+  color: var(--text-white);
+  border-radius: 4px;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1.3;
+  pointer-events: none;
+}
+
+.header-action-btn { position: relative; }
+
 .opp-tab .beta-tag-small {
   margin-left: auto;
   padding: 1px 6px;

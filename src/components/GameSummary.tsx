@@ -41,10 +41,10 @@ function headline(
   // Q.D.8: roulette is capture-the-king — there's no checkmate, so a
   // win/loss always means a king was actually taken off the board.
   if (isRoulette && outcome === 'human-win') {
-    return `King captured — you won in ${moveCount} moves`;
+    return `King captured! You won in ${moveCount} moves`;
   }
   if (isRoulette && outcome === 'ai-win') {
-    return `King captured — you lost in ${moveCount} moves`;
+    return `King captured. You lost in ${moveCount} moves`;
   }
   switch (outcome) {
     case 'human-win':
@@ -216,7 +216,7 @@ function ShareGameButton({ gameId }: { gameId: string }) {
         toast.show('Share link copied to clipboard', 'success');
       })
       .catch(() => {
-        toast.show('Could not copy link — try again', 'error');
+        toast.show('Could not copy link. Try again', 'error');
       });
   }
   return (

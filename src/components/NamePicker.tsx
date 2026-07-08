@@ -123,7 +123,7 @@ export function NamePicker({
       const msg = err instanceof Error ? err.message : 'UNKNOWN';
       if (msg === 'DISPLAY_NAME_TAKEN') {
         setRemoteResult({ slug: currentSlug, status: { kind: 'taken' } });
-        setError('Someone just grabbed that name — try another.');
+        setError('Someone just grabbed that name. Try another.');
       } else {
         setError('Could not save name. Check your connection and retry.');
       }
@@ -136,9 +136,9 @@ export function NamePicker({
       case 'idle':
         return { text: '3–20 chars: letters, numbers, space, - or _', tone: 'neutral' };
       case 'tooShort':
-        return { text: 'Too short — at least 3 characters', tone: 'warn' };
+        return { text: 'Too short: at least 3 characters', tone: 'warn' };
       case 'tooLong':
-        return { text: 'Too long — max 20 characters', tone: 'warn' };
+        return { text: 'Too long: max 20 characters', tone: 'warn' };
       case 'invalidChars':
         return { text: 'Invalid characters', tone: 'warn' };
       case 'checking':

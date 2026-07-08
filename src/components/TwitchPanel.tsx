@@ -415,10 +415,10 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
                   : round.mode === 'predict'
                     ? `Which move will the AI play? · ${secondsLeft}s`
                     : round.mode === 'chatvsbot'
-                      ? `Chat — type your move! (e4, Nf3, O-O) · ${secondsLeft}s`
+                      ? `Chat, type your move! (e4, Nf3, O-O) · ${secondsLeft}s`
                       : round.mode === 'guess'
                         ? 'Guess the streamer’s move! (e4, Nf3, O-O)'
-                        : `Chat — pick the AI's move! · ${secondsLeft}s`}
+                        : `Chat, pick the AI's move! · ${secondsLeft}s`}
               </div>
               {round.freeform ? (
                 round.candidates.length === 0 ? (
