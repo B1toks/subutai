@@ -113,7 +113,11 @@
       "PowerShell(npx tsc -b 2>$null; \"tsc: $LASTEXITCODE\"; npx eslint src/components/FriendLobby.tsx src/components/NamePicker.tsx src/components/MultiplayerGameView.tsx src/components/ThemeToggle.tsx src/components/MusicToggle.tsx src/components/TutorialOverlay.tsx src/components/GameSummary.tsx src/components/VictoryScene.tsx src/components/MusicDock.tsx src/components/TwitchPanel.tsx 2>$null; \"eslint: $LASTEXITCODE\")",
       "PowerShell(npm run build:gh 2>$null | Select-String \"built in|error\"; \"build: $LASTEXITCODE\")",
       "PowerShell(git add src docs/ROADMAP.md; git commit -F \"C:\\\\Users\\\\Alex\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projects-chess\\\\4e87c811-ea28-47e3-af87-1d394eaa8800\\\\scratchpad\\\\r8-msg.txt\" | Select-Object -First 2; \"branch: $\\(git branch --show-current\\)\"; git log --oneline -2)",
-      "PowerShell(git add -A .claude/settings.local.json 2>$null; git commit -m \"chore: checkpoint before nick cloud \\(r9\\)\" --allow-empty | Select-Object -First 1; \"branch: $\\(git branch --show-current\\)\")"
+      "PowerShell(git add -A .claude/settings.local.json 2>$null; git commit -m \"chore: checkpoint before nick cloud \\(r9\\)\" --allow-empty | Select-Object -First 1; \"branch: $\\(git branch --show-current\\)\")",
+      "PowerShell(npx tsc -b 2>$null; \"tsc: $LASTEXITCODE\")",
+      "PowerShell(npx tsc -b 2>$null; \"tsc: $LASTEXITCODE\"; npx eslint src/App.tsx 2>$null | Select-String \"guess|dash|cloud|boardSize\" | Select-Object -First 6; \"eslint targeted done\"; npm run build:gh 2>$null | Select-String \"built in|error\"; \"build: $LASTEXITCODE\")",
+      "PowerShell(git add src/App.tsx src/App.css; git commit -F \"C:\\\\Users\\\\Alex\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projects-chess\\\\4e87c811-ea28-47e3-af87-1d394eaa8800\\\\scratchpad\\\\r9-msg.txt\" | Select-Object -First 2; \"branch: $\\(git branch --show-current\\)\"; git log --oneline -2)",
+      "PowerShell(git add -A .claude/settings.local.json 2>$null; git commit -m \"chore: checkpoint before guess levels + rotate command \\(r10\\)\" --allow-empty | Select-Object -First 1; \"branch: $\\(git branch --show-current\\)\")"
     ],
     "additionalDirectories": [
       "C:\\projects\\chess\\src"
