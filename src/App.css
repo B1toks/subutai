@@ -3187,6 +3187,12 @@ body.checkmate-flash::after {
   border-bottom: 1px solid var(--btn-border);
 }
 
+/* R10 — guess difficulty sub-row: visually secondary to the mode row. */
+.twitch-level-row {
+  padding-top: 0;
+  opacity: 0.92;
+}
+
 .twitch-mode-pill {
   flex: 1;
   border: 1px solid var(--btn-border);

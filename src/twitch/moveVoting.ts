@@ -30,6 +30,10 @@ import { twitchChat, type TwitchChatMessage } from './chat';
 
 export type VoteMode = 'off' | 'predict' | 'chat' | 'chatvsbot' | 'guess';
 
+/** R10 — guess-round difficulty: name the exact move (+2) or just the
+ *  piece type the streamer will touch (+1, the easy on-ramp). */
+export type GuessLevel = 'move' | 'piece';
+
 export interface VoteCandidate {
   move: Move;
   san: string;
@@ -49,6 +53,9 @@ export interface VoteRound {
   /** R2 — guess rounds have no clock: they stay open until the
    *  streamer moves (endsAt is ignored). */
   openEnded?: boolean;
+  /** R10 — what a guess round is guessing: the exact move or just the
+   *  piece type. Absent on non-guess rounds. */
+  guessKind?: GuessLevel;
 }
 
 /** R2 — who called the streamer's move. */
@@ -71,6 +78,42 @@ const REVEAL_HOLD_MS = 3_500;
 type RoundCb = (round: VoteRound | null) => void;
 type ScoresCb = (scores: ViewerScore[]) => void;
 type ModeCb = (mode: VoteMode) => void;
+
+/** R10 — plain-word fallback for keys moveKey() rejects: "rotate",
+ *  "knight", "queen"… Lowercased single word, "!" prefix stripped. */
+function plainWordKey(raw: string): string | null {
+  let t = raw.trim().toLowerCase();
+  if (t.startsWith('!')) t = t.slice(1);
+  if (!/^[a-z]{2,10}$/.test(t)) return null;
+  return t;
+}
+
+/** R10 — the board-rotation pseudo-move chat can call. */
+const ROTATE_CANDIDATE: VoteCandidate = {
+  move: { kind: 'topologyToggle' },
+  san: 'Rotate',
+};
+
+/** R10 — words that map a chat message to a piece type. */
+const PIECE_WORDS: Record<string, string> = {
+  pawn: 'pawn',
+  knight: 'knight',
+  horse: 'knight',
+  bishop: 'bishop',
+  rook: 'rook',
+  tower: 'rook',
+  queen: 'queen',
+  king: 'king',
+};
+
+const PIECE_LABEL: Record<string, string> = {
+  pawn: 'Pawn',
+  knight: 'Knight',
+  bishop: 'Bishop',
+  rook: 'Rook',
+  queen: 'Queen',
+  king: 'King',
+};
 
 /**
  * T6 — normalise a chat message (or a SAN string, for indexing) into a
@@ -144,6 +187,11 @@ class MoveVotingStore {
   private modeCbs: ModeCb[] = [];
   /** T6 — normalized move text → candidate, for the live freeform round. */
   private sanIndex = new Map<string, VoteCandidate>();
+  /** R10 — guess difficulty picked by the streamer (session-only). */
+  private guessLevel: GuessLevel = 'move';
+  /** R10 — piece-level rounds: from-square → piece type, captured when
+   *  the round opens so the resolve can classify the played move. */
+  private guessTypeByFrom = new Map<string, string>();
   private clearTimer: ReturnType<typeof setTimeout> | null = null;
   // M.13 — coalesce round emits. Busy channels fire 50+ votes/sec; one
   // setRound per vote was a render storm that froze the panel and made
@@ -176,6 +224,15 @@ class MoveVotingStore {
 
   getRound(): VoteRound | null {
     return this.round;
+  }
+
+  getGuessLevel(): GuessLevel {
+    return this.guessLevel;
+  }
+
+  /** R10 — takes effect on the NEXT guess round; an open one keeps its kind. */
+  setGuessLevel(level: GuessLevel) {
+    this.guessLevel = level;
   }
 
   getScores(): ViewerScore[] {
@@ -299,7 +356,11 @@ class MoveVotingStore {
    * Returns null when the mode is off, chat is disconnected, or the
    * round was cancelled under us.
    */
-  async gateHumanMove(boardState: BoardState, legalMoves: Move[]): Promise<Move | null> {
+  async gateHumanMove(
+    boardState: BoardState,
+    legalMoves: Move[],
+    allowRotate = false,
+  ): Promise<Move | null> {
     if (this.mode !== 'chatvsbot') return null;
     if (twitchChat.getStatus() !== 'connected') return null;
     // The bot often answers within the previous round's REVEAL_HOLD —
@@ -314,6 +375,8 @@ class MoveVotingStore {
     if (pieceMoves.length === 0) return null;
 
     this.indexLegalMoves(boardState, pieceMoves);
+    // R10 — chat can play the rotation itself ("rotate"), when legal.
+    if (allowRotate) this.sanIndex.set('rotate', ROTATE_CANDIDATE);
 
     this.votes.clear();
     this.voterMeta.clear();
@@ -407,16 +470,38 @@ class MoveVotingStore {
   /**
    * R2 — open a "guess the streamer" round. Free-form input like
    * chatvsbot, but nothing awaits it: it has no clock and resolves only
-   * when the streamer moves (resolveGuessRound) or the position changes
-   * under it (cancelRound — App's effect cleanup, same as chatvsbot).
+   * when the streamer moves (resolveGuessRound / resolveGuessRotate) or
+   * the position changes under it (cancelRound — App's effect cleanup).
+   * R10 — the round's kind follows the streamer-picked difficulty:
+   * 'move' indexes exact moves, 'piece' indexes piece-type words; both
+   * accept "rotate" when a rotation is currently legal.
    */
-  openGuessRound(boardState: BoardState, legalMoves: Move[]) {
+  openGuessRound(boardState: BoardState, legalMoves: Move[], allowRotate = false) {
     if (this.mode !== 'guess') return;
     if (twitchChat.getStatus() !== 'connected') return;
     if (this.round) return;
     const pieceMoves = legalMoves.filter((m) => m.from && m.to);
     if (pieceMoves.length === 0) return;
-    this.indexLegalMoves(boardState, pieceMoves);
+    const kind = this.guessLevel;
+    if (kind === 'move') {
+      this.indexLegalMoves(boardState, pieceMoves);
+    } else {
+      this.sanIndex.clear();
+      this.guessTypeByFrom.clear();
+      const present = new Set<string>();
+      for (const m of pieceMoves) {
+        const type = m.from ? boardState.pieces[m.from]?.type : undefined;
+        if (!type) continue;
+        this.guessTypeByFrom.set(m.from as string, type);
+        present.add(type);
+      }
+      for (const [word, type] of Object.entries(PIECE_WORDS)) {
+        if (present.has(type)) {
+          this.sanIndex.set(word, { move: { kind: 'normal' }, san: PIECE_LABEL[type] });
+        }
+      }
+    }
+    if (allowRotate) this.sanIndex.set('rotate', ROTATE_CANDIDATE);
     this.votes.clear();
     this.voterMeta.clear();
     this.round = {
@@ -427,38 +512,38 @@ class MoveVotingStore {
       revealIdx: null,
       freeform: true,
       openEnded: true,
+      guessKind: kind,
     };
     this.emitRound();
   }
 
-  /**
-   * R2 — the streamer moved: resolve the open guess round against the
-   * move actually played. Correct guessers get +2 (a human is harder to
-   * read than a slate) and are returned so the App can flash their
-   * nicks. The played move joins the slate even if nobody guessed it —
-   * the reveal banner then shows what chat missed.
-   */
-  resolveGuessRound(played: Move, san: string): GuessWinner[] {
+  /** R10 — points at stake for the open guess round's difficulty. */
+  private guessAward(round: VoteRound): number {
+    return round.guessKind === 'piece' ? 1 : 2;
+  }
+
+  /** Shared guess settlement: find (or append) the winning candidate,
+   *  award its voters, reveal, schedule the banner clear. */
+  private settleGuess(
+    matchIdx: (c: VoteCandidate) => boolean,
+    fallback: VoteCandidate,
+  ): GuessWinner[] {
     const round = this.round;
     if (!round || round.mode !== 'guess' || round.revealIdx !== null) return [];
-    let idx = round.candidates.findIndex(
-      (c) =>
-        c.move.from === played.from &&
-        c.move.to === played.to &&
-        (c.move.kind !== 'promotion' || c.move.promotion === played.promotion),
-    );
+    let idx = round.candidates.findIndex(matchIdx);
     if (idx === -1) {
       idx = round.candidates.length;
-      round.candidates.push({ move: played, san });
+      round.candidates.push(fallback);
       round.counts.push(0);
     }
     const winners: GuessWinner[] = [];
+    const award = this.guessAward(round);
     for (const [nick, vIdx] of this.votes) {
       if (vIdx === idx) {
         const meta = this.voterMeta.get(nick);
         const w = { nick, displayName: meta?.displayName ?? nick, color: meta?.color ?? '' };
         winners.push(w);
-        this.addPoints(w.nick, w.displayName, w.color, 2);
+        this.addPoints(w.nick, w.displayName, w.color, award);
       }
     }
     this.emitScores();
@@ -470,6 +555,39 @@ class MoveVotingStore {
       this.emitRound();
     }, REVEAL_HOLD_MS);
     return winners;
+  }
+
+  /**
+   * R2 — the streamer moved: resolve the open guess round against the
+   * move actually played. Correct guessers score (+2 exact move, +1
+   * piece type) and are returned so the App can burst their nicks. The
+   * played answer joins the slate even if nobody guessed it — the
+   * reveal banner then shows what chat missed.
+   */
+  resolveGuessRound(played: Move, san: string): GuessWinner[] {
+    const round = this.round;
+    if (!round || round.mode !== 'guess' || round.revealIdx !== null) return [];
+    if (round.guessKind === 'piece') {
+      const type = played.from ? this.guessTypeByFrom.get(played.from) : undefined;
+      const label = type ? PIECE_LABEL[type] : san;
+      return this.settleGuess(
+        (c) => c.san === label,
+        { move: { kind: 'normal' }, san: label },
+      );
+    }
+    return this.settleGuess(
+      (c) =>
+        c.move.from === played.from &&
+        c.move.to === played.to &&
+        (c.move.kind !== 'promotion' || c.move.promotion === played.promotion),
+      { move: played, san },
+    );
+  }
+
+  /** R10 — the streamer rotated the board instead of moving: voters who
+   *  typed "rotate" win, at the open round's stake. */
+  resolveGuessRotate(): GuessWinner[] {
+    return this.settleGuess((c) => c.san === ROTATE_CANDIDATE.san, ROTATE_CANDIDATE);
   }
 
   /** T6 — abort an open (unrevealed) round: the position changed under
@@ -493,7 +611,10 @@ class MoveVotingStore {
     if (!round || round.revealIdx !== null) return;
     let idx: number;
     if (round.freeform) {
-      const key = moveKey(msg.text);
+      // R10 — moveKey handles chess notation; the plain-word fallback
+      // covers "rotate" and the piece-type words, which its charset
+      // rejects. Unknown words simply miss the index and are ignored.
+      const key = moveKey(msg.text) ?? plainWordKey(msg.text);
       if (!key) return;
       const cand = this.sanIndex.get(key);
       if (!cand) return;

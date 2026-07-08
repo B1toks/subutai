@@ -11,7 +11,13 @@ import {
   type GameResult,
   type PredictionState,
 } from '../twitch/predictions';
-import { moveVoting, type ViewerScore, type VoteMode, type VoteRound } from '../twitch/moveVoting';
+import {
+  moveVoting,
+  type GuessLevel,
+  type ViewerScore,
+  type VoteMode,
+  type VoteRound,
+} from '../twitch/moveVoting';
 import { loadEmoteMap, type EmoteMap } from '../twitch/seventv';
 import { dockLayout, DOCK_WIDTH } from '../ui/dockLayout';
 
@@ -290,6 +296,16 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
     setVoteMode(m);
   }
 
+  // R10 — guess difficulty (exact move +2 / piece type +1); takes effect
+  // on the next round.
+  const [guessLevel, setGuessLevelState] = useState<GuessLevel>(() =>
+    moveVoting.getGuessLevel(),
+  );
+  function pickGuessLevel(l: GuessLevel) {
+    moveVoting.setGuessLevel(l);
+    setGuessLevelState(l);
+  }
+
   const connected = status === 'connected';
   const secondsLeft = round && round.revealIdx === null
     ? Math.max(0, Math.ceil((round.endsAt - roundNow) / 1000))
@@ -402,6 +418,29 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
             ))}
           </div>
 
+          {/* R10 — guess difficulty selector (next round picks it up) */}
+          {voteMode === 'guess' && (
+            <div className="twitch-mode-row twitch-level-row" role="radiogroup" aria-label="Guess difficulty">
+              {(['move', 'piece'] as GuessLevel[]).map((l) => (
+                <button
+                  key={l}
+                  type="button"
+                  role="radio"
+                  aria-checked={guessLevel === l}
+                  className={`twitch-mode-pill${guessLevel === l ? ' is-active' : ''}`}
+                  onClick={() => pickGuessLevel(l)}
+                  title={
+                    l === 'move'
+                      ? 'Chat names the exact move (+2 points)'
+                      : 'Chat names just the piece type (+1 point)'
+                  }
+                >
+                  {l === 'move' ? 'Exact move +2' : 'Piece +1'}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* T4 — live vote round */}
           {round && (
             <div className={`twitch-round${round.revealIdx !== null ? ' is-revealed' : ''}`}>
@@ -415,9 +454,11 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
                   : round.mode === 'predict'
                     ? `Which move will the AI play? · ${secondsLeft}s`
                     : round.mode === 'chatvsbot'
-                      ? `Chat, type your move! (e4, Nf3, O-O) · ${secondsLeft}s`
+                      ? `Chat, type your move! (e4, Nf3, O-O, rotate) · ${secondsLeft}s`
                       : round.mode === 'guess'
-                        ? 'Guess the streamer’s move! (e4, Nf3, O-O)'
+                        ? round.guessKind === 'piece'
+                          ? 'Guess which piece the streamer moves! (pawn, knight, rotate…)'
+                          : 'Guess the streamer’s move! (e4, Nf3, O-O, rotate)'
                         : `Chat, pick the AI's move! · ${secondsLeft}s`}
               </div>
               {round.freeform ? (

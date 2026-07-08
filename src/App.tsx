@@ -299,6 +299,19 @@ function evalToColors(evalCp: number): { c1: string; c2: string } {
 
 const HUMAN_COLOR: Color = 'white';
 
+/** R10 — is a board rotation currently a legal turn (classic rules)?
+ *  Mirrors handleRotate's own guard: no back-to-back rotations, and the
+ *  toggled board must not leave the mover's king attacked. Used to
+ *  decide whether chat rounds accept the "rotate" command. */
+function rotateIsLegal(bs: BoardState): boolean {
+  if (bs.lastMoveWasRotation) return false;
+  const toggled = toggleTopology(bs);
+  const king = findKing(toggled, bs.sideToMove);
+  if (!king) return false;
+  const opp = bs.sideToMove === 'white' ? 'black' : 'white';
+  return !isSquareAttacked(toggled, king, opp as Color, toggled.topologyState);
+}
+
 /* R5 — encouragement in a losing position. When the human (white) has
  * been meaningfully behind for a couple of moves, drop a supportive nudge
  * instead of letting them spiral into a resign. Rotate-flavoured lines
@@ -2189,6 +2202,8 @@ function App() {
       const toggleSan = computeSAN(state, toggleMove);
       setLog((prev) => appendMove(prev, toggleMove, toggleSan, state.topologyState));
       setLastMove(null);
+      // R10 — the streamer rotated: settle the chat's guess round.
+      announceGuessWinners(moveVoting.resolveGuessRotate());
       checkGameOver(next, true);
       return;
     }
@@ -2913,8 +2928,16 @@ function App() {
     if (gameMode !== 'classic' || gameStatus !== 'active') return;
     if (currentPlayer !== 'human') return;
     let stale = false;
-    void moveVoting.gateHumanMove(state, legalMoves).then((move) => {
-      if (stale || !move || !move.from || !move.to) return;
+    void moveVoting.gateHumanMove(state, legalMoves, rotateIsLegal(state)).then((move) => {
+      if (stale || !move) return;
+      // R10 — chat elected to rotate the board as its move. handleRotate
+      // re-checks legality itself; the round only offered "rotate" while
+      // it was legal, and this effect re-fires on any position change.
+      if (move.kind === 'topologyToggle') {
+        handleRotate();
+        return;
+      }
+      if (!move.from || !move.to) return;
       const san = computeSAN(state, move);
       const afterMove = applyMove(state, move);
       setLog((prev) => appendMove(prev, move, san, state.topologyState));
@@ -2968,7 +2991,7 @@ function App() {
     if (isMultiplayer || isLocalMode || isAutoMode || watchingGame) return;
     if (gameMode !== 'classic' || gameStatus !== 'active') return;
     if (currentPlayer !== 'human') return;
-    moveVoting.openGuessRound(state, legalMoves);
+    moveVoting.openGuessRound(state, legalMoves, rotateIsLegal(state));
     return () => moveVoting.cancelRound();
   }, [
     twitchVoteMode,
