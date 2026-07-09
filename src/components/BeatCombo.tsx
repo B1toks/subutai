@@ -45,12 +45,8 @@ export function BeatCombo() {
       role="status">
       <span className="beat-combo-label">{label}</span>
       {event.streak > 1 && <span className="beat-combo-streak">×{event.streak}</span>}
-      {/* M.21 — beat points: what this move earned + the session total. */}
-      {event.points > 0 && (
-        <span className="beat-combo-points">
-          +{event.points} · {event.totalPoints}
-        </span>
-      )}
+      {/* R12 — the running points tally moved to MusicScorePanel; this
+          toast stays pure hit feedback. */}
       {event.achievement && (
         <span className="beat-combo-achievement">🏆 Rhythm Master!</span>
       )}

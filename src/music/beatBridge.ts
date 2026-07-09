@@ -28,6 +28,17 @@ export interface BeatMoveEvent {
   totalPoints: number;
 }
 
+/** R12 — running session tally shown by the music score window. */
+export interface BeatSessionStats {
+  totalPoints: number;
+  hits: number;
+  perfect: number;
+  good: number;
+  off: number;
+  bestStreak: number;
+  streak: number;
+}
+
 const ACHIEVEMENTS_KEY = 'subutai_achievements';
 const RHYTHM_MASTER_ID = 'rhythm-master';
 
@@ -48,6 +59,11 @@ class BeatBridge {
   /** M.21.1 — tap refractory (anti multi-finger mash). */
   private lastTapMs = 0;
   private listeners = new Set<Listener>();
+  // R12 — session tally for the music score window.
+  private perfect = 0;
+  private good = 0;
+  private off = 0;
+  private bestStreak = 0;
 
   onMove(cb: Listener): () => void {
     this.listeners.add(cb);
@@ -62,6 +78,45 @@ class BeatBridge {
 
   resetStreak() {
     this.streak = 0;
+  }
+
+  /** R12 — snapshot of the running session tally. */
+  getStats(): BeatSessionStats {
+    return {
+      totalPoints: this.totalPoints,
+      hits: this.perfect + this.good + this.off,
+      perfect: this.perfect,
+      good: this.good,
+      off: this.off,
+      bestStreak: this.bestStreak,
+      streak: this.streak,
+    };
+  }
+
+  /** R12 — zero the tally (the score window's reset button). */
+  resetSession() {
+    this.streak = 0;
+    this.totalPoints = 0;
+    this.perfect = 0;
+    this.good = 0;
+    this.off = 0;
+    this.bestStreak = 0;
+    // Poke subscribers so the window re-reads the zeroed stats.
+    const event: BeatMoveEvent = {
+      score: 'off',
+      streak: 0,
+      tier: 'none',
+      achievement: false,
+      points: 0,
+      totalPoints: 0,
+    };
+    this.listeners.forEach((cb) => {
+      try {
+        cb(event);
+      } catch {
+        /* listener errors must not break the game */
+      }
+    });
   }
 
   /** Called by App when a human move lands. No-op (returns null) when
@@ -90,8 +145,12 @@ class BeatBridge {
     const score = beatEngine.scoreNow();
     if (score === 'off') {
       this.streak = 0;
+      this.off += 1;
     } else {
       this.streak += 1;
+      if (score === 'perfect') this.perfect += 1;
+      else this.good += 1;
+      if (this.streak > this.bestStreak) this.bestStreak = this.streak;
     }
     const tier = comboTier(this.streak);
     const achievement = this.streak === 10 && this.earnRhythmMaster();

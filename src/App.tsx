@@ -101,6 +101,7 @@ import { beatEngine } from './music/beatEngine';
 import { beatMode } from './music/beatMode';
 import { liveBpm } from './music/liveBpm';
 import { BeatCombo } from './components/BeatCombo';
+import { MusicScorePanel } from './components/MusicScorePanel';
 import { scaleBudgetMs } from './utils/deviceTier';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
@@ -5767,6 +5768,8 @@ function App() {
       )}
       {/* SP-2 — on-beat combo overlay; renders null while idle. */}
       <BeatCombo />
+      {/* R12 — session beat-points tally (compact pill, click to expand). */}
+      <MusicScorePanel />
 
       {/* R6 — pixel victory cinematic on a come-from-behind win. */}
       {victoryTheme && (
