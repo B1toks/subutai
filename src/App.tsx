@@ -858,24 +858,63 @@ function App() {
   const [dock, setDock] = useState<DockState>(() => dockLayout.get());
   useEffect(() => dockLayout.on(setDock), []);
 
+  // R14 — manual UI scale (0.8–1.5×), persisted. Applied as CSS zoom on
+  // <body>, so every panel (portaled ones included) grows with it; the
+  // board-size math below divides the viewport by it since layout then
+  // happens in zoomed coordinates.
+  const [uiScale, setUiScale] = useState<number>(() => {
+    try {
+      const v = Number.parseFloat(localStorage.getItem('subutai_ui_scale') ?? '1');
+      return Number.isFinite(v) && v >= 0.8 && v <= 1.5 ? v : 1;
+    } catch {
+      return 1;
+    }
+  });
+  useEffect(() => {
+    (document.body.style as CSSStyleDeclaration & { zoom?: string }).zoom =
+      uiScale === 1 ? '' : String(uiScale);
+    return () => {
+      (document.body.style as CSSStyleDeclaration & { zoom?: string }).zoom = '';
+    };
+  }, [uiScale]);
+  const pickUiScale = useCallback((v: number) => {
+    const clamped = Math.max(0.8, Math.min(1.5, v));
+    setUiScale(clamped);
+    try {
+      localStorage.setItem('subutai_ui_scale', String(clamped));
+    } catch {
+      /* private mode */
+    }
+  }, []);
+
   // R9 — floored at 240px: a hidden/headless tab can report innerWidth 0
   // during init, and without the floor boardSize goes NEGATIVE (tile math,
   // dash arrays and overlays all silently break until the next resize).
+  // R14 — the cap is no longer a flat 520: it follows the viewport
+  // (70% of height, up to 820) so big monitors actually get a big board.
   const [boardSize, setBoardSize] = useState(() =>
     Math.max(240, Math.min(window.innerWidth - 32, 520)),
   );
 
   useEffect(() => {
     function recompute() {
+      // Layout runs in zoom space: divide the device viewport by the scale.
+      const vw = window.innerWidth / uiScale;
+      const vh = window.innerHeight / uiScale;
       // Side docks reserve space only on desktop; below the breakpoint
       // the panels become full-width bottom bars and reserve nothing.
       const reserved = window.innerWidth > 720 ? dock.left + dock.right : 0;
-      setBoardSize(Math.max(240, Math.min(window.innerWidth - 32 - reserved, 520)));
+      // Above the grid collapse (880px, device px — CSS media queries
+      // ignore zoom) the right sidebar (320) + gaps/padding stay clear;
+      // below it the board takes the full width minus shell padding.
+      const chrome = window.innerWidth > 880 ? 392 : 32;
+      const cap = Math.min(820, Math.round(vh * 0.7));
+      setBoardSize(Math.max(240, Math.min(vw - chrome - reserved, cap)));
     }
     recompute();
     window.addEventListener('resize', recompute);
     return () => window.removeEventListener('resize', recompute);
-  }, [dock]);
+  }, [dock, uiScale]);
 
   // R5 — encouragement in a losing position.
   const toast = useToast();
@@ -5731,6 +5770,29 @@ function App() {
                 Chess960 on Wikipedia
               </a>
             </p>
+            {/* R14 — display scale: CSS zoom on <body>, persisted. The fix
+                for "everything is tiny on a big monitor". */}
+            <div className="help-scale-row">
+              <label htmlFor="ui-scale">
+                Display scale
+                <span className="help-scale-val">{Math.round(uiScale * 100)}%</span>
+              </label>
+              <input
+                id="ui-scale"
+                type="range"
+                min={0.8}
+                max={1.5}
+                step={0.05}
+                value={uiScale}
+                onChange={(e) => pickUiScale(Number.parseFloat(e.target.value))}
+                aria-label="Interface scale"
+              />
+              {uiScale !== 1 && (
+                <button type="button" className="help-scale-reset" onClick={() => pickUiScale(1)}>
+                  100%
+                </button>
+              )}
+            </div>
             <div className="help-dialog-actions">
               <button
                 type="button"
