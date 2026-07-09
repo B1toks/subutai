@@ -119,7 +119,10 @@
       "PowerShell(git add src/App.tsx src/App.css; git commit -F \"C:\\\\Users\\\\Alex\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projects-chess\\\\4e87c811-ea28-47e3-af87-1d394eaa8800\\\\scratchpad\\\\r9-msg.txt\" | Select-Object -First 2; \"branch: $\\(git branch --show-current\\)\"; git log --oneline -2)",
       "PowerShell(git add -A .claude/settings.local.json 2>$null; git commit -m \"chore: checkpoint before guess levels + rotate command \\(r10\\)\" --allow-empty | Select-Object -First 1; \"branch: $\\(git branch --show-current\\)\")",
       "PowerShell(git add src/twitch/moveVoting.ts src/components/TwitchPanel.tsx src/App.tsx src/App.css; git commit -F \"C:\\\\Users\\\\Alex\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projects-chess\\\\4e87c811-ea28-47e3-af87-1d394eaa8800\\\\scratchpad\\\\r10-msg.txt\" | Select-Object -First 2; \"branch: $\\(git branch --show-current\\)\"; git log --oneline -2)",
-      "PowerShell(git add -A .claude/settings.local.json 2>$null; git commit -m \"chore: checkpoint before extended tutorial \\(r11\\)\" --allow-empty | Select-Object -First 1; \"branch: $\\(git branch --show-current\\)\")"
+      "PowerShell(git add -A .claude/settings.local.json 2>$null; git commit -m \"chore: checkpoint before extended tutorial \\(r11\\)\" --allow-empty | Select-Object -First 1; \"branch: $\\(git branch --show-current\\)\")",
+      "PowerShell(npx tsc -b 2>$null; \"tsc: $LASTEXITCODE\"; npx eslint src/components/TutorialOverlay.tsx 2>$null; \"eslint: $LASTEXITCODE\")",
+      "PowerShell(git add src/App.tsx src/components/TutorialOverlay.tsx; git commit -F \"C:\\\\Users\\\\Alex\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--projects-chess\\\\4e87c811-ea28-47e3-af87-1d394eaa8800\\\\scratchpad\\\\r11-msg.txt\" | Select-Object -First 2; \"branch: $\\(git branch --show-current\\)\"; git log --oneline -2)",
+      "PowerShell(git add -A .claude/settings.local.json 2>$null; git commit -m \"chore: checkpoint before music score window \\(r12\\)\" --allow-empty | Select-Object -First 1; \"branch: $\\(git branch --show-current\\)\")"
     ],
     "additionalDirectories": [
       "C:\\projects\\chess\\src"
