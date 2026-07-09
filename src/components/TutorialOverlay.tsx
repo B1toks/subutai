@@ -1,5 +1,15 @@
 import { useEffect, useLayoutEffect, useState } from 'react';
-import { RotateCw, Eye, Dices, BarChart3, GraduationCap, Swords } from 'lucide-react';
+import {
+  RotateCw,
+  Eye,
+  Dices,
+  BarChart3,
+  GraduationCap,
+  Swords,
+  Settings,
+  Disc3,
+  Cast,
+} from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Icon } from './Icon';
 
@@ -80,6 +90,37 @@ const STEPS: TourStep[] = [
       'The eval bar shows who is winning in real time, and every move gets ' +
       'graded. After the game, open Review for a move-by-move breakdown ' +
       'with better-move hints.',
+  },
+  // R11 — the header row, briefly; then the two stars in detail.
+  {
+    target: 'header',
+    icon: Settings,
+    title: 'The top bar, in ten seconds',
+    body:
+      'Everything else lives up here: theme switcher, sound, the music ' +
+      'dock, Twitch chat, the leaderboard, your stats and a feedback ' +
+      'button. Two of these deserve a closer look.',
+  },
+  {
+    target: 'music',
+    icon: Disc3,
+    title: 'Music that moves the board',
+    body:
+      'The disc opens the music dock (beta). Load a Spotify track or a ' +
+      'local file, or capture tab audio: the app detects the BPM, locks a ' +
+      'beat grid, and the board starts living in rhythm. Beat Mode even ' +
+      'lands your moves on the beat. Every control explains itself the ' +
+      'first time you press it.',
+  },
+  {
+    target: 'twitch',
+    icon: Cast,
+    title: 'Let chat play with you',
+    body:
+      'The cast icon opens Twitch chat (beta). Connect your channel and ' +
+      'pick a mode: chat predicts the AI, plays against you, plays FOR ' +
+      'you, or guesses your next move for points. Candidate moves appear ' +
+      'right on the board as colored dashed arrows.',
   },
 ];
 

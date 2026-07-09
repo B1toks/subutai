@@ -4044,7 +4044,7 @@ function App() {
             )
           )}
         </div>
-        <div className="header-controls">
+        <div className="header-controls" data-tour="header">
           <Tooltip text={showMusicDock ? 'Hide music dock' : 'Spotify + beat sync (beta)'} side="bottom">
             <button
               type="button"
@@ -4052,6 +4052,7 @@ function App() {
               onClick={() => setShowMusicDock((v) => !v)}
               aria-label="Toggle music dock (beta)"
               aria-pressed={showMusicDock}
+              data-tour="music"
             >
               <Icon icon={Disc3} size="md" aria-hidden />
               <span className="beta-corner" aria-hidden>β</span>
@@ -4064,6 +4065,7 @@ function App() {
               onClick={() => setShowTwitch((v) => !v)}
               aria-label="Toggle Twitch chat (beta)"
               aria-pressed={showTwitch}
+              data-tour="twitch"
             >
               <Icon icon={Cast} size="md" aria-hidden />
               <span className="beta-corner" aria-hidden>β</span>
