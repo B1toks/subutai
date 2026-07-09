@@ -62,7 +62,7 @@ import {
 } from 'lucide-react';
 import type { GameReviewMeta } from './components/GameReview';
 import { useMultiplayerSync } from './components/MultiplayerGameView';
-import type { MatchDoc, MatchOutcome } from './firebase/matches';
+import { rejoinMatch, type MatchDoc, type MatchOutcome } from './firebase/matches';
 import {
   saveMultiplayerGameToGames,
   translateOutcomeForPlayer,
@@ -493,6 +493,18 @@ function App() {
   // Match-completion modal state (separate from the AI GameSummary which
   // is points-driven and doesn't fit the PvP shape).
   const [mpEndOutcome, setMpEndOutcome] = useState<MatchOutcome | null>(null);
+  // R13b — reconnect after a refresh. The active match code is read ONCE
+  // at mount (the persistence effect below clears the key whenever
+  // activeMatch is null, so reading it lazily later would lose the race).
+  const mpResumeCodeRef = useRef<string | null>(
+    (() => {
+      try {
+        return localStorage.getItem('subutai_mp_active');
+      } catch {
+        return null;
+      }
+    })(),
+  );
   const mpSavedGameIdRef = useRef<string | null>(null);
   const mpWroteOutcomeRef = useRef<string | null>(null);
   // T2: review can be entered for the LIVE game (default — reads the `log`
@@ -519,6 +531,49 @@ function App() {
     },
   );
   const isMultiplayer = mpSync !== null;
+
+  // R13b — persist the live match code so a refresh can resume it. The
+  // key exists only while a match is genuinely live: it clears when the
+  // match ends (outcome modal) or when there's no active match at all.
+  useEffect(() => {
+    try {
+      if (activeMatch && !mpEndOutcome) {
+        localStorage.setItem('subutai_mp_active', activeMatch.code);
+      } else {
+        localStorage.removeItem('subutai_mp_active');
+      }
+    } catch {
+      /* private mode */
+    }
+  }, [activeMatch, mpEndOutcome]);
+
+  // R13b — one-shot resume: once auth lands, try to re-seat into the
+  // match recorded before the refresh. rejoinMatch verifies the seat and
+  // liveness; on any failure the key is just dropped (the AFK watchdog
+  // may have forfeited us long ago — nothing to resume into).
+  useEffect(() => {
+    const code = mpResumeCodeRef.current;
+    if (!code || !user || activeMatch) return;
+    mpResumeCodeRef.current = null;
+    void rejoinMatch(code, user.uid)
+      .then((match) => {
+        setActiveMatch(match);
+        setOpponentMode('friend');
+        setMpEndOutcome(null);
+        mpSavedGameIdRef.current = null;
+        mpWroteOutcomeRef.current = null;
+        setView('game');
+      })
+      .catch(() => {
+        try {
+          localStorage.removeItem('subutai_mp_active');
+        } catch {
+          /* private mode */
+        }
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
   const [watchingGame, setWatchingGame] = useState<WatchingGame | null>(null);
   const watchAutoplayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gameBackupRef = useRef<GameBackup | null>(null);
@@ -3303,6 +3358,18 @@ function App() {
         }
         return;
       }
+      // R13b — classic MP gets the same promotion picker as solo (the
+      // auto-queen shortcut made underpromotion impossible in PvP).
+      // Roulette keeps auto-queen to preserve the multi-action flow.
+      if (
+        move.kind === 'promotion' &&
+        move.from &&
+        move.to &&
+        mpSync.matchState.gameMode !== 'roulette'
+      ) {
+        setPendingPromotion({ from: move.from, to: move.to });
+        return;
+      }
       const resolved: Move =
         move.kind === 'promotion' && !move.promotion
           ? { ...move, promotion: 'queen' }
@@ -3528,6 +3595,14 @@ function App() {
         m.promotion === pieceType,
     );
     if (!move) return;
+    // R13b — MP: the picked piece rides the match doc; the local commit
+    // below is solo-only (the MP board re-derives from the shared log).
+    if (isMultiplayer && mpSync) {
+      setSelected(null);
+      setPendingPromotion(null);
+      void mpSync.sendMove(move);
+      return;
+    }
     const san = computeSAN(state, move);
     // R2 — promotion commits bypass commitMove; settle the guess round here too.
     announceGuessWinners(moveVoting.resolveGuessRound(move, san));

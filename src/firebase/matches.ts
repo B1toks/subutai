@@ -193,6 +193,25 @@ export async function joinMatch(
   });
 }
 
+/**
+ * R13b — resume a match this uid already sits in (page refresh, tab
+ * crash). Read-only: unlike joinMatch it claims nothing, it just
+ * verifies the seat and returns the live doc so App can re-mount the
+ * sync hook. Throws MATCH_NOT_FOUND / NOT_PARTICIPANT / MATCH_OVER.
+ */
+export async function rejoinMatch(code: string, uid: string): Promise<MatchDoc> {
+  const snap = await getDoc(doc(db, 'matches', code));
+  if (!snap.exists()) throw new Error('MATCH_NOT_FOUND');
+  const data = snap.data() as MatchDoc;
+  if (data.host.uid !== uid && data.guest?.uid !== uid) {
+    throw new Error('NOT_PARTICIPANT');
+  }
+  if (data.status !== 'active' && data.status !== 'waiting') {
+    throw new Error('MATCH_OVER');
+  }
+  return data;
+}
+
 export function subscribeMatch(
   code: string,
   onChange: (doc: MatchDoc | null) => void,
