@@ -1002,6 +1002,11 @@ function App() {
   useEffect(() => {
     if (isAutoMode) return;
     if (isMultiplayer) return; // MP completion runs through a separate effect
+    // R13/BUG-5 — local hot-seat is two humans on one device: its results
+    // must never reach finishGame (solo leaderboard, personal best,
+    // "human-win" attribution are all meaningless there). The game-over
+    // banner is the whole ending.
+    if (isLocalMode) return;
     if (gameStatus === 'active') return;
     if (log.moves.length === 0) return;
     if (completedLogIdRef.current === log.id) return;
@@ -1416,6 +1421,15 @@ function App() {
       return;
     }
     if (gameStatus !== 'active') return;
+    // R13/BUG-5 — hot-seat resign: either seat may press it, so a solo
+    // "human-resign" record would blame the wrong player half the time.
+    // Just end the game; the banner is the ending, nothing is saved.
+    if (isLocalMode) {
+      setGameOutcome('human-resign'); // blocks the completion effect
+      setGameStatus('checkmate');
+      completedLogIdRef.current = log.id;
+      return;
+    }
     // Pre-set the outcome so the gameStatus-watching effect skips this one.
     setGameOutcome('human-resign');
     setGameStatus('checkmate');
@@ -2054,16 +2068,27 @@ function App() {
       ? mpSync.matchState.timeControlSec ?? null
       : null;
 
+  // R13/BUG-2 — MP terminality lives in the MATCH doc, not in the local
+  // gameStatus (which stays 'active' for the whole PvP game). Gating the
+  // tick and the live-charge on gameStatus kept the loser's clock visibly
+  // counting past the end of a finished match.
+  const mpMatchLive =
+    isMultiplayer && mpSync
+      ? mpSync.matchState.status === 'active' && !mpSync.matchState.outcome
+      : false;
+
   const [mpNow, setMpNow] = useState(() => Date.now());
   useEffect(() => {
-    if (!mpTimeControl || gameStatus !== 'active') return;
+    if (!mpTimeControl || !mpMatchLive) return;
     const id = setInterval(() => setMpNow(Date.now()), 500);
     return () => clearInterval(id);
-  }, [mpTimeControl, gameStatus]);
+  }, [mpTimeControl, mpMatchLive]);
 
   const mpClocks = useMemo(() => {
     if (!mpTimeControl || !mpSync) return null;
     const moves = mpSync.matchState.log.moves;
+    // R13 — Fischer increment: every completed move credits its mover.
+    const incMs = (mpSync.matchState.timeIncrementSec ?? 0) * 1000;
     let usedWhite = 0;
     let usedBlack = 0;
     for (let i = 1; i < moves.length; i++) {
@@ -2073,17 +2098,21 @@ function App() {
       if (i % 2 === 0) usedWhite += dt;
       else usedBlack += dt;
     }
-    if (gameStatus === 'active' && moves.length > 0) {
+    if (mpMatchLive && moves.length > 0) {
       const live = Math.max(0, mpNow - (moves[moves.length - 1].timestamp ?? mpNow));
       if (moves.length % 2 === 0) usedWhite += live;
       else usedBlack += live;
     }
+    // Completed-move counts: entries alternate W,B,W,B… so white made
+    // ceil(n/2) of them and black the rest.
+    const whiteMoves = Math.ceil(moves.length / 2);
+    const blackMoves = Math.floor(moves.length / 2);
     const total = mpTimeControl * 1000;
     return {
-      white: Math.max(0, total - usedWhite),
-      black: Math.max(0, total - usedBlack),
+      white: Math.max(0, total + whiteMoves * incMs - usedWhite),
+      black: Math.max(0, total + blackMoves * incMs - usedBlack),
     };
-  }, [mpTimeControl, mpSync, mpNow, gameStatus]);
+  }, [mpTimeControl, mpSync, mpNow, mpMatchLive]);
 
   const flagFiredRef = useRef(false);
   useEffect(() => {
@@ -2096,6 +2125,18 @@ function App() {
     if (mine <= 0) {
       flagFiredRef.current = true;
       void mpSync.resign();
+      return;
+    }
+    // R13/BUG-3 — the flagging client may be gone (tab closed): if the
+    // OPPONENT's clock hits zero, the waiting peer claims the flag win
+    // itself instead of waiting ~90s for the AFK watchdog. Same
+    // transaction-guarded write local mate detection uses, so a
+    // simultaneous self-forfeit can't double-settle the match.
+    const theirs = mpSync.myColor === 'white' ? mpClocks.black : mpClocks.white;
+    if (theirs <= 0) {
+      flagFiredRef.current = true;
+      const opponentIsHost = mpSync.matchState.host.uid !== mpSync.myUid;
+      void mpSync.writeOutcomeIfFirst(opponentIsHost ? 'host-resign' : 'guest-resign');
     }
   }, [mpClocks, mpSync]);
 
@@ -3843,25 +3884,25 @@ function App() {
   const gameOverMessage = useMemo(() => {
     if (gameStatus === 'checkmate') {
       const winner = state.sideToMove === 'white' ? 'Black' : 'White';
-      return `Checkmate \u2014 ${winner} wins!`;
+      return `Checkmate! ${winner} wins`;
     }
     if (gameStatus === 'draw_stalemate') {
-      return 'Draw \u2014 Stalemate';
+      return 'Draw: stalemate';
     }
     if (gameStatus === 'draw_material') {
-      return 'Draw \u2014 Insufficient material';
+      return 'Draw: insufficient material';
     }
     if (gameStatus === 'draw_repetition') {
-      return 'Draw \u2014 Threefold repetition';
+      return 'Draw: threefold repetition';
     }
     if (gameStatus === 'draw_50move') {
-      return 'Draw \u2014 50-move rule';
+      return 'Draw: 50-move rule';
     }
     if (gameStatus === 'king_captured_white_wins') {
-      return 'King captured \u2014 White wins!';
+      return 'King captured! White wins';
     }
     if (gameStatus === 'king_captured_black_wins') {
-      return 'King captured \u2014 Black wins!';
+      return 'King captured! Black wins';
     }
     return null;
   }, [gameStatus, state.sideToMove]);
@@ -5603,11 +5644,15 @@ function App() {
       )}
 
       {isMultiplayer && mpSync && mpEndOutcome && (() => {
-        const myView = translateOutcomeForPlayer(mpEndOutcome, {
-          uid: mpSync.myUid,
-          displayName: '',
-          color: mpSync.myColor,
-        });
+        const myView = translateOutcomeForPlayer(
+          mpEndOutcome,
+          {
+            uid: mpSync.myUid,
+            displayName: '',
+            color: mpSync.myColor,
+          },
+          mpSync.matchState.host.uid,
+        );
         const opp = mpSync.opponentDisplayName;
         const headline =
           myView === 'human-win'

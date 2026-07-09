@@ -53,8 +53,11 @@ export interface MatchDoc {
   /** B8 — per-side clock budget in seconds; null/absent = untimed.
    *  Clocks are derived client-side from move timestamps (both peers
    *  compute identically from the shared log), flag-fall self-forfeits
-   *  through the existing resign path. v1 is a single 10-min preset. */
+   *  through the existing resign path. */
   timeControlSec?: number | null;
+  /** R13 — Fischer increment in seconds, credited to the mover after
+   *  each completed move. null/absent = no increment (old docs). */
+  timeIncrementSec?: number | null;
   /** Stage Q.D.3: full solo parity — one spin yields a slot bag of
    *  ROULETTE_SLOT_COUNT piece types and the on-clock player gets
    *  ROULETTE_MAX_ACTIONS actions to spend. Each move consumes a
@@ -101,6 +104,7 @@ export async function createMatch(
   host: { uid: string; displayName: string },
   gameMode: MatchGameMode = 'classic',
   timeControlSec: number | null = null,
+  timeIncrementSec: number | null = null,
 ): Promise<string> {
   // Vanishingly rare for 32^6 (~10^9) codes, but bound the loop just in case
   // someone runs a botnet flooding /matches.
@@ -133,6 +137,7 @@ export async function createMatch(
     outcome: null,
     gameMode,
     timeControlSec,
+    timeIncrementSec,
     rouletteSlots: null,
     rouletteActionsLeft: 0,
     usedRouletteSlots: [],

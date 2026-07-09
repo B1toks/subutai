@@ -21,7 +21,7 @@ export async function saveMultiplayerGameToGames(
   if (!match.guest || !match.outcome) return;
 
   const moveCount = Math.floor(match.log.moves.length / 2);
-  const hostOutcome = translateOutcomeForPlayer(match.outcome, match.host);
+  const hostOutcome = translateOutcomeForPlayer(match.outcome, match.host, match.host.uid);
 
   await addDoc(collection(db, 'games'), {
     playerId: match.host.uid,
@@ -47,19 +47,27 @@ export async function saveMultiplayerGameToGames(
   });
 }
 
-/** Map a MatchOutcome (stored at match level) into the host's perspective
- *  using the existing GameOutcome vocabulary so the rest of the app's
- *  review / display code keeps working unchanged. */
+/** Map a MatchOutcome (stored at match level) into one player's
+ *  perspective using the existing GameOutcome vocabulary so the rest of
+ *  the app's review / display code keeps working unchanged.
+ *
+ *  R13/BUG-1 fix: resign/forfeit outcomes are stored by ROLE
+ *  (host-resign / guest-resign), and host color is randomized at match
+ *  creation — so they must be resolved against the host's uid, never
+ *  against the player's color. Keying off color inverted the result in
+ *  every match where the host drew Black (~half of them). */
 export function translateOutcomeForPlayer(
   outcome: MatchOutcome,
   player: MatchParticipant,
+  hostUid: string,
 ): GameOutcome {
   if (outcome === 'draw') return 'draw';
+  const isHost = player.uid === hostUid;
   if (outcome === 'host-resign') {
-    return player.color === 'white' ? 'human-resign' : 'human-win';
+    return isHost ? 'human-resign' : 'human-win';
   }
   if (outcome === 'guest-resign') {
-    return player.color === 'white' ? 'human-win' : 'human-resign';
+    return isHost ? 'human-win' : 'human-resign';
   }
   // Color outcomes (white-win / black-win): "I won" if my color matches.
   const winColor = outcome === 'white-win' ? 'white' : 'black';

@@ -25,6 +25,21 @@ type LobbyView =
   | { kind: 'hosted'; code: string; status: 'waiting' | 'active' }
   | { kind: 'joining' };
 
+/* R13 — time-control presets: base seconds + Fischer increment. */
+interface TimeControl {
+  label: string;
+  title: string;
+  sec: number | null;
+  inc: number | null;
+}
+
+const TIME_CONTROLS: TimeControl[] = [
+  { label: 'No clock', title: 'Untimed match', sec: null, inc: null },
+  { label: '3+2', title: '3 minutes + 2s per move', sec: 180, inc: 2 },
+  { label: '5+0', title: '5 minutes per player', sec: 300, inc: 0 },
+  { label: '10+0', title: '10 minutes per player', sec: 600, inc: 0 },
+];
+
 export function FriendLobby({
   uid,
   displayName,
@@ -37,8 +52,8 @@ export function FriendLobby({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [createMode, setCreateMode] = useState<MatchGameMode>('classic');
-  // B8 — 10-min time control checkbox (friend matches only for now).
-  const [timed, setTimed] = useState(false);
+  // R13 — time-control preset (classic friend matches only).
+  const [timeControl, setTimeControl] = useState<TimeControl>(TIME_CONTROLS[0]);
   // onMatchReady changes identity on every parent render; storing in a ref
   // keeps the subscribe-effect deps minimal.
   const onMatchReadyRef = useRef(onMatchReady);
@@ -71,7 +86,8 @@ export function FriendLobby({
         { uid: uid!, displayName: displayName! },
         createMode,
         // Timed roulette doesn't fit the multi-action turn model yet.
-        createMode === 'classic' && timed ? 600 : null,
+        createMode === 'classic' ? timeControl.sec : null,
+        createMode === 'classic' ? timeControl.inc : null,
       );
       setView({ kind: 'hosted', code, status: 'waiting' });
     } catch (err) {
@@ -197,17 +213,26 @@ export function FriendLobby({
                 </span>
               </label>
             </div>
-            {/* B8 — single 10-min preset for now; more controls later. */}
-            <label className={`friend-lobby-timecontrol${timed ? ' is-selected' : ''}`}>
-              <input
-                type="checkbox"
-                checked={timed}
-                onChange={(e) => setTimed(e.target.checked)}
-                disabled={busy}
-              />
-              <span className="friend-lobby-mode-title">⏱ Time control</span>
-              <span className="friend-lobby-mode-sub">10 minutes per player</span>
-            </label>
+            {/* R13 — time-control presets (classic only; roulette's
+                multi-action turns don't fit the alternating clock). */}
+            {createMode === 'classic' && (
+              <div className="friend-lobby-tc-row" role="radiogroup" aria-label="Time control">
+                {TIME_CONTROLS.map((tc) => (
+                  <button
+                    key={tc.label}
+                    type="button"
+                    role="radio"
+                    aria-checked={timeControl === tc}
+                    className={`friend-lobby-tc-pill${timeControl === tc ? ' is-selected' : ''}`}
+                    onClick={() => setTimeControl(tc)}
+                    disabled={busy}
+                    title={tc.title}
+                  >
+                    {tc.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <button
               type="button"
               className="friend-lobby-primary-btn"
