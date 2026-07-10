@@ -207,6 +207,12 @@ export function MusicDock({ onClose }: MusicDockProps) {
   // Engine mirrors for the UI (the engine itself lives outside React).
   const [bpm, setBpm] = useState(() => beatEngine.getBpm());
   const [syncRunning, setSyncRunning] = useState(() => beatEngine.isRunning());
+  // R15-bug — "I pressed Stop and it turned itself back on": every
+  // confident detector pass auto-started the grid. Stop now records the
+  // user's intent; the auto-start paths (detectors, embed playback, BPM
+  // edits) respect it, and any EXPLICIT start (Sync, preset, playlist,
+  // file load, capture) clears it.
+  const userStoppedRef = useRef(false);
   // SP-3 — automatic BPM lookup (oEmbed → Deezer).
   const [autoBpm, setAutoBpm] = useState<'idle' | 'looking' | 'found' | 'none'>('idle');
   // SP-3 — Beat Mode: moves snap to the beat (classic solo only).
@@ -339,7 +345,12 @@ export function MusicDock({ onClose }: MusicDockProps) {
           // board pulses in lock-step with real playback (and naturally
           // pauses when the track is paused — frozen track clock = no
           // beats). Fixes "synced but the board doesn't move".
-          if (!e.data.isPaused && beatEngine.getBpm() > 0 && !beatEngine.isRunning()) {
+          if (
+            !e.data.isPaused &&
+            beatEngine.getBpm() > 0 &&
+            !beatEngine.isRunning() &&
+            !userStoppedRef.current
+          ) {
             beatEngine.start();
             setSyncRunning(true);
           }
@@ -393,7 +404,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
       setBpm(r.bpm);
       setAutoBpm('found');
       setLive({ bpm: r.bpm, conf: r.confidence });
-      if (!beatEngine.isRunning()) {
+      if (!beatEngine.isRunning() && !userStoppedRef.current) {
         beatEngine.start();
         setSyncRunning(true);
       }
@@ -423,6 +434,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
       // stability too meant a fair-confidence reading never reached the
       // board at all on wobblier material ("детектить, але не передається").
       if (!beatEngine.isRunning()) {
+        if (userStoppedRef.current) return;
         lockGrid();
         beatEngine.start();
         setSyncRunning(true);
@@ -458,6 +470,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
   }
 
   function handleSync() {
+    userStoppedRef.current = false;
     // M.16 — Sync used to silently do nothing when the engine had no tempo
     // (the live detector was too "weak" to auto-adopt). Now it falls back to
     // the shown / auto BPM so the grid ALWAYS engages on press; phase-aligns
@@ -486,6 +499,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
   }
 
   function handleStopSync() {
+    userStoppedRef.current = true;
     beatEngine.stop();
     setSyncRunning(false);
   }
@@ -494,6 +508,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
   // Track base when a Spotify embed is loaded (so pause still freezes
   // it), wall base otherwise (mic / speakers / metronome).
   function handlePreset(presetBpm: number) {
+    userStoppedRef.current = false;
     beatEngine.setBase(loadedUrl ? 'track' : 'wall');
     beatEngine.adoptBpm(presetBpm);
     setBpm(presetBpm);
@@ -547,7 +562,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
     if (nowPlaying?.id === playlistId && nowPlaying.idx === idx && bpm) {
       beatEngine.adoptBpm(bpm);
       setBpm(bpm);
-      if (!beatEngine.isRunning()) {
+      if (!beatEngine.isRunning() && !userStoppedRef.current) {
         beatEngine.start();
         setSyncRunning(true);
       }
@@ -559,6 +574,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
   async function playPlaylistTrack(pl: SavedPlaylist, idx: number) {
     const track = pl.tracks[idx];
     if (!track) return;
+    userStoppedRef.current = false;
     setNowPlaying({ id: pl.id, idx });
     await loadTrack(track.url, track.bpm);
     if (track.bpm) {
@@ -683,6 +699,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
   }
 
   async function startCapture(source: 'mic' | 'display') {
+    userStoppedRef.current = false;
     setMicError(null);
     if (micEq.isRunning()) {
       const wasSource = micEq.getSource();

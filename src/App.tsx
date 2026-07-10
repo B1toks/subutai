@@ -531,6 +531,12 @@ function App() {
     },
   );
   const isMultiplayer = mpSync !== null;
+  // R15-bug — mirror for async continuations (AI think can outlive the
+  // solo game it started in when a PvP match begins mid-search).
+  const isMultiplayerRef = useRef(isMultiplayer);
+  useEffect(() => {
+    isMultiplayerRef.current = isMultiplayer;
+  }, [isMultiplayer]);
 
   // R13b — persist the live match code so a refresh can resume it. The
   // key exists only while a match is genuinely live: it clears when the
@@ -557,6 +563,7 @@ function App() {
     mpResumeCodeRef.current = null;
     void rejoinMatch(code, user.uid)
       .then((match) => {
+        startNewGame(); // R15-bug — same solo-world reset as onMatchReady
         setActiveMatch(match);
         setOpponentMode('friend');
         setMpEndOutcome(null);
@@ -2784,6 +2791,12 @@ function App() {
           lastMoveWasRotation,
           allowSelfCheck: gameMode === 'roulette',
         });
+        // R15-bug — clearTimeout can't stop a callback that already fired
+        // and is parked on the await above. If a PvP match started while
+        // the engine was thinking, this continuation must NOT touch the
+        // solo world: its checkGameOver would set a terminal gameStatus
+        // that the MP UI reads (banner over the board, clock hidden).
+        if (isMultiplayerRef.current) return;
         if (!chosen) return;
         if (chosen.kind === 'topologyToggle' && boardState.lastMoveWasRotation) {
           console.warn('[rotation guard] AI returned rotation when not allowed — ignoring');
@@ -3482,14 +3495,38 @@ function App() {
       if (plan) {
         beatSnapPendingRef.current = true;
         setBeatSnap({ from, to, ms: plan.landMs });
-        // Commit (start the glide) so it lands on the beat.
-        window.setTimeout(() => {
+        // R15-bug — the hold used to be ONE fixed setTimeout computed at
+        // click time, but since M.26/27 the grid is alive under it: an
+        // essentia re-lock (every ~6s) or a PLL nudge moves the beats,
+        // and the pre-computed hold landed where the beat USED to be —
+        // "Beat Mode лагає". The hold now TRACKS the live grid, waking
+        // shortly before each estimated land and re-reading
+        // msToNextBeat(); a hard cap (~1.6 beats from click) commits
+        // regardless, so a re-anchoring grid can never chase the move
+        // away from the player.
+        const commitSnap = () => {
           beatSnapPendingRef.current = false;
           setSelected(null);
           commitMove();
-        }, plan.holdMs);
-        // Clear the ring once the piece has touched down (on the beat).
-        window.setTimeout(() => setBeatSnap(null), plan.landMs);
+          setBeatSnap(null);
+        };
+        const deadline =
+          performance.now() + Math.min(plan.landMs, beatEngine.getIntervalMs() * 1.6);
+        const track = () => {
+          if (!beatEngine.isRunning()) {
+            commitSnap(); // grid stopped mid-hold — play immediately
+            return;
+          }
+          const msLeft = beatEngine.msToNextBeat();
+          if (msLeft <= slideMs + 45 || performance.now() >= deadline) {
+            // Beat within glide reach (or cap hit): commit so the piece
+            // lands on it.
+            window.setTimeout(commitSnap, Math.max(0, msLeft - slideMs));
+            return;
+          }
+          window.setTimeout(track, Math.min(60, msLeft - slideMs - 40));
+        };
+        track();
         return;
       }
     }
@@ -4127,6 +4164,12 @@ function App() {
             // Q.B.2: hand the live match over to the regular game view.
             // The board / log / header all reuse the single-player UI,
             // sourcing their data from useMultiplayerSync.
+            //
+            // R15-bug — reset the solo world FIRST: a finished solo game
+            // leaves a terminal gameStatus behind, and the MP UI reads it
+            // (its "Checkmate!" banner covered the fresh match and hid
+            // the clock strip, which is gated on gameStatus==='active').
+            startNewGame();
             setActiveMatch(match);
             setView('game');
             // Reset any stale completion state from a previous match.
