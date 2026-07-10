@@ -7356,11 +7356,53 @@ body.checkmate-flash::after {
   100% { transform: translate(0, 0); }
 }
 
+/* R17b — red vignette pulse when a real check lands. Sits over the
+   board only (absolute inside the board wrap), breathes in and out. */
+.check-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 rgba(220, 38, 38, 0);
+  animation: check-vignette-pulse 0.9s ease-out both;
+}
+
+@keyframes check-vignette-pulse {
+  0%   { box-shadow: inset 0 0 0 rgba(220, 38, 38, 0); }
+  25%  { box-shadow: inset 0 0 64px rgba(220, 38, 38, 0.55); }
+  60%  { box-shadow: inset 0 0 40px rgba(220, 38, 38, 0.3); }
+  100% { box-shadow: inset 0 0 0 rgba(220, 38, 38, 0); }
+}
+
+/* R17b — the held-breath freeze beat before the victory cinematic:
+   dim + desaturate everything for ~0.65s (the storyboard's audio-dip
+   moment), then VictoryScene's own fade takes over. */
+.victory-freeze {
+  position: fixed;
+  inset: 0;
+  z-index: 9400; /* just under .victory-scene (9500) */
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(4, 5, 8, 0.55) 0%, rgba(2, 2, 4, 0.92) 100%);
+  backdrop-filter: grayscale(0.85) brightness(0.75);
+  animation: victory-freeze-in 0.65s ease-in both;
+}
+
+@keyframes victory-freeze-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .tile.is-capture-burst::before,
   .tile.is-capture-burst::after,
-  .board-with-coords.is-capture-shake {
+  .board-with-coords.is-capture-shake,
+  .check-vignette {
     animation: none;
+  }
+  .victory-freeze {
+    animation: none;
+    opacity: 1;
   }
 }
 

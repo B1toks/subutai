@@ -801,6 +801,13 @@ function App() {
   // explosion below) so human, AI, chat and PvP captures all fire it.
   const [captureFxSquare, setCaptureFxSquare] = useState<SquareId | null>(null);
   const [captureShake, setCaptureShake] = useState(false);
+  // R17b — red vignette pulse when a REAL check lands (preview-induced
+  // "checks" from the rotation eye are ignored).
+  const [checkVignette, setCheckVignette] = useState(false);
+  // R17b — the storyboard's "зрив темпу": a dim freeze-frame beat before
+  // the victory cinematic slams in.
+  const [victoryFreeze, setVictoryFreeze] = useState(false);
+  const victoryFreezeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [enPassantExplosionSquare, setEnPassantExplosionSquare] =
     useState<SquareId | null>(null);
 
@@ -994,6 +1001,16 @@ function App() {
   // side). A tense, come-from-behind win triggers the victory cinematic.
   const worstHumanEvalRef = useRef(0);
   const [victoryTheme, setVictoryTheme] = useState<VictoryTheme | null>(null);
+  // R17b — every victory entrance goes through the freeze beat: ~0.65s of
+  // dimmed stillness (the held breath from the storyboard), THEN the scene.
+  const launchVictory = useCallback((t: VictoryTheme) => {
+    if (victoryFreezeTimer.current) clearTimeout(victoryFreezeTimer.current);
+    setVictoryFreeze(true);
+    victoryFreezeTimer.current = setTimeout(() => {
+      setVictoryFreeze(false);
+      setVictoryTheme(t);
+    }, 650);
+  }, []);
   useEffect(() => {
     if (searchEvalFromWhite !== null && searchEvalFromWhite < worstHumanEvalRef.current) {
       worstHumanEvalRef.current = searchEvalFromWhite;
@@ -1007,7 +1024,7 @@ function App() {
   //                                                 (+ pulses the Rotate btn)
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const trigger = (t: VictoryTheme = 'red') => setVictoryTheme(t === 'blue' ? 'blue' : 'red');
+    const trigger = (t: VictoryTheme = 'red') => launchVictory(t === 'blue' ? 'blue' : 'red');
     const encourage = () => {
       const pool = Math.random() < 0.5 ? ENCOURAGE_ROTATE : ENCOURAGE_GENERIC;
       toast.show(pool[Math.floor(Math.random() * pool.length)], 'info', 5200);
@@ -2072,6 +2089,8 @@ function App() {
     setSearchMateInPlies(null);
     worstHumanEvalRef.current = 0; // R6 — reset the tense-win detector
     setVictoryTheme(null);
+    if (victoryFreezeTimer.current) clearTimeout(victoryFreezeTimer.current);
+    setVictoryFreeze(false);
     setSummaryOpen(false);
     setLastGamePoints(null);
     setGameOutcome(null);
@@ -3237,6 +3256,20 @@ function App() {
     return { king, checkers };
   }, [previewTopology, state]);
 
+  // R17b — pulse the red vignette when a REAL check lands: only on the
+  // null→checked transition, and never for the rotation-preview's
+  // hypothetical checks (checkSquares computes those too).
+  const prevCheckKingRef = useRef<string | null>(null);
+  useEffect(() => {
+    const king = previewTopology ? null : checkSquares.king;
+    const was = prevCheckKingRef.current;
+    prevCheckKingRef.current = king;
+    if (!king || was) return;
+    setCheckVignette(true);
+    const t = setTimeout(() => setCheckVignette(false), 900);
+    return () => clearTimeout(t);
+  }, [checkSquares.king, previewTopology]);
+
   const displayTopology =
     previewLocked && lockedPreviewTopology
       ? lockedPreviewTopology
@@ -3776,8 +3809,8 @@ function App() {
     if (gameOutcome !== 'human-win') return;
     if (isMultiplayer || isLocalMode) return;
     if (worstHumanEvalRef.current > -2.0) return; // was never really in danger
-    setVictoryTheme(Math.random() < 0.5 ? 'red' : 'blue');
-  }, [gameOutcome, isMultiplayer, isLocalMode]);
+    launchVictory(Math.random() < 0.5 ? 'red' : 'blue');
+  }, [gameOutcome, isMultiplayer, isLocalMode, launchVictory]);
 
   const layout = useMemo(
     () => computeBoardLayout(displayTopology, boardSize),
@@ -5092,6 +5125,7 @@ function App() {
             </svg>
           );
         })()}
+        {checkVignette && <div className="check-vignette" aria-hidden />}
         {guessCloud.length > 0 && (
           <div className="guess-cloud" aria-live="polite">
             {guessCloud.map((n) => (
@@ -6020,6 +6054,8 @@ function App() {
       {/* R12 — session beat-points tally (compact pill, click to expand). */}
       <MusicScorePanel />
 
+      {/* R17b — the held-breath beat: a dim freeze before the cinematic. */}
+      {victoryFreeze && <div className="victory-freeze" aria-hidden />}
       {/* R6 — pixel victory cinematic on a come-from-behind win. */}
       {victoryTheme && (
         <Suspense fallback={null}>
