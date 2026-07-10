@@ -796,6 +796,11 @@ function App() {
   const [rouletteSpinCountLocal, setRouletteSpinCount] = useState(0);
   // Stage T1: square that just had a pawn taken via en passant — paints a
   // brief explosion overlay so the off-target capture is visually obvious.
+  // R17a — cinema micro-FX: spark burst on the capture square + a brief
+  // board jitter. Driven off the shared log (same pattern as the EP
+  // explosion below) so human, AI, chat and PvP captures all fire it.
+  const [captureFxSquare, setCaptureFxSquare] = useState<SquareId | null>(null);
+  const [captureShake, setCaptureShake] = useState(false);
   const [enPassantExplosionSquare, setEnPassantExplosionSquare] =
     useState<SquareId | null>(null);
 
@@ -3169,6 +3174,24 @@ function App() {
     return () => clearTimeout(t);
   }, [log.moves.length]);
 
+  // R17a — spark burst + micro-shake on every plain capture (EP keeps its
+  // dedicated bigger explosion above). Promotion-captures are skipped:
+  // the log entry can't tell a quiet promotion from a capturing one.
+  useEffect(() => {
+    const last = log.moves[log.moves.length - 1];
+    if (!last) return;
+    const mv = last.move;
+    if (mv.kind !== 'capture' || !mv.to) return;
+    setCaptureFxSquare(mv.to as SquareId);
+    setCaptureShake(true);
+    const t1 = setTimeout(() => setCaptureFxSquare(null), 620);
+    const t2 = setTimeout(() => setCaptureShake(false), 300);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [log.moves.length]);
+
   const highlightedTargets = useMemo(() => {
     if (!selected) return new Set<string>();
     const targets = new Set<string>();
@@ -4608,7 +4631,7 @@ function App() {
           isPending={!isMultiplayer && searchEvalFromWhite === null}
         />
       <div
-        className={`board-with-coords${showAfkAlert && currentPlayer === 'human' && gameStatus === 'active' ? ' is-afk-nudge' : ''}`}
+        className={`board-with-coords${showAfkAlert && currentPlayer === 'human' && gameStatus === 'active' ? ' is-afk-nudge' : ''}${captureShake ? ' is-capture-shake' : ''}`}
         style={{ width: boardSize }}
         data-tour="board"
       >
@@ -4721,6 +4744,7 @@ function App() {
                 isSelected ? 'selected' : '',
                 isEnPassantTarget ? 'target-enpassant' : isTarget ? 'target' : '',
                 isEnPassantExplosion ? 'enpassant-explosion' : '',
+                captureFxSquare === sq ? 'is-capture-burst' : '',
                 isLastFrom ? 'last-from' : '',
                 isLastTo ? 'last-to' : '',
                 olderHighlight ? 'last-older' : '',

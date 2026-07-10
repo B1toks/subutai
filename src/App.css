@@ -7288,6 +7288,82 @@ body.checkmate-flash::after {
   100% { transform: scale(0); opacity: 0; }
 }
 
+/* R17a — cinema micro-FX: spark burst on a capture. The ::before ring
+   flashes out from the impact; the ::after dot scatters 8 "sparks" as
+   animated box-shadows (a pure-CSS particle burst — no extra DOM). */
+.tile.is-capture-burst::before {
+  content: '';
+  position: absolute;
+  inset: 18%;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 200, 90, 0.9);
+  animation: capture-ring 0.42s ease-out both;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.tile.is-capture-burst::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: transparent;
+  animation: capture-sparks 0.6s ease-out both;
+  pointer-events: none;
+  z-index: 3;
+}
+
+@keyframes capture-ring {
+  0%   { transform: scale(0.3); opacity: 1; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+
+@keyframes capture-sparks {
+  0% {
+    box-shadow:
+      0 0 0 rgba(255, 214, 90, 1), 0 0 0 rgba(255, 150, 60, 1),
+      0 0 0 rgba(255, 235, 160, 1), 0 0 0 rgba(255, 120, 60, 1),
+      0 0 0 rgba(255, 214, 90, 1), 0 0 0 rgba(255, 190, 90, 1),
+      0 0 0 rgba(255, 235, 160, 1), 0 0 0 rgba(255, 150, 60, 1);
+    opacity: 1;
+  }
+  100% {
+    box-shadow:
+      22px -26px 0 rgba(255, 214, 90, 0), -24px -18px 0 rgba(255, 150, 60, 0),
+      28px 10px 0 rgba(255, 235, 160, 0), -18px 24px 0 rgba(255, 120, 60, 0),
+      8px -32px 0 rgba(255, 214, 90, 0), -30px -4px 0 rgba(255, 190, 90, 0),
+      14px 28px 0 rgba(255, 235, 160, 0), -8px -28px 0 rgba(255, 150, 60, 0);
+    opacity: 0;
+  }
+}
+
+/* R17a — impact jitter: 2px board shudder for the first ~0.3s of a
+   capture. Deliberately tiny; the "slam" reads through accumulation
+   with the sparks, not through amplitude. */
+.board-with-coords.is-capture-shake {
+  animation: capture-shake 0.28s ease-out both;
+}
+
+@keyframes capture-shake {
+  0%   { transform: translate(0, 0); }
+  20%  { transform: translate(2px, -1px); }
+  40%  { transform: translate(-2px, 1px); }
+  60%  { transform: translate(1px, 2px); }
+  80%  { transform: translate(-1px, -1px); }
+  100% { transform: translate(0, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile.is-capture-burst::before,
+  .tile.is-capture-burst::after,
+  .board-with-coords.is-capture-shake {
+    animation: none;
+  }
+}
+
 .tile.enpassant-explosion::after {
   content: '\1F4A5'; /* 💥 */
   position: absolute;
