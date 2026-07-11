@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# R15 local data dumps (contain player ids, large)
+data/
