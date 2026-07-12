@@ -35,6 +35,67 @@ interface Stats {
 const SAMPLE_SIZE = 500;
 const REFRESH_MS = 30_000;
 
+/** R15 step 2 — public player-facing stats over /games (human vs AI runs).
+ *  The collection is world-readable and small (hundreds of docs); we read it
+ *  whole and aggregate client-side. Buckets use points.moveCount = full moves. */
+interface HumanStats {
+  total: number;
+  players: number;
+  wins: number;
+  survive50: number;
+  longestMoves: number;
+  fastestWinMoves: number | null;
+  /** funnel buckets 1-10 / 11-20 / ... / 50+ -> [wins, losses+resigns] */
+  funnel: Array<{ label: string; win: number; loss: number }>;
+}
+
+interface GameDocLike {
+  outcome?: string;
+  moveCount?: number;
+  playerId?: string;
+}
+
+const FUNNEL_LABELS = ['1-10', '11-20', '21-30', '31-40', '41-50', '50+'];
+
+async function loadHumanStats(): Promise<HumanStats> {
+  const snap = await getDocs(collection(db, 'games'));
+  const players = new Set<string>();
+  let wins = 0;
+  let survive50 = 0;
+  let longestMoves = 0;
+  let fastestWinMoves: number | null = null;
+  const funnel = FUNNEL_LABELS.map((label) => ({ label, win: 0, loss: 0 }));
+
+  snap.forEach((doc) => {
+    const d = doc.data() as GameDocLike;
+    const moves = d.moveCount ?? 0;
+    const isWin = d.outcome === 'human-win';
+    if (d.playerId) players.add(d.playerId);
+    if (isWin) {
+      wins++;
+      // ignore degenerate 0/1-move logs — they read as nonsense on a public page
+      if (moves >= 2 && (fastestWinMoves === null || moves < fastestWinMoves)) {
+        fastestWinMoves = moves;
+      }
+    }
+    if (moves >= 50) survive50++;
+    if (moves > longestMoves) longestMoves = moves;
+    const bucket = funnel[Math.min(5, Math.floor(Math.max(moves - 1, 0) / 10))];
+    if (isWin) bucket.win++;
+    else bucket.loss++;
+  });
+
+  return {
+    total: snap.size,
+    players: players.size,
+    wins,
+    survive50,
+    longestMoves,
+    fastestWinMoves,
+    funnel,
+  };
+}
+
 const EMPTY: Stats = {
   totalGames: 0,
   whiteWins: 0,
@@ -139,10 +200,18 @@ async function loadStats(): Promise<Stats> {
 
 export function StatsPage() {
   const [stats, setStats] = useState<Stats>(EMPTY);
+  const [human, setHuman] = useState<HumanStats | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     function refresh() {
+      loadHumanStats()
+        .then((next) => {
+          if (!cancelled) setHuman(next);
+        })
+        .catch((err: unknown) => {
+          console.error('[stats] human stats load failed', err);
+        });
       loadStats()
         .then((next) => {
           if (!cancelled) setStats(next);
@@ -193,15 +262,81 @@ export function StatsPage() {
       : 0;
   const fmtDate = (d: Date | null) => (d ? d.toLocaleString() : '—');
 
+  const funnelMax = human
+    ? Math.max(1, ...human.funnel.map((b) => b.win + b.loss))
+    : 1;
+
   return (
     <div className="stats-page">
       <h1>
-        <Icon icon={BarChart3} size="lg" aria-hidden /> Training Data Stats
+        <Icon icon={BarChart3} size="lg" aria-hidden /> Subutai Chess Stats
       </h1>
+
+      {human && (
+        <>
+          <section className="stats-hero">
+            <div className="stat-big">{human.total.toLocaleString()}</div>
+            <div className="stat-label">
+              battles fought by {human.players.toLocaleString()} players
+            </div>
+          </section>
+
+          <section className="stats-section">
+            <h2>Hall of numbers</h2>
+            <div className="stat-row">
+              <span className="stat-row-label">Players who beat the bot</span>
+              <strong className="stat-row-value">{human.wins}</strong>
+              <span className="stat-pct">
+                ({human.total > 0 ? Math.round((100 * human.wins) / human.total) : 0}%)
+              </span>
+            </div>
+            <div className="stat-row">
+              <span className="stat-row-label">Games reaching move 50</span>
+              <strong className="stat-row-value">{human.survive50}</strong>
+              <span className="stat-pct">
+                ({human.total > 0 ? Math.round((100 * human.survive50) / human.total) : 0}%)
+              </span>
+            </div>
+            <div className="stat-row">
+              <span className="stat-row-label">Longest game</span>
+              <strong className="stat-row-value">{human.longestMoves} moves</strong>
+            </div>
+            <div className="stat-row">
+              <span className="stat-row-label">Fastest win</span>
+              <strong className="stat-row-value">
+                {human.fastestWinMoves !== null ? `${human.fastestWinMoves} moves` : '—'}
+              </strong>
+            </div>
+          </section>
+
+          <section className="stats-section">
+            <h2>
+              Survival funnel{' '}
+              <span className="stats-section-meta">(game length, wins vs losses)</span>
+            </h2>
+            {human.funnel.map((b) => (
+              <div className="funnel-row" key={b.label}>
+                <span className="funnel-label">{b.label}</span>
+                <span className="funnel-track">
+                  <span
+                    className="funnel-bar funnel-bar-win"
+                    style={{ width: `${(100 * b.win) / funnelMax}%` }}
+                  />
+                  <span
+                    className="funnel-bar funnel-bar-loss"
+                    style={{ width: `${(100 * b.loss) / funnelMax}%` }}
+                  />
+                </span>
+                <span className="funnel-count">{b.win + b.loss}</span>
+              </div>
+            ))}
+          </section>
+        </>
+      )}
 
       <section className="stats-hero">
         <div className="stat-big">{stats.totalGames.toLocaleString()}</div>
-        <div className="stat-label">games collected</div>
+        <div className="stat-label">bot training games collected</div>
       </section>
 
       <section className="stats-section">
