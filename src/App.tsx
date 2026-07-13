@@ -75,6 +75,7 @@ import {
   fetchSavedGame,
   deserializeGameLog,
 } from './firebase/games';
+import { logGameStart } from './firebase/gameStarts';
 import { computeGamePoints, type GameOutcome, type GamePoints } from './analysis/points';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
@@ -3839,6 +3840,26 @@ function App() {
   }, [log.moves, gameMode]);
 
   const positionLabel = backRankString(initialState);
+
+  // R15: abandonment ping — one doc per solo run, on the human's first move.
+  // finishGame only fires on completed games, so without this "quit vs lost"
+  // is unmeasurable. Same user/displayName gate as the save keeps the two
+  // series comparable. Ref dedupes per log.id (survives re-renders, resets
+  // with each new game's fresh id).
+  const startPingedLogIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (isAutoMode || isMultiplayer) return;
+    if (!user || !displayName) return;
+    if (log.moves.length === 0) return; // HUMAN_COLOR is white — first entry is the human's
+    if (startPingedLogIdRef.current === log.id) return;
+    startPingedLogIdRef.current = log.id;
+    logGameStart({
+      uid: user.uid,
+      chess960Id: positionLabel,
+      seed,
+      gameMode,
+    });
+  }, [isAutoMode, isMultiplayer, user, displayName, log, positionLabel, seed, gameMode]);
 
   // Stable callback for <MemoryPanel onGameActivate>. The wrapped function
   // closes over a ref that always points at the latest `resumeGame`, so the
