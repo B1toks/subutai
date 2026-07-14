@@ -57,6 +57,14 @@ interface GameDocLike {
 
 const FUNNEL_LABELS = ['1-10', '11-20', '21-30', '31-40', '41-50', '50+'];
 
+/** R15 T3: share of human wins that passed through <= -2.5 pawns at some
+ *  point. Firestore stores no move evals (stripped on save), so this can't
+ *  be computed client-side — the number comes from the offline labelling run
+ *  over all games (docs/R15-DATA-FINDINGS.md §4, 33 of 56 wins). Refresh it
+ *  whenever the offline pipeline is rerun (scripts/report-r15.mjs). */
+const COMEBACK_WIN_PCT = 59;
+const COMEBACK_MEASURED_AT = 'Jul 2026';
+
 async function loadHumanStats(): Promise<HumanStats> {
   const snap = await getDocs(collection(db, 'games'));
   const players = new Set<string>();
@@ -298,6 +306,11 @@ export function StatsPage() {
               </span>
             </div>
             <div className="stat-row">
+              <span className="stat-row-label">Wins that came back from a lost position</span>
+              <strong className="stat-row-value">{COMEBACK_WIN_PCT}%</strong>
+              <span className="stat-pct">*</span>
+            </div>
+            <div className="stat-row">
               <span className="stat-row-label">Longest game</span>
               <strong className="stat-row-value">{human.longestMoves} moves</strong>
             </div>
@@ -400,6 +413,10 @@ export function StatsPage() {
         </div>
       </section>
 
+      <p className="stats-footnote">
+        * behind by 2.5+ pawns (engine eval) at some point during the game;
+        measured offline across all games, {COMEBACK_MEASURED_AT}
+      </p>
       <p className="stats-footnote">
         Auto-refresh every 30s &middot; Outcome/metric breakdown from {SAMPLE_SIZE} most-recent games
       </p>
