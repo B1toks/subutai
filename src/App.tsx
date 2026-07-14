@@ -326,9 +326,22 @@ const ENCOURAGE_GENERIC = [
   "You're behind, not beaten. Make the bot earn every square.",
 ];
 const ENCOURAGE_ROTATE = [
-  'Tough spot? Sometimes one rotate flips the whole position. Try it.',
-  'Feeling stuck? A board rotate can change everything from here.',
+  // R15 data: a rotate swings the eval hard but usually AGAINST the rotator
+  // (mean -277cp for the rotating side). Sell it as honest chaos, and always
+  // pair it with the re-check habit.
+  'Tough spot? A rotate shakes up the whole position. Just re-check your pieces right after.',
+  'Feeling stuck? Rotate scrambles the game for both sides. Chaos favours the prepared.',
 ];
+
+/* R15 step 4-lite — two data-driven coaching beats.
+ * The labelled human games say: median FIRST blunder lands on move 4 (92 of
+ * 98 inside moves 1-10), and 25 of 98 first blunders come immediately after
+ * the player's OWN rotation. Two one-shot-per-game nudges target exactly
+ * those windows. Both ride the coaching-tools gate like the R5 nudges. */
+const EARLY_GAME_TIP =
+  'Heads up: most games here are decided in the first 10 moves. Slow down and check captures.';
+const ROTATE_AFTERMATH_TIP =
+  'You rotated and the whole board changed with you. Re-check your pieces before moving on.';
 
 /** Reshape a live MatchDoc into the GameLog the single-player render code
  *  already knows how to consume. The stored move shape happens to be a
@@ -997,6 +1010,10 @@ function App() {
   const encourageLastMoveRef = useRef(-99);
   const encourageCheckedMoveRef = useRef(-1);
   const [encourageRotate, setEncourageRotate] = useState(false);
+  // R15 step 4-lite — one-shot-per-game coaching beats, deduped by log.id
+  // (fresh id per game, survives re-renders).
+  const earlyTipLogIdRef = useRef<string | null>(null);
+  const rotateTipLogIdRef = useRef<string | null>(null);
 
   // R6 — worst eval the human faced this game (most negative from white's
   // side). A tense, come-from-behind win triggers the victory cinematic.
@@ -3800,6 +3817,61 @@ function App() {
     helpToolsEnabled,
     canRotate,
     log.moves.length,
+    toast,
+  ]);
+
+  // R15 4-lite (a) — early-danger window. Median first blunder is move 4, so
+  // the moment the eval first dips in moves 2-10 gets a single "slow down"
+  // beat. Fires BEFORE the -2.5 R5 nudge territory (-1.5..-2.5) so the two
+  // never stack on the same turn; once per game.
+  useEffect(() => {
+    if (isMultiplayer || isLocalMode || watchingGame) return;
+    if (gameMode !== 'classic' || gameStatus !== 'active') return;
+    if (!helpToolsEnabled) return;
+    if (currentPlayer !== 'human') return;
+    if (earlyTipLogIdRef.current === log.id) return;
+    const plies = log.moves.length;
+    if (plies < 3 || plies > 20) return; // full moves ~2-10
+    const ev = searchEvalFromWhite;
+    if (ev === null || ev > -1.5 || ev <= -2.5) return;
+    earlyTipLogIdRef.current = log.id;
+    toast.show(EARLY_GAME_TIP, 'info', 5200);
+  }, [
+    searchEvalFromWhite,
+    currentPlayer,
+    gameStatus,
+    gameMode,
+    isMultiplayer,
+    isLocalMode,
+    watchingGame,
+    helpToolsEnabled,
+    log,
+    toast,
+  ]);
+
+  // R15 4-lite (b) — rotation aftermath. 25 of 98 first blunders happen right
+  // after the player's OWN rotation ("rotated and didn't re-read the board").
+  // Classic only: the parity check (even ply = white = human) doesn't hold
+  // under roulette's 2-actions-per-turn economy. Once per game.
+  useEffect(() => {
+    if (isMultiplayer || isLocalMode || watchingGame) return;
+    if (gameMode !== 'classic' || gameStatus !== 'active') return;
+    if (!helpToolsEnabled) return;
+    if (rotateTipLogIdRef.current === log.id) return;
+    const idx = log.moves.length - 1;
+    if (idx < 0 || idx > 40) return; // the habit matters in the danger window
+    const last = log.moves[idx];
+    if (last.move.kind !== 'topologyToggle' || idx % 2 !== 0) return;
+    rotateTipLogIdRef.current = log.id;
+    toast.show(ROTATE_AFTERMATH_TIP, 'info', 5200);
+  }, [
+    gameStatus,
+    gameMode,
+    isMultiplayer,
+    isLocalMode,
+    watchingGame,
+    helpToolsEnabled,
+    log,
     toast,
   ]);
 
