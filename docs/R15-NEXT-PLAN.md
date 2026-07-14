@@ -56,7 +56,11 @@ have the same gate, so the join is fair by construction.
 Accept: report prints "starts / completed / abandoned (rate)" without NaN,
 counts reconcile (starts >= completions in any window).
 
-### T3 — marketing stats page v2 (2-3 h)
+### T3 — marketing stats page v2 (2-3 h) — DONE 2026-07-13
+Shipped option (a): hardcoded `COMEBACK_WIN_PCT = 59` in StatsPage.tsx with
+an asterisk footnote; refresh the constant after each offline pipeline rerun.
+Remaining sub-item ("X% of started games get finished") still waits on T2.
+Original spec kept below for the finish-rate follow-up:
 Where: `src/components/StatsPage.tsx` (route: `/?stats=1`, lazy-loaded from
 `App.tsx` via `isStatsMode`). CSS: `.funnel-*` and `.stat*` blocks at the
 bottom of `src/App.css`.
@@ -101,7 +105,12 @@ Accept: a script `scripts/eval-predictor.mjs` printing top-1/top-3 accuracy
 on a held-out 20% of games, and the number beats "always engine best move"
 baseline on top-3.
 
-### T5 — bot flavours from self-play corpus (independent of T4)
+### T5 — bot flavours from self-play corpus (independent of T4) — MINING DONE 2026-07-13
+`scripts/mine-traps.mjs` shipped; findings in R15-DATA-FINDINGS.md §5
+(knight-contact traps, rotation-blindness is human-only, fumble-prone starts
+table). Building the actual bot flavours is a NEW stage — needs user
+sign-off on which of the three recommendations to implement.
+Original spec:
 `data/training-games-dump.json` = 4807 self-play games, every move has
 `searchScore` (cp, White perspective). Mine "typical trap" positions: moves
 where the score swings >= 300cp within the first 10 full moves. Cluster by
