@@ -88,6 +88,39 @@ moveCount = full moves. Buckets x outcome:
   premise ("players in -2.5 holes can still win") is confirmed by data, and
   this is a strong marketing stat ("59% of wins came back from dead").
 
+## 5. Self-play trap mining (T5, 2026-07-13, `scripts/mine-traps.mjs`)
+
+Definition: a "fumble" = a move in the first 10 full moves whose eval swing is
+>= 300cp AGAINST the mover (searchScore labels, stage-j self-play, n=4807 games).
+
+- 7532 early fumbles in 2660 games (55% of games have one). Volume rises
+  monotonically move 1 -> 10 (31 -> 1321): more contact, more traps.
+- **Fumbled-move motifs:** quiet pawn pushes lead (2014), then knight moves
+  (1247 quiet + 864 captures = 2111 total — the knight is the #1 piece-level
+  trap source). Queen moves fumble 841 times combined.
+- **Punishing replies:** knight capture is the top punishing motif (1198),
+  then pawn capture (805). Knights punish; pawns collect.
+- **Rotation contrast (the headline):** only 3% of engine fumbles follow a
+  rotation within 2 plies (244 vs 7288) — but **26% of human first blunders
+  do** (25/98, §2). Rotation-blindness is a *human-specific* failure mode:
+  the engine re-reads the rotated board perfectly, people don't. This both
+  justifies the post-rotate coaching beat (shipped in r15-4lite) and suggests
+  a dirty-but-honest bot flavour: rotating more often against humans is a
+  legitimate difficulty lever that costs the engine ~nothing.
+- Fumble-prone starts cluster around cramped knight corners
+  (NBRQBKRN 112, BBQRKRNN 95, QBBRKRNN 88, ...). A "trappy" daily-challenge
+  start can be picked straight from this table.
+- Caveat: self-play blunders come from the engine's own noise/depth limits,
+  not human psychology — treat motifs as "where the position is sharp", not
+  "what humans do wrong". The human-side ground truth is §2.
+
+Bot-flavour recommendations derived (NOT implemented):
+1. "Punisher" difficulty: bias the bot toward sharp lines (knight contact,
+   capture-rich positions) in moves 4-10 where the fumble density peaks.
+2. Rotation pressure: raise bot rotation frequency vs humans — humans blunder
+   after rotations, the bot does not.
+3. Daily trap start: seed the day's chess960Id from the fumble-prone table.
+
 ## Where this leaves the R15 plan
 
 - Step 0 (dump+inventory): DONE. Step 1 (analytics): DONE (this doc).
