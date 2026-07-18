@@ -26,13 +26,13 @@ function getWorker(): Worker {
       const errCb = failed.get(id);
       pending.delete(id);
       failed.delete(id);
-      // eslint-disable-next-line no-console
+       
       console.warn('[classifier] worker error', error);
       errCb?.(error ?? 'classify failed');
     }
   };
   worker.onerror = (e) => {
-    // eslint-disable-next-line no-console
+     
     console.error('[classifier] worker crashed', e.message);
   };
   return worker;

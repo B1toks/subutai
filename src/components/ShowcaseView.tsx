@@ -128,7 +128,9 @@ function freshAutoplayState(): AutoplayState {
 function ShowcaseAutoPlay() {
   const [snapshot, setSnapshot] = useState<AutoplayState>(freshAutoplayState);
   const snapshotRef = useRef(snapshot);
-  snapshotRef.current = snapshot;
+  useEffect(() => {
+    snapshotRef.current = snapshot;
+  }, [snapshot]);
 
   useEffect(() => {
     let cancelled = false;

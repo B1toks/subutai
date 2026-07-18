@@ -1085,7 +1085,11 @@ function App() {
         ? 'checkmate'
         : 'stalemate';
     const saved = buildSavedGameFromLog(log, state, termination, sourceId);
-    (localStorageAdapter.saveOrUpdateGame?.(saved) ?? localStorageAdapter.saveGame(saved));
+    if (localStorageAdapter.saveOrUpdateGame) {
+      localStorageAdapter.saveOrUpdateGame(saved);
+    } else {
+      localStorageAdapter.saveGame(saved);
+    }
 
     // Clean up the live snapshot so Memory shows one final entry.
     if (sourceId) {
@@ -1102,7 +1106,11 @@ function App() {
     const liveId = liveSavedGameIdRef.current;
     if (!liveId) return;
     const snapshot = buildSavedGameSnapshot(log, liveId);
-    (localStorageAdapter.saveOrUpdateGame?.(snapshot) ?? localStorageAdapter.saveGame(snapshot));
+    if (localStorageAdapter.saveOrUpdateGame) {
+      localStorageAdapter.saveOrUpdateGame(snapshot);
+    } else {
+      localStorageAdapter.saveGame(snapshot);
+    }
   }, [gameStatus, log, isMultiplayer]);
 
   // Game-completion pipeline: detects terminal gameStatus transitions, computes
@@ -4079,7 +4087,11 @@ function App() {
 
       const id = `replay-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const snapshot = buildSavedGameSnapshot(replayLog, id);
-      (localStorageAdapter.saveOrUpdateGame?.(snapshot) ?? localStorageAdapter.saveGame(snapshot));
+      if (localStorageAdapter.saveOrUpdateGame) {
+        localStorageAdapter.saveOrUpdateGame(snapshot);
+      } else {
+        localStorageAdapter.saveGame(snapshot);
+      }
 
       // Load into the board as an unfinished game so it can be continued.
       liveSavedGameIdRef.current = id;

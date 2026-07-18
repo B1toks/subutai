@@ -43,7 +43,7 @@ function parseMoveToken(tokenRaw: string): ParsedToken {
   if (!token) throw new NotationParseError('Empty move token.');
 
   // Topology toggle: "A→B" or "B→A"
-  if (/^[AB]\s*[→\-\>]\s*[AB]$/.test(token)) {
+  if (/^[AB]\s*[→\->]\s*[AB]$/.test(token)) {
     return { move: { kind: 'topologyToggle' } };
   }
 
@@ -63,7 +63,7 @@ function parseMoveToken(tokenRaw: string): ParsedToken {
   // Piece move: [NBRQK]?from→to[=QRBN]?[@AB]?
   // Accepts both → and - as separators for robustness.
   const moveMatch = token.match(
-    /^([NBRQK])?([a-h][1-8])\s*[→\-]\s*([a-h][1-8])(?:=([QRBN]))?(?:@([AB]))?$/,
+    /^([NBRQK])?([a-h][1-8])\s*[→-]\s*([a-h][1-8])(?:=([QRBN]))?(?:@([AB]))?$/,
   );
   if (moveMatch) {
     const [, , from, to, promo, topo] = moveMatch;
