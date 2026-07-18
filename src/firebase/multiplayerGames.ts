@@ -1,50 +1,66 @@
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { FirebaseError } from 'firebase/app';
 import { db } from './client';
 import type { MatchDoc, MatchOutcome, MatchParticipant } from './matches';
 import type { GameOutcome, GamePoints } from '../analysis/points';
 
 /**
- * Persist a finished PvP match to /games so both players keep a record they
+ * Persist a finished PvP match to /games so the player keeps a record they
  * can replay from Memory. Crucially:
  *   - vsAI: false → never enters the classic leaderboard query
  *   - points are explicitly zero so even if some future code path forgets to
  *     filter by vsAI, PvP wins can't inflate any player's bestGamePoints
  *   - opponentId / opponentName let the row render "vs X" later
  *
- * Called from MultiplayerGameView when the match transitions to completed.
- * Only one peer should call this (we pick host) to avoid two near-duplicate
- * docs in /games; the contract is enforced by the caller, not the rules.
+ * R13 host-gone fix: EACH peer saves their OWN record (their perspective,
+ * their playerId) instead of the old host-only single doc — a host who
+ * closes the tab at game end no longer costs the guest their record. The
+ * deterministic id mp-{code}-{uid} + setDoc makes retries idempotent: a
+ * second write to the same id is an UPDATE, which /games rules deny, and
+ * we swallow exactly that error. (Rules also require playerId == auth.uid,
+ * so a peer can only ever create their own copy.)
  */
 export async function saveMultiplayerGameToGames(
   match: MatchDoc,
+  myUid: string,
 ): Promise<void> {
   if (!match.guest || !match.outcome) return;
+  const me = match.host.uid === myUid ? match.host : match.guest;
+  const opponent = match.host.uid === myUid ? match.guest : match.host;
+  if (me.uid !== myUid) return; // spectator/foreign uid — nothing to save
 
   const moveCount = Math.floor(match.log.moves.length / 2);
-  const hostOutcome = translateOutcomeForPlayer(match.outcome, match.host, match.host.uid);
+  const myOutcome = translateOutcomeForPlayer(match.outcome, me, match.host.uid);
 
-  await addDoc(collection(db, 'games'), {
-    playerId: match.host.uid,
-    playerName: match.host.displayName,
-    opponentId: match.guest.uid,
-    opponentName: match.guest.displayName,
-    chess960Id: match.chess960Id,
-    seed: match.seed,
-    humanColor: match.host.color,
-    log: {
-      initialTopology: match.log.initialTopology,
-      moves: match.log.moves,
-    },
-    outcome: hostOutcome,
-    moveCount,
-    points: zeroPoints(moveCount),
-    matchCode: match.code,
-    vsAI: false,
-    // Q.D.8: persist the rules the match was played under so retro-analysis
-    // matches reality (roulette → no-check classifier).
-    gameMode: match.gameMode ?? 'classic',
-    createdAt: serverTimestamp(),
-  });
+  try {
+    await setDoc(doc(db, 'games', `mp-${match.code}-${myUid}`), {
+      playerId: me.uid,
+      playerName: me.displayName,
+      opponentId: opponent.uid,
+      opponentName: opponent.displayName,
+      chess960Id: match.chess960Id,
+      seed: match.seed,
+      humanColor: me.color,
+      log: {
+        initialTopology: match.log.initialTopology,
+        moves: match.log.moves,
+      },
+      outcome: myOutcome,
+      moveCount,
+      points: zeroPoints(moveCount),
+      matchCode: match.code,
+      vsAI: false,
+      // Q.D.8: persist the rules the match was played under so retro-analysis
+      // matches reality (roulette → no-check classifier).
+      gameMode: match.gameMode ?? 'classic',
+      createdAt: serverTimestamp(),
+    });
+  } catch (err) {
+    // Doc already exists (this device or another one raced us) → the denied
+    // UPDATE is the idempotency signal, not a failure.
+    if (err instanceof FirebaseError && err.code === 'permission-denied') return;
+    throw err;
+  }
 }
 
 /** Map a MatchOutcome (stored at match level) into one player's

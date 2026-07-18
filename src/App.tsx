@@ -1188,10 +1188,13 @@ function App() {
     if (mpEndOutcome !== match.outcome) {
       setMpEndOutcome(match.outcome);
     }
-    // Host-only /games write — guarded by code so retries are idempotent.
-    if (mpSync.isHost && mpSavedGameIdRef.current !== match.code) {
+    // R13 host-gone fix: each peer saves their OWN /games record (idempotent
+    // via deterministic doc id inside the helper), so the record survives
+    // the other player vanishing at game end. Ref-guard just stops in-session
+    // re-attempts.
+    if (user && mpSavedGameIdRef.current !== match.code) {
       mpSavedGameIdRef.current = match.code;
-      void saveMultiplayerGameToGames(match).catch((err) => {
+      void saveMultiplayerGameToGames(match, user.uid).catch((err) => {
         console.error('[mp] save to /games failed', err);
       });
     }

@@ -53,6 +53,9 @@ interface GameDocLike {
   outcome?: string;
   moveCount?: number;
   playerId?: string;
+  /** false on PvP records (each peer saves one) — excluded from the
+   *  vs-bot marketing numbers so they don't double-count matches. */
+  vsAI?: boolean;
 }
 
 const FUNNEL_LABELS = ['1-10', '11-20', '21-30', '31-40', '41-50', '50+'];
@@ -74,8 +77,11 @@ async function loadHumanStats(): Promise<HumanStats> {
   let fastestWinMoves: number | null = null;
   const funnel = FUNNEL_LABELS.map((label) => ({ label, win: 0, loss: 0 }));
 
+  let total = 0;
   snap.forEach((doc) => {
     const d = doc.data() as GameDocLike;
+    if (d.vsAI === false) return; // PvP records tell a different story
+    total++;
     const moves = d.moveCount ?? 0;
     const isWin = d.outcome === 'human-win';
     if (d.playerId) players.add(d.playerId);
@@ -94,7 +100,7 @@ async function loadHumanStats(): Promise<HumanStats> {
   });
 
   return {
-    total: snap.size,
+    total,
     players: players.size,
     wins,
     survive50,
