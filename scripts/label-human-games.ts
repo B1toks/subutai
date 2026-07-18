@@ -29,6 +29,8 @@ interface DumpGame {
   createdAt: number;
   durationMs?: number;
   points?: { total?: number };
+  /** false on PvP records — those aren't human-vs-AI evidence. */
+  vsAI?: boolean;
   log?: { initialTopology: 'A' | 'B'; moves: DumpMove[] };
 }
 
@@ -57,6 +59,9 @@ const t0 = Date.now();
 let moveTotal = 0;
 
 for (const [gi, g] of games.entries()) {
+  // PvP records (vsAI: false) mix two humans — they'd poison every
+  // "human vs the bot" statistic downstream. Solo docs only.
+  if (g.vsAI === false) continue;
   const moves = g.log?.moves ?? [];
   if (!moves.length || !g.chess960Id) continue;
   const allowSelfCheck = g.gameMode === 'roulette';
