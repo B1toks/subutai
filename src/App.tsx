@@ -815,6 +815,14 @@ function App() {
   // explosion below) so human, AI, chat and PvP captures all fire it.
   const [captureFxSquare, setCaptureFxSquare] = useState<SquareId | null>(null);
   const [captureShake, setCaptureShake] = useState(false);
+  // R17c — storyboard "big capture" strobe: two flash frames when a QUEEN
+  // or ROOK is taken (plain captures only). Color codes the loss —
+  // queen reads red, rook reads electric blue. Kept under 3 flashes/sec
+  // for photosensitivity; reduced-motion hides it entirely.
+  const [captureStrobe, setCaptureStrobe] = useState<'queen' | 'rook' | null>(null);
+  // R17c — rotation dust wave: an expanding shockwave ring when a topology
+  // rotation commits (human, AI, chat or PvP — all come through the log).
+  const [rotationDust, setRotationDust] = useState(false);
   // R17b — red vignette pulse when a REAL check lands (preview-induced
   // "checks" from the rotation eye are ignored).
   const [checkVignette, setCheckVignette] = useState(false);
@@ -3211,6 +3219,13 @@ function App() {
     return () => clearTimeout(t);
   }, [log.moves.length]);
 
+  // R17c — the board as it stood BEFORE the latest log entry. The snapshot
+  // effect below is declared AFTER the capture/rotation effects, so within
+  // one commit they read the pre-move board (declaration order = run
+  // order) and only then the ref advances. pieces[mv.to] on the snapshot
+  // is therefore the piece that just got taken.
+  const prevBoardRef = useRef<BoardState | null>(null);
+
   // R17a — spark burst + micro-shake on every plain capture (EP keeps its
   // dedicated bigger explosion above). Promotion-captures are skipped:
   // the log entry can't tell a quiet promotion from a capturing one.
@@ -3223,11 +3238,34 @@ function App() {
     setCaptureShake(true);
     const t1 = setTimeout(() => setCaptureFxSquare(null), 620);
     const t2 = setTimeout(() => setCaptureShake(false), 300);
+    // R17c — strobe frames only when the victim was a major piece.
+    const victim = prevBoardRef.current?.pieces[mv.to as SquareId];
+    let t3: ReturnType<typeof setTimeout> | null = null;
+    if (victim && (victim.type === 'queen' || victim.type === 'rook')) {
+      setCaptureStrobe(victim.type);
+      t3 = setTimeout(() => setCaptureStrobe(null), 760);
+    }
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
+      if (t3) clearTimeout(t3);
     };
   }, [log.moves.length]);
+
+  // R17c — dust shockwave when a topology rotation commits.
+  useEffect(() => {
+    const last = log.moves[log.moves.length - 1];
+    if (!last || last.move.kind !== 'topologyToggle') return;
+    setRotationDust(true);
+    const t = setTimeout(() => setRotationDust(false), 780);
+    return () => clearTimeout(t);
+  }, [log.moves.length]);
+
+  // R17c — snapshot advance. MUST stay declared after the two effects
+  // above (see prevBoardRef comment). Ref write only — no render churn.
+  useEffect(() => {
+    prevBoardRef.current = state;
+  }, [state]);
 
   const highlightedTargets = useMemo(() => {
     if (!selected) return new Set<string>();
@@ -5219,6 +5257,10 @@ function App() {
           );
         })()}
         {checkVignette && <div className="check-vignette" aria-hidden />}
+        {captureStrobe && (
+          <div className={`capture-strobe is-${captureStrobe}`} aria-hidden />
+        )}
+        {rotationDust && <div className="rotation-dust" aria-hidden />}
         {guessCloud.length > 0 && (
           <div className="guess-cloud" aria-live="polite">
             {guessCloud.map((n) => (

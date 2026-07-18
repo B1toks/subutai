@@ -8779,3 +8779,96 @@ button:active:not(:disabled) {
     animation: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   R17c — CINEMA MICRO-FX, remaining storyboard doses.
+   1. Big-capture strobe: two full-screen flash frames when a queen or
+      rook dies. Queen bleeds red, rook arcs electric blue. Two flashes
+      across 0.76s keeps it under the 3-flashes-per-second guideline;
+      opacity stays low so it reads as a camera flash, not a floodlight.
+   2. Rotation dust wave: a shockwave ring + a trailing rim expanding
+      from the board center when a topology rotation commits.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.capture-strobe {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9350; /* over the board, under victory-freeze (9400) */
+  mix-blend-mode: screen;
+  animation: capture-strobe-frames 0.76s steps(1, end) both;
+}
+
+.capture-strobe.is-queen {
+  --strobe-color: rgba(255, 45, 70, 0.26);
+}
+
+.capture-strobe.is-rook {
+  --strobe-color: rgba(80, 170, 255, 0.24);
+}
+
+@keyframes capture-strobe-frames {
+  0% { background: var(--strobe-color); }
+  16% { background: transparent; }
+  45% { background: var(--strobe-color); }
+  62% { background: transparent; }
+  100% { background: transparent; }
+}
+
+.rotation-dust {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 8; /* just under the check vignette (9) */
+  border-radius: inherit;
+  overflow: hidden;
+}
+
+/* Leading shockwave ring */
+.rotation-dust::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14%;
+  height: 14%;
+  margin: -7% 0 0 -7%;
+  border-radius: 50%;
+  border: 3px solid var(--seam-color, rgba(255, 255, 255, 0.4));
+  animation: dust-ring 0.72s cubic-bezier(0.16, 0.84, 0.44, 1) both;
+}
+
+/* Trailing dust rim — thinner, hazier, slightly behind */
+.rotation-dust::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14%;
+  height: 14%;
+  margin: -7% 0 0 -7%;
+  border-radius: 50%;
+  border: 1px solid var(--text-muted, rgba(255, 255, 255, 0.3));
+  box-shadow:
+    0 0 12px 4px var(--seam-color, rgba(255, 255, 255, 0.2)),
+    inset 0 0 10px 2px var(--seam-color, rgba(255, 255, 255, 0.15));
+  animation: dust-ring 0.78s cubic-bezier(0.22, 0.7, 0.5, 1) 0.06s both;
+}
+
+@keyframes dust-ring {
+  from {
+    transform: scale(0.35);
+    opacity: 0.95;
+  }
+  to {
+    transform: scale(8.5);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .capture-strobe,
+  .rotation-dust {
+    display: none;
+  }
+}
