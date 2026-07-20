@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Dices, Users } from 'lucide-react';
+import { ArrowLeft, Dices, Users, Zap } from 'lucide-react';
 import { Icon } from './Icon';
 import {
   createMatch,
@@ -9,6 +9,8 @@ import {
   type MatchDoc,
   type MatchGameMode,
 } from '../firebase/matches';
+import { findQuickMatch, type QuickMatchHandle } from '../firebase/quickMatch';
+import { getOnlineCount } from '../firebase/presence';
 
 interface FriendLobbyProps {
   uid: string | null;
@@ -23,7 +25,11 @@ interface FriendLobbyProps {
 type LobbyView =
   | { kind: 'home' }
   | { kind: 'hosted'; code: string; status: 'waiting' | 'active' }
-  | { kind: 'joining' };
+  | { kind: 'joining' }
+  // R16 — quick-match states: actively searching the queue, and the honest
+  // "nobody around" fallback offer after the 30s window closes.
+  | { kind: 'searching' }
+  | { kind: 'qm-empty' };
 
 /* R13 — time-control presets: base seconds + Fischer increment. */
 interface TimeControl {
@@ -60,6 +66,80 @@ export function FriendLobby({
   onMatchReadyRef.current = onMatchReady;
 
   const signedIn = uid !== null && displayName !== null;
+
+  // R16 — quick match. onlineCount null = unknown (presence rules not
+  // deployed / offline): the counter simply hides instead of lying with 0.
+  const [onlineCount, setOnlineCount] = useState<number | null>(null);
+  const [searchSecs, setSearchSecs] = useState(0);
+  const qmHandleRef = useRef<QuickMatchHandle | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    const refresh = () => {
+      void getOnlineCount().then((n) => {
+        if (live) setOnlineCount(n);
+      });
+    };
+    refresh();
+    const id = setInterval(refresh, 15_000);
+    return () => {
+      live = false;
+      clearInterval(id);
+    };
+  }, []);
+
+  // Elapsed-seconds ticker for the searching screen.
+  useEffect(() => {
+    if (view.kind !== 'searching') return;
+    setSearchSecs(0);
+    const id = setInterval(() => setSearchSecs((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [view.kind]);
+
+  // Leaving the lobby mid-search must withdraw the queue entry.
+  useEffect(() => {
+    return () => qmHandleRef.current?.cancel();
+  }, []);
+
+  async function handleQuickMatch() {
+    if (!signedIn || busy) return;
+    setBusy(true);
+    setError(null);
+    setView({ kind: 'searching' });
+    const handle = findQuickMatch({ uid: uid!, displayName: displayName! });
+    qmHandleRef.current = handle;
+    try {
+      const res = await handle.result;
+      switch (res.kind) {
+        case 'hosting':
+          // We claimed a waiter and host the fresh match — the standard
+          // hosted-lobby subscription takes over from here.
+          setView({ kind: 'hosted', code: res.code, status: 'waiting' });
+          break;
+        case 'joined':
+          onMatchReadyRef.current(res.match);
+          setView({ kind: 'home' });
+          break;
+        case 'timeout':
+          setView({ kind: 'qm-empty' });
+          break;
+        case 'cancelled':
+          setView({ kind: 'home' });
+          break;
+        case 'unavailable':
+          setError('Quick match is not available right now. Try a friend code below.');
+          setView({ kind: 'home' });
+          break;
+      }
+    } catch (err) {
+      console.error('[lobby] quick match failed', err);
+      setError('Quick match failed. Try again or use a friend code.');
+      setView({ kind: 'home' });
+    } finally {
+      qmHandleRef.current = null;
+      setBusy(false);
+    }
+  }
 
   // Subscribe to the hosted match doc while waiting. When the guest joins
   // (status flips to active) we hand off to the parent.
@@ -167,6 +247,29 @@ export function FriendLobby({
 
       {view.kind === 'home' && (
         <>
+          <section className="friend-lobby-card quick-match-card">
+            <h3>
+              <Icon icon={Zap} size="sm" aria-hidden /> Quick match
+            </h3>
+            <p className="friend-lobby-hint">
+              Pair up with whoever is searching right now. Classic mode,
+              no clock.
+              {onlineCount !== null && (
+                <span className="quick-match-online">
+                  {' '}Online now: <strong>{onlineCount}</strong>
+                </span>
+              )}
+            </p>
+            <button
+              type="button"
+              className="friend-lobby-primary-btn"
+              onClick={handleQuickMatch}
+              disabled={!signedIn || busy}
+            >
+              Find an opponent
+            </button>
+          </section>
+
           <section className="friend-lobby-card">
             <h3>Create a match</h3>
             <p className="friend-lobby-hint">
@@ -312,6 +415,61 @@ export function FriendLobby({
             <span className="friend-lobby-spinner" aria-hidden />
             Joining match…
           </p>
+        </section>
+      )}
+
+      {view.kind === 'searching' && (
+        <section className="friend-lobby-card">
+          <p className="friend-lobby-status">
+            <span className="friend-lobby-spinner" aria-hidden />
+            Looking for an opponent… {searchSecs}s
+          </p>
+          <p className="friend-lobby-hint">
+            {onlineCount !== null && onlineCount > 1
+              ? `${onlineCount} players online right now.`
+              : 'Hang tight — the search window is about 30 seconds.'}
+          </p>
+          <button
+            type="button"
+            className="friend-lobby-secondary-btn"
+            onClick={() => qmHandleRef.current?.cancel()}
+          >
+            Cancel search
+          </button>
+        </section>
+      )}
+
+      {view.kind === 'qm-empty' && (
+        <section className="friend-lobby-card">
+          <h3>Nobody around right now</h3>
+          <p className="friend-lobby-hint">
+            No one joined the queue in time. Honest options while the arena
+            fills up:
+          </p>
+          <div className="quick-match-fallback-row">
+            <button
+              type="button"
+              className="friend-lobby-primary-btn"
+              onClick={onBack}
+            >
+              Play the bot (same board)
+            </button>
+            <button
+              type="button"
+              className="friend-lobby-secondary-btn"
+              onClick={() => setView({ kind: 'home' })}
+            >
+              Invite a friend by code
+            </button>
+          </div>
+          <button
+            type="button"
+            className="friend-lobby-secondary-btn"
+            onClick={handleQuickMatch}
+            disabled={busy}
+          >
+            Search again
+          </button>
         </section>
       )}
     </div>

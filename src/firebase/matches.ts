@@ -121,13 +121,29 @@ export async function createMatch(
   }
   if (!code) throw new Error('MATCH_CODE_COLLISION');
 
+  await setDoc(
+    doc(db, 'matches', code),
+    buildMatchDocPayload(host, code, gameMode, timeControlSec, timeIncrementSec),
+  );
+
+  return code;
+}
+
+/** Fresh waiting-room match payload. Shared between createMatch and the
+ *  R16 quick-match claim transaction so the doc shape can't drift. */
+export function buildMatchDocPayload(
+  host: { uid: string; displayName: string },
+  code: string,
+  gameMode: MatchGameMode = 'classic',
+  timeControlSec: number | null = null,
+  timeIncrementSec: number | null = null,
+): Record<string, unknown> {
   // Use the timestamp as the chess960 seed — keeps replays deterministic
   // for the same match.
   const seed = Date.now();
   const chess960Id = chess960IdFromSeed(seed);
   const hostColor: 'white' | 'black' = Math.random() < 0.5 ? 'white' : 'black';
-
-  await setDoc(doc(db, 'matches', code), {
+  return {
     code,
     chess960Id,
     seed,
@@ -147,9 +163,7 @@ export async function createMatch(
     rouletteSpinCount: 0,
     createdAt: serverTimestamp(),
     lastActivity: serverTimestamp(),
-  });
-
-  return code;
+  };
 }
 
 /**

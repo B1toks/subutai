@@ -76,6 +76,7 @@ import {
   deserializeGameLog,
 } from './firebase/games';
 import { logGameStart } from './firebase/gameStarts';
+import { startPresenceHeartbeat, stopPresenceHeartbeat } from './firebase/presence';
 import { computeGamePoints, type GameOutcome, type GamePoints } from './analysis/points';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
@@ -1014,6 +1015,15 @@ function App() {
 
   // R5 — encouragement in a losing position.
   const toast = useToast();
+
+  // R16 — presence heartbeat feeds the quick-match "online now" counter.
+  // Signed-in users only (same gate as everything matchmaking touches).
+  useEffect(() => {
+    if (!user || !displayName) return;
+    startPresenceHeartbeat(user.uid);
+    return () => stopPresenceHeartbeat();
+  }, [user, displayName]);
+
   const encourageBadStreakRef = useRef(0);
   const encourageLastMoveRef = useRef(-99);
   const encourageCheckedMoveRef = useRef(-1);

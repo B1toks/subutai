@@ -8872,3 +8872,21 @@ button:active:not(:disabled) {
     display: none;
   }
 }
+
+/* R16 — quick match bits in the friend lobby */
+.quick-match-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.quick-match-online {
+  color: var(--text);
+}
+
+.quick-match-fallback-row {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-2);
+}
