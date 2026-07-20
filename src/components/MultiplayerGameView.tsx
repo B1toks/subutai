@@ -3,7 +3,6 @@ import {
   doc,
   runTransaction,
   serverTimestamp,
-  updateDoc,
 } from 'firebase/firestore';
 import { db } from '../firebase/client';
 import {
@@ -471,10 +470,20 @@ export function useMultiplayerSync(
     setError(null);
     try {
       const outcome: MatchOutcome = isHost ? 'host-resign' : 'guest-resign';
-      await updateDoc(doc(db, 'matches', liveMatch.code), {
-        status: 'completed',
-        outcome,
-        lastActivity: serverTimestamp(),
+      // R13 hardening: transaction-guarded like every other outcome write —
+      // a resign racing a flag-fall (or the opponent's resign) must not
+      // clobber the outcome that landed first. Losing the race is fine:
+      // the game is over either way.
+      await runTransaction(db, async (tx) => {
+        const ref = doc(db, 'matches', liveMatch.code);
+        const snap = await tx.get(ref);
+        if (!snap.exists()) return;
+        if ((snap.data() as MatchDoc).outcome) return;
+        tx.update(ref, {
+          status: 'completed',
+          outcome,
+          lastActivity: serverTimestamp(),
+        });
       });
     } catch (err) {
       console.error('[mp] resign failed', err);

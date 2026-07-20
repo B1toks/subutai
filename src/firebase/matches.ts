@@ -12,7 +12,9 @@ import { db } from './client';
 import { createStartingPosition, type Move, type SquareId } from '../engine';
 import type { PieceType, TopologyState } from '../engine/types';
 
-export type MatchStatus = 'waiting' | 'active' | 'completed' | 'abandoned';
+// R13 cleanup: 'abandoned' removed — nothing ever wrote it (verified against
+// prod: statuses in the wild are waiting/active/completed only).
+export type MatchStatus = 'waiting' | 'active' | 'completed';
 export type MatchOutcome =
   | 'white-win'
   | 'black-win'
