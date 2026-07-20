@@ -1,9 +1,18 @@
-# R15 — data mining findings (2026-07-12)
+# R15 — data mining findings (2026-07-12, rev. 2026-07-20 solo-only)
 
 Source: full offline dump of Firestore (`scripts/dump-games.mjs`,
 `scripts/dump-training-games.mjs`), evals recomputed with the in-app
 classifier at search budget 150ms / depth 5 (`scripts/label-human-games.ts`),
 reports from `scripts/report-r15.mjs`. Dumps live in gitignored `data/`.
+
+> **Rev. 2026-07-20 — PvP decontamination.** 38 of the 121 `/games` docs
+> turned out to be PvP match records (`vsAI: false`, host-perspective), not
+> human-vs-bot games. The labeller now skips them and every number below is
+> recomputed over the **83 solo games** (77 with a first blunder). Biggest
+> corrections: games over by move 10 are 40% (was 53% — PvP inflated the
+> early bucket), comeback share of wins is **71%** (was 59%), median human
+> rotation moved to move 11 (was 8). Directionally every conclusion
+> survived.
 
 ## 0. What actually exists (inventory)
 
@@ -26,37 +35,36 @@ Key corrections to the R15 premise:
   almost never repeat, so a frequency-table "opening book" predictor has no
   data to stand on. Any human-move model must be feature-based.
 
-## 1. Survival funnel (118 games with non-empty logs)
+## 1. Survival funnel (83 solo games with non-empty logs)
 
 moveCount = full moves. Buckets x outcome:
 
 | moves | human-win | ai-win | resign | total |
 |---|---|---|---|---|
-| 1-10 | 37 | 13 | 13 | **63 (53%)** |
-| 11-20 | 11 | 15 | 3 | 29 |
-| 21-30 | 3 | 13 | 1 | 17 |
+| 1-10 | 19 | 10 | 4 | **33 (40%)** |
+| 11-20 | 10 | 14 | 3 | 27 |
+| 21-30 | 1 | 13 | 1 | 15 |
 | 31-40 | 1 | 3 | 1 | 5 |
-| 41-50 | 2 | 0 | 0 | 2 |
+| 41-50 | 1 | 0 | 0 | 1 |
 | 50+ | 2 | 0 | 0 | 2 |
 
-- **53% of games are over by move 10.** The early game is the entire product
-  experience for most players.
-- "Survive 50 moves" is reached by **2% of games** (2/118... wins at 50+ do
-  exist but are unicorns). As a headline goal it is way too hard; either
-  rebrand it as an epic achievement or add a nearer milestone (move 20 is
-  already top-40% of games).
-- Half the 1-10 bucket wins are roulette king-captures — fast wins are a
-  roulette phenomenon, not classic chess skill.
+- **40% of games are over by move 10, 72% by move 20.** The early game is
+  still the bulk of the product experience.
+- "Survive 50 moves" is reached by **2% of games** (2/83). As a headline
+  goal it is way too hard; either rebrand it as an epic achievement or add
+  a nearer milestone (move 20 is already top-28% of games).
+- Fast 1-10 wins skew roulette king-captures — fast wins are a roulette
+  phenomenon, not classic chess skill.
 
 ## 2. First human blunder (cpl >= 250 at search d5)
 
-- 98/118 games contain one; median arrival: **move 4** (p25 move 2, p75 move 6).
-  92 of 98 first blunders happen inside moves 1-10.
-- Average human cpl by phase: moves 1-10 -> 272cp, 11-20 -> 289cp,
-  21-30 -> 258cp, 31+ -> 130cp. Players who survive get *better* (survivor
+- 77/83 games contain one; median arrival: **move 4** (p25 move 2, p75 move 6).
+  69 of 77 first blunders happen inside moves 1-10.
+- Average human cpl by phase: moves 1-10 -> 273cp, 11-20 -> 286cp,
+  21-30 -> 244cp, 31+ -> 121cp. Players who survive get *better* (survivor
   bias, but the early-game error rate is the onboarding problem).
-- What precedes the first blunder (2 plies before): quiet position 34,
-  capture/exchange 28, **own rotation 25**, bot rotation 11.
+- What precedes the first blunder (2 plies before): quiet position 28,
+  capture/exchange 23, **own rotation 19 (25%)**, bot rotation 7.
 - Implications: hints/encouragement must target moves 2-6, not the midgame;
   the current -2.5 encouragement threshold is reachable by move ~5 for most
   players. A "careful, this is where most games are lost" cue in moves 3-8
@@ -64,12 +72,12 @@ moveCount = full moves. Buckets x outcome:
 
 ## 3. Rotation statistics
 
-- 110 human rotations, 94 bot rotations across 118 games (84 games have >= 1).
-  Median rotation happens at move 8.
+- 84 human rotations, 75 bot rotations across 83 solo games.
+  Median rotation happens at move 11.
 - Eval delta for the side that rotates (search eval, own perspective,
-  n=89 human rotations with a prior eval): mean **-277cp**, median -89cp.
-  Improved (>+50cp): 3. Worsened (<-50cp): 54.
-- Bot rotations: mean -206cp, median -20cp (7 improved / 36 worsened).
+  n=68 human rotations with a prior eval): mean **-224cp**, median -70cp.
+  Improved (>+50cp): 4. Worsened (<-50cp): 39.
+- Bot rotations: mean -129cp, median -7cp (8 improved / 25 worsened).
 - Reading: "a simple rotate changes everything" is TRUE — the eval swing is
   huge — but for the person rotating it is overwhelmingly a *negative* swing
   at engine depth 5. Rotation is a chaos move, not a rescue move, at least
@@ -77,16 +85,18 @@ moveCount = full moves. Buckets x outcome:
   oversells it; "rotate changes everything, for both of you" is the honest
   marketing line. Caveats: evals across a topology flip are noisy, n is small,
   and a losing player may rationally prefer variance even at eval cost.
-- 25 first-blunders directly follow the player's own rotation — rotating and
-  then not re-reading the new board is a recognizable failure pattern worth a
-  tutorial beat ("after you rotate, re-check your hanging pieces").
+- 19 of 77 first-blunders (25%) directly follow the player's own rotation —
+  rotating and then not re-reading the new board is a recognizable failure
+  pattern worth a tutorial beat ("after you rotate, re-check your hanging
+  pieces"). Shipped as the r15-4lite post-rotate toast.
 
 ## 4. Comebacks / encouragement threshold
 
-- Of 56 human wins, **33 (59%) passed through <= -2.5 pawns** at some point.
-  Comebacks are the NORM here, not the exception — the encouragement system's
-  premise ("players in -2.5 holes can still win") is confirmed by data, and
-  this is a strong marketing stat ("59% of wins came back from dead").
+- Of 34 solo human wins, **24 (71%) passed through <= -2.5 pawns** at some
+  point. Comebacks are the NORM here, not the exception — the encouragement
+  system's premise ("players in -2.5 holes can still win") is confirmed by
+  data, and this is a strong marketing stat ("71% of wins came back from
+  dead").
 
 ## 5. Self-play trap mining (T5, 2026-07-13, `scripts/mine-traps.mjs`)
 
@@ -101,8 +111,8 @@ Definition: a "fumble" = a move in the first 10 full moves whose eval swing is
 - **Punishing replies:** knight capture is the top punishing motif (1198),
   then pawn capture (805). Knights punish; pawns collect.
 - **Rotation contrast (the headline):** only 3% of engine fumbles follow a
-  rotation within 2 plies (244 vs 7288) — but **26% of human first blunders
-  do** (25/98, §2). Rotation-blindness is a *human-specific* failure mode:
+  rotation within 2 plies (244 vs 7288) — but **25% of human first blunders
+  do** (19/77, §2). Rotation-blindness is a *human-specific* failure mode:
   the engine re-reads the rotated board perfectly, people don't. This both
   justifies the post-rotate coaching beat (shipped in r15-4lite) and suggests
   a dirty-but-honest bot flavour: rotating more often against humans is a

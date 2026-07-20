@@ -63,9 +63,10 @@ const FUNNEL_LABELS = ['1-10', '11-20', '21-30', '31-40', '41-50', '50+'];
 /** R15 T3: share of human wins that passed through <= -2.5 pawns at some
  *  point. Firestore stores no move evals (stripped on save), so this can't
  *  be computed client-side — the number comes from the offline labelling run
- *  over all games (docs/R15-DATA-FINDINGS.md §4, 33 of 56 wins). Refresh it
- *  whenever the offline pipeline is rerun (scripts/report-r15.mjs). */
-const COMEBACK_WIN_PCT = 59;
+ *  over solo games (docs/R15-DATA-FINDINGS.md §4, 24 of 34 wins after the
+ *  2026-07-20 PvP decontamination). Refresh it whenever the offline
+ *  pipeline is rerun (scripts/report-r15.mjs). */
+const COMEBACK_WIN_PCT = 71;
 const COMEBACK_MEASURED_AT = 'Jul 2026';
 
 async function loadHumanStats(): Promise<HumanStats> {
