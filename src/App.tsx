@@ -3403,6 +3403,19 @@ function App() {
     return () => clearTimeout(t);
   }, [checkSquares.king, previewTopology]);
 
+  // Motion scaffold — soft tactile sound the instant a piece is picked up.
+  // Central effect (not scattered at every setSelected call site) so it
+  // fires exactly once per null -> square transition, same shape as the
+  // check-vignette effect above. Skipped while replaying/watching a game —
+  // the viewer isn't the one touching pieces.
+  const prevSelectedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const was = prevSelectedRef.current;
+    prevSelectedRef.current = selected;
+    if (!selected || was || watchingGame) return;
+    audio.play('pieceTouch');
+  }, [selected, watchingGame]);
+
   const displayTopology =
     previewLocked && lockedPreviewTopology
       ? lockedPreviewTopology
@@ -4373,7 +4386,7 @@ function App() {
 
   if (view === 'review') {
     return (
-      <div className="app-shell" ref={shellRef}>
+      <div className="app-shell" key={view} ref={shellRef}>
         <Suspense fallback={<div className="view-loading"><span className="spinner" /></div>}>
         <GameReview
           log={activeReviewLog ?? log}
@@ -4402,7 +4415,7 @@ function App() {
 
   if (view === 'leaderboard') {
     return (
-      <div className="app-shell" ref={shellRef}>
+      <div className="app-shell" key={view} ref={shellRef}>
         <Suspense fallback={<div className="view-loading"><span className="spinner" /></div>}>
         <Leaderboard
           currentUid={user?.uid ?? null}
@@ -4419,7 +4432,7 @@ function App() {
 
   if (view === 'friend-lobby') {
     return (
-      <div className="app-shell" ref={shellRef}>
+      <div className="app-shell" key={view} ref={shellRef}>
         <Suspense fallback={<div className="view-loading"><span className="spinner" /></div>}>
         <FriendLobby
           uid={user?.uid ?? null}
@@ -4454,6 +4467,13 @@ function App() {
   return (
     <div
       className={`app-shell${flashEffect ? ` is-${flashEffect}-flash` : ''}`}
+      // Motion scaffold: keyed by the coarse `view` enum (not opponentMode/
+      // isMultiplayer) so React remounts the shell — and replays the
+      // view-enter crossfade — only on a real screen switch (game <->
+      // review/leaderboard/friend-lobby). Switching opponent mode or
+      // starting an MP match while still in 'game' must NOT retrigger
+      // this, or the board would look like it reset.
+      key={view}
       // Sprint 4.3.1 — data-opponent-mode + data-game-active drive CSS
       // selectors that hide duplicate / irrelevant controls in local
       // 2P hot-seat mode (the standard action group, standalone rotate,
