@@ -6,6 +6,7 @@ import {
   playCheckmate,
   playClick,
   playMove,
+  playPieceTouch,
   playPromotion,
   playRouletteSpin,
 } from './synths';
@@ -27,7 +28,8 @@ export type SfxName =
   | 'blunder'
   | 'promotion'
   | 'click'
-  | 'rouletteSpin';
+  | 'rouletteSpin'
+  | 'pieceTouch';
 
 type AudioConstructor = typeof AudioContext;
 
@@ -184,6 +186,7 @@ class AudioControllerImpl {
       case 'promotion':  playPromotion(ctx, out); break;
       case 'click':      playClick(ctx, out); break;
       case 'rouletteSpin': playRouletteSpin(ctx, out); break;
+      case 'pieceTouch': playPieceTouch(ctx, out); break;
     }
   }
 

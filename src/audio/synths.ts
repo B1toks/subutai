@@ -295,3 +295,23 @@ export function playClick(ctx: AudioContext, out: GainNode) {
   osc.start();
   osc.stop(ctx.currentTime + 0.05);
 }
+
+/** Motion-scaffold: soft tactile "touch" for picking up a piece. Deliberately
+ *  softer, lower and shorter than playClick (a UI blip) so it reads as
+ *  touching wood, not pressing a button — a filtered triangle blip with a
+ *  fast decay, quieter than every other SFX in this file. */
+export function playPieceTouch(ctx: AudioContext, out: GainNode) {
+  const osc = ctx.createOscillator();
+  const filter = ctx.createBiquadFilter();
+  const gain = ctx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.value = 620;
+  filter.type = 'lowpass';
+  filter.frequency.value = 1400;
+  gain.gain.setValueAtTime(0, ctx.currentTime);
+  gain.gain.linearRampToValueAtTime(0.035, ctx.currentTime + 0.004);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
+  osc.connect(filter).connect(gain).connect(out);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.06);
+}
