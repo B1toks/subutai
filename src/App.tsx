@@ -1058,6 +1058,13 @@ function App() {
   //   subutaiVictory()  / subutaiVictory('blue')  — the victory cinematic
   //   subutaiEncourage()                          — a losing-position nudge
   //                                                 (+ pulses the Rotate btn)
+  //   subutaiFX.check()                           — the red check vignette
+  //   subutaiFX.strobe('queen' | 'rook')           — the big-capture strobe
+  //   subutaiFX.dust()                             — the rotation dust wave
+  // The FX ones normally fire only off real game events (a landed check,
+  // a queen/rook capture, a committed rotation) — there was no way to QA
+  // them without playing a whole line out. This exposes the same setters
+  // the real triggers use, so a reviewer can fire each one in isolation.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const trigger = (t: VictoryTheme = 'red') => launchVictory(t === 'blue' ? 'blue' : 'red');
@@ -1067,14 +1074,30 @@ function App() {
       setEncourageRotate(true);
       window.setTimeout(() => setEncourageRotate(false), 5200);
     };
+    const fx = {
+      check: () => {
+        setCheckVignette(true);
+        window.setTimeout(() => setCheckVignette(false), 900);
+      },
+      strobe: (piece: 'queen' | 'rook' = 'queen') => {
+        setCaptureStrobe(piece);
+        window.setTimeout(() => setCaptureStrobe(null), 760);
+      },
+      dust: () => {
+        setRotationDust(true);
+        window.setTimeout(() => setRotationDust(false), 780);
+      },
+    };
     const w = window as unknown as {
       subutaiVictory?: (t?: VictoryTheme) => void;
       __triggerVictory?: (t?: VictoryTheme) => void;
       subutaiEncourage?: () => void;
+      subutaiFX?: typeof fx;
     };
     w.subutaiVictory = trigger;
     w.__triggerVictory = trigger; // legacy alias used in dev tooling
     w.subutaiEncourage = encourage;
+    w.subutaiFX = fx;
   }, [toast]);
 
   useEffect(() => {
@@ -5411,8 +5434,12 @@ function App() {
                   onClick={() => handlePromotion(type)}
                   title={type}
                 >
-                  <span className="piece piece-white">
-                    {glyphForPiece('white', type)}
+                  {/* DEF-12: the promoting side owns the pawn on the last
+                      rank = the side to move while the dialog is open. The
+                      old code hardcoded white, so Black's picker showed white
+                      glyphs (cosmetic; the committed piece was always right). */}
+                  <span className={`piece piece-${state.sideToMove}`}>
+                    {glyphForPiece(state.sideToMove, type)}
                   </span>
                 </button>
               ))}

@@ -33,10 +33,15 @@ export function chess960BackRank(seedNumber = 1): BoardState {
     .filter((idx) => !occupied.has(idx));
   const knightIndexes: number[] = [];
   for (let i = 0; i < 2; i++) {
-    const idx =
-      knightCandidates[randomInt(knightCandidates.length - i, seed)];
-    knightIndexes.push(knightCandidates[idx]);
-    knightCandidates.splice(idx, 1);
+    // DEF-4 fix: randomInt returns a POSITION in the candidate array; the
+    // old code then indexed the array AGAIN by the drawn file value
+    // (knightCandidates[idx]), which was usually out of range → undefined,
+    // and spliced by value not position. Net effect: only 544/960 back
+    // ranks were reachable and knights piled onto the h-file (~50%).
+    // Draw by position throughout.
+    const pos = randomInt(knightCandidates.length, seed);
+    knightIndexes.push(knightCandidates[pos]);
+    knightCandidates.splice(pos, 1);
   }
   knightIndexes.forEach((idx) => occupied.add(idx));
 

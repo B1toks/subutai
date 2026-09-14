@@ -43,7 +43,9 @@ service cloud.firestore {
 
     match /training_games/{id} {
       allow read: if request.auth != null;
-      allow create: if true;
+      // DEF-11: was `if true` (world-writable spam vector). The app signs in
+      // anonymously before any auto-play write, so gating on auth is safe.
+      allow create: if request.auth != null;
       allow update, delete: if false;
     }
 
@@ -80,14 +82,36 @@ service cloud.firestore {
                     && request.resource.data.status == 'waiting'
                     && request.resource.data.guest == null;
 
-      allow update: if request.auth != null && (
-        resource.data.host.uid == request.auth.uid
-        || (resource.data.guest != null && resource.data.guest.uid == request.auth.uid)
-        || (resource.data.status == 'waiting'
-            && resource.data.guest == null
-            && request.resource.data.guest != null
-            && request.resource.data.guest.uid == request.auth.uid)
-      );
+      // DEF-8 (partial hardening). Chess legality can't be expressed in
+      // rules — appended-move validity and turn ownership still need a
+      // trusted server / Cloud Function and remain open. What IS enforced
+      // here closes the highest-integrity holes without touching the
+      // log-append path legitimate play depends on:
+      //   - identity fields (host, chess960Id, seed, code) are immutable;
+      //   - guest is write-once (null -> value, then frozen), so nobody can
+      //     rewrite the opponent's participant record;
+      //   - outcome is write-once, so a client can't force or flip a result.
+      // All three legit update paths (guest join, move append, outcome
+      // write) satisfy these: join only fills a null guest, moves touch
+      // neither guest nor outcome, and outcome writes only fill a null
+      // outcome.
+      allow update: if request.auth != null
+        && request.resource.data.host == resource.data.host
+        && request.resource.data.chess960Id == resource.data.chess960Id
+        && request.resource.data.seed == resource.data.seed
+        && request.resource.data.code == resource.data.code
+        && (resource.data.guest == null
+            || request.resource.data.guest == resource.data.guest)
+        && (resource.data.outcome == null
+            || request.resource.data.outcome == resource.data.outcome)
+        && (
+          resource.data.host.uid == request.auth.uid
+          || (resource.data.guest != null && resource.data.guest.uid == request.auth.uid)
+          || (resource.data.status == 'waiting'
+              && resource.data.guest == null
+              && request.resource.data.guest != null
+              && request.resource.data.guest.uid == request.auth.uid)
+        );
 
       allow delete: if false;
     }

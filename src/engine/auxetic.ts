@@ -280,6 +280,11 @@ export function applyPassMove(state: BoardState): BoardState {
     fullmoveNumber:
       state.sideToMove === 'black' ? state.fullmoveNumber + 1 : state.fullmoveNumber,
     lastMoveWasRotation: false,
+    // DEF-1: an en-passant right expires the instant the capture isn't made.
+    // A pass is a non-capturing reply, so the marker must clear — otherwise a
+    // stale target pollutes positionSignature/zobrist (missed threefold) and
+    // can trigger a phantom EP capture on a later ply.
+    enPassantTarget: null,
   };
 }
 
@@ -292,6 +297,9 @@ export function applyRotationMove(state: BoardState): BoardState {
     fullmoveNumber:
       state.sideToMove === 'black' ? state.fullmoveNumber + 1 : state.fullmoveNumber,
     lastMoveWasRotation: true,
+    // DEF-1: same as applyPassMove — a rotation is a non-capturing reply, and
+    // an EP target computed in topology A is meaningless once the board flips.
+    enPassantTarget: null,
   };
   const sig = positionSignature(base);
   return { ...base, positionHistory: [...state.positionHistory, sig] };
