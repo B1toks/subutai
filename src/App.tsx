@@ -281,8 +281,34 @@ function evaluateFromWhite(state: BoardState): number {
 // Map a White-perspective centipawn score to a pair of HSL colors that drive
 // the linear-gradient. tanh squashes extreme positions into [-1, 1] so the
 // gradient eases off rather than running away on crushing material wins.
-function evalToColors(evalCp: number): { c1: string; c2: string } {
+//
+// "Rotation changes the room" (docs/IDEAS.md): topology A gets the original
+// warm gold/crimson ramp; topology B gets a cool cyan/violet ramp of the
+// same shape. This is a TINT, not a theme swap — it lives entirely inside
+// the ambient background gradient, which was already identical across every
+// [data-theme], so it never touches piece colors, accents, or panel chrome
+// (ThemeToggle keeps full control of those). The existing @property-
+// registered --eval-c1/--eval-c2 transition (0.6s ease, App.css) does the
+// cross-fade for free — this only changes which hue pair feeds it.
+function evalToColors(evalCp: number, topology: TopologyState): { c1: string; c2: string } {
   const t = Math.tanh(evalCp / 400);
+  if (topology === 'B') {
+    if (t > 0.1) {
+      const i = Math.min(t, 1);
+      return {
+        c1: `hsl(195, ${30 + 30 * i}%, ${15 + 5 * i}%)`,
+        c2: `hsl(210, ${20 + 20 * i}%, ${8 + 3 * i}%)`,
+      };
+    }
+    if (t < -0.1) {
+      const i = Math.min(-t, 1);
+      return {
+        c1: `hsl(275, ${25 + 35 * i}%, ${12 + 4 * i}%)`,
+        c2: `hsl(265, ${20 + 25 * i}%, ${6 + 3 * i}%)`,
+      };
+    }
+    return { c1: '#1a1c2a', c2: '#12131f' };
+  }
   if (t > 0.1) {
     const i = Math.min(t, 1);
     return {
@@ -1599,14 +1625,21 @@ function App() {
   // T5: paint from the viewer's perspective so each peer in a PvP match
   // sees their OWN winning/losing state — the player who's ahead gets
   // gold/warm, the player who's behind gets crimson/cool, simultaneously.
+  //
+  // "Rotation changes the room" — keyed off state.topologyState (the
+  // COMMITTED board), never previewTopology. A hover-preview of the
+  // rotate button is exploratory and reversible; repainting the whole
+  // page's mood off a mere hover would feel unstable. The room only
+  // shifts once a rotation actually lands, same rule R17c's dust-wave FX
+  // already follows.
   useEffect(() => {
     const shell = shellRef.current;
     if (!shell) return;
-    const { c1, c2 } = evalToColors(myPerspectiveEval);
+    const { c1, c2 } = evalToColors(myPerspectiveEval, state.topologyState);
     shell.style.setProperty('--eval-c1', c1);
     shell.style.setProperty('--eval-c2', c2);
     prevEvalRef.current = currentEval;
-  }, [myPerspectiveEval, currentEval, view, activeMatch]);
+  }, [myPerspectiveEval, currentEval, view, activeMatch, state.topologyState]);
 
   // Keep logLengthRef in sync with committed log state — used by classify
   // .then handlers to decide if their analysis is still the latest.
