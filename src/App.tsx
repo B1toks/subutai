@@ -4972,31 +4972,50 @@ function App() {
           // showFileLabel locals + the corresponding <span> children
           // removed accordingly.
 
-          // Sprint 3.2 — piece slide-in. When this tile is lastMove.to in
-          // classic mode and both endpoints have angle 0 (no per-tile
-          // rotation), compute the offset from the lastMove.from tile so
-          // the piece starts at the "from" position and animates back to
-          // its real center. Rotated-tile cases (topology B) skip the
-          // slide rather than fight the local-frame transform math.
+          // Sprint 3.2 / M.20 — piece slide-in. When this tile is
+          // lastMove.to in classic mode, compute the pixel offset from the
+          // lastMove.from tile so the piece starts at the "from" position
+          // and glides back to its real center. M.20 lifted the old
+          // angle === 0 restriction: that guard meant every move made
+          // while topology B was active (EVERY tile has angle ±90 there —
+          // see getSquarePosition — so the old check could never pass)
+          // silently skipped the slide entirely, i.e. after the game's own
+          // signature rotation mechanic fired even once, no move ever
+          // animated again. The dx/dy pixel math itself never depended on
+          // either tile's angle — only the piece GLYPH's own counter-
+          // rotation does, and that's now animated in parallel below
+          // (slideRotFromDeg / .is-rotating-in) instead of gating the
+          // slide off entirely.
           let slideDx = 0;
           let slideDy = 0;
           let isSliding = false;
+          let slideMs = 260;
+          // Angle the piece glyph should rotate FROM (its counter-rotation
+          // on the origin tile) so App can animate the glyph's rotation in
+          // sync with the wrapper's translate. null when not sliding.
+          let slideRotFromAngle: number | null = null;
           if (
             piece &&
             gameMode === 'classic' &&
             lastMove?.to === sq &&
             lastMove.from &&
-            lastMove.from !== lastMove.to &&
-            angle === 0
+            lastMove.from !== lastMove.to
           ) {
             const fromTile = tilePixelCenter(lastMove.from, displayTopology, layout);
-            if (fromTile.angle === 0) {
-              const fromCxView = flip ? boardSize - fromTile.cx : fromTile.cx;
-              const fromCyView = flip ? boardSize - fromTile.cy : fromTile.cy;
-              slideDx = fromCxView - cxView;
-              slideDy = fromCyView - cyView;
-              isSliding = true;
-            }
+            const fromCxView = flip ? boardSize - fromTile.cx : fromTile.cx;
+            const fromCyView = flip ? boardSize - fromTile.cy : fromTile.cy;
+            slideDx = fromCxView - cxView;
+            slideDy = fromCyView - cyView;
+            isSliding = true;
+            slideRotFromAngle = fromTile.angle;
+            // M.20 — scale duration with travel distance: a one-square hop
+            // stays snappy, a board-spanning glide gets a touch more time
+            // to read as a real "flight" rather than a blur. Narrow band
+            // (220-330ms) so it never reads as sluggish.
+            const dist = Math.hypot(slideDx, slideDy);
+            slideMs = Math.round(
+              Math.min(330, Math.max(220, 220 + (dist / (tileBase * 7)) * 110)),
+            );
           }
 
           return (
@@ -5080,6 +5099,7 @@ function App() {
                   style={isSliding ? ({
                     '--slide-dx': `${slideDx}px`,
                     '--slide-dy': `${slideDy}px`,
+                    '--slide-ms': `${slideMs}ms`,
                   } as React.CSSProperties) : undefined}
                 >
                   {(() => {
@@ -5091,6 +5111,17 @@ function App() {
                     const localBlackFlip =
                       opponentMode === 'local' && piece.color === 'black';
                     const totalRot = (angle ? -angle : 0) + (localBlackFlip ? 180 : 0);
+                    // M.20 — if this move's origin tile had a different
+                    // counter-rotation than the destination (crossing a
+                    // topology-B boundary, or simply moving while B is
+                    // already active), animate the glyph's OWN rotation in
+                    // parallel with the wrapper's slide instead of letting
+                    // it snap straight to totalRot on arrival.
+                    const fromRot =
+                      slideRotFromAngle !== null
+                        ? (slideRotFromAngle ? -slideRotFromAngle : 0) + (localBlackFlip ? 180 : 0)
+                        : totalRot;
+                    const rotSliding = isSliding && fromRot !== totalRot;
                     return (
                       <span
                         className={[
@@ -5098,8 +5129,20 @@ function App() {
                           piece.color === 'white'
                             ? 'piece-white'
                             : 'piece-black',
-                        ].join(' ')}
-                        style={totalRot !== 0 ? { transform: `rotate(${totalRot}deg)` } : undefined}
+                          rotSliding ? 'is-rotating-in' : '',
+                        ]
+                          .filter(Boolean)
+                          .join(' ')}
+                        style={{
+                          ...(totalRot !== 0 ? { transform: `rotate(${totalRot}deg)` } : {}),
+                          ...(rotSliding
+                            ? ({
+                                '--slide-rot-from': `${fromRot}deg`,
+                                '--slide-rot-to': `${totalRot}deg`,
+                                '--slide-ms': `${slideMs}ms`,
+                              } as React.CSSProperties)
+                            : {}),
+                        }}
                       >
                         {glyphForPiece(piece.color, piece.type)}
                       </span>
