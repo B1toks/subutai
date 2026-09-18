@@ -2543,6 +2543,14 @@ function App() {
   // Cached here so the AI scheduler, classifier, and downstream UI
   // can short-circuit on a single flag.
   const isLocalMode = opponentMode === 'local' && !isMultiplayer;
+  // Local hot-seat's own "game over" modal dismiss flag (see the render
+  // site near the MP completion dialog). Reset per game via the effect
+  // below, keyed on log.id like the other one-shot-per-game flags in
+  // this file (earlyTipLogIdRef etc.).
+  const [localGameOverDismissed, setLocalGameOverDismissed] = useState(false);
+  useEffect(() => {
+    setLocalGameOverDismissed(false);
+  }, [log.id]);
   // Sprint 4.3.1 — derived "the user has committed to this game" flag.
   // Used to (a) hide the duplicate bottom action group in local 2P and
   // (b) lock the opponent / mode toggles so a misclick can't reset
@@ -4003,22 +4011,99 @@ function App() {
     toast,
   ]);
 
-  // R6 — fire the pixel victory cinematic on a TENSE win: the human won
-  // after being clearly behind at some point (worst eval ≤ -2 pawns). A
-  // clean, never-in-danger win just gets the usual summary. Solo only.
-  useEffect(() => {
-    if (gameOutcome !== 'human-win') return;
-    if (isMultiplayer || isLocalMode) return;
-    if (worstHumanEvalRef.current > -2.0) return; // was never really in danger
-    launchVictory(Math.random() < 0.5 ? 'red' : 'blue');
-  }, [gameOutcome, isMultiplayer, isLocalMode, launchVictory]);
-
   const layout = useMemo(
     () => computeBoardLayout(displayTopology, boardSize),
     [displayTopology, boardSize],
   );
 
   const scale = layout.tileSize / tileBase;
+
+  // M.21 — checkmate death cinematic. Instead of the instant white flash
+  // cutting straight to the summary modal, the screen irises down around
+  // the mated king (everything else fades to black, the king is the last
+  // thing visible), holds a beat, then the king shatters. Fires on ANY
+  // checkmate — human win or loss, any mode — since it's dramatizing the
+  // king's fate, not the player's. The existing win-only VictoryScene and
+  // every "game over" modal (summary / MP / local) wait for this to
+  // finish via mateSeqActive below rather than cutting it off.
+  // Position falls back to "the side-to-move's king" (findKing) when
+  // nobody's actually in check, purely so the subutaiFX.mate() dev seam
+  // (below) always has a real square to point at — the real gameplay
+  // trigger effect still requires a genuine gameStatus === 'checkmate'.
+  const mateKingPos = useMemo(() => {
+    const kingSq = checkSquares.king ?? findKing(state, state.sideToMove);
+    if (!kingSq) return null;
+    const tile = tilePixelCenter(kingSq as SquareId, displayTopology, layout);
+    const flip = isMultiplayer && mpSync?.myColor === 'black';
+    return {
+      sq: kingSq as string,
+      cx: flip ? boardSize - tile.cx : tile.cx,
+      cy: flip ? boardSize - tile.cy : tile.cy,
+    };
+  }, [checkSquares.king, state, displayTopology, layout, boardSize, isMultiplayer, mpSync]);
+  const MATE_IRIS_MS = 900;
+  const MATE_HOLD_MS = 320;
+  const MATE_SHATTER_MS = 720;
+  const [mateSeq, setMateSeq] = useState<'idle' | 'iris' | 'shatter'>('idle');
+  const mateSeqStartedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (gameStatus !== 'checkmate' || !mateKingPos) {
+      setMateSeq('idle');
+      mateSeqStartedRef.current = null;
+      return;
+    }
+    // One playthrough per game — a re-render while mid-sequence (eval
+    // ticking in, etc.) must not restart it.
+    if (mateSeqStartedRef.current === log.id) return;
+    mateSeqStartedRef.current = log.id;
+    setMateSeq('iris');
+    const t1 = setTimeout(() => setMateSeq('shatter'), MATE_IRIS_MS + MATE_HOLD_MS);
+    const t2 = setTimeout(
+      () => setMateSeq('idle'),
+      MATE_IRIS_MS + MATE_HOLD_MS + MATE_SHATTER_MS,
+    );
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [gameStatus, mateKingPos, log.id]);
+  const mateSeqActive = mateSeq !== 'idle';
+
+  // Dev seam: subutaiFX.mate() — merges onto the window.subutaiFX object
+  // the earlier console-seams effect (check/strobe/dust) already created,
+  // rather than redeclaring it. Needed because playing a whole line out
+  // to a real checkmate just to QA this cinematic is slow; this fires the
+  // exact same iris -> hold -> shatter -> idle sequence pointed at
+  // whichever king mateKingPos resolves to (the side-to-move's king when
+  // nobody's actually in check).
+  useEffect(() => {
+    if (typeof window === 'undefined' || !mateKingPos) return;
+    const w = window as unknown as { subutaiFX?: Record<string, unknown> };
+    if (!w.subutaiFX) return;
+    w.subutaiFX.mate = () => {
+      setMateSeq('iris');
+      setTimeout(() => setMateSeq('shatter'), MATE_IRIS_MS + MATE_HOLD_MS);
+      setTimeout(() => setMateSeq('idle'), MATE_IRIS_MS + MATE_HOLD_MS + MATE_SHATTER_MS);
+    };
+  }, [mateKingPos]);
+
+  // R6 — fire the pixel victory cinematic on a TENSE win: the human won
+  // after being clearly behind at some point (worst eval ≤ -2 pawns). A
+  // clean, never-in-danger win just gets the usual summary. Solo only.
+  // M.21 — waits for the checkmate death cinematic (mateSeqActive) to
+  // finish first so the two full-screen sequences never overlap; the ref
+  // guard is needed because this effect now legitimately re-runs (deps
+  // include mateSeqActive) without gameOutcome itself changing.
+  const victoryFiredForLogRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (gameOutcome !== 'human-win') return;
+    if (isMultiplayer || isLocalMode) return;
+    if (mateSeqActive) return;
+    if (worstHumanEvalRef.current > -2.0) return; // was never really in danger
+    if (victoryFiredForLogRef.current === log.id) return;
+    victoryFiredForLogRef.current = log.id;
+    launchVictory(Math.random() < 0.5 ? 'red' : 'blue');
+  }, [gameOutcome, isMultiplayer, isLocalMode, mateSeqActive, log.id, launchVictory]);
 
   // Highlight the last N piece-plies on the board. Roulette mode plays two
   // sub-moves per AI turn, so we widen the window to 2; classic stays at 1
@@ -5122,6 +5207,12 @@ function App() {
                         ? (slideRotFromAngle ? -slideRotFromAngle : 0) + (localBlackFlip ? 180 : 0)
                         : totalRot;
                     const rotSliding = isSliding && fromRot !== totalRot;
+                    // M.21 — the mated king fades/shatters in place once
+                    // the death cinematic reaches its shatter phase (see
+                    // .checkmate-iris/.checkmate-shatter render site and
+                    // the mateSeq state machine above the board render).
+                    const isMatedKing =
+                      mateSeq === 'shatter' && mateKingPos?.sq === sq;
                     return (
                       <span
                         className={[
@@ -5130,6 +5221,7 @@ function App() {
                             ? 'piece-white'
                             : 'piece-black',
                           rotSliding ? 'is-rotating-in' : '',
+                          isMatedKing ? 'checkmate-king-fade' : '',
                         ]
                           .filter(Boolean)
                           .join(' ')}
@@ -5405,6 +5497,23 @@ function App() {
           <div className={`capture-strobe is-${captureStrobe}`} aria-hidden />
         )}
         {rotationDust && <div className="rotation-dust" aria-hidden />}
+        {mateKingPos && mateSeqActive && (
+          <div
+            className="checkmate-iris"
+            style={{
+              '--iris-cx': `${mateKingPos.cx}px`,
+              '--iris-cy': `${mateKingPos.cy}px`,
+            } as React.CSSProperties}
+            aria-hidden
+          />
+        )}
+        {mateKingPos && mateSeq === 'shatter' && (
+          <div
+            className="checkmate-shatter"
+            style={{ left: `${mateKingPos.cx}px`, top: `${mateKingPos.cy}px` } as React.CSSProperties}
+            aria-hidden
+          />
+        )}
         {guessCloud.length > 0 && (
           <div className="guess-cloud" aria-live="polite">
             {guessCloud.map((n) => (
@@ -6102,7 +6211,7 @@ function App() {
         />
       )}
 
-      {isMultiplayer && mpSync && mpEndOutcome && (() => {
+      {isMultiplayer && mpSync && mpEndOutcome && !mateSeqActive && (() => {
         const myView = translateOutcomeForPlayer(
           mpEndOutcome,
           {
@@ -6197,7 +6306,45 @@ function App() {
         );
       })()}
 
-      {summaryOpen && lastGamePoints && gameOutcome && (
+      {/* R13/BUG-5 kept local hot-seat OUT of finishGame/GameSummary on
+          purpose (a 2-humans-one-device game has no "human" to attribute
+          a personal-best/leaderboard entry to) - but that meant its ending
+          was just a text banner with no modal and no explicit "new game"
+          prompt, unlike every other mode. Reuses the MP completion dialog's
+          styling (mp-completion-*) - same shape, no scoring, just the
+          outcome + a clear way to start again. */}
+      {isLocalMode && gameStatus !== 'active' && !localGameOverDismissed && !mateSeqActive && log.moves.length > 0 && (
+        <div
+          className="mp-completion-backdrop"
+          onClick={() => setLocalGameOverDismissed(true)}
+        >
+          <div className="mp-completion-dialog" onClick={(e) => e.stopPropagation()}>
+            <h2 className="mp-completion-title">Game over</h2>
+            <p className="mp-completion-headline">{gameOverMessage}</p>
+            <div className="mp-completion-actions">
+              <button
+                type="button"
+                className="mp-btn mp-btn-primary"
+                onClick={() => {
+                  setLocalGameOverDismissed(true);
+                  startNewGame();
+                }}
+              >
+                Start new game
+              </button>
+              <button
+                type="button"
+                className="mp-btn mp-btn-secondary"
+                onClick={() => setLocalGameOverDismissed(true)}
+              >
+                Keep viewing board
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {summaryOpen && lastGamePoints && gameOutcome && !mateSeqActive && (
         <GameSummary
           points={lastGamePoints}
           outcome={gameOutcome}

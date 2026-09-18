@@ -8899,6 +8899,126 @@ button:active:not(:disabled) {
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   M.21 — CHECKMATE DEATH CINEMATIC.
+   Instead of an instant cut, the screen irises down around the mated
+   king (everything else fades to black, the king is the last thing
+   visible), holds a beat, then the king shatters. Fires on ANY
+   checkmate, win or loss — the trigger/timing lives in App.tsx
+   (mateSeq state machine); this is purely the two visual layers.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* --iris-radius is a real CUSTOM property (not just a keyframe param) —
+   @property registration lets the browser interpolate it smoothly frame
+   by frame while the radial-gradient below re-reads it every frame,
+   exactly like --eval-c1/--eval-c2 at the top of this file. */
+@property --iris-radius {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 1400px;
+}
+
+.checkmate-iris {
+  position: absolute;
+  inset: 0;
+  z-index: 9420; /* over victory-freeze (9400), under nothing — this IS the moment */
+  pointer-events: none;
+  background: radial-gradient(
+    circle at var(--iris-cx, 50%) var(--iris-cy, 50%),
+    transparent var(--iris-radius),
+    rgba(6, 4, 10, 0.97) calc(var(--iris-radius) + 46px)
+  );
+  animation: checkmate-iris-close 900ms cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+
+@keyframes checkmate-iris-close {
+  from { --iris-radius: 1400px; }
+  to   { --iris-radius: 30px; }
+}
+
+/* The shatter burst: a single element whose ::before/::after fling a ring
+   of fragments outward via animated box-shadow offsets (same technique as
+   .tile.is-capture-burst::after, scaled up and slowed down for weight),
+   while the king glyph itself (rendered by React as a plain absolutely
+   positioned glyph at the same point) fades/scales down in parallel. */
+.checkmate-shatter {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 9421;
+}
+
+.checkmate-shatter::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: transparent;
+  animation: checkmate-shatter-shards 720ms cubic-bezier(0.22, 0.7, 0.4, 1) both;
+}
+
+.checkmate-shatter::after {
+  content: '';
+  position: absolute;
+  left: -22px;
+  top: -22px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 210, 120, 0.85), transparent 70%);
+  animation: checkmate-shatter-flash 500ms ease-out both;
+}
+
+@keyframes checkmate-shatter-shards {
+  0% {
+    box-shadow:
+      0 0 0 rgba(230, 225, 240, 1), 0 0 0 rgba(180, 60, 60, 1),
+      0 0 0 rgba(230, 225, 240, 1), 0 0 0 rgba(180, 60, 60, 1),
+      0 0 0 rgba(230, 225, 240, 1), 0 0 0 rgba(180, 60, 60, 1),
+      0 0 0 rgba(230, 225, 240, 1), 0 0 0 rgba(180, 60, 60, 1),
+      0 0 0 rgba(230, 225, 240, 1), 0 0 0 rgba(180, 60, 60, 1);
+    opacity: 1;
+  }
+  100% {
+    box-shadow:
+      54px -62px 0 rgba(230, 225, 240, 0), -58px -44px 0 rgba(180, 60, 60, 0),
+      66px 24px 0 rgba(230, 225, 240, 0), -46px 58px 0 rgba(180, 60, 60, 0),
+      20px -76px 0 rgba(230, 225, 240, 0), -72px -10px 0 rgba(180, 60, 60, 0),
+      34px 68px 0 rgba(230, 225, 240, 0), -18px -70px 0 rgba(180, 60, 60, 0),
+      74px -20px 0 rgba(230, 225, 240, 0), -34px 74px 0 rgba(180, 60, 60, 0);
+    opacity: 0;
+  }
+}
+
+@keyframes checkmate-shatter-flash {
+  0%   { opacity: 0.9; transform: scale(0.4); }
+  100% { opacity: 0; transform: scale(2.4); }
+}
+
+/* The king glyph itself, held frozen through the iris + hold, then
+   scaled/faded away in sync with the shard burst above. */
+.checkmate-king-fade {
+  animation: checkmate-king-fade 640ms cubic-bezier(0.4, 0, 0.7, 1) both;
+}
+
+@keyframes checkmate-king-fade {
+  0%   { opacity: 1; transform: scale(1); filter: blur(0); }
+  40%  { opacity: 1; transform: scale(1.08); filter: blur(0); }
+  100% { opacity: 0; transform: scale(0.5); filter: blur(3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .checkmate-iris,
+  .checkmate-shatter,
+  .checkmate-king-fade {
+    display: none;
+  }
+}
+
 /* R16 — quick match bits in the friend lobby */
 .quick-match-card h3 {
   display: flex;
