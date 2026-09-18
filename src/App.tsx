@@ -292,6 +292,31 @@ function evaluateFromWhite(state: BoardState): number {
 // cross-fade for free — this only changes which hue pair feeds it.
 function evalToColors(evalCp: number, topology: TopologyState): { c1: string; c2: string } {
   const t = Math.tanh(evalCp / 400);
+  // M.23 — the room's background is the ONE thing in this app that's
+  // deliberately theme-INDEPENDENT: it's a soft, always-on hint of "how
+  // is this going" (warm/gold = winning, cool/red = losing), not a mood
+  // board. Every dark theme shares one dark-tuned ramp below since they
+  // already read fine together; wood-light needed its OWN ramp (same
+  // shape, high-lightness cream tones) instead of just being defeated
+  // outright — see the removed [data-theme="wood-light"] .app-shell
+  // override that used to flatten this to a static color.
+  if (document.documentElement.getAttribute('data-theme') === 'wood-light') {
+    if (t > 0.1) {
+      const i = Math.min(t, 1);
+      return {
+        c1: `hsl(42, ${25 + 30 * i}%, ${92 - 6 * i}%)`,
+        c2: `hsl(36, ${20 + 25 * i}%, ${88 - 6 * i}%)`,
+      };
+    }
+    if (t < -0.1) {
+      const i = Math.min(-t, 1);
+      return {
+        c1: `hsl(355, ${25 + 30 * i}%, ${92 - 8 * i}%)`,
+        c2: `hsl(348, ${20 + 25 * i}%, ${87 - 8 * i}%)`,
+      };
+    }
+    return { c1: '#f6f1e8', c2: '#ede5d5' };
+  }
   if (topology === 'B') {
     if (t > 0.1) {
       const i = Math.min(t, 1);
@@ -1622,6 +1647,22 @@ function App() {
     void finishGame('human-resign');
   }
 
+  // M.23 — evalToColors reads document.documentElement's data-theme
+  // attribute imperatively (see the wood-light branch), but ThemeToggle
+  // lives in a separate component and writes that attribute directly to
+  // the DOM, not through any state this component subscribes to. Without
+  // this, switching themes wouldn't repaint the eval-gradient until the
+  // NEXT eval/topology change happened to fire the effect below for an
+  // unrelated reason — a switch to/from wood-light would visibly lag.
+  // themeTick just forces that effect to re-run the instant the attribute
+  // actually changes.
+  const [themeTick, setThemeTick] = useState(0);
+  useEffect(() => {
+    const observer = new MutationObserver(() => setThemeTick((n) => n + 1));
+    observer.observe(document.documentElement, { attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
+
   // Drive the gradient via CSS custom properties. setProperty (rather than
   // inline style) lets the @property-registered transition interpolate
   // colour-to-colour smoothly. prevEvalRef tracks the white-POV value
@@ -1644,7 +1685,7 @@ function App() {
     shell.style.setProperty('--eval-c1', c1);
     shell.style.setProperty('--eval-c2', c2);
     prevEvalRef.current = currentEval;
-  }, [myPerspectiveEval, currentEval, view, activeMatch, state.topologyState]);
+  }, [myPerspectiveEval, currentEval, view, activeMatch, state.topologyState, themeTick]);
 
   // Keep logLengthRef in sync with committed log state — used by classify
   // .then handlers to decide if their analysis is still the latest.

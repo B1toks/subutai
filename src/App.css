@@ -7832,14 +7832,16 @@ body.checkmate-flash::after {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   WOOD-LIGHT THEME — defeats the dark eval-gradient on .app-shell
-   so the page reads as off-white. The board / pieces / tokens
-   already pick up correct values from the theme block above.
+   WOOD-LIGHT THEME.
+   M.23 — used to defeat the eval-gradient entirely here (background:
+   var(--bg), flattening it to a static off-white) so the DARK-tuned
+   ramp wouldn't look muddy against a light theme. Fixed properly instead:
+   evalToColors() in App.tsx now has its own high-lightness cream ramp
+   for wood-light, so the win/lose background signal survives on every
+   theme — background is the one thing that's meant to stay theme-
+   independent. Nothing to override here anymore; the board / pieces /
+   tokens already pick up correct values from the theme block above.
    ═══════════════════════════════════════════════════════════════════ */
-
-[data-theme="wood-light"] .app-shell {
-  background: var(--bg);
-}
 
 /* ═══════════════════════════════════════════════════════════════════
    CYBERPUNK THEME — subtle, frosted-glass enhancements
