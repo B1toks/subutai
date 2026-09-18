@@ -29,6 +29,7 @@ import { FeedbackModal } from './components/FeedbackModal';
 import { MilestoneModal } from './components/MilestoneModal';
 import { AutoPlayView } from './components/AutoPlayView';
 import { ThemeToggle } from './components/ThemeToggle';
+import { NeonLogo } from './components/NeonLogo';
 import { UserMenu } from './components/UserMenu';
 import { Effects3DToggle } from './components/Effects3DToggle';
 import { AudioToggle } from './components/AudioToggle';
@@ -817,6 +818,10 @@ function App() {
     white: 0,
     black: 0,
   });
+  // Design experiment (neon-stitch): optional solo time control in seconds.
+  // null = free play (chips keep showing elapsed). With a value the chips
+  // show remaining = tc - elapsed, floored at 0. Display-only in solo.
+  const [soloTcSec, setSoloTcSec] = useState<number | null>(null);
   const [previewLocked, setPreviewLocked] = useState(false);
   const [lockedPreviewTopology, setLockedPreviewTopology] = useState<TopologyState | null>(null);
   const [hoveredSquare, setHoveredSquare] = useState<string | null>(null);
@@ -1077,6 +1082,33 @@ function App() {
     return () => stopPresenceHeartbeat();
   }, [user, displayName]);
 
+  // Design experiment: friendly out-of-time notice for the solo countdown.
+  // One toast per side per game; the game itself keeps going (no flag-fall
+  // vs the bot until that's an explicit product decision).
+  const soloFlaggedRef = useRef<{ logId: string | null; white: boolean; black: boolean }>({
+    logId: null,
+    white: false,
+    black: false,
+  });
+  useEffect(() => {
+    if (soloTcSec === null || isMultiplayer || isAutoMode) return;
+    if (gameStatus !== 'active') return;
+    const flagged = soloFlaggedRef.current;
+    if (flagged.logId !== log.id) {
+      soloFlaggedRef.current = { logId: log.id, white: false, black: false };
+      return;
+    }
+    for (const side of ['white', 'black'] as const) {
+      if (flagged[side]) continue;
+      if (soloTcSec * 1000 - clockMs[side] > 0) continue;
+      flagged[side] = true;
+      toast.show(
+        `${side === 'white' ? 'White' : 'Black'} is out of time. Friendly clock only - the game goes on.`,
+        'info',
+        4200,
+      );
+    }
+  }, [clockMs, soloTcSec, isMultiplayer, isAutoMode, gameStatus, log.id, toast]);
   const encourageBadStreakRef = useRef(0);
   const encourageLastMoveRef = useRef(-99);
   const encourageCheckedMoveRef = useRef(-1);
@@ -4657,19 +4689,34 @@ function App() {
     <div className="app-root" style={{ '--board-size': `${boardSize}px` } as React.CSSProperties}>
       <header className="app-header">
         <div className="app-brand">
+          <NeonLogo />
           <h1>subutai</h1>
-          {isMultiplayer && mpSync ? (
-            <p className="app-tagline">
-              vs <strong>{mpSync.opponentDisplayName}</strong> · {mpSync.matchState.code}
-            </p>
-          ) : (
-            gameMode === 'classic' &&
-            opponentMode === 'ai' && (
-              <p className="app-tagline">
-                Try to survive 50 moves against the AI
-              </p>
-            )
-          )}
+          {/* Design experiment (neon-stitch): the mock's LIVE strip replaces
+              the plain tagline. Solo shows a short seed-derived game tag. */}
+          <div className="live-strip">
+            <span className="live-pill">
+              <span className="live-dot" aria-hidden />
+              LIVE
+            </span>
+            <span
+              className="live-title"
+              title={
+                !isMultiplayer && gameMode === 'classic' && opponentMode === 'ai'
+                  ? 'Try to survive 50 moves against the AI'
+                  : undefined
+              }
+            >
+              {isMultiplayer && mpSync ? (
+                <>
+                  vs <strong>{mpSync.opponentDisplayName}</strong> · {mpSync.matchState.code}
+                </>
+              ) : (
+                <>
+                  vs AI · #{Math.abs(seed).toString(36).toUpperCase().slice(-5) || '0'}
+                </>
+              )}
+            </span>
+          </div>
         </div>
         <div className="header-controls" data-tour="header">
           <Tooltip text={showMusicDock ? 'Hide music dock' : 'Spotify + beat sync (beta)'} side="bottom">
@@ -4854,63 +4901,18 @@ function App() {
 
       <div className="app-body">
       <div className="board-area">
-      <div className="game-mode-cards" data-tour="modes">
-        <button
-          type="button"
-          className={`mode-card${gameMode === 'classic' ? ' is-active' : ''}`}
-          disabled={modeToggleLocked}
-          title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Classic chess rules'}
-          onClick={() => {
-            if (gameMode === 'classic') return;
-            setGameMode('classic');
-            setAllowedPieceTypes(null);
-            setIsRouletteSpinning(false);
-            setRouletteActionsLeft(0);
-            setUsedRouletteSlots([]);
-          }}
-        >
-          <span className="mode-card-icon" aria-hidden>
-            <Icon icon={Crosshair} size="xl" strokeWidth={1.75} />
-          </span>
-          <span className="mode-card-content">
-            <span className="mode-card-title">Classic</span>
-            <span className="mode-card-subtitle">
-              Standard chess960 + topology rotation
-            </span>
-          </span>
-        </button>
-        <button
-          type="button"
-          className={`mode-card${gameMode === 'roulette' ? ' is-active' : ''}`}
-          disabled={modeToggleLocked}
-          title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Spin a 4-slot bag · 2 actions/turn (move or rotate)'}
-          onClick={() => {
-            if (gameMode === 'roulette') return;
-            setGameMode('roulette');
-            setAllowedPieceTypes(null);
-            setIsRouletteSpinning(false);
-            setRouletteActionsLeft(0);
-            setUsedRouletteSlots([]);
-          }}
-        >
-          <span className="mode-card-icon" aria-hidden>
-            <Icon icon={Dices} size="xl" strokeWidth={1.75} />
-          </span>
-          <span className="mode-card-content">
-            <span className="mode-card-title">Roulette</span>
-            <span className="mode-card-subtitle">
-              Capture-the-king · spin the wheel
-            </span>
-          </span>
-        </button>
-      </div>
       {/* S2.5 — per-side clocks. Elapsed time normally; in a timed MP
           match (B8) they switch to countdown, glowing red under 30s. */}
       {gameStatus === 'active' && !watchingGame && (
         <div className="game-clocks" aria-label="Game clocks">
           {(['white', 'black'] as const).map((side) => {
-            const ms = mpClocks ? mpClocks[side] : clockMs[side];
-            const low = mpClocks !== null && ms < 30_000;
+            const soloCountdown = mpClocks === null && soloTcSec !== null;
+            const ms = mpClocks
+              ? mpClocks[side]
+              : soloCountdown
+                ? Math.max(0, soloTcSec * 1000 - clockMs[side])
+                : clockMs[side];
+            const low = (mpClocks !== null || soloCountdown) && ms < 30_000;
             return (
               <span
                 key={side}
@@ -6035,7 +6037,8 @@ function App() {
       </div>
       <aside className="right-sidebar">
         <section className="sidebar-panel sidebar-opponent">
-          <h2 className="sidebar-panel-title">Opponent</h2>
+          <h2 className="sidebar-panel-title">Game setup</h2>
+          <h3 className="setup-sub-label">Opponent</h3>
           {/* Sprint 4.3.1 — when a local game is in progress, lock all
               non-local opponent tabs behind a confirm dialog so a stray
               tap can't silently abandon the game. The lock is "soft":
@@ -6083,6 +6086,91 @@ function App() {
               </div>
             );
           })()}
+
+          {/* Design experiment (neon-stitch): mode cards moved here from
+              above the board — the mock's GAME SETUP panel owns opponent,
+              mode and time control together. */}
+          <h3 className="setup-sub-label">Mode</h3>
+          <div className="game-mode-cards" data-tour="modes">
+            <button
+              type="button"
+              className={`mode-card${gameMode === 'classic' ? ' is-active' : ''}`}
+              disabled={modeToggleLocked}
+              title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Classic chess rules'}
+              onClick={() => {
+                if (gameMode === 'classic') return;
+                setGameMode('classic');
+                setAllowedPieceTypes(null);
+                setIsRouletteSpinning(false);
+                setRouletteActionsLeft(0);
+                setUsedRouletteSlots([]);
+              }}
+            >
+              <span className="mode-card-icon" aria-hidden>
+                <Icon icon={Crosshair} size="xl" strokeWidth={1.75} />
+              </span>
+              <span className="mode-card-content">
+                <span className="mode-card-title">Classic</span>
+                <span className="mode-card-subtitle">
+                  Standard chess960 + topology rotation
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              className={`mode-card${gameMode === 'roulette' ? ' is-active' : ''}`}
+              disabled={modeToggleLocked}
+              title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Spin a 4-slot bag · 2 actions/turn (move or rotate)'}
+              onClick={() => {
+                if (gameMode === 'roulette') return;
+                setGameMode('roulette');
+                setAllowedPieceTypes(null);
+                setIsRouletteSpinning(false);
+                setRouletteActionsLeft(0);
+                setUsedRouletteSlots([]);
+              }}
+            >
+              <span className="mode-card-icon" aria-hidden>
+                <Icon icon={Dices} size="xl" strokeWidth={1.75} />
+              </span>
+              <span className="mode-card-content">
+                <span className="mode-card-title">Roulette</span>
+                <span className="mode-card-subtitle">
+                  Capture-the-king · spin the wheel
+                </span>
+              </span>
+            </button>
+          </div>
+
+          {/* Solo time control: flips the S2.5 elapsed chips into remaining
+              countdowns. Display-only — nobody loses on time vs the bot.
+              MP time control comes from the lobby, so the pills lock there. */}
+          <h3 className="setup-sub-label">Time control</h3>
+          <div className="tc-pills">
+            {([
+              [null, 'None'],
+              [60, '1 min'],
+              [180, '3 min'],
+              [600, '10 min'],
+            ] as const).map(([sec, label]) => (
+              <button
+                key={label}
+                type="button"
+                className={`tc-pill${soloTcSec === sec ? ' is-active' : ''}`}
+                disabled={isMultiplayer}
+                title={
+                  isMultiplayer
+                    ? 'Time control is set in the match lobby'
+                    : sec === null
+                      ? 'Free play: clocks count time spent'
+                      : `Each side gets ${label} on the clock`
+                }
+                onClick={() => setSoloTcSec(sec)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </section>
 
         <section className="sidebar-panel sidebar-moves">

@@ -513,6 +513,120 @@
   color-scheme: dark;
 }
 
+/* ─── Neon: Stitch redesign try-on — vivid indigo + cyan/magenta glow ───
+   Unlike cyberpunk (matte, restrained), neon IS the garish one: gradient
+   room, dual-color glowing borders, rose vs ice pieces. */
+[data-theme="neon"] {
+  /* Backgrounds — deep indigo, never true black */
+  --bg: #131022;
+  --bg-deep: #100d1d;
+  --bg-mid: #191532;
+  --bg-elevated: #201c3c;
+  --bg-elevated-hover: #292450;
+  --bg-panel: #1a1636;
+  --bg-panel-deep: #151129;
+  --bg-card: #1a1636;
+  --bg-card-alt: #201c3c;
+  --bg-overlay-dark: #0e0b1a;
+  --bg-popup: #1e1a3a;
+  --bg-deeper: #100d1d;
+  --bg-danger-tint: #241030;
+
+  /* Tiles — muted violet-navy, low contrast like the mock */
+  --tile-light: #292544;
+  --tile-dark: #181528;
+  --tile-light-alt: #35305c;
+  --tile-dark-alt: #211d38;
+  --tile-promo-light: #35305c;
+  --tile-promo-dark: #181528;
+  --tile-promo-light-text: #e9edff;
+  --tile-promo-dark-text: #e9edff;
+
+  /* Pieces — ice white vs rose pink, both softly lit */
+  --piece-white: #e9edff;
+  --piece-black: #f3a8d2;
+  --piece-text-on-bright: #131022;
+  --piece-white-flat: #e9edff;
+  --piece-black-flat: #f3a8d2;
+  --piece-white-shadow: 0 0 3px rgba(78, 225, 255, 0.55), 0 0 10px rgba(78, 225, 255, 0.25);
+  --piece-black-shadow: 0 0 3px rgba(255, 79, 216, 0.55), 0 0 10px rgba(255, 79, 216, 0.25);
+
+  /* Accents — electric cyan primary, hot magenta secondary */
+  --accent-primary: #4ee1ff;
+  --accent-secondary: #ff4fd8;
+  --accent-gold: #4ee1ff;
+  --accent-gold-bright: #7deeff;
+  --accent-gold-orange: #ff9de8;
+  --accent-gold-light: #7deeff;
+  --accent-amber-mid: #b48cff;
+  --accent-amber-bright: #c9a8ff;
+  --accent-amber-warm: #ff9de8;
+  --accent-peach: #ff9de8;
+  --text-on-bright-gold: #0e0b1a;
+
+  /* Secondary */
+  --accent-teal: #52f5c3;
+  --accent-teal-bright: #4ee1ff;
+  --accent-info: #4ee1ff;
+  --accent-orange: #ffb04f;
+
+  /* Status — hot magenta danger, mint success */
+  --accent-danger: #ff4f8f;
+  --danger: #ff4f8f;
+  --danger-bright: #ff6ba1;
+  --danger-coral: #ff4f8f;
+  --danger-coral-light: #ff8ab8;
+  --danger-mid: #d63a75;
+  --danger-dark: #b02e60;
+  --danger-light: #ff8ab8;
+  --danger-very-light: #ffa8c9;
+  --danger-pale: #ffc4da;
+  --danger-short: #ff6ba1;
+
+  --accent-success: #52f5c3;
+  --success: #52f5c3;
+  --success-light: #7df8d3;
+  --success-mint: #52f5c3;
+
+  /* Text */
+  --text: #e9edff;
+  --text-primary: #e9edff;
+  --text-secondary: rgba(233, 237, 255, 0.68);
+  --text-muted: rgba(233, 237, 255, 0.42);
+  --text-muted-warm: rgba(233, 237, 255, 0.55);
+  --text-white: #ffffff;
+  --text-on-light: #0e0b1a;
+  --text-grey-mid: rgba(233, 237, 255, 0.35);
+  --text-grey-light: rgba(233, 237, 255, 0.45);
+  --text-grey-lighter: rgba(233, 237, 255, 0.6);
+
+  /* Buttons */
+  --btn-bg: #221d42;
+  --btn-border: rgba(78, 225, 255, 0.35);
+
+  /* Borders — visible neon hairlines */
+  --border-subtle: rgba(78, 225, 255, 0.18);
+  --border-strong: rgba(78, 225, 255, 0.5);
+
+  /* Glows — the point of the theme */
+  --glow-accent: 0 0 10px rgba(78, 225, 255, 0.5), 0 0 22px rgba(78, 225, 255, 0.2);
+  --glow-danger: 0 0 10px rgba(255, 79, 216, 0.45), 0 0 22px rgba(255, 79, 216, 0.18);
+  --glow-success: 0 0 10px rgba(82, 245, 195, 0.45);
+  --shadow-elevated: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(78, 225, 255, 0.15);
+
+  /* Seam: cyan */
+  --seam-color: rgba(78, 225, 255, 0.3);
+
+  /* Sacrifice: hot magenta */
+  --sacrifice-color: 255, 79, 216;
+
+  --font-display: 'JetBrains Mono', 'Consolas', monospace;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+
+  color-scheme: dark;
+}
+
 .app-shell {
   position: relative;
   width: 100%;
@@ -9109,4 +9223,374 @@ button:active:not(:disabled) {
   gap: var(--space-2);
   flex-wrap: wrap;
   margin-bottom: var(--space-2);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   NEON THEME — Stitch redesign try-on (design/neon-stitch branch).
+   Tokens live in the [data-theme="neon"] block up top; everything here
+   is additive structure: the gradient room, glowing card borders, the
+   dual-color mode cards and the wordmark treatment.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* The room: indigo base + magenta glow top-right, cyan low-left, faint
+   violet wash. Fixed so it doesn't scroll away. */
+[data-theme="neon"] .app-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(circle at 88% 6%, rgba(255, 79, 216, 0.16), transparent 45%),
+    radial-gradient(circle at 6% 88%, rgba(78, 225, 255, 0.12), transparent 45%),
+    radial-gradient(circle at 50% 130%, rgba(140, 90, 255, 0.14), transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+[data-theme="neon"] .app-root {
+  position: relative;
+  z-index: 1;
+}
+
+/* Board: floating neon slab — cyan hairline + ambient glow */
+[data-theme="neon"] .board {
+  border-radius: 10px;
+  box-shadow:
+    0 14px 40px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(78, 225, 255, 0.28),
+    0 0 24px rgba(78, 225, 255, 0.12),
+    0 0 60px rgba(255, 79, 216, 0.08);
+}
+
+/* Right-column cards: rounded, hairline-bordered, softly lit */
+[data-theme="neon"] .sidebar-panel {
+  background: rgba(26, 22, 54, 0.82);
+  border: 1px solid rgba(78, 225, 255, 0.22);
+  border-radius: 12px;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.45),
+    0 0 14px rgba(78, 225, 255, 0.06);
+  backdrop-filter: blur(6px);
+}
+
+[data-theme="neon"] .sidebar-panel-title {
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Mode cards: Classic wears cyan, Roulette wears magenta — matching the
+   two Stitch cards. Selected card lights up its own color. */
+[data-theme="neon"] .mode-card {
+  border: 1px solid rgba(78, 225, 255, 0.3);
+  border-radius: 12px;
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+[data-theme="neon"] .mode-card:last-child {
+  border-color: rgba(255, 79, 216, 0.35);
+}
+[data-theme="neon"] .mode-card.is-active,
+[data-theme="neon"] .mode-card:hover {
+  border-color: rgba(78, 225, 255, 0.75);
+  box-shadow: 0 0 12px rgba(78, 225, 255, 0.35), inset 0 0 12px rgba(78, 225, 255, 0.08);
+}
+[data-theme="neon"] .mode-card:last-child.is-active,
+[data-theme="neon"] .mode-card:last-child:hover {
+  border-color: rgba(255, 79, 216, 0.8);
+  box-shadow: 0 0 12px rgba(255, 79, 216, 0.35), inset 0 0 12px rgba(255, 79, 216, 0.08);
+}
+
+/* Opponent pills + header action tiles: neon outline on hover/active */
+[data-theme="neon"] .opp-tab,
+[data-theme="neon"] .header-action-btn,
+[data-theme="neon"] .action-btn,
+[data-theme="neon"] .rotate-btn {
+  border-radius: 10px;
+}
+[data-theme="neon"] .opp-tab:hover,
+[data-theme="neon"] .opp-tab.is-active,
+[data-theme="neon"] .header-action-btn:hover,
+[data-theme="neon"] .header-action-btn.is-active,
+[data-theme="neon"] .action-btn:hover,
+[data-theme="neon"] .rotate-btn:hover {
+  box-shadow: var(--glow-accent);
+}
+
+/* Last-move tiles: cyan wash */
+[data-theme="neon"] .tile.last-from::before {
+  background: rgba(78, 225, 255, 0.16);
+}
+[data-theme="neon"] .tile.last-to::before {
+  background: rgba(78, 225, 255, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(78, 225, 255, 0.5);
+}
+
+/* Wordmark: ice core with a dual cyan/magenta halo, like the logo */
+[data-theme="neon"] .app-header h1 {
+  color: #f4f7ff;
+  text-shadow:
+    0 0 10px rgba(78, 225, 255, 0.55),
+    0 0 26px rgba(255, 79, 216, 0.35);
+}
+
+/* Toasts pick up the glass card look */
+[data-theme="neon"] .toast {
+  border: 1px solid rgba(78, 225, 255, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 14px rgba(78, 225, 255, 0.12);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme="neon"] .app-header h1 {
+    animation: neon-breathe 4.5s ease-in-out infinite;
+  }
+  @keyframes neon-breathe {
+    0%, 100% { text-shadow: 0 0 10px rgba(78, 225, 255, 0.55), 0 0 26px rgba(255, 79, 216, 0.35); }
+    50% { text-shadow: 0 0 14px rgba(78, 225, 255, 0.75), 0 0 34px rgba(255, 79, 216, 0.5); }
+  }
+}
+
+/* ─── Neon logo (5 variants, click to cycle) ─────────────────────── */
+.neon-logo-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 4px;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+  align-self: center;
+  transition: transform 0.15s, filter 0.2s;
+}
+.neon-logo-btn:hover {
+  transform: scale(1.06);
+  filter: drop-shadow(0 0 8px rgba(78, 225, 255, 0.5));
+}
+.neon-logo-btn svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   LAYOUT EXPERIMENT — design/neon-stitch branch only.
+   Full Stitch-mock structure: fixed left icon rail (the old header
+   buttons), top bar with LIVE strip, GAME SETUP consolidated in the
+   right sidebar (opponent + mode + time control), clock chips above
+   the board (existing S2.5 strip, now countdown-capable in solo).
+   Uses theme tokens throughout so all five themes survive; tuned for
+   neon. Desktop-only rail — mobile keeps the stock header row.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Brand: bigger mark, optically centered against the wordmark */
+.app-brand {
+  align-items: center;
+}
+.neon-logo-btn {
+  width: 58px;
+  height: 58px;
+}
+
+/* Top bar reads as a floating pill bar */
+.app-header {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  padding: 8px 16px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+[data-theme="neon"] .app-header {
+  background: rgba(26, 22, 54, 0.8);
+  border-color: rgba(78, 225, 255, 0.22);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45), 0 0 16px rgba(255, 79, 216, 0.07);
+}
+
+/* LIVE strip */
+.live-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-on-bright-gold);
+  background: var(--accent-secondary);
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.25);
+}
+[data-theme="neon"] .live-pill {
+  background: linear-gradient(90deg, #ff4fd8, #b44fff);
+  color: #fff;
+  box-shadow: 0 0 12px rgba(255, 79, 216, 0.5);
+}
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: live-dot-blink 1.6s ease-in-out infinite;
+}
+@keyframes live-dot-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-dot { animation: none; }
+}
+.live-title {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.live-title strong {
+  color: var(--text);
+}
+
+/* Left icon rail: the header controls become a fixed vertical dock */
+@media (min-width: 721px) {
+  .header-controls {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 68px;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: var(--space-2);
+    padding: 14px 0 calc(14px + env(safe-area-inset-bottom, 0px));
+    background: var(--bg-card);
+    border-right: 1px solid var(--border-subtle);
+    overflow-y: auto;
+    scrollbar-width: none;
+    z-index: 860; /* under docks/popups (880+), over the page */
+  }
+  .header-controls::-webkit-scrollbar { display: none; }
+  [data-theme="neon"] .header-controls {
+    background: rgba(19, 16, 34, 0.88);
+    border-right: 1px solid rgba(78, 225, 255, 0.18);
+    backdrop-filter: blur(8px);
+    box-shadow: 8px 0 24px rgba(0, 0, 0, 0.35);
+  }
+  /* Content steps aside for the rail */
+  .app-root {
+    padding-left: 84px;
+  }
+}
+
+/* GAME SETUP sub-sections in the right sidebar */
+.setup-sub-label {
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+.sidebar-opponent .setup-sub-label:first-of-type {
+  margin-top: 0;
+}
+
+/* Mode cards squeezed into the sidebar: stacked, compact */
+.right-sidebar .game-mode-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  margin: 0;
+}
+.right-sidebar .mode-card {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-2);
+}
+.right-sidebar .mode-card-icon svg {
+  width: 26px;
+  height: 26px;
+}
+.right-sidebar .mode-card-title {
+  font-size: 14px;
+}
+.right-sidebar .mode-card-subtitle {
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+/* Time-control pills */
+.tc-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.tc-pill {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, color 0.15s;
+}
+.tc-pill:hover:not(:disabled) {
+  border-color: var(--accent-primary);
+  color: var(--text);
+}
+.tc-pill.is-active {
+  border-color: var(--accent-primary);
+  color: var(--text);
+  box-shadow: var(--glow-accent);
+}
+.tc-pill:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Clock chips: glassier, mock-sized */
+[data-theme="neon"] .clock-chip {
+  background: rgba(26, 22, 54, 0.85);
+  border-color: rgba(78, 225, 255, 0.25);
+  font-size: 14px;
+  padding: 5px 14px;
+}
+[data-theme="neon"] .clock-chip.is-running {
+  border-color: rgba(78, 225, 255, 0.8);
+  box-shadow: 0 0 12px rgba(78, 225, 255, 0.35);
+}
+[data-theme="neon"] .clock-chip.is-low {
+  border-color: rgba(255, 79, 216, 0.8);
+  box-shadow: 0 0 12px rgba(255, 79, 216, 0.4);
+}
+
+/* Layout experiment follow-ups (design/neon-stitch):
+   1. Rail tooltips open to the RIGHT of the icons (the stock side="bottom"
+      geometry points them under the fixed rail edge).
+   2. A left-docked music panel starts AFTER the rail instead of under it. */
+@media (min-width: 721px) {
+  .header-controls .tooltip {
+    --tip-tx: 0;
+    --tip-ty: -50%;
+    left: calc(100% + 8px);
+    right: auto;
+    top: 50%;
+    bottom: auto;
+    transform: translateY(-50%);
+  }
+  .music-dock.is-docked-left {
+    left: 68px;
+  }
 }

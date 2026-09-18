@@ -19,7 +19,7 @@
  * Volume capped at 0.4 (master gain) so music sits below the SFX layer.
  */
 
-export type AmbientTheme = 'wood' | 'wood-light' | 'cyberpunk' | 'fantasy';
+export type AmbientTheme = 'wood' | 'wood-light' | 'cyberpunk' | 'fantasy' | 'neon';
 export type StingerKind = 'danger' | 'sacrifice';
 
 /* M.5.2 — musical directions sharing one engine:
@@ -119,6 +119,26 @@ const THEMES: Record<AmbientTheme, ThemeSpec> = {
     noteIntervalMs: [2200, 4800],
     tensionRoot: 220,
     // Synthwave-friendly Am7 → Fmaj7 → Cmaj7 → G.
+    progression: [
+      [220, 261.63, 329.63, 392],
+      [174.61, 220, 261.63, 329.63],
+      [261.63, 329.63, 392, 493.88],
+      [196, 246.94, 293.66, 392],
+    ],
+  },
+  // Stitch neon redesign shares the synthwave stack with cyberpunk — the
+  // visual language is a brighter cousin, not a new mood.
+  neon: {
+    drones: [
+      { freq: 55, type: 'sine', gainMul: 0.35 },
+      { freq: 110, type: 'triangle', gainMul: 0.25, filterFreq: 500 },
+    ],
+    scale: [220, 261.63, 293.66, 329.63, 392, 440, 523.25],
+    tenseScale: [220, 233.08, 293.66, 311.13, 415.3, 440],
+    noteType: 'sawtooth',
+    noteFilter: 1200,
+    noteIntervalMs: [2200, 4800],
+    tensionRoot: 220,
     progression: [
       [220, 261.63, 329.63, 392],
       [174.61, 220, 261.63, 329.63],
