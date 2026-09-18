@@ -16,6 +16,20 @@ const ShowcaseView = lazy(() =>
 // Firestore data and never writes anything back.
 const isShowcase = new URLSearchParams(window.location.search).get('showcase') === '1';
 
+// V1 — async font swap. index.html loads the decorative theme faces with
+// media="print" so they never block first paint; this flips them live once
+// downloaded. Used to be an inline onload= handler, which the production
+// Content-Security-Policy (no 'unsafe-inline' for scripts) now forbids.
+for (const link of Array.from(
+  document.querySelectorAll<HTMLLinkElement>('link[data-async-font]'),
+)) {
+  const swap = () => {
+    link.media = 'all';
+  };
+  if (link.sheet) swap();
+  else link.addEventListener('load', swap, { once: true });
+}
+
 // Sprint 4.4 — PWA service worker. Production only: in dev it would
 // cache Vite's transformed modules and serve stale code after edits.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {

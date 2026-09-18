@@ -26,10 +26,18 @@ const LABELS: Record<Theme, string> = {
   neon: 'Neon',
 };
 
+// V1 — neon is the launch default. A saved choice (any of the five) always
+// wins; only first-time visitors land on neon.
+const DEFAULT_THEME: Theme = 'neon';
+
 function readInitialTheme(): Theme {
-  if (typeof window === 'undefined') return 'wood';
-  const saved = window.localStorage.getItem(STORAGE_KEY) as Theme | null;
-  return saved && THEMES.includes(saved) ? saved : 'wood';
+  if (typeof window === 'undefined') return DEFAULT_THEME;
+  try {
+    const saved = window.localStorage.getItem(STORAGE_KEY) as Theme | null;
+    return saved && THEMES.includes(saved) ? saved : DEFAULT_THEME;
+  } catch {
+    return DEFAULT_THEME;
+  }
 }
 
 export function ThemeToggle() {

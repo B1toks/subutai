@@ -22,6 +22,9 @@ interface GameSummaryProps {
   durationMs?: number;
   /** Stage R: drives roulette-specific row labels ("Speed bonus", "Win bonus"). */
   gameMode?: 'classic' | 'roulette';
+  /** V1 — why an otherwise-complete game isn't ranked (practice bot level).
+   *  Defaults to the too-short explanation when absent. */
+  uncountedReason?: string;
   onClose: () => void;
   onPlayAgain: () => void;
 }
@@ -72,6 +75,7 @@ export function GameSummary({
   playerName,
   durationMs,
   gameMode = 'classic',
+  uncountedReason,
   onClose,
   onPlayAgain,
 }: GameSummaryProps) {
@@ -159,8 +163,8 @@ export function GameSummary({
           </>
         ) : (
           <div className="summary-uncounted">
-            <strong>This game wasn’t counted</strong>
-            <p>Games under 10 moves don’t earn points.</p>
+            <strong>{uncountedReason ? 'Practice game' : 'This game wasn’t counted'}</strong>
+            <p>{uncountedReason ?? 'Games under 10 moves don’t earn points.'}</p>
           </div>
         )}
 

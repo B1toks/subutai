@@ -15,7 +15,13 @@ import {
   findCheckingPieces,
 } from './engine/moves';
 import { applyRotationMove, applyPassMove, toggleTopology, computeBoardLayout, tilePixelCenter } from './engine/auxetic';
-import { SubutaiAgent } from './ai/agents';
+import {
+  SubutaiAgent,
+  BOT_STRENGTHS,
+  BOT_STRENGTH_LABEL,
+  isBotStrength,
+  type BotStrength,
+} from './ai/agents';
 import { evaluate, PIECE_VALUE } from './ai/evaluate';
 import { searchPosition, ttClear } from './ai/search';
 import { type MoveClass, type MoveAnalysis } from './analysis/classify';
@@ -145,9 +151,30 @@ type GameStatus =
   | 'draw_repetition'
   | 'draw_50move'
   | 'king_captured_white_wins'
-  | 'king_captured_black_wins';
+  | 'king_captured_black_wins'
+  // V1 — solo time control: the side that runs out of time loses.
+  | 'timeout_white'
+  | 'timeout_black';
 
 type GameMode = 'classic' | 'roulette';
+
+const BOT_LEVEL_KEY = 'subutai_bot_level';
+
+function readInitialBotLevel(): BotStrength {
+  try {
+    const raw = localStorage.getItem(BOT_LEVEL_KEY);
+    if (isBotStrength(raw)) return raw;
+  } catch {
+    /* private mode */
+  }
+  return 'strong';
+}
+
+const BOT_STRENGTH_HINT: Record<BotStrength, string> = {
+  casual: 'Relaxed bot: shallow search plus the occasional loose move. Practice only, not ranked.',
+  normal: 'Solid club-level bot. Practice only, not ranked.',
+  strong: 'Full-strength engine. The only level that counts for the leaderboard.',
+};
 
 const ROULETTE_SLOT_COUNT = 4;
 const ROULETTE_MAX_ACTIONS = 2;
@@ -317,6 +344,30 @@ function evalToColors(evalCp: number, topology: TopologyState): { c1: string; c2
       };
     }
     return { c1: '#f6f1e8', c2: '#ede5d5' };
+  }
+  // Neon: the room lives in the indigo family. Topology A leans cyan when
+  // winning / magenta when losing; topology B swaps to teal / violet so
+  // the "rotation tints the room" beat survives on this theme too.
+  if (document.documentElement.getAttribute('data-theme') === 'neon') {
+    const win = topology === 'B' ? 170 : 195;
+    const lose = topology === 'B' ? 275 : 320;
+    if (t > 0.1) {
+      const i = Math.min(t, 1);
+      return {
+        c1: `hsl(${win}, ${40 + 30 * i}%, ${13 + 5 * i}%)`,
+        c2: `hsl(${win + 40}, ${30 + 20 * i}%, ${9 + 3 * i}%)`,
+      };
+    }
+    if (t < -0.1) {
+      const i = Math.min(-t, 1);
+      return {
+        c1: `hsl(${lose}, ${35 + 35 * i}%, ${12 + 4 * i}%)`,
+        c2: `hsl(${lose - 35}, ${28 + 22 * i}%, ${8 + 3 * i}%)`,
+      };
+    }
+    return topology === 'B'
+      ? { c1: '#141a33', c2: '#0f1224' }
+      : { c1: '#1a1533', c2: '#12101f' };
   }
   if (topology === 'B') {
     if (t > 0.1) {
@@ -494,10 +545,13 @@ function App() {
   );
   // T2: ?game=<id> loads a saved /games doc into the Review screen on
   // mount, so a copied share-link opens directly into playback.
-  const sharedGameId = useMemo(
-    () => new URLSearchParams(window.location.search).get('game'),
-    [],
-  );
+  const sharedGameId = useMemo(() => {
+    const raw = new URLSearchParams(window.location.search).get('game');
+    // Firestore auto-ids are 20 url-safe chars; anything else is junk that
+    // would only produce a confusing "could not load" banner (or a thrown
+    // invalid-path error for slashes). Ignore it up front.
+    return raw && /^[A-Za-z0-9_-]{1,64}$/.test(raw) ? raw : null;
+  }, []);
 
   const [autoGamesCompleted, setAutoGamesCompleted] = useState(0);
   const [autoLastOutcome, setAutoLastOutcome] = useState<GameOutcome | null>(null);
@@ -822,6 +876,21 @@ function App() {
   // null = free play (chips keep showing elapsed). With a value the chips
   // show remaining = tc - elapsed, floored at 0. Display-only in solo.
   const [soloTcSec, setSoloTcSec] = useState<number | null>(null);
+  // V1 — bot strength. Persisted; mirrored in a ref because the AI
+  // scheduler is a memoised callback that must read the live value.
+  const [botLevel, setBotLevelState] = useState<BotStrength>(readInitialBotLevel);
+  const botLevelRef = useRef<BotStrength>(botLevel);
+  useEffect(() => {
+    botLevelRef.current = botLevel;
+  }, [botLevel]);
+  function setBotLevel(next: BotStrength) {
+    setBotLevelState(next);
+    try {
+      localStorage.setItem(BOT_LEVEL_KEY, next);
+    } catch {
+      /* private mode */
+    }
+  }
   const [previewLocked, setPreviewLocked] = useState(false);
   const [lockedPreviewTopology, setLockedPreviewTopology] = useState<TopologyState | null>(null);
   const [hoveredSquare, setHoveredSquare] = useState<string | null>(null);
@@ -1082,33 +1151,8 @@ function App() {
     return () => stopPresenceHeartbeat();
   }, [user, displayName]);
 
-  // Design experiment: friendly out-of-time notice for the solo countdown.
-  // One toast per side per game; the game itself keeps going (no flag-fall
-  // vs the bot until that's an explicit product decision).
-  const soloFlaggedRef = useRef<{ logId: string | null; white: boolean; black: boolean }>({
-    logId: null,
-    white: false,
-    black: false,
-  });
-  useEffect(() => {
-    if (soloTcSec === null || isMultiplayer || isAutoMode) return;
-    if (gameStatus !== 'active') return;
-    const flagged = soloFlaggedRef.current;
-    if (flagged.logId !== log.id) {
-      soloFlaggedRef.current = { logId: log.id, white: false, black: false };
-      return;
-    }
-    for (const side of ['white', 'black'] as const) {
-      if (flagged[side]) continue;
-      if (soloTcSec * 1000 - clockMs[side] > 0) continue;
-      flagged[side] = true;
-      toast.show(
-        `${side === 'white' ? 'White' : 'Black'} is out of time. Friendly clock only - the game goes on.`,
-        'info',
-        4200,
-      );
-    }
-  }, [clockMs, soloTcSec, isMultiplayer, isAutoMode, gameStatus, log.id, toast]);
+  // V1 — the solo time-control flag-fall effect lives further down, right
+  // after `isLocalMode` is declared (TDZ: hooks here can't read it yet).
   const encourageBadStreakRef = useRef(0);
   const encourageLastMoveRef = useRef(-99);
   const encourageCheckedMoveRef = useRef(-1);
@@ -1203,6 +1247,8 @@ function App() {
       gameStatus === 'checkmate'
         || gameStatus === 'king_captured_white_wins'
         || gameStatus === 'king_captured_black_wins'
+        || gameStatus === 'timeout_white'
+        || gameStatus === 'timeout_black'
         ? 'checkmate'
         : 'stalemate';
     const saved = buildSavedGameFromLog(log, state, termination, sourceId);
@@ -1260,6 +1306,11 @@ function App() {
       // Black wins => human (white) lost.
       outcome = 'ai-win';
     } else if (gameStatus === 'king_captured_white_wins') {
+      outcome = 'human-win';
+    } else if (gameStatus === 'timeout_white') {
+      // V1 — human (white) flagged.
+      outcome = 'ai-win';
+    } else if (gameStatus === 'timeout_black') {
       outcome = 'human-win';
     } else {
       outcome = 'draw';
@@ -1359,7 +1410,12 @@ function App() {
   }, [sharedGameId]);
 
   async function finishGame(outcome: GameOutcome) {
-    const points = computeGamePoints(log, outcome, HUMAN_COLOR, gameMode);
+    const computed = computeGamePoints(log, outcome, HUMAN_COLOR, gameMode);
+    // V1 — only full-strength games are ranked. Practice levels still get
+    // the full breakdown on screen and are saved (with their level) for the
+    // data pipeline, but never touch personal best / leaderboard stats.
+    const rankedLevel = botLevel === 'strong';
+    const points: GamePoints = rankedLevel ? computed : { ...computed, counted: false };
     const durationMs = Date.now() - gameStartedAtRef.current;
     setGameOutcome(outcome);
     setLastGamePoints(points);
@@ -1391,6 +1447,7 @@ function App() {
         humanColor: HUMAN_COLOR,
         gameMode,
         durationMs,
+        botLevel,
       });
       setLastGameId(gameId);
       setIsNewBest(nb);
@@ -2309,8 +2366,18 @@ function App() {
     setClockMs({ white: 0, black: 0 });
   }, [logLocal.id]);
 
+  // V1 — with a solo time control the clocks arm on the first move (like
+  // every online chess clock); free play keeps counting from game start.
+  // Picking a control before the first move also zeroes whatever free-play
+  // elapsed time had already accumulated, so both sides start with the
+  // full budget (the pills lock once a game is under way).
+  const clockArmed = soloTcSec === null || logLocal.moves.length > 0;
   useEffect(() => {
-    if (gameStatus !== 'active' || watchingGame) return;
+    if (logLocal.moves.length === 0) setClockMs({ white: 0, black: 0 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [soloTcSec]);
+  useEffect(() => {
+    if (gameStatus !== 'active' || watchingGame || !clockArmed) return;
     let last = Date.now();
     const id = setInterval(() => {
       const now = Date.now();
@@ -2320,7 +2387,7 @@ function App() {
       setClockMs((c) => ({ ...c, [side]: c[side] + dt }));
     }, 500);
     return () => clearInterval(id);
-  }, [gameStatus, watchingGame, logLocal.id]);
+  }, [gameStatus, watchingGame, logLocal.id, clockArmed]);
 
   // ── B8: multiplayer time control ──────────────────────────────────
   // Both peers derive identical countdown clocks from the shared move
@@ -2621,6 +2688,34 @@ function App() {
   // Cached here so the AI scheduler, classifier, and downstream UI
   // can short-circuit on a single flag.
   const isLocalMode = opponentMode === 'local' && !isMultiplayer;
+
+  // V1 — solo time control flag-fall. When a side's remaining time hits
+  // zero the game ends as a loss on time for that side, exactly like a
+  // timed PvP match. Vs the bot the completion effect turns the terminal
+  // status into ai-win / human-win and saves as usual; in local hot-seat
+  // the banner is the ending (same as resign there). The clock only arms
+  // after the first move (see the tick effect), so nobody flags while the
+  // board is still untouched.
+  const soloFlagLogIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (soloTcSec === null || isMultiplayer || isAutoMode || watchingGame) return;
+    if (gameStatus !== 'active' || log.moves.length === 0) return;
+    if (soloFlagLogIdRef.current === log.id) return;
+    const flagged = (['white', 'black'] as const).find(
+      (side) => soloTcSec * 1000 - clockMs[side] <= 0,
+    );
+    if (!flagged) return;
+    soloFlagLogIdRef.current = log.id;
+    if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
+    setSelected(null);
+    setGameStatus(flagged === 'white' ? 'timeout_white' : 'timeout_black');
+    if (isLocalMode) completedLogIdRef.current = log.id;
+    toast.show(
+      `${flagged === 'white' ? 'White' : 'Black'} ran out of time.`,
+      'info',
+      3200,
+    );
+  }, [clockMs, soloTcSec, isMultiplayer, isAutoMode, watchingGame, gameStatus, log.id, log.moves.length, isLocalMode, toast]);
   // Local hot-seat's own "game over" modal dismiss flag (see the render
   // site near the MP completion dialog). Reset per game via the effect
   // below, keyed on log.id like the other one-shot-per-game flags in
@@ -3003,6 +3098,7 @@ function App() {
         const chosen = await SubutaiAgent.chooseMove(boardState, moves, {
           lastMoveWasRotation,
           allowSelfCheck: gameMode === 'roulette',
+          strength: botLevelRef.current,
         });
         // R15-bug — clearTimeout can't stop a callback that already fired
         // and is parked on the await above. If a PvP match started while
@@ -4469,6 +4565,12 @@ function App() {
     if (gameStatus === 'king_captured_black_wins') {
       return 'King captured! Black wins';
     }
+    if (gameStatus === 'timeout_white') {
+      return 'White ran out of time. Black wins';
+    }
+    if (gameStatus === 'timeout_black') {
+      return 'Black ran out of time. White wins';
+    }
     return null;
   }, [gameStatus, state.sideToMove]);
 
@@ -4694,10 +4796,27 @@ function App() {
           {/* Design experiment (neon-stitch): the mock's LIVE strip replaces
               the plain tagline. Solo shows a short seed-derived game tag. */}
           <div className="live-strip">
-            <span className="live-pill">
-              <span className="live-dot" aria-hidden />
-              LIVE
-            </span>
+            {/* V1 — the pill reports the real game state: LIVE while a
+                game is running, READY before the first move, OVER after
+                the result. */}
+            {(() => {
+              const mpLive = isMultiplayer && mpSync
+                ? mpSync.matchState.status === 'active' && !mpSync.matchState.outcome
+                : false;
+              const phase: 'live' | 'ready' | 'over' = isMultiplayer
+                ? (mpLive ? 'live' : 'over')
+                : gameStatus !== 'active'
+                  ? 'over'
+                  : log.moves.length > 0
+                    ? 'live'
+                    : 'ready';
+              return (
+                <span className={`live-pill is-${phase}`}>
+                  <span className="live-dot" aria-hidden />
+                  {phase === 'live' ? 'LIVE' : phase === 'over' ? 'OVER' : 'READY'}
+                </span>
+              );
+            })()}
             <span
               className="live-title"
               title={
@@ -4745,16 +4864,7 @@ function App() {
               <span className="beta-corner" aria-hidden>β</span>
             </button>
           </Tooltip>
-          <Tooltip text="Leaderboard" side="bottom">
-            <button
-              type="button"
-              className="header-action-btn"
-              onClick={() => setView('leaderboard')}
-              aria-label="Leaderboard"
-            >
-              <Icon icon={Trophy} size="md" aria-hidden />
-            </button>
-          </Tooltip>
+          <span className="rail-sep" aria-hidden />
           <Tooltip
             text={user && displayName ? 'Send feedback' : 'Sign in to send feedback'}
             side="bottom"
@@ -4780,10 +4890,27 @@ function App() {
               <Icon icon={HelpCircle} size="md" aria-hidden />
             </button>
           </Tooltip>
+          <span className="rail-sep rail-sep-tray" aria-hidden />
           <MusicToggle />
           <AudioToggle />
           <Effects3DToggle />
           <ThemeToggle />
+        </div>
+        {/* V1 — the two things a player reaches for most often stay in the
+            top bar on every viewport: the leaderboard and their own name.
+            Everything else lives in the left rail (desktop) / header row
+            (mobile). */}
+        <div className="topbar-actions">
+          <button
+            type="button"
+            className="topbar-btn"
+            onClick={() => setView('leaderboard')}
+            aria-label="Leaderboard"
+            title="Leaderboard"
+          >
+            <Icon icon={Trophy} size="md" aria-hidden />
+            <span className="topbar-btn-label">Leaderboard</span>
+          </button>
           {displayName && (
             <UserMenu
               displayName={displayName}
@@ -6145,8 +6272,40 @@ function App() {
           {/* Solo time control: flips the S2.5 elapsed chips into remaining
               countdowns. Display-only — nobody loses on time vs the bot.
               MP time control comes from the lobby, so the pills lock there. */}
+          {/* V1 — bot strength. Solo vs AI only; locked once a game is on
+              (a mid-game switch would silently change the opponent). */}
+          {opponentMode === 'ai' && !isMultiplayer && (
+            <>
+              <h3 className="setup-sub-label">Bot strength</h3>
+              <div className="tc-pills" role="radiogroup" aria-label="Bot strength">
+                {BOT_STRENGTHS.map((level) => (
+                  <button
+                    key={level}
+                    type="button"
+                    role="radio"
+                    aria-checked={botLevel === level}
+                    className={`tc-pill${botLevel === level ? ' is-active' : ''}${level === 'strong' ? ' is-ranked' : ''}`}
+                    disabled={modeToggleLocked}
+                    title={
+                      modeToggleLocked
+                        ? 'Finish or restart the game to change the bot'
+                        : BOT_STRENGTH_HINT[level]
+                    }
+                    onClick={() => setBotLevel(level)}
+                  >
+                    {BOT_STRENGTH_LABEL[level]}
+                  </button>
+                ))}
+              </div>
+              <p className="setup-hint">
+                {botLevel === 'strong'
+                  ? 'Full strength. Wins and survival count for the leaderboard.'
+                  : 'Practice level: the game is saved but not ranked.'}
+              </p>
+            </>
+          )}
           <h3 className="setup-sub-label">Time control</h3>
-          <div className="tc-pills">
+          <div className="tc-pills" role="radiogroup" aria-label="Time control">
             {([
               [null, 'None'],
               [60, '1 min'],
@@ -6156,14 +6315,18 @@ function App() {
               <button
                 key={label}
                 type="button"
+                role="radio"
+                aria-checked={soloTcSec === sec}
                 className={`tc-pill${soloTcSec === sec ? ' is-active' : ''}`}
-                disabled={isMultiplayer}
+                disabled={isMultiplayer || modeToggleLocked}
                 title={
                   isMultiplayer
                     ? 'Time control is set in the match lobby'
-                    : sec === null
-                      ? 'Free play: clocks count time spent'
-                      : `Each side gets ${label} on the clock`
+                    : modeToggleLocked
+                      ? 'Finish or restart the game to change the clock'
+                      : sec === null
+                        ? 'Free play: clocks just count time spent'
+                        : `Each side gets ${label}. Run out and you lose on time`
                 }
                 onClick={() => setSoloTcSec(sec)}
               >
@@ -6171,6 +6334,9 @@ function App() {
               </button>
             ))}
           </div>
+          {soloTcSec !== null && !isMultiplayer && (
+            <p className="setup-hint">Clocks start on the first move. Out of time = loss.</p>
+          )}
         </section>
 
         <section className="sidebar-panel sidebar-moves">
@@ -6502,6 +6668,11 @@ function App() {
           playerName={displayName}
           durationMs={lastGameDurationMs ?? undefined}
           gameMode={gameMode}
+          uncountedReason={
+            botLevel !== 'strong'
+              ? `Played vs the ${BOT_STRENGTH_LABEL[botLevel]} bot. Only Strong-bot games are ranked.`
+              : undefined
+          }
           onClose={() => setSummaryOpen(false)}
           onPlayAgain={() => {
             setSummaryOpen(false);

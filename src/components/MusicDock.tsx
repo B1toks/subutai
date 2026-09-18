@@ -121,22 +121,59 @@ declare global {
 }
 
 const API_SRC = 'https://open.spotify.com/embed/iframe-api/v1';
+const API_LOAD_TIMEOUT_MS = 12_000;
 
-/** Load the IFrame API script once; resolves with the API object. */
+/** Load the IFrame API script once; resolves with the API object.
+ *  V1 — rejects when the script never arrives (ad blocker, offline,
+ *  CSP): the dock used to sit on "Loading player…" forever. A failed
+ *  attempt is forgotten so the next Load can retry. */
+let apiLoad: Promise<SpotifyIFrameAPI> | null = null;
 function loadIframeApi(): Promise<SpotifyIFrameAPI> {
   if (window.__spotifyIframeApi) return Promise.resolve(window.__spotifyIframeApi);
-  return new Promise((resolve) => {
+  if (apiLoad) return apiLoad;
+  apiLoad = new Promise<SpotifyIFrameAPI>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      apiLoad = null;
+      reject(new Error('SPOTIFY_API_TIMEOUT'));
+    }, API_LOAD_TIMEOUT_MS);
     window.onSpotifyIframeApiReady = (api) => {
+      clearTimeout(timer);
       window.__spotifyIframeApi = api;
       resolve(api);
     };
-    if (!document.querySelector(`script[src="${API_SRC}"]`)) {
+    const existing = document.querySelector(`script[src="${API_SRC}"]`);
+    if (!existing) {
       const s = document.createElement('script');
       s.src = API_SRC;
       s.async = true;
+      s.onerror = () => {
+        clearTimeout(timer);
+        apiLoad = null;
+        s.remove();
+        reject(new Error('SPOTIFY_API_BLOCKED'));
+      };
       document.body.appendChild(s);
     }
   });
+  return apiLoad;
+}
+
+/** V1 — BPM memory is keyed by the canonical spotify:<type>:<id> URI so a
+ *  link with tracking params (?si=…) or the /embed/ form still hits the
+ *  same entry. Falls back to the raw-URL key older builds wrote. */
+function bpmKey(url: string): string {
+  return parseSpotifyUrl(url)?.uri ?? url;
+}
+function savedBpmFor(url: string): number | undefined {
+  const map = readBpmMap();
+  return map[bpmKey(url)] ?? map[url];
+}
+function rememberBpm(url: string, bpm: number): void {
+  const map = readBpmMap();
+  map[bpmKey(url)] = bpm;
+  try {
+    localStorage.setItem(BPM_MAP_KEY, JSON.stringify(map));
+  } catch { /* private mode */ }
 }
 
 function parseSpotifyUrl(
@@ -173,7 +210,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
     }
   });
   const [loadedUrl, setLoadedUrl] = useState('');
-  const [playerState, setPlayerState] = useState<'idle' | 'loading' | 'ready'>('idle');
+  const [playerState, setPlayerState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [micOn, setMicOn] = useState(() => micEq.isRunning());
   // M.15 — equalizer "temperature": how hard the perimeter wave reacts.
   const [eqSens, setEqSens] = useState(() => eqSettings.getSensitivity());
@@ -276,7 +313,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
     // the race that left the board frozen on a stale track BPM.
     const liveOwns = micEq.getSource() === 'mic' || micEq.getSource() === 'display';
     if (!liveOwns) beatEngine.setBase('track');
-    const saved = knownBpm ?? readBpmMap()[url];
+    const saved = knownBpm ?? savedBpmFor(url);
     if (liveOwns) {
       // Live grid stays in charge; just remember the BPM for later.
       if (saved) setBpm(saved);
@@ -300,11 +337,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
         // don't clobber it. Cache the BPM but leave the engine alone.
         const liveNow = micEq.getSource() === 'mic' || micEq.getSource() === 'display';
         if (result) {
-          const map = readBpmMap();
-          map[target] = result.bpm;
-          try {
-            localStorage.setItem(BPM_MAP_KEY, JSON.stringify(map));
-          } catch { /* private mode */ }
+          rememberBpm(target, result.bpm);
           setBpm(result.bpm);
           setAutoBpm('found');
           if (!liveNow) {
@@ -326,7 +359,16 @@ export function MusicDock({ onClose }: MusicDockProps) {
       setPlayerState('ready');
       return;
     }
-    const api = await loadIframeApi();
+    let api: SpotifyIFrameAPI;
+    try {
+      api = await loadIframeApi();
+    } catch {
+      // Player script blocked / offline: keep the beat grid (Deezer BPM
+      // still arrives) but say so instead of spinning forever.
+      if (loadedUrlRef.current === url) setPlayerState('error');
+      return;
+    }
+    if (loadedUrlRef.current !== url || !embedHostRef.current) return;
     // The API replaces the host node — keep a dedicated child for it.
     const slot = document.createElement('div');
     embedHostRef.current.innerHTML = '';
@@ -477,7 +519,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
     // to a real detected kick when live capture is running.
     if (beatEngine.getBpm() <= 0) {
       const fallback =
-        bpm > 0 ? bpm : liveBpm.getBpm() || (loadedUrl ? readBpmMap()[loadedUrl] ?? 0 : 0);
+        bpm > 0 ? bpm : liveBpm.getBpm() || (loadedUrl ? savedBpmFor(loadedUrl) ?? 0 : 0);
       if (fallback > 0) {
         const liveOwns = micEq.getSource() === 'mic' || micEq.getSource() === 'display';
         beatEngine.setBase(liveOwns || !loadedUrl ? 'wall' : 'track');
@@ -489,13 +531,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
     }
     if (!beatEngine.start()) return;
     setSyncRunning(true);
-    if (beatEngine.getBpm() > 0 && loadedUrl) {
-      const map = readBpmMap();
-      map[loadedUrl] = beatEngine.getBpm();
-      try {
-        localStorage.setItem(BPM_MAP_KEY, JSON.stringify(map));
-      } catch { /* private mode */ }
-    }
+    if (beatEngine.getBpm() > 0 && loadedUrl) rememberBpm(loadedUrl, beatEngine.getBpm());
   }
 
   function handleStopSync() {
@@ -834,7 +870,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
     };
   }, [dockedLeft, minimized]);
 
-  const savedBpm = loadedUrl ? readBpmMap()[loadedUrl] : undefined;
+  const savedBpm = loadedUrl ? savedBpmFor(loadedUrl) : undefined;
   // SP-8 — a playlist/album can't be per-track-analyzed; steer to live/tap.
   const loadedIsCollection = loadedUrl ? parseSpotifyUrl(loadedUrl)?.type !== 'track' : false;
   const tapsHint =
@@ -1016,6 +1052,11 @@ export function MusicDock({ onClose }: MusicDockProps) {
       />
       {playerState === 'loading' && (
         <div className="twitch-status">Loading player…</div>
+      )}
+      {playerState === 'error' && (
+        <div className="twitch-status twitch-status-error">
+          Spotify player could not load (blocked or offline). The beat grid still works with Tab audio, a local file, or tap tempo.
+        </div>
       )}
 
       {/* M.10 — primary beat-sync line. BPM auto-starts the grid; this

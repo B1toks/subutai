@@ -9,10 +9,16 @@ import type { AmbientTheme } from '../audio/AudioController';
 function readCurrentTheme(): AmbientTheme {
   if (typeof document === 'undefined') return 'wood';
   const raw = document.documentElement.getAttribute('data-theme');
-  if (raw === 'wood-light' || raw === 'cyberpunk' || raw === 'fantasy' || raw === 'wood') {
+  if (
+    raw === 'wood-light' ||
+    raw === 'cyberpunk' ||
+    raw === 'fantasy' ||
+    raw === 'wood' ||
+    raw === 'neon'
+  ) {
     return raw;
   }
-  return 'wood';
+  return 'neon';
 }
 
 /**

@@ -19,7 +19,11 @@ interface SevenTvEmote {
 function emoteUrl(e: SevenTvEmote): string | null {
   const host = e.data?.host;
   if (!host?.url) return null;
-  // host.url is protocol-relative: //cdn.7tv.app/emote/<id>
+  // host.url is protocol-relative: //cdn.7tv.app/emote/<id>. Only accept
+  // the 7TV CDN itself (and a sane emote name) so a compromised or spoofed
+  // API response can't point <img> tags at arbitrary hosts.
+  if (!/^\/\/cdn\.7tv\.app\/emote\/[A-Za-z0-9]+$/.test(host.url)) return null;
+  if (typeof e.name !== 'string' || e.name.length === 0 || e.name.length > 100) return null;
   return `https:${host.url}/1x.webp`;
 }
 
