@@ -846,7 +846,9 @@ function App() {
   // or ROOK is taken (plain captures only). Color codes the loss —
   // queen reads red, rook reads electric blue. Kept under 3 flashes/sec
   // for photosensitivity; reduced-motion hides it entirely.
-  const [captureStrobe, setCaptureStrobe] = useState<'queen' | 'rook' | null>(null);
+  const [captureStrobe, setCaptureStrobe] = useState<
+    'queen' | 'rook' | 'bishop' | 'knight' | null
+  >(null);
   // R17c — rotation dust wave: an expanding shockwave ring when a topology
   // rotation commits (human, AI, chat or PvP — all come through the log).
   const [rotationDust, setRotationDust] = useState(false);
@@ -1085,12 +1087,15 @@ function App() {
   //   subutaiEncourage()                          — a losing-position nudge
   //                                                 (+ pulses the Rotate btn)
   //   subutaiFX.check()                           — the red check vignette
-  //   subutaiFX.strobe('queen' | 'rook')           — the big-capture strobe
+  //   subutaiFX.strobe('queen'|'rook'|'bishop'|'knight') — the capture strobe
   //   subutaiFX.dust()                             — the rotation dust wave
+  //   subutaiFX.mate()                             — the checkmate iris + shatter
   // The FX ones normally fire only off real game events (a landed check,
-  // a queen/rook capture, a committed rotation) — there was no way to QA
-  // them without playing a whole line out. This exposes the same setters
-  // the real triggers use, so a reviewer can fire each one in isolation.
+  // a non-pawn capture, a committed rotation, an actual mate) — there was
+  // no way to QA them without playing a whole line out. This exposes the
+  // same setters the real triggers use, so a reviewer can fire each one
+  // in isolation. (subutaiFX.mate is attached by a separate effect further
+  // down, once mateKingPos exists — merges onto this same object.)
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const trigger = (t: VictoryTheme = 'red') => launchVictory(t === 'blue' ? 'blue' : 'red');
@@ -1105,7 +1110,7 @@ function App() {
         setCheckVignette(true);
         window.setTimeout(() => setCheckVignette(false), 900);
       },
-      strobe: (piece: 'queen' | 'rook' = 'queen') => {
+      strobe: (piece: 'queen' | 'rook' | 'bishop' | 'knight' = 'queen') => {
         setCaptureStrobe(piece);
         window.setTimeout(() => setCaptureStrobe(null), 760);
       },
@@ -3323,10 +3328,19 @@ function App() {
     setCaptureShake(true);
     const t1 = setTimeout(() => setCaptureFxSquare(null), 620);
     const t2 = setTimeout(() => setCaptureShake(false), 300);
-    // R17c — strobe frames only when the victim was a major piece.
+    // R17c/M.22 — strobe frames on any non-pawn capture. Pawns keep just
+    // the plain capture-burst spark (they're the most common loss, and
+    // keeping them "lighter" preserves the hierarchy: losing a piece that
+    // isn't a pawn is the moment worth a bigger flourish).
     const victim = prevBoardRef.current?.pieces[mv.to as SquareId];
     let t3: ReturnType<typeof setTimeout> | null = null;
-    if (victim && (victim.type === 'queen' || victim.type === 'rook')) {
+    if (
+      victim &&
+      (victim.type === 'queen' ||
+        victim.type === 'rook' ||
+        victim.type === 'bishop' ||
+        victim.type === 'knight')
+    ) {
       setCaptureStrobe(victim.type);
       t3 = setTimeout(() => setCaptureStrobe(null), 760);
     }

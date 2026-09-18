@@ -7307,12 +7307,6 @@ body.checkmate-flash::after {
   animation: enpassant-pulse 0.8s ease-in-out infinite;
 }
 
-@keyframes enpassant-explode {
-  0%   { transform: scale(1); opacity: 1; }
-  50%  { transform: scale(2.5); opacity: 0.6; filter: brightness(1.5); }
-  100% { transform: scale(0); opacity: 0; }
-}
-
 /* R17a — cinema micro-FX: spark burst on a capture. The ::before ring
    flashes out from the impact; the ::after dot scatters 8 "sparks" as
    animated box-shadows (a pure-CSS particle burst — no extra DOM). */
@@ -7431,16 +7425,80 @@ body.checkmate-flash::after {
   }
 }
 
-.tile.enpassant-explosion::after {
-  content: '\1F4A5'; /* 💥 */
+/* M.22 — en passant used to just be a literal emoji character (\1F4A5
+   "💥") scaling up while fading. Upgraded to the same pure-CSS
+   spark-burst technique as the capture-burst FX (box-shadow-offset
+   particles, no extra DOM), but in a cool pale-blue/white "vanish" palette
+   instead of fiery orange — EP removes a pawn that was never actually
+   touched, so it should read as a puff/dissipation, not an impact. More
+   sparks (12 vs 8) and a longer throw than the plain capture-burst since
+   it's a rarer move worth the extra flourish. */
+.tile.enpassant-explosion::before {
+  content: '';
   position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 28px;
-  animation: enpassant-explode 0.7s ease-out forwards;
+  inset: 14%;
+  border-radius: 50%;
+  border: 2px solid rgba(235, 240, 255, 0.95);
+  animation: ep-ring 0.5s ease-out both;
   pointer-events: none;
+  z-index: 4;
+}
+
+.tile.enpassant-explosion::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(235, 240, 255, 0.9), transparent 70%);
+  animation:
+    ep-puff 0.75s ease-out both,
+    ep-sparks 0.8s ease-out both;
+  pointer-events: none;
+  z-index: 4;
+}
+
+@keyframes ep-ring {
+  0%   { transform: scale(0.3); opacity: 1; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+@keyframes ep-puff {
+  0%   { transform: scale(0.5); opacity: 0.85; }
+  100% { transform: scale(3.4); opacity: 0; }
+}
+
+@keyframes ep-sparks {
+  0% {
+    box-shadow:
+      0 0 0 rgba(255, 255, 255, 1), 0 0 0 rgba(200, 215, 255, 1),
+      0 0 0 rgba(255, 255, 255, 1), 0 0 0 rgba(200, 215, 255, 1),
+      0 0 0 rgba(255, 255, 255, 1), 0 0 0 rgba(200, 215, 255, 1),
+      0 0 0 rgba(255, 255, 255, 1), 0 0 0 rgba(200, 215, 255, 1),
+      0 0 0 rgba(255, 255, 255, 1), 0 0 0 rgba(200, 215, 255, 1),
+      0 0 0 rgba(255, 255, 255, 1), 0 0 0 rgba(200, 215, 255, 1);
+    opacity: 1;
+  }
+  100% {
+    box-shadow:
+      30px -34px 0 rgba(255, 255, 255, 0), -32px -22px 0 rgba(200, 215, 255, 0),
+      36px 14px 0 rgba(255, 255, 255, 0), -26px 32px 0 rgba(200, 215, 255, 0),
+      10px -40px 0 rgba(255, 255, 255, 0), -40px -6px 0 rgba(200, 215, 255, 0),
+      18px 38px 0 rgba(255, 255, 255, 0), -10px -38px 0 rgba(200, 215, 255, 0),
+      42px -12px 0 rgba(255, 255, 255, 0), -18px 40px 0 rgba(200, 215, 255, 0),
+      6px 42px 0 rgba(255, 255, 255, 0), -42px 16px 0 rgba(200, 215, 255, 0);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile.enpassant-explosion::before,
+  .tile.enpassant-explosion::after {
+    animation: none;
+    display: none;
+  }
 }
 
 /* --- Bot Slayer badge (Stage P addendum 8) ----------------------------- */
@@ -8831,6 +8889,20 @@ button:active:not(:disabled) {
 
 .capture-strobe.is-rook {
   --strobe-color: rgba(80, 170, 255, 0.24);
+}
+
+/* M.22 — strobe extended to minor pieces (was queen/rook only). Bishop
+   gets violet (diagonal/mystic), knight gets a warm gold-green (the odd
+   one out, matching its odd movement) — both dimmer than the majors
+   (0.20 vs 0.26/0.24) so losing a minor still reads as lighter than
+   losing a major, preserving the existing "how much did that hurt"
+   hierarchy the capture-burst spark alone doesn't convey. */
+.capture-strobe.is-bishop {
+  --strobe-color: rgba(160, 90, 230, 0.2);
+}
+
+.capture-strobe.is-knight {
+  --strobe-color: rgba(190, 210, 60, 0.2);
 }
 
 @keyframes capture-strobe-frames {
