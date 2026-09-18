@@ -3,6 +3,50 @@
 Loose ideas worth keeping, not yet scoped or built. Move an idea into
 `ROADMAP.md` (with a plan) once it's ready to actually build.
 
+## Focus / Ritual mode (not built)
+
+"Чи є Музика як ритуал/вайб — lo-fi chess під свій трек?" The building
+blocks already exist and are real (not stubs): MusicDock plays the
+player's own Spotify track/playlist alongside the game; BeatEngine does
+live BPM detection (essentia.js/TempoCNN) and syncs rotation, victory
+strobes, and capture timing to it; there's also a built-in generative
+ambient layer (Eno-style — quiet filtered floor + sparse mid-register
+notes, not static loops) with 4 theme-matched palettes and warm/dark/
+adaptive moods. What's missing is the RITUAL FRAMING around all of that:
+
+- No dedicated "Focus mode" that dims the UI chrome to something close to
+  just-the-board, signaling "this is a session, not a tab."
+- No default curated lo-fi preset — the player has to paste their own
+  Spotify link before any of the music system does anything.
+- No entrance beat — sitting down to play reads exactly like opening any
+  other web page, not like starting something.
+
+Candidate shape for a future session: a single toggle (maybe living next
+to ThemeToggle, or triggered by an idle/first-visit moment) that (a)
+dims/hides non-essential chrome, (b) auto-starts the built-in ambient
+layer with no Spotify link required, (c) plays a short, quiet entrance
+transition. Possibly the natural home for a lighter version of "rotation
+changes the theme" (see below) — a Focus-mode-only palette shift instead
+of applying it globally. Not scoped, not started.
+
+## Daily Trap Challenge (requested, not yet built)
+
+From the R15 self-play trap-mining work (`docs/R15-DATA-FINDINGS.md` §5):
+4807 self-play games surfaced a table of the most "trap-prone" chess960
+starting positions — early moves (4-10) where the eval swings hard
+against whoever just moved, i.e. positions that reliably fool players.
+User wants a Wordle-style daily feature built on this: one shared
+position/line per day, everyone plays the same trap, a potential sponsor
+slot on the daily header once there's real traffic to justify it.
+
+Needs actual scoping before building: how a "day" resolves the same
+position for everyone (server-driven pick vs. a deterministic seed from
+the date), what "solving" the trap means as a win condition (survive N
+moves? find the only non-losing reply? beat the position outright?),
+whether attempts are capped per day, and a results-sharing format (a
+Wordle-style emoji-grid summary is the obvious playbook). Candidate for
+the next work session — real feature, not a quick add.
+
 ## Rotate changes the theme — DONE 2026-09-14 (main, not the neon branch)
 
 User's idea, said in passing: when the board rotates (topology A → B), the
