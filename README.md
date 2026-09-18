@@ -14,6 +14,14 @@ A **Chess 960 variant** with dynamically rotating 2×2 board segments and custom
 - Custom castling rules adapted to the rotation mechanic
 - All standard rules + segment-rotation logic + global state synchronization
 
+## Playing
+
+- **Bot strength** — Casual / Normal / Strong. Strong is the full engine and the only level that counts for the leaderboard; the lighter levels are for learning the rotation mechanic and are saved as practice games.
+- **Time control** — None / 1 / 3 / 10 min per side against the bot. Clocks start on the first move; running out of time loses the game.
+- **Modes** — Classic (checkmate wins, rotation costs a tempo) and Roulette (spin a bag of piece types, two actions per turn, capture the king).
+- **Opponents** — the engine, a friend by 6-letter code (or Quick match), or hot-seat on one device.
+- **Themes** — Neon (default), Wood, Wood Light, Cyberpunk, Fantasy. The theme button sits in the settings tray at the bottom of the left rail.
+
 ## Streaming & interactive layer
 
 Subutai doubles as a stream toy — the audience plays along and the board reacts to music.
@@ -59,6 +67,14 @@ npm run dev
 ## Backend (optional)
 
 Display names, saved games, the leaderboard, and the feedback collector use Firebase (Anonymous Auth + Firestore) on the free Spark plan. The chess engine, classifier, and eval bar work fully offline without it. See [FIREBASE_SETUP.md](./FIREBASE_SETUP.md) for the setup walkthrough.
+
+`firestore.rules` validates every write (field shapes, size caps, leaderboard numbers must be backed by a saved game, match logs are append-only and turn-owned). Deploy them with `npx firebase-tools deploy --only firestore:rules` after any change.
+
+## Security notes
+
+- Production builds ship a Content-Security-Policy `<meta>` tag (injected by the Vite plugin in `vite.config.ts`); dev builds don't, so Vite HMR keeps working. If a new third-party integration is added, extend the policy there.
+- The Firebase web API key is public by design; restrict it by HTTP referrer in the Google Cloud console.
+- Audit, open items and the launch checklist: [docs/SECURITY-AUDIT-2026-09.md](./docs/SECURITY-AUDIT-2026-09.md), [docs/LAUNCH-CHECKLIST-V1.md](./docs/LAUNCH-CHECKLIST-V1.md).
 
 ## My role
 

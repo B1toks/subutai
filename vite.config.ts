@@ -24,7 +24,13 @@ const CSP = [
   "base-uri 'self'",
   "object-src 'none'",
   "form-action 'self'",
-  "script-src 'self' 'wasm-unsafe-eval' https://open.spotify.com https://open.spotifycdn.com https://api.deezer.com",
+  // The Spotify IFrame API bootstrap (open.spotify.com) chain-loads its real
+  // bundle from embed-cdn.spotifycdn.com (wildcard covers CDN renames), and
+  // that bundle evaluates code strings at runtime — verified in the
+  // production preview: without 'unsafe-eval' the player never initialises.
+  // The policy still forbids inline scripts and any origin not listed here,
+  // which is where the real XSS protection lives.
+  "script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' https://open.spotify.com https://*.spotifycdn.com https://api.deezer.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
   "img-src 'self' data: blob: https://cdn.7tv.app",
@@ -32,7 +38,7 @@ const CSP = [
   "worker-src 'self' blob:",
   "child-src 'self' blob: https://open.spotify.com",
   "frame-src https://open.spotify.com https://subutai-chess.firebaseapp.com",
-  "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://open.spotify.com https://api.deezer.com https://7tv.io https://api.ivr.fi wss://irc-ws.chat.twitch.tv https://fonts.googleapis.com https://fonts.gstatic.com",
+  "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://open.spotify.com https://*.spotifycdn.com https://api.deezer.com https://7tv.io https://api.ivr.fi wss://irc-ws.chat.twitch.tv https://fonts.googleapis.com https://fonts.gstatic.com",
   'upgrade-insecure-requests',
 ].join('; ');
 

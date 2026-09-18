@@ -1053,6 +1053,11 @@ export function MusicDock({ onClose }: MusicDockProps) {
       {playerState === 'loading' && (
         <div className="twitch-status">Loading player…</div>
       )}
+      {playerState === 'ready' && loadedUrl && (
+        <div className="music-dock-hint music-dock-hint-row">
+          Full tracks need a Spotify login in this browser; otherwise the embed plays 30s previews. For an exact beat grid use a local file or Tab audio.
+        </div>
+      )}
       {playerState === 'error' && (
         <div className="twitch-status twitch-status-error">
           Spotify player could not load (blocked or offline). The beat grid still works with Tab audio, a local file, or tap tempo.

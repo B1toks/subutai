@@ -160,6 +160,9 @@ type GameMode = 'classic' | 'roulette';
 
 const BOT_LEVEL_KEY = 'subutai_bot_level';
 
+/** V1 — seed of the very first game of a page load (see the `seed` state). */
+const FIRST_SEED = Date.now();
+
 function readInitialBotLevel(): BotStrength {
   try {
     const raw = localStorage.getItem(BOT_LEVEL_KEY);
@@ -705,20 +708,23 @@ function App() {
   const [watchingGame, setWatchingGame] = useState<WatchingGame | null>(null);
   const watchAutoplayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gameBackupRef = useRef<GameBackup | null>(null);
-  const [seed, setSeed] = useState<number>(1);
+  // V1 — every visit starts from a fresh chess960 position. The old fixed
+  // seed 1 meant everyone's first game was the same RQKRNBBN board until
+  // they pressed New game.
+  const [seed, setSeed] = useState<number>(() => FIRST_SEED);
   // Local single-player engine state. In multiplayer (Q.B.2) the rest of
   // App reads through the `state` / `legalMoves` / `log` / `lastMove`
   // const aliases below, which swap to mpSync-derived values; the local
   // setters keep firing for safety but their writes are visually inert
   // because the aliases ignore them.
-  const [stateLocal, setState] = useState<BoardState>(() => createStartingPosition(1));
-  const [initialState, setInitialState] = useState<BoardState>(() => createStartingPosition(1));
+  const [stateLocal, setState] = useState<BoardState>(() => createStartingPosition(FIRST_SEED));
+  const [initialState, setInitialState] = useState<BoardState>(() => createStartingPosition(FIRST_SEED));
   const [selected, setSelected] = useState<string | null>(null);
   const [legalMovesLocal, setLegalMoves] = useState<Move[]>(() =>
-    generateLegalMoves(createStartingPosition(1)),
+    generateLegalMoves(createStartingPosition(FIRST_SEED)),
   );
   const [logLocal, setLog] = useState<GameLog>(() =>
-    createGameLog('game-1', createStartingPosition(1), 1),
+    createGameLog(`game-${FIRST_SEED}`, createStartingPosition(FIRST_SEED), FIRST_SEED),
   );
   const [gameStatus, setGameStatus] = useState<GameStatus>('active');
   const [previewTopology, setPreviewTopology] = useState<TopologyState | null>(null);
