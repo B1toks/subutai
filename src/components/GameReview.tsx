@@ -74,6 +74,109 @@ function shortMoveText(entry: GameLog['moves'][number]): string {
   return entry.san ?? '?';
 }
 
+/** V1 — which log entries were the human's own actions. Replays the log
+ *  properly (rotations flip the side too), so roulette's 2-actions-per-turn
+ *  economy is handled instead of assuming even = human. */
+function humanTurnMask(log: GameLog): boolean[] {
+  let state: BoardState = log.initialState;
+  const mask: boolean[] = [];
+  for (const entry of log.moves) {
+    mask.push(state.sideToMove === HUMAN_COLOR);
+    if (entry.move.kind === 'topologyToggle') {
+      state = applyRotationMove(state);
+    } else if (entry.move.from && entry.move.to) {
+      state = applyMove(state, entry.move);
+    }
+  }
+  return mask;
+}
+
+interface TurningPoint {
+  idx: number;
+  cpl: number;
+  /** The move allowed a forced mate (classic) or hung the king (roulette):
+   *  the classifier reports a mate-scale loss there, which reads as a
+   *  nonsense number, so the card says what happened instead. */
+  decisive: boolean;
+  san: string;
+  better: string | null;
+  /** The human rotated on their previous action and blundered right after. */
+  afterOwnRotation: boolean;
+}
+
+/** Mate-scale losses (search returns ~100000 for a lost king) would swamp
+ *  any average; cap a single move's loss at a queen and a half. */
+const CPL_CAP = 1200;
+const MATE_SCALE_CPL = 50_000;
+
+/** V1 (data plan §5.1/5.2) — the human move that cost the most. R15 data:
+ *  25% of first blunders come straight after the player's OWN rotation,
+ *  so that case gets called out explicitly. */
+function findTurningPoint(
+  log: GameLog,
+  analyses: readonly MoveAnalysis[],
+  human: readonly boolean[],
+): TurningPoint | null {
+  let best: TurningPoint | null = null;
+  for (let i = 0; i < log.moves.length; i++) {
+    const a = analyses[i];
+    if (!human[i] || !a || log.moves[i].move.kind === 'topologyToggle') continue;
+    if (a.classification === 'brilliant' || a.classification === 'checkmate') continue;
+    if (a.cpl < 100) continue;
+    if (best && a.cpl <= best.cpl) continue;
+    let prevHuman = i - 1;
+    while (prevHuman >= 0 && !human[prevHuman]) prevHuman--;
+    best = {
+      idx: i,
+      cpl: Math.round(a.cpl),
+      decisive: a.cpl >= MATE_SCALE_CPL,
+      san: shortMoveText(log.moves[i]),
+      better: a.bestMoveSan ?? a.bestPvSan?.[0] ?? null,
+      afterOwnRotation:
+        prevHuman >= 0 && log.moves[prevHuman].move.kind === 'topologyToggle',
+    };
+  }
+  return best;
+}
+
+interface PhaseRow {
+  label: string;
+  avgCpl: number | null;
+  moves: number;
+}
+
+/** V1 (data plan §5.4) — average human CPL by game phase. The R15 corpus
+ *  says the opening (moves 1-10) is where people lose games; showing the
+ *  split makes that visible per game. */
+function phaseReport(
+  log: GameLog,
+  analyses: readonly MoveAnalysis[],
+  human: readonly boolean[],
+): PhaseRow[] {
+  const buckets = [
+    { label: 'Moves 1-10', lo: 1, hi: 10, sum: 0, n: 0 },
+    { label: 'Moves 11-20', lo: 11, hi: 20, sum: 0, n: 0 },
+    { label: 'Moves 21+', lo: 21, hi: Infinity, sum: 0, n: 0 },
+  ];
+  let fullMove = 0;
+  for (let i = 0; i < log.moves.length; i++) {
+    if (human[i]) fullMove++;
+    const a = analyses[i];
+    if (!human[i] || !a || log.moves[i].move.kind === 'topologyToggle') continue;
+    if (a.classification === 'brilliant' || a.classification === 'checkmate') continue;
+    const b = buckets.find((bk) => fullMove >= bk.lo && fullMove <= bk.hi);
+    if (b) {
+      b.sum += Math.min(CPL_CAP, a.cpl);
+      b.n++;
+    }
+  }
+  return buckets.map((b) => ({
+    label: b.label,
+    avgCpl: b.n ? Math.round(b.sum / b.n) : null,
+    moves: b.n,
+  }));
+}
+
 function humanQualityBonus(
   log: GameLog,
   analyses: readonly MoveAnalysis[],
@@ -246,6 +349,15 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
   const qualityBonus = useMemo(
     () => (result ? humanQualityBonus(log, result.moves) : 0),
     [log, result],
+  );
+  const humanMask = useMemo(() => humanTurnMask(log), [log]);
+  const turningPoint = useMemo(
+    () => (result ? findTurningPoint(log, result.moves, humanMask) : null),
+    [log, result, humanMask],
+  );
+  const phases = useMemo(
+    () => (result ? phaseReport(log, result.moves, humanMask) : []),
+    [log, result, humanMask],
   );
 
   const boardSnapshot = useMemo(
@@ -434,6 +546,45 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
             </div>
           )}
 
+          {/* V1 — the one move that decided the game, click to jump to it. */}
+          {result && turningPoint && (
+            <button
+              type="button"
+              className={`review-turning${turningPoint.idx + 1 === reviewIdx ? ' is-current' : ''}`}
+              onClick={() => setReviewIdx(turningPoint.idx + 1)}
+              title="Jump to this position"
+            >
+              <span className="review-turning-kicker">Turning point</span>
+              <span className="review-turning-line">
+                Move {Math.floor(turningPoint.idx / 2) + 1}: <strong>{turningPoint.san}</strong>{' '}
+                {turningPoint.decisive
+                  ? log.gameMode === 'roulette'
+                    ? 'left the king to be captured'
+                    : 'allowed a forced mate'
+                  : `cost ${turningPoint.cpl} cp`}
+                {turningPoint.better ? (
+                  <>
+                    . Better: <strong>{turningPoint.better}</strong>
+                  </>
+                ) : null}
+              </span>
+              {turningPoint.afterOwnRotation && (
+                <span className="review-turning-note">
+                  Right after your own rotation. 1 in 4 first blunders happen exactly here:
+                  re-check every piece after you twist the board.
+                </span>
+              )}
+            </button>
+          )}
+          {result && !turningPoint && (
+            <div className="review-turning review-turning-clean">
+              <span className="review-turning-kicker">No turning point</span>
+              <span className="review-turning-line">
+                No move lost 100 cp or more. Clean game.
+              </span>
+            </div>
+          )}
+
           {result && (
             <div className="game-review-stats">
               <Stat
@@ -476,6 +627,35 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
                   prefix="+"
                 />
               )}
+            </div>
+          )}
+
+          {/* V1 — your average loss per phase. Bars scale to 300 cp. */}
+          {result && phases.some((p) => p.avgCpl !== null) && (
+            <div className="review-phases" aria-label="Accuracy by phase">
+              <div className="review-phases-title">Your average loss by phase</div>
+              {phases.map((p) => (
+                <div key={p.label} className="review-phase-row">
+                  <span className="review-phase-label">{p.label}</span>
+                  <span className="review-phase-bar" aria-hidden>
+                    <span
+                      className={`review-phase-fill${
+                        p.avgCpl === null
+                          ? ''
+                          : p.avgCpl >= 150
+                            ? ' is-bad'
+                            : p.avgCpl >= 60
+                              ? ' is-mid'
+                              : ' is-good'
+                      }`}
+                      style={{ width: `${p.avgCpl === null ? 0 : Math.min(100, (p.avgCpl / 300) * 100)}%` }}
+                    />
+                  </span>
+                  <span className="review-phase-value">
+                    {p.avgCpl === null ? 'no moves' : `${p.avgCpl} cp`}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
 

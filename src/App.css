@@ -9783,6 +9783,106 @@ button:active:not(:disabled) {
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 30px rgba(255, 79, 216, 0.12);
 }
 
+/* Game Review 2.0: turning-point card + phase bars. */
+.review-turning {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  font-family: inherit;
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--danger-mid);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.2s ease;
+}
+.review-turning:hover,
+.review-turning.is-current {
+  border-color: var(--danger-bright);
+  box-shadow: var(--glow-danger);
+}
+.review-turning-clean {
+  border-color: var(--success);
+  cursor: default;
+}
+.review-turning-clean:hover {
+  box-shadow: none;
+  border-color: var(--success);
+}
+.review-turning-kicker {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.review-turning-line {
+  font-size: 13px;
+  line-height: 1.4;
+}
+.review-turning-line strong {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.review-turning-note {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--accent-amber-warm);
+}
+.review-phases {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-md);
+}
+.review-phases-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+.review-phase-row {
+  display: grid;
+  grid-template-columns: 82px 1fr 58px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.review-phase-label {
+  color: var(--text-secondary);
+}
+.review-phase-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.review-phase-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--success);
+  transition: width 0.4s ease;
+}
+.review-phase-fill.is-mid {
+  background: var(--accent-amber-warm);
+}
+.review-phase-fill.is-bad {
+  background: var(--danger-bright);
+}
+.review-phase-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
 /* Mobile: the header row wraps brand / controls / actions cleanly. */
 @media (max-width: 720px) {
   .app-header {

@@ -22,6 +22,8 @@ export interface GameReviewResult {
   };
 }
 
+const AVERAGE_CPL_CAP = 1200;
+
 /** Linear forgiving curve (Sprint 2.5). Friendlier than the chess.com
  *  exponential for casual play — a typical hobbyist game (~50 cpl) lands
  *  near 72%, a tough one (~150 cpl) still scores ~47%, and only truly
@@ -105,7 +107,12 @@ export async function analyzeGame(
     else if (a.classification === 'checkmate') checkmate++;
     else if (a.classification === 'best') bestCount++;
     if (a.classification !== 'checkmate' && a.classification !== 'brilliant') {
-      cplSum += a.cpl;
+      // V1 — a move that allows a forced mate (or hangs the king in
+      // roulette) carries a mate-scale loss (~100000 cp). Averaging that in
+      // raw produced "Avg. CPL 19986 / accuracy 0%" for any game with one
+      // such move. Cap a single move at a queen-and-a-half: still a
+      // blunder, no longer a number that swamps the whole game.
+      cplSum += Math.min(a.cpl, AVERAGE_CPL_CAP);
       cplDivisor++;
     }
   }
