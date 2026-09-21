@@ -696,7 +696,11 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
                   )}
                   {showCpl && a && (
                     <span className="review-cpl">
-                      (−{Math.round(a.cpl)} cp)
+                      {a.cpl >= MATE_SCALE_CPL
+                        ? log.gameMode === 'roulette'
+                          ? '(hangs the king)'
+                          : '(allows mate)'
+                        : `(−${Math.round(a.cpl)} cp)`}
                     </span>
                   )}
                   {betterText && (

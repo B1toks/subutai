@@ -3,7 +3,7 @@ import { applyMove } from '../engine/moves';
 import { applyRotationMove } from '../engine/auxetic';
 import type { GameLog } from '../recording/log';
 import { type MoveAnalysis } from './classify';
-import { classifyAsync } from './classifyClient';
+import { cancelPendingClassifications, classifyAsync } from './classifyClient';
 
 export interface GameReviewResult {
   /** Per-move analysis, parallel to log.moves. */
@@ -48,8 +48,18 @@ export async function analyzeGame(
     maxDepth?: number;
   },
 ): Promise<GameReviewResult> {
-  const budgetMs = opts?.budgetMs ?? 2000;
-  const maxDepth = opts?.maxDepth ?? 8;
+  // V1 (DEF-6) — a review that starts while another one is still running
+  // (React re-running the effect, or the player opening a second game)
+  // would otherwise queue behind it and show no progress for a minute.
+  cancelPendingClassifications();
+  // V1 — bound the wall-clock wait. The serial worker spends up to budgetMs
+  // per move, so a 60-ply game at the old flat 2000ms meant a two-minute
+  // stare at a spinner. Short games keep full depth; long ones trade a
+  // little search depth for a review that arrives while you still care.
+  const defaultBudget =
+    log.moves.length > 40 ? 900 : log.moves.length > 20 ? 1300 : 2000;
+  const budgetMs = opts?.budgetMs ?? defaultBudget;
+  const maxDepth = opts?.maxDepth ?? (log.moves.length > 40 ? 7 : 8);
   // Q.D.8: replay-side analysis must match the rules the game was played
   // under. Roulette games have no check enforcement; passing the option
   // keeps the worker's internal search consistent.
