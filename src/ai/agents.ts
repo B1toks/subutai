@@ -27,9 +27,26 @@ interface StrengthProfile {
   randomMoveChance: number;
 }
 
+/* V1 — measured, not guessed. scripts/bench-bot-levels.ts scores each level
+ * against a depth-8 reference search. The first cut (casual d2/25% slip,
+ * normal d4/no slip) came back at 116 vs 123 average centipawn loss: the
+ * two levels were indistinguishable, because search depth alone stops
+ * paying off quickly on this board while a slip costs material outright.
+ * The ladder below separates them with the lever that actually moves the
+ * number — how often the bot lets one go — and keeps depth as the slower
+ * second axis. Note the time budget only binds at strong: depth 2 and 4
+ * finish in well under their allowance, so the honest way to describe the
+ * lower levels to a player is depth + slip rate, never seconds.
+ *
+ * Measured after this change (24 positions, depth-8 reference; 3 games per
+ * level head to head, evaluation from the weaker side):
+ *   casual  154 cpl   42% agreement   -26.6 pawns vs strong
+ *   normal  128 cpl   63% agreement    -2.9 pawns vs strong
+ *   strong   33 cpl   71% agreement    reference
+ * Re-run scripts/bench-bot-levels.ts after touching these numbers. */
 const STRENGTH_PROFILE: Record<BotStrength, StrengthProfile> = {
-  casual: { budgetMs: 120, maxDepth: 2, randomMoveChance: 0.25 },
-  normal: { budgetMs: 350, maxDepth: 4, randomMoveChance: 0 },
+  casual: { budgetMs: 150, maxDepth: 2, randomMoveChance: 0.35 },
+  normal: { budgetMs: 400, maxDepth: 4, randomMoveChance: 0.1 },
   strong: { budgetMs: 800, maxDepth: 6, randomMoveChance: 0 },
 };
 

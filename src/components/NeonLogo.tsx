@@ -2,10 +2,16 @@ import { useEffect, useState } from 'react';
 import { useToast } from './Toast';
 import { audio } from '../audio/AudioController';
 
-/* Design try-on (design/neon-stitch): the Stitch logo — a neon diamond with
- * rotation arrows around a crown — plus four riffs on the same language
- * (rotation = auxetic topology, crown = capture-the-king). Click the mark to
- * cycle all 5; the pick persists so it survives reloads while comparing. */
+/* The app-wide brand mark: a diamond with rotation arrows around a crown
+ * (rotation = auxetic topology, crown = capture-the-king), plus four riffs
+ * on the same language. Click to cycle; the pick persists.
+ *
+ * V1 — the mark is drawn from THEME TOKENS, not the neon palette it was
+ * born in. It shipped with hardcoded cyan/magenta, which read as a sticker
+ * from another product on the wood, wood-light and fantasy boards. Inline
+ * SVG resolves CSS custom properties normally, so every stroke below
+ * follows whatever [data-theme] is active: gold-on-bronze in wood, violet
+ * in fantasy, cyan/magenta in neon. */
 
 const STORAGE_KEY = 'subutai_logo_variant';
 const NAMES = [
@@ -16,9 +22,10 @@ const NAMES = [
   'S monogram',
 ] as const;
 
-const CYAN = '#4ee1ff';
-const MAGENTA = '#ff4fd8';
-const ICE = '#e9edff';
+/** Primary line (the frame), secondary (the crown), and the light core. */
+const CYAN = 'var(--accent-primary)';
+const MAGENTA = 'var(--accent-secondary)';
+const ICE = 'var(--text-primary)';
 
 function Crown({ size = 10, y = 0 }: { size?: number; y?: number }) {
   const s = size;
@@ -88,6 +95,8 @@ function variantSvg(i: number) {
       return (
         <svg viewBox="-32 -32 64 64" role="img" aria-hidden>
           <defs>
+            {/* stop-color also accepts custom properties, so the monogram
+                gradient tracks the theme like every other variant. */}
             <linearGradient id="neon-s-grad" x1="0" y1="0" x2="1" y2="1">
               <stop offset="0" stopColor={CYAN} />
               <stop offset="1" stopColor={MAGENTA} />

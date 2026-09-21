@@ -139,6 +139,14 @@
   /* Subutai signature: 2×2 block seam-line color */
   --seam-color: rgba(212, 175, 55, 0.15);
 
+  /* V1 — last-move highlight. Used to be one hardcoded cornflower blue in
+     every theme, which fought the wood room and the fantasy parchment.
+     Each theme now names its own; the selected-square outline stays gold/
+     accent so the two never read as the same signal. */
+  --last-move-fill: rgba(196, 150, 60, 0.3);
+  --last-move-fill-strong: rgba(214, 170, 74, 0.42);
+  --last-move-ring: rgba(240, 206, 130, 0.55);
+
   /* Sprint 2.7 — sacrifice highlight tone (R, G, B as bare numbers so
      animation rules can compose rgba(var(--sacrifice-color), alpha)). */
   --sacrifice-color: 168, 85, 247;
@@ -267,6 +275,11 @@
   /* Seam: faint dark hint */
   --seam-color: rgba(42, 24, 16, 0.1);
 
+  /* Last move: warm ochre, readable on a bright board */
+  --last-move-fill: rgba(206, 158, 48, 0.36);
+  --last-move-fill-strong: rgba(198, 146, 30, 0.5);
+  --last-move-ring: rgba(150, 105, 20, 0.5);
+
   /* Sacrifice: deeper violet for contrast on the off-white page. */
   --sacrifice-color: 124, 58, 237;
 
@@ -382,6 +395,11 @@
 
   /* Seam: faint cyan */
   --seam-color: rgba(93, 200, 214, 0.22);
+
+  /* Last move: the theme's own muted cyan */
+  --last-move-fill: rgba(93, 200, 214, 0.26);
+  --last-move-fill-strong: rgba(93, 200, 214, 0.36);
+  --last-move-ring: rgba(140, 225, 235, 0.5);
 
   /* Sacrifice: brighter neon violet on the matte-black page. */
   --sacrifice-color: 200, 100, 255;
@@ -502,6 +520,11 @@
   /* Seam: warm gold */
   --seam-color: rgba(201, 160, 98, 0.2);
 
+  /* Last move: arcane violet, the theme's secondary voice */
+  --last-move-fill: rgba(150, 110, 210, 0.3);
+  --last-move-fill-strong: rgba(160, 120, 224, 0.42);
+  --last-move-ring: rgba(196, 164, 250, 0.55);
+
   /* Sacrifice: royal gold */
   --sacrifice-color: 218, 165, 32;
 
@@ -616,6 +639,11 @@
 
   /* Seam: cyan */
   --seam-color: rgba(78, 225, 255, 0.3);
+
+  /* Last move: electric cyan (replaces the old per-theme override block) */
+  --last-move-fill: rgba(78, 225, 255, 0.16);
+  --last-move-fill-strong: rgba(78, 225, 255, 0.24);
+  --last-move-ring: rgba(78, 225, 255, 0.55);
 
   /* Sacrifice: hot magenta */
   --sacrifice-color: 255, 79, 216;
@@ -1201,6 +1229,45 @@
   }
 }
 
+/* V1 SIDEBAR_STEPS — the right column used to stop growing at 320px, so on
+   a 1440p/4K screen the board kept scaling while the panels stayed a thin
+   strip. Both step up together; the board-size effect in App.tsx mirrors
+   these exact numbers (sidebar 320 / 400 / 460, cap 820 / 900 / 1000). */
+@media (min-width: 1700px) {
+  .app-root {
+    max-width: 1500px;
+  }
+  .app-body {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
+  }
+  .sidebar-panel {
+    padding: var(--space-4);
+  }
+  .sidebar-moves .move-log-text {
+    max-height: 340px;
+    font-size: 13px;
+  }
+}
+
+@media (min-width: 2100px) {
+  .app-root {
+    max-width: 1760px;
+  }
+  .app-body {
+    grid-template-columns: minmax(0, 1fr) minmax(380px, 460px);
+  }
+  .sidebar-panel-title {
+    font-size: 12px;
+  }
+  .sidebar-analysis .analysis-eval {
+    font-size: 26px;
+  }
+  .sidebar-moves .move-log-text {
+    max-height: 420px;
+    font-size: 14px;
+  }
+}
+
 /* R14 — display-scale row in the help dialog. */
 .help-scale-row {
   display: flex;
@@ -1765,12 +1832,12 @@
 }
 
 .tile.last-from::before {
-  background: rgba(100, 140, 220, 0.45);
+  background: var(--last-move-fill);
 }
 
 .tile.last-to::before {
-  background: rgba(100, 140, 220, 0.55);
-  box-shadow: inset 0 0 0 2px rgba(140, 180, 255, 0.6);
+  background: var(--last-move-fill-strong);
+  box-shadow: inset 0 0 0 2px var(--last-move-ring);
 }
 
 /* S2.4 — engine hint pair. Teal so it can't be confused with the blue
@@ -6652,9 +6719,10 @@ body.checkmate-flash::after {
    those buttons + add a stale material-score chip and a second rotate
    icon, so we hide it wholesale. Reveals again on game-over so the
    user can hit "New game" / "Lock formation" from the standard row. */
-.app-shell[data-opponent-mode='local'][data-game-active='1'] .board-actions {
-  display: none;
-}
+/* V1 — the standard action row stays visible in local hot-seat too: it is
+   the white seat's row (and the only place with New game / Lock formation).
+   Hiding it used to leave the board with a duplicate, differently-aligned
+   set of buttons before the first move and no way to restart mid-game. */
 
 /* Sprint 4.3.1 — soft-locked opponent tab during an active local game.
    Uses aria-disabled + class (not the disabled attribute) so the click
@@ -9315,13 +9383,12 @@ button:active:not(:disabled) {
   box-shadow: var(--glow-accent);
 }
 
-/* Last-move tiles: cyan wash */
-[data-theme="neon"] .tile.last-from::before {
-  background: rgba(78, 225, 255, 0.16);
-}
-[data-theme="neon"] .tile.last-to::before {
-  background: rgba(78, 225, 255, 0.22);
-  box-shadow: inset 0 0 0 1px rgba(78, 225, 255, 0.5);
+/* Last-move tiles are token-driven now (--last-move-* per theme). */
+
+/* V1 — the wordmark gets a soft halo in every theme, in that theme's own
+   accent; neon keeps its louder dual-color version below. */
+.app-header h1 {
+  text-shadow: 0 0 14px color-mix(in srgb, var(--accent-primary) 35%, transparent);
 }
 
 /* Wordmark: ice core with a dual cyan/magenta halo, like the logo */
@@ -9366,7 +9433,8 @@ button:active:not(:disabled) {
 }
 .neon-logo-btn:hover {
   transform: scale(1.06);
-  filter: drop-shadow(0 0 8px rgba(78, 225, 255, 0.5));
+  /* Theme-driven like the mark itself (was a fixed cyan glow). */
+  filter: drop-shadow(0 0 8px var(--accent-primary));
 }
 .neon-logo-btn svg {
   width: 100%;
@@ -9781,6 +9849,176 @@ button:active:not(:disabled) {
 [data-theme="neon"] .mp-completion-dialog {
   border: 1px solid rgba(78, 225, 255, 0.28);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 30px rgba(255, 79, 216, 0.12);
+}
+
+/* V1 — busy overlay: covers a transition that does its work in one React
+   commit (leaving a replay, restoring a saved game) so the tab never looks
+   frozen without explanation. */
+.busy-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg-deep) 72%, transparent);
+  backdrop-filter: blur(3px);
+  animation: busy-fade-in 120ms ease-out;
+}
+@keyframes busy-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.busy-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-elevated);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+.busy-label {
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .busy-overlay { animation: none; }
+}
+
+/* V1 — first-visit welcome screen. Full takeover, theme-token driven so it
+   reads correctly on wood and fantasy as well as neon. */
+.welcome-root {
+  position: fixed;
+  inset: 0;
+  z-index: 9600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-3);
+  overflow-y: auto;
+  background:
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent-primary) 12%, transparent), transparent 60%),
+    var(--bg-deep);
+  animation: busy-fade-in 200ms ease-out;
+}
+.welcome-card {
+  width: min(560px, 100%);
+  margin: auto;
+  padding: var(--space-5) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-elevated);
+  text-align: center;
+}
+.welcome-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 44px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: var(--text-primary);
+  text-shadow: 0 0 18px color-mix(in srgb, var(--accent-primary) 40%, transparent);
+}
+.welcome-tagline {
+  margin: var(--space-2) 0 var(--space-4);
+  font-size: 15px;
+  color: var(--text-secondary);
+}
+.welcome-points {
+  list-style: none;
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  text-align: left;
+}
+.welcome-points li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.welcome-points strong {
+  color: var(--text-primary);
+}
+.welcome-point-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--accent-primary);
+}
+.welcome-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.welcome-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 12px var(--space-4);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.15s ease, border-color 0.15s ease, box-shadow 0.2s ease;
+}
+.welcome-btn:hover {
+  transform: translateY(-1px);
+}
+.welcome-btn:active {
+  transform: translateY(0);
+}
+.welcome-btn-primary {
+  background: var(--accent-primary);
+  border: 1px solid var(--accent-primary);
+  color: var(--text-on-bright-gold);
+  box-shadow: var(--glow-accent);
+}
+.welcome-btn-primary:hover {
+  filter: brightness(1.08);
+}
+.welcome-btn-secondary {
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  color: var(--text-primary);
+}
+.welcome-btn-secondary:hover {
+  border-color: var(--accent-primary);
+}
+.welcome-footnote {
+  margin: var(--space-3) 0 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+@media (max-width: 480px) {
+  .welcome-card {
+    padding: var(--space-4) var(--space-3);
+  }
+  .welcome-title {
+    font-size: 34px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .welcome-root { animation: none; }
+  .welcome-btn:hover { transform: none; }
 }
 
 /* Game Review 2.0: turning-point card + phase bars. */

@@ -44,6 +44,7 @@ import { audio } from './audio/AudioController';
 import { Icon } from './components/Icon';
 import { Tooltip } from './components/Tooltip';
 import { TutorialOverlay, TUTORIAL_DONE_KEY } from './components/TutorialOverlay';
+import { WelcomeScreen, WELCOME_SEEN_KEY } from './components/WelcomeScreen';
 import {
   AlarmClock,
   AlertTriangle,
@@ -181,10 +182,23 @@ function readInitialBotLevel(): BotStrength {
   return 'strong';
 }
 
+/** V1 — what actually changes between levels, in the player's terms.
+ *  The numbers are the real search profile in src/ai/agents.ts, so the
+ *  panel never promises a difference the engine does not make. */
 const BOT_STRENGTH_HINT: Record<BotStrength, string> = {
-  casual: 'Relaxed bot: shallow search plus the occasional loose move. Practice only, not ranked.',
-  normal: 'Solid club-level bot. Practice only, not ranked.',
-  strong: 'Full-strength engine. The only level that counts for the leaderboard.',
+  casual:
+    'Looks 2 moves ahead and throws away about 1 move in 3 on purpose. It hangs pieces and misses simple tactics. Practice only, not ranked.',
+  normal:
+    'Looks 4 moves ahead and slips about 1 move in 10. It punishes anything you leave hanging but will hand you chances back. Practice only, not ranked.',
+  strong:
+    'Looks 6 moves ahead and never slips on purpose. Measured at about a quarter of the error the lower levels make. The leaderboard is this bot.',
+};
+
+/** One-line summary under the pills: the single fact that matters most. */
+const BOT_STRENGTH_SUMMARY: Record<BotStrength, string> = {
+  casual: 'Casual: 2 moves ahead, gives away 1 move in 3. Not ranked.',
+  normal: 'Normal: 4 moves ahead, slips 1 move in 10. Not ranked.',
+  strong: 'Strong: 6 moves ahead, no slips. Wins and survival count for the leaderboard.',
 };
 
 const ROULETTE_SLOT_COUNT = 4;
@@ -740,19 +754,58 @@ function App() {
   const [showHelp, setShowHelp] = useState(false);
   // S2.2 — first-launch tour. Defaults to open until the user finishes
   // or skips it once; replayable from the Help dialog.
-  const [showTutorial, setShowTutorial] = useState<boolean>(() => {
+  /* V1 — the tour no longer ambushes a first-time visitor. The welcome
+   * screen below runs first and the tour starts only if they ask for it
+   * (or from Rules & info). Returning players who never finished it are
+   * left alone. */
+  const [showTutorial, setShowTutorial] = useState<boolean>(false);
+  const [showWelcome, setShowWelcome] = useState<boolean>(() => {
     try {
-      return localStorage.getItem(TUTORIAL_DONE_KEY) !== '1';
+      // Anyone who already finished the old tour is not a first-timer.
+      if (localStorage.getItem(TUTORIAL_DONE_KEY) === '1') return false;
+      return localStorage.getItem(WELCOME_SEEN_KEY) !== '1';
     } catch {
       return false;
     }
   });
+  const dismissWelcome = useCallback((startTour: boolean) => {
+    try {
+      localStorage.setItem(WELCOME_SEEN_KEY, '1');
+    } catch { /* private mode — it will greet them again next visit */ }
+    setShowWelcome(false);
+    if (startTour) setShowTutorial(true);
+  }, []);
   const closeTutorial = useCallback(() => {
     try {
       localStorage.setItem(TUTORIAL_DONE_KEY, '1');
     } catch { /* private mode — show it again next visit */ }
     setShowTutorial(false);
   }, []);
+  /* V1 — busy overlay. Some transitions (leaving a replay, loading a saved
+   * game) do their work inside one React commit, so the tab simply stops
+   * repainting for a moment and reads as a hang. beginBusy paints a labelled
+   * spinner first and clears it after the browser has had two frames plus a
+   * short beat, which is long enough for the commit to land and short enough
+   * that a fast machine sees a deliberate blink, not a stutter. */
+  const [busyLabel, setBusyLabel] = useState<string | null>(null);
+  const busyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const beginBusy = useCallback((label: string) => {
+    if (busyTimerRef.current) clearTimeout(busyTimerRef.current);
+    setBusyLabel(label);
+    // A plain timer, deliberately NOT requestAnimationFrame: rAF is paused
+    // in a hidden or throttled tab, and an overlay that waits for a frame
+    // that never comes would leave the app covered by a spinner forever —
+    // the exact "frozen site" this is meant to explain away. Timers keep
+    // firing (clamped, not stopped), so the overlay always clears itself.
+    busyTimerRef.current = setTimeout(() => {
+      setBusyLabel(null);
+      busyTimerRef.current = null;
+    }, 420);
+  }, []);
+  useEffect(() => () => {
+    if (busyTimerRef.current) clearTimeout(busyTimerRef.current);
+  }, []);
+
   const [showMaterialPopup, setShowMaterialPopup] = useState(false);
   const [copied, setCopied] = useState(false);
   // Sprint 3.7 (rev 2) — Threat / Support toggles restored after the
@@ -1143,10 +1196,17 @@ function App() {
       // the panels become full-width bottom bars and reserve nothing.
       const reserved = window.innerWidth > 720 ? dock.left + dock.right : 0;
       // Above the grid collapse (880px, device px — CSS media queries
-      // ignore zoom) the right sidebar (320) + gaps/padding stay clear;
-      // below it the board takes the full width minus shell padding.
-      const chrome = window.innerWidth > 880 ? 392 : 32;
-      const cap = Math.min(820, Math.round(vh * 0.7));
+      // ignore zoom) the right sidebar + gaps/padding stay clear; below it
+      // the board takes the full width minus shell padding.
+      // V1 — the sidebar is no longer a flat 320: it steps up on big
+      // monitors (see the SIDEBAR_STEPS media queries in App.css), so the
+      // reserved chrome and the board cap follow the same steps. They must
+      // stay in sync or the board overflows its column.
+      const w = window.innerWidth;
+      const sidebar = w >= 2100 ? 460 : w >= 1700 ? 400 : 320;
+      const chrome = w > 880 ? sidebar + 72 : 32;
+      const capPx = w >= 2100 ? 1000 : w >= 1700 ? 900 : 820;
+      const cap = Math.min(capPx, Math.round(vh * 0.7));
       setBoardSize(Math.max(240, Math.min(vw - chrome - reserved, cap)));
     }
     recompute();
@@ -1690,6 +1750,10 @@ function App() {
       watchAutoplayRef.current = null;
     }
     const backup = gameBackupRef.current;
+    // V1 — restoring the paused game re-derives the board, legal moves and
+    // eval in one commit, which can visibly stall on a slow machine. Cover
+    // it so the app never looks frozen with no explanation.
+    beginBusy('Restoring your game');
     setWatchingGame(null);
     if (!backup) return;
 
@@ -4120,6 +4184,10 @@ function App() {
   }, []);
 
   const canRotate = useMemo(() => {
+    // V1 — a replay is a recording, not a game: nothing on the board may be
+    // acted on while watching (the rotate button used to stay live and the
+    // roulette Spin button leaked in from the mode the viewer left).
+    if (watchingGame) return false;
     if (currentPlayer !== 'human') return false;
     if (state.lastMoveWasRotation) return false; // back-to-back guard
 
@@ -4135,7 +4203,7 @@ function App() {
     if (!king) return false;
     const opp = state.sideToMove === 'white' ? 'black' : 'white';
     return !isSquareAttacked(toggled, king, opp as 'white' | 'black', toggled.topologyState);
-  }, [currentPlayer, state, gameMode, allowedPieceTypes, rouletteActionsLeft]);
+  }, [currentPlayer, state, gameMode, allowedPieceTypes, rouletteActionsLeft, watchingGame]);
 
   // R5 — nudge the player when they've been clearly behind for a couple of
   // moves, so a hard position reads as "keep fighting" rather than "resign".
@@ -5116,6 +5184,7 @@ function App() {
           board-actions row, so the wide banner is gone. */}
       {gameMode === 'roulette' &&
         gameStatus === 'active' &&
+        !watchingGame &&
         (allowedPieceTypes || isRouletteSpinning) && (
         <div className="roulette-panel">
           <div className="roulette-display">
@@ -5821,52 +5890,12 @@ function App() {
       </div>
       </div>
 
-      {/* Sprint 4.2 — bottom action row for the white-side player in
-          local 2P mode. Mirrors the top row, rendered upright. */}
-      {isLocalMode && gameStatus === 'active' && (
-        <div className="local-actions local-actions-bottom" aria-hidden={state.sideToMove !== 'white'}>
-          <button
-            type="button"
-            className="action-btn resign-btn"
-            onClick={requestResign}
-            disabled={log.moves.length === 0}
-            aria-label="Resign (white)"
-            title="Resign"
-          >
-            <Icon icon={Flag} size="md" aria-hidden />
-          </button>
-          <button
-            type="button"
-            className={`action-btn preview-btn${previewLocked ? ' active' : ''}`}
-            onClick={() => {
-              if (previewLocked) {
-                setPreviewLocked(false);
-                setLockedPreviewTopology(null);
-              } else {
-                setPreviewLocked(true);
-                setLockedPreviewTopology(state.topologyState === 'A' ? 'B' : 'A');
-              }
-            }}
-            aria-label={previewLocked ? 'Unlock rotation preview' : 'Preview rotation'}
-            title={previewLocked ? 'Unlock preview' : 'Preview rotation'}
-          >
-            <Icon icon={Eye} size="md" aria-hidden />
-          </button>
-          <button
-            type="button"
-            className={`rotate-btn-icon${encourageRotate && canRotate ? ' is-hint-pulsing' : ''}`}
-            onClick={handleRotate}
-            disabled={!canRotate}
-            aria-label={`Rotate ${state.topologyState} to ${state.topologyState === 'A' ? 'B' : 'A'}`}
-            title="Rotate board"
-          >
-            <Icon icon={RotateCw} size="md" aria-hidden />
-            <span className="rotate-label-text" aria-hidden>
-              {state.topologyState}{' → '}{state.topologyState === 'A' ? 'B' : 'A'}
-            </span>
-          </button>
-        </div>
-      )}
+      {/* V1 — the white seat uses the standard .board-actions row below,
+          exactly like every other mode. The mirrored row above the board
+          is the only local-mode extra (it serves the player sitting on the
+          far side). The old duplicate bottom row is gone: it repeated
+          resign / preview / rotate one row above the real one and pushed
+          the layout past the board's frame. */}
 
       {pendingPromotion && (
         <div className="promotion-backdrop" onClick={() => setPendingPromotion(null)}>
@@ -6051,6 +6080,7 @@ function App() {
             every subsequent turn without the button mounting at all. */}
         {gameMode === 'roulette' &&
           gameStatus === 'active' &&
+          !watchingGame &&
           allowedPieceTypes === null &&
           !isRouletteSpinning &&
           currentPlayer === 'human' &&
@@ -6245,16 +6275,20 @@ function App() {
                   <Icon icon={Bot} size="md" aria-hidden />
                   <span>vs AI</span>
                 </button>
+                {/* V1 — "vs Friend" undersold this tab: it is the whole
+                    online side (quick match against a stranger, or a
+                    private 6-letter code). "Online" pairs naturally with
+                    "Local" and matches what the lobby actually offers. */}
                 <button
                   type="button"
                   className={`opp-tab${opponentMode === 'friend' ? ' is-active' : ''}${oppLocked ? ' is-locked' : ''}`}
                   onClick={() => requestOpponentChange('friend')}
                   aria-disabled={oppLocked || undefined}
-                  title={oppLocked ? lockedTitle : 'Private match by code'}
+                  title={oppLocked ? lockedTitle : 'Play a real opponent: quick match, or a private code'}
                   disabled={!user || !displayName}
                 >
                   <Icon icon={Users} size="md" aria-hidden />
-                  <span>vs Friend</span>
+                  <span>Online</span>
                 </button>
                 {/* Sprint 4.1 — Local hot-seat. Both colours play from this
                     device; the AI scheduler short-circuits via the
@@ -6355,11 +6389,7 @@ function App() {
                   </button>
                 ))}
               </div>
-              <p className="setup-hint">
-                {botLevel === 'strong'
-                  ? 'Full strength. Wins and survival count for the leaderboard.'
-                  : 'Practice level: the game is saved but not ranked.'}
-              </p>
+              <p className="setup-hint">{BOT_STRENGTH_SUMMARY[botLevel]}</p>
             </>
           )}
           <h3 className="setup-sub-label">Time control</h3>
@@ -6526,7 +6556,8 @@ function App() {
         <MemoryPanel onGameActivate={onMemoryGameActivate} />
       )}
 
-      {!authLoading && user && !displayName && (
+      {/* The name prompt waits its turn behind the welcome screen. */}
+      {!authLoading && user && !displayName && !showWelcome && (
         <NamePicker
           mode="initial"
           uid={user.uid}
@@ -6837,6 +6868,24 @@ function App() {
 
       {/* S2.2 — first-launch tour. Only meaningful over the live game
           screen; suppressed in replays, multiplayer, and sub-views. */}
+      {/* V1 — first visit: one screen, two doors, then (optionally) the
+          tour. Never for a shared-game link or the kiosk/auto modes. */}
+      {showWelcome && view === 'game' && !watchingGame && !sharedGameId && (
+        <WelcomeScreen
+          onPlay={() => dismissWelcome(false)}
+          onTour={() => dismissWelcome(true)}
+        />
+      )}
+
+      {busyLabel && (
+        <div className="busy-overlay" role="status" aria-live="polite">
+          <div className="busy-card">
+            <span className="spinner" aria-hidden />
+            <span className="busy-label">{busyLabel}…</span>
+          </div>
+        </div>
+      )}
+
       {showTutorial && view === 'game' && !isMultiplayer && !watchingGame && (
         <TutorialOverlay onClose={closeTutorial} />
       )}
