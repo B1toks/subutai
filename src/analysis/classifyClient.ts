@@ -16,6 +16,7 @@ const NEUTRAL: MoveAnalysis = {
   classification: 'good',
   cpl: 0,
   searchScoreFromWhite: 0,
+  superseded: true,
 };
 
 /**

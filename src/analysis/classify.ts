@@ -36,6 +36,11 @@ export interface MoveAnalysis {
    * sees recaptures and tactics that a static evaluator misses.
    */
   searchScoreFromWhite: number;
+  /** V1 (DEF-6) — this request was dropped when a newer batch superseded it
+   *  (see cancelPendingClassifications). The numbers are placeholders, not
+   *  a verdict on the move: callers must not paint the eval bar or write
+   *  them into the game log. */
+  superseded?: boolean;
   /** True when the search found a forced mate from the post-move position. */
   isMate?: boolean;
   /** Plies until mate (0 = mate already on the board). Defined when isMate. */

@@ -2120,6 +2120,19 @@ function App() {
     [pushSearchEval, triggerFlash, flagClassifiedSquare],
   );
 
+  /** V1 (DEF-6) — record a finished classification and play its visuals.
+   *  A superseded result (its batch was cancelled when a Game Review
+   *  started) carries placeholder numbers: writing them would snap the
+   *  eval bar to 0.00 and log the move as plain "good", so it is dropped. */
+  const commitAnalysis = useCallback(
+    (moveIdx: number, analysis: MoveAnalysis, moveTo: SquareId | undefined) => {
+      if (analysis.superseded) return;
+      setLog((prev) => updateMoveAnalysisAt(prev, moveIdx, analysis));
+      applyClassifyVisuals(moveIdx, analysis, moveTo);
+    },
+    [applyClassifyVisuals],
+  );
+
   /**
    * Walks an imported log forward, classifying each move asynchronously.
    * Each step is its own setTimeout(0) so the UI stays responsive between
@@ -2158,6 +2171,7 @@ function App() {
             maxDepth: 7,
             allowSelfCheck: loadedLog.gameMode === 'roulette',
           });
+          if (a.superseded) continue; // DEF-6: dropped by a newer batch
           setLog((prev) =>
             prev.id === capturedId ? updateMoveAnalysisAt(prev, i, a) : prev,
           );
@@ -3203,14 +3217,13 @@ function App() {
             maxDepth: 7,
             allowSelfCheck: gameMode === 'roulette',
           });
-          setLog((prev) => updateMoveAnalysisAt(prev, moveIdx, aiAnalysis));
-          applyClassifyVisuals(moveIdx, aiAnalysis, move.to);
+          commitAnalysis(moveIdx, aiAnalysis, move.to);
         }
 
         checkGameOver(next, move.kind === 'topologyToggle');
       }, 650);
     },
-    [applyClassifyVisuals],
+    [commitAnalysis],
   );
 
   // Slim AI step for auto mode: no classifier round-trip, tighter delay.
@@ -3450,8 +3463,7 @@ function App() {
         maxDepth: 7,
         allowSelfCheck: false,
       }).then((analysis) => {
-        setLog((prev) => updateMoveAnalysisAt(prev, moveIdx, analysis));
-        applyClassifyVisuals(moveIdx, analysis, move.to);
+        commitAnalysis(moveIdx, analysis, move.to);
       });
       setState(afterMove);
       setLegalMoves(getLegalMoves(afterMove));
@@ -4002,8 +4014,7 @@ function App() {
         allowSelfCheck: gameMode === 'roulette',
       })
         .then((analysis) => {
-          setLog((prev) => updateMoveAnalysisAt(prev, moveIdx, analysis));
-          applyClassifyVisuals(moveIdx, analysis, resolvedMove.to);
+          commitAnalysis(moveIdx, analysis, resolvedMove.to);
         });
     }
 
@@ -4094,12 +4105,9 @@ function App() {
       budgetMs: scaleBudgetMs(1000),
       maxDepth: 7,
       allowSelfCheck: gameMode === 'roulette',
-    }).then(
-      (analysis) => {
-        setLog((prev) => updateMoveAnalysisAt(prev, moveIdx, analysis));
-        applyClassifyVisuals(moveIdx, analysis, move.to);
-      },
-    );
+    }).then((analysis) => {
+      commitAnalysis(moveIdx, analysis, move.to);
+    });
     checkGameOver(next);
   }
 
