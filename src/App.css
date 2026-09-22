@@ -3679,7 +3679,13 @@ body.checkmate-flash::after {
   inset: 0;
   z-index: 9500;
   cursor: pointer;
-  animation: victory-fade-in 0.2s ease-out both;
+  /* V1 — deliberately NO entrance animation. The scene used to fade in
+     from opacity 0 with fill-mode `both`, which means a stalled animation
+     engine leaves a full-screen overlay that is invisible but still on
+     top of everything. The canvas paints near-black on its very first
+     frame anyway, and it is handed the screen by an iris that has already
+     gone black, so there is nothing for a fade to smooth over. */
+  opacity: 1;
 }
 
 .victory-canvas {
@@ -3699,11 +3705,6 @@ body.checkmate-flash::after {
   color: rgba(255, 255, 255, 0.55);
   pointer-events: none;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
-}
-
-@keyframes victory-fade-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
 }
 
 /* R4 — first-press coach-mark inside the music dock. Slides in under
@@ -4622,57 +4623,133 @@ body.checkmate-flash::after {
 .music-style-dot[data-style="dark"] { background: #8b5cf6; }
 .music-style-dot[data-style="adaptive"] { background: var(--accent-teal-bright); }
 
-/* ── S2.5: per-side elapsed clocks ────────────────────────────────────
-   Sits between the mode cards and the board. The running side's chip
-   lights up, so this also reads as a quiet turn indicator. */
+/* ── S2.5 / V1: the tournament clock ──────────────────────────────────
+   Sits between the mode cards and the board. Two separate floating chips
+   read as two unrelated labels; the thing a player actually recognises is
+   the single unit on the table with two faces and a seam down the middle,
+   so that is what this is: one housing, two faces, a dashed seam, and the
+   running side lit. The numbers stay digital — an unlit 88:88 ghost with
+   the live time burning through it — because that is what a real DGT
+   shows; only the body is analogue.
+   The running face doubles as the turn indicator, as the old chips did. */
 
-.game-clocks {
+.tournament-clock {
+  position: relative;
   display: flex;
-  justify-content: center;
-  gap: var(--space-3);
-  margin: var(--space-2) 0;
+  width: fit-content;
+  margin: var(--space-2) auto;
+  padding: 5px;
+  border: 1px solid var(--btn-border);
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--bg-elevated), var(--bg-card));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 4px 12px rgba(0, 0, 0, 0.18);
 }
 
-.clock-chip {
+/* The seam. A pseudo-element rather than a border on the second face, so
+   it stays visible when the running face paints its own background. */
+.tournament-clock::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 9px;
+  bottom: 9px;
+  border-left: 1px dashed var(--border-subtle);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.tc-face {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 108px;
+  padding: 7px 18px 6px;
+  border-radius: 10px;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.tc-readout {
+  position: relative;
+  display: inline-block;
+  font-family: ui-monospace, 'Menlo', 'Consolas', monospace;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+}
+
+.tc-ghost {
+  position: absolute;
+  inset: 0;
+  color: var(--text-muted);
+  opacity: 0.15;
+}
+
+.tc-digits {
+  position: relative;
+  color: var(--text-secondary);
+  transition: color 0.2s, text-shadow 0.2s;
+}
+
+.tc-name {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  border-radius: var(--radius-full, 999px);
-  border: 1px solid var(--btn-border);
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  transition: color 0.2s, border-color 0.2s, box-shadow 0.2s;
+  gap: 5px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
-.clock-chip-dot {
-  width: 8px;
-  height: 8px;
+.tc-lamp {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: currentColor;
-  opacity: 0.5;
 }
 
-.clock-chip-white .clock-chip-dot { background: var(--piece-white-flat); opacity: 0.9; }
-.clock-chip-black .clock-chip-dot { background: var(--piece-black-flat); opacity: 0.9; box-shadow: 0 0 0 1px var(--text-muted); }
+.tc-face-white .tc-lamp { background: var(--piece-white-flat); opacity: 0.9; }
+.tc-face-black .tc-lamp {
+  background: var(--piece-black-flat);
+  opacity: 0.9;
+  box-shadow: 0 0 0 1px var(--text-muted);
+}
 
-.clock-chip.is-running {
+.tc-face.is-running {
+  background: var(--bg-card);
+  box-shadow:
+    inset 0 0 0 1px var(--accent-primary),
+    0 0 10px -3px var(--accent-primary);
+}
+
+.tc-face.is-running .tc-digits {
   color: var(--text);
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 8px rgba(212, 168, 67, 0.25);
+  text-shadow: 0 0 10px currentColor;
 }
 
-/* B8 — timed match, under 30s: the chip turns urgent. */
-.clock-chip.is-low {
-  color: var(--danger-pale);
-  border-color: var(--accent-danger);
+.tc-face.is-running .tc-name { color: var(--text-secondary); }
+.tc-face-white.is-running .tc-lamp { box-shadow: 0 0 8px var(--accent-primary); }
+.tc-face-black.is-running .tc-lamp {
+  box-shadow: 0 0 0 1px var(--text-muted), 0 0 8px var(--accent-primary);
 }
 
-.clock-chip.is-low.is-running {
-  box-shadow: 0 0 10px rgba(220, 38, 38, 0.45);
+/* B8 — timed match, under 30s: that face turns urgent. */
+.tc-face.is-low .tc-digits { color: var(--danger-pale); }
+
+.tc-face.is-low.is-running {
+  box-shadow:
+    inset 0 0 0 1px var(--accent-danger),
+    0 0 12px -3px var(--accent-danger);
   animation: afk-breathe 1s ease-in-out infinite;
+}
+
+@media (max-width: 720px) {
+  .tc-face { min-width: 88px; padding: 6px 12px 5px; }
+  .tc-readout { font-size: 18px; }
 }
 
 /* B8 — lobby time-control checkbox, matches the mode cards. */
@@ -9458,19 +9535,35 @@ button:active:not(:disabled) {
 }
 
 /* Clock chips: glassier, mock-sized */
-[data-theme="neon"] .clock-chip {
-  background: rgba(26, 22, 54, 0.85);
-  border-color: rgba(78, 225, 255, 0.25);
-  font-size: 14px;
-  padding: 5px 14px;
+/* Neon: the housing turns into a smoked-glass panel and the lit face
+   glows cyan, the way the rest of the neon chrome does. */
+[data-theme="neon"] .tournament-clock {
+  background: linear-gradient(180deg, rgba(32, 27, 66, 0.92), rgba(18, 15, 40, 0.92));
+  border-color: rgba(78, 225, 255, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 6px 18px rgba(0, 0, 0, 0.35);
 }
-[data-theme="neon"] .clock-chip.is-running {
-  border-color: rgba(78, 225, 255, 0.8);
-  box-shadow: 0 0 12px rgba(78, 225, 255, 0.35);
+[data-theme="neon"] .tournament-clock::before {
+  border-left-color: rgba(78, 225, 255, 0.3);
 }
-[data-theme="neon"] .clock-chip.is-low {
-  border-color: rgba(255, 79, 216, 0.8);
-  box-shadow: 0 0 12px rgba(255, 79, 216, 0.4);
+[data-theme="neon"] .tc-face.is-running {
+  background: rgba(78, 225, 255, 0.07);
+  box-shadow:
+    inset 0 0 0 1px rgba(78, 225, 255, 0.55),
+    0 0 14px -2px rgba(78, 225, 255, 0.5);
+}
+[data-theme="neon"] .tc-face.is-running .tc-digits {
+  text-shadow: 0 0 12px rgba(78, 225, 255, 0.85);
+}
+[data-theme="neon"] .tc-face.is-low.is-running {
+  background: rgba(255, 79, 216, 0.08);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 79, 216, 0.65),
+    0 0 14px -2px rgba(255, 79, 216, 0.55);
+}
+[data-theme="neon"] .tc-face.is-low.is-running .tc-digits {
+  text-shadow: 0 0 12px rgba(255, 79, 216, 0.8);
 }
 
 /* Layout experiment follow-ups (design/neon-stitch):
@@ -9757,56 +9850,74 @@ button:active:not(:disabled) {
 }
 
 /* The 960 / replay row reads as one strip of pills. */
+/* V1 rev 2 — this row was three separate 12px pills, which gave the
+   starting-rank code and two rarely-used utilities the same visual weight
+   as the board actions directly above them. It is one quiet strip now:
+   a single hairline container, the three slots divided by 1px seams,
+   everything one step smaller and one step dimmer. It only lights up
+   under the cursor. */
 .position-label-wrap {
-  gap: var(--space-2);
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
+  gap: 0;
+  padding: 2px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-card);
+}
+/* Seams between slots. Drawn with box-shadow rather than a border so
+   adding one never shifts the row by a pixel. */
+.position-label-wrap > * + * {
+  box-shadow: -1px 0 0 var(--border-subtle);
 }
 .position-replay-btn,
 .position-edit-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 12px;
-  font-size: 12px;
+  gap: 4px;
+  padding: 3px 9px;
+  font-size: 11px;
   font-weight: 600;
   font-family: inherit;
-  border-radius: 999px;
-  border: 1px solid var(--btn-border);
-  background: var(--btn-bg);
-  color: var(--text-secondary);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
   cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease, box-shadow 0.2s ease;
+  transition: color 0.15s ease, background 0.15s ease;
 }
 .position-replay-btn:hover,
 .position-edit-btn:hover {
   color: var(--text);
-  border-color: var(--accent-primary);
-  box-shadow: var(--glow-accent);
+  background: var(--bg-elevated);
 }
 .position-label-wrap .position-label {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 5px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-card);
-  font-size: 13px;
-  letter-spacing: 1.5px;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 11.5px;
+  letter-spacing: 1.2px;
   color: var(--text-secondary);
 }
 .position-label-key {
   font-family: var(--font-body);
-  font-size: 9.5px;
+  font-size: 8.5px;
   font-weight: 700;
   letter-spacing: 0.08em;
-  padding: 2px 6px;
+  padding: 1px 5px;
   border-radius: 999px;
   background: var(--bg-elevated);
   color: var(--text-muted);
 }
 .position-input {
-  border-radius: 999px;
-  padding: 5px 12px;
+  border-radius: 8px;
+  padding: 3px 9px;
+  font-size: 11.5px;
 }
 
 /* Memory panel: a card in the same family as the sidebar panels. */
@@ -10131,4 +10242,132 @@ button:active:not(:disabled) {
     width: 40px;
     height: 40px;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   V1 BUTTON SWEEP — every remaining control.
+
+   The redesign had reached the chrome around the board but stopped at
+   the edge of the dialogs, the tour, the lobby, the music dock and the
+   Twitch panel. Those were still carrying four different corner radii
+   (4 / 6 / 8 / --radius-md), no hover feedback on half of them, and no
+   focus ring anywhere, which is what makes a UI feel like two products
+   stitched together.
+
+   This is a system, not fourteen one-off blocks:
+     · 999px  small inline secondary actions (copy, watch, stop, replay)
+     · 10px   standard buttons inside cards and dialogs
+     · 12px   full-width primary actions
+   plus one hover treatment and one keyboard focus ring for all of them.
+   Nothing here touches display, width or layout — only the surface —
+   so no existing arrangement can shift.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── small inline secondary: pills ───────────────────────────────── */
+.copy-btn,
+.watch-btn,
+.watch-btn-stop,
+.auto-stop-btn,
+.leaderboard-replay-btn,
+.memory-refresh-btn,
+.music-dock-tap-btn,
+.music-dock-beat-btn {
+  border-radius: 999px;
+  font-weight: 600;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease,
+    box-shadow 0.2s ease;
+}
+
+.copy-btn:hover,
+.watch-btn:hover,
+.auto-stop-btn:hover,
+.leaderboard-replay-btn:hover,
+.music-dock-tap-btn:hover,
+.music-dock-beat-btn:hover {
+  color: var(--text);
+  border-color: var(--accent-primary);
+}
+
+/* ── standard: buttons that live inside a card or a dialog ───────── */
+.modal-btn,
+.mp-btn,
+.mp-back-btn,
+.summary-action-btn,
+.summary-share-btn,
+.help-tour-btn,
+.help-close-btn,
+.tour-next-btn,
+.tour-back-btn,
+.tour-skip-btn,
+.twitch-connect-btn,
+.twitch-close-btn,
+.friend-lobby-secondary-btn,
+.music-dock-load-btn,
+.music-dock-file-btn,
+.music-dock-pl-analyze-btn,
+.music-dock-pl-newbtn {
+  border-radius: 10px;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    box-shadow 0.2s ease;
+}
+
+/* ── full-width primary actions ──────────────────────────────────── */
+.panel-action-btn,
+.friend-lobby-primary-btn,
+.spin-roulette-btn-compact {
+  border-radius: 12px;
+}
+
+/* A bordered button lights its border under the cursor; a filled one
+   lifts instead, because a border it does not have cannot glow. */
+.modal-btn-secondary:hover,
+.mp-btn-secondary:hover,
+.help-tour-btn:hover,
+.tour-back-btn:hover,
+.tour-skip-btn:hover,
+.friend-lobby-secondary-btn:hover,
+.music-dock-load-btn:hover,
+.music-dock-file-btn:hover {
+  border-color: var(--accent-primary);
+  color: var(--text);
+}
+
+.modal-btn-primary:hover,
+.modal-btn-danger:hover,
+.mp-btn-primary:hover,
+.tour-next-btn:hover,
+.twitch-connect-btn:hover,
+.friend-lobby-primary-btn:hover,
+.panel-action-btn:hover {
+  filter: brightness(1.08);
+}
+
+/* ── one keyboard focus ring for the whole app ───────────────────── */
+/* None of these had one. :focus-visible only fires for keyboard and
+   assistive-tech focus, so pointer users never see it. */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  /* No border-radius here: the outline already follows the element's own
+     corners, and setting one would make a focused button change shape. */
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+/* Neon: the same sweep, with the glow this theme uses everywhere else. */
+[data-theme="neon"] .copy-btn:hover,
+[data-theme="neon"] .watch-btn:hover,
+[data-theme="neon"] .auto-stop-btn:hover,
+[data-theme="neon"] .leaderboard-replay-btn:hover,
+[data-theme="neon"] .modal-btn-secondary:hover,
+[data-theme="neon"] .mp-btn-secondary:hover,
+[data-theme="neon"] .help-tour-btn:hover,
+[data-theme="neon"] .tour-back-btn:hover,
+[data-theme="neon"] .friend-lobby-secondary-btn:hover,
+[data-theme="neon"] .music-dock-load-btn:hover,
+[data-theme="neon"] .music-dock-file-btn:hover {
+  box-shadow: 0 0 10px -2px var(--accent-primary);
 }

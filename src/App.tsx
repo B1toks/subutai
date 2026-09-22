@@ -28,7 +28,7 @@ import { type MoveClass, type MoveAnalysis } from './analysis/classify';
 import { classifyAsync } from './analysis/classifyClient';
 import { NamePicker } from './components/NamePicker';
 import { useToast } from './components/Toast';
-import type { VictoryTheme } from './components/VictoryScene';
+import type { EndgameKind, KingOrigin, VictoryTheme } from './components/EndgameScene';
 import { GameSummary } from './components/GameSummary';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { FeedbackModal } from './components/FeedbackModal';
@@ -143,8 +143,17 @@ const MusicDock = lazy(() =>
   import('./components/MusicDock').then((m) => ({ default: m.MusicDock })),
 );
 // R6 — pixel victory cinematic; loaded only when a tense win triggers it.
-const VictoryScene = lazy(() =>
-  import('./components/VictoryScene').then((m) => ({ default: m.VictoryScene })),
+/**
+ * The endgame cinematic is code-split, but it is handed the screen by the
+ * checkmate iris on a hard cut: if the chunk is still in flight when the
+ * iris ends, the board flashes back into view for a few hundred ms before
+ * going black again. So the import is also callable on its own, and the
+ * iris kicks it off the moment it starts closing — by the time it hands
+ * over, the module is in cache and React's lazy resolves in a microtask.
+ */
+const importEndgameScene = () => import('./components/EndgameScene');
+const EndgameScene = lazy(() =>
+  importEndgameScene().then((m) => ({ default: m.EndgameScene })),
 );
 
 type GameStatus =
@@ -311,11 +320,19 @@ function bumpEvalForMove(
 const BEAT_SLIDE_MS = 260;
 
 // S2.5 — mm:ss elapsed-time display for the per-side clocks.
-function formatClock(ms: number): string {
+/**
+ * V1 — fixed-width MM:SS for the tournament clock face.
+ *
+ * This used to be a "m:ss" formatter, which is fine in a sentence but
+ * wrong on a clock: the digits shift sideways the moment the tens column
+ * drops, and the unlit "88:88" ghost behind them stops lining up. Pads to
+ * two, and grows past 99 minutes rather than truncating.
+ */
+function formatClockFace(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
-  return `${m}:${String(s).padStart(2, '0')}`;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 const MOVE_CLASS_MARKER: Record<MoveClass, string> = {
@@ -1242,17 +1259,19 @@ function App() {
   // R6 — worst eval the human faced this game (most negative from white's
   // side). A tense, come-from-behind win triggers the victory cinematic.
   const worstHumanEvalRef = useRef(0);
-  const [victoryTheme, setVictoryTheme] = useState<VictoryTheme | null>(null);
-  // R17b — every victory entrance goes through the freeze beat: ~0.65s of
-  // dimmed stillness (the held breath from the storyboard), THEN the scene.
-  const launchVictory = useCallback((t: VictoryTheme) => {
-    if (victoryFreezeTimer.current) clearTimeout(victoryFreezeTimer.current);
-    setVictoryFreeze(true);
-    victoryFreezeTimer.current = setTimeout(() => {
-      setVictoryFreeze(false);
-      setVictoryTheme(t);
-    }, 650);
-  }, []);
+  // V1 — the endgame cut currently on screen (win or loss), or null.
+  // `king` is where the losing king stood, in viewport pixels, so the
+  // cinematic can start by lifting THAT piece off THAT square; `prelude`
+  // is the dark lead-in the scene has to play itself when the checkmate
+  // iris did not already black the room out.
+  // The launcher lives further down, next to mateKingPos — it needs the
+  // king's board position and that is declared around line 4400 (TDZ).
+  const [endgameCut, setEndgameCut] = useState<{
+    kind: EndgameKind;
+    theme: VictoryTheme;
+    king: KingOrigin | null;
+    prelude: number;
+  } | null>(null);
   useEffect(() => {
     if (searchEvalFromWhite !== null && searchEvalFromWhite < worstHumanEvalRef.current) {
       worstHumanEvalRef.current = searchEvalFromWhite;
@@ -1261,22 +1280,22 @@ function App() {
   // Console seams — preview the big moments on demand without having to
   // play them out for real. Attached in production too (harmless hidden
   // globals) so they work on the live site's DevTools:
-  //   subutaiVictory()  / subutaiVictory('blue')  — the victory cinematic
   //   subutaiEncourage()                          — a losing-position nudge
   //                                                 (+ pulses the Rotate btn)
   //   subutaiFX.check()                           — the red check vignette
   //   subutaiFX.strobe('queen'|'rook'|'bishop'|'knight') — the capture strobe
   //   subutaiFX.dust()                             — the rotation dust wave
-  //   subutaiFX.mate()                             — the checkmate iris + shatter
+  //   subutaiFX.mate()                             — the checkmate iris
   // The FX ones normally fire only off real game events (a landed check,
   // a non-pawn capture, a committed rotation, an actual mate) — there was
   // no way to QA them without playing a whole line out. This exposes the
   // same setters the real triggers use, so a reviewer can fire each one
-  // in isolation. (subutaiFX.mate is attached by a separate effect further
-  // down, once mateKingPos exists — merges onto this same object.)
+  // in isolation. (subutaiFX.mate and the endgame cinematics — subutai
+  // Victory / subutaiDefeat / subutaiEndgame — are attached by a separate
+  // effect further down, once mateKingPos exists; it merges onto this
+  // same object.)
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const trigger = (t: VictoryTheme = 'red') => launchVictory(t === 'blue' ? 'blue' : 'red');
     const encourage = () => {
       const pool = Math.random() < 0.5 ? ENCOURAGE_ROTATE : ENCOURAGE_GENERIC;
       toast.show(pool[Math.floor(Math.random() * pool.length)], 'info', 5200);
@@ -1298,13 +1317,9 @@ function App() {
       },
     };
     const w = window as unknown as {
-      subutaiVictory?: (t?: VictoryTheme) => void;
-      __triggerVictory?: (t?: VictoryTheme) => void;
       subutaiEncourage?: () => void;
       subutaiFX?: typeof fx;
     };
-    w.subutaiVictory = trigger;
-    w.__triggerVictory = trigger; // legacy alias used in dev tooling
     w.subutaiEncourage = encourage;
     w.subutaiFX = fx;
   }, [toast]);
@@ -2456,7 +2471,7 @@ function App() {
     setSearchEvalFromWhite(null);
     setSearchMateInPlies(null);
     worstHumanEvalRef.current = 0; // R6 — reset the tense-win detector
-    setVictoryTheme(null);
+    setEndgameCut(null);
     if (victoryFreezeTimer.current) clearTimeout(victoryFreezeTimer.current);
     setVictoryFreeze(false);
     setSummaryOpen(false);
@@ -4348,15 +4363,84 @@ function App() {
     const flip = isMultiplayer && mpSync?.myColor === 'black';
     return {
       sq: kingSq as string,
+      // Whose king this is — the side to move is the side being mated.
+      // Carried here so the hand-off effect below can tell a win from a
+      // loss without reaching into `state` (which it does not depend on).
+      color: state.sideToMove,
       cx: flip ? boardSize - tile.cx : tile.cx,
       cy: flip ? boardSize - tile.cy : tile.cy,
     };
   }, [checkSquares.king, state, displayTopology, layout, boardSize, isMultiplayer, mpSync]);
+
+  /**
+   * V1 — where a given side's king is on screen, in VIEWPORT pixels.
+   *
+   * mateKingPos above is board-relative, which is all the DOM iris needs
+   * (it is absolutely positioned inside .board). The endgame cinematic
+   * renders to a full-screen canvas, so it needs the same point in the
+   * viewport's frame — hence the board rect. .board carries no border or
+   * padding, so its rect origin and the board's own coordinate origin are
+   * the same point.
+   */
+  const kingOriginFor = useCallback(
+    (color: Color): KingOrigin | null => {
+      const sq = findKing(state, color);
+      if (!sq) return null;
+      const rect = document.querySelector('.board')?.getBoundingClientRect();
+      if (!rect) return null;
+      const tile = tilePixelCenter(sq as SquareId, displayTopology, layout);
+      const flip = isMultiplayer && mpSync?.myColor === 'black';
+      return {
+        x: rect.left + (flip ? boardSize - tile.cx : tile.cx),
+        y: rect.top + (flip ? boardSize - tile.cy : tile.cy),
+        size: layout.tileSize,
+        color,
+      };
+    },
+    [state, displayTopology, layout, boardSize, isMultiplayer, mpSync],
+  );
+
+  /**
+   * V1 — start an endgame cut.
+   *
+   * `fromIris` means the checkmate iris has already blacked the room out
+   * and handed over, so the scene skips its own lead-in and lifts the king
+   * immediately. Everything else (a flag fall, a resignation, a captured
+   * king) gets the R17b freeze beat first — a moment of dimmed stillness —
+   * and then a short dark prelude inside the scene.
+   *
+   * Reduced motion opts out entirely: the player goes straight to the
+   * summary, the same way the iris and the shatter already hide themselves.
+   */
+  const launchEndgame = useCallback(
+    (kind: EndgameKind, opts?: { loser?: Color; fromIris?: boolean }) => {
+      if (typeof window === 'undefined') return;
+      if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+      void importEndgameScene(); // no-op if the iris already warmed it
+      const loser: Color = opts?.loser ?? (kind === 'victory' ? 'black' : HUMAN_COLOR);
+      const king = kingOriginFor(loser);
+      const theme: VictoryTheme = Math.random() < 0.5 ? 'red' : 'blue';
+      if (victoryFreezeTimer.current) clearTimeout(victoryFreezeTimer.current);
+      if (opts?.fromIris) {
+        setEndgameCut({ kind, theme, king, prelude: 0 });
+        return;
+      }
+      setVictoryFreeze(true);
+      victoryFreezeTimer.current = setTimeout(() => {
+        setVictoryFreeze(false);
+        setEndgameCut({ kind, theme, king, prelude: 300 });
+      }, 650);
+    },
+    [kingOriginFor],
+  );
+
   const MATE_IRIS_MS = 900;
   const MATE_HOLD_MS = 320;
   const MATE_SHATTER_MS = 720;
   const [mateSeq, setMateSeq] = useState<'idle' | 'iris' | 'shatter'>('idle');
   const mateSeqStartedRef = useRef<string | null>(null);
+  // One endgame cut per game, whichever effect gets there first.
+  const endgameFiredForLogRef = useRef<string | null>(null);
   useEffect(() => {
     if (gameStatus !== 'checkmate' || !mateKingPos) {
       setMateSeq('idle');
@@ -4368,6 +4452,29 @@ function App() {
     if (mateSeqStartedRef.current === log.id) return;
     mateSeqStartedRef.current = log.id;
     setMateSeq('iris');
+    // V1 — in a solo game the iris no longer ends in a shatter: it hands
+    // the king over to the endgame cinematic, which picks it up as pixels
+    // on the same square and carries it to the middle of the screen. The
+    // shatter stays as the ending for every mode that does NOT get a
+    // cinematic (multiplayer, hot-seat, spectating, bot-vs-bot), so those
+    // keep exactly the ending they had.
+    const matedColor = mateKingPos.color;
+    const cinematic =
+      !isMultiplayer && !isLocalMode && !watchingGame && !isAutoMode;
+    if (cinematic && endgameFiredForLogRef.current !== log.id) {
+      endgameFiredForLogRef.current = log.id;
+      // Warm the chunk during the 1.2s the iris takes to close, so the
+      // hand-off is a cut and not a gap.
+      void importEndgameScene();
+      const handOff = setTimeout(() => {
+        setMateSeq('idle');
+        launchEndgame(matedColor === HUMAN_COLOR ? 'defeat' : 'victory', {
+          loser: matedColor,
+          fromIris: true,
+        });
+      }, MATE_IRIS_MS + MATE_HOLD_MS);
+      return () => clearTimeout(handOff);
+    }
     const t1 = setTimeout(() => setMateSeq('shatter'), MATE_IRIS_MS + MATE_HOLD_MS);
     const t2 = setTimeout(
       () => setMateSeq('idle'),
@@ -4377,44 +4484,101 @@ function App() {
       clearTimeout(t1);
       clearTimeout(t2);
     };
-  }, [gameStatus, mateKingPos, log.id]);
+  }, [
+    gameStatus,
+    mateKingPos,
+    log.id,
+    isMultiplayer,
+    isLocalMode,
+    watchingGame,
+    isAutoMode,
+    launchEndgame,
+  ]);
   const mateSeqActive = mateSeq !== 'idle';
+  // V1 — "a full-screen endgame sequence owns the screen right now": the
+  // iris, or the cinematic it hands over to. Every game-over modal waits
+  // on this, so a summary can never pop up underneath the cut.
+  const endgameSceneActive = mateSeqActive || endgameCut !== null;
 
-  // Dev seam: subutaiFX.mate() — merges onto the window.subutaiFX object
-  // the earlier console-seams effect (check/strobe/dust) already created,
-  // rather than redeclaring it. Needed because playing a whole line out
-  // to a real checkmate just to QA this cinematic is slow; this fires the
-  // exact same iris -> hold -> shatter -> idle sequence pointed at
-  // whichever king mateKingPos resolves to (the side-to-move's king when
-  // nobody's actually in check).
+  // Dev seams for the endings. Playing a real line out to a checkmate just
+  // to look at 7 seconds of animation is hopeless, so every ending can be
+  // fired by hand. These merge onto the window.subutaiFX object the earlier
+  // console-seams effect (check/strobe/dust) already created.
+  //
+  //   subutaiVictory()            the win cut (king lift → crown → VICTORY)
+  //   subutaiDefeat()             the loss cut (king lift → topple → DEFEAT)
+  //   subutaiEndgame('victory' | 'defeat', { full: true })
+  //                               same, but `full` plays the checkmate iris
+  //                               first and hands over exactly as a real
+  //                               game does — this is the whole thing
+  //   subutaiFX.mate()            just the iris + shatter, no cinematic
+  //
+  // The cut points at whichever king mateKingPos resolves to, so it works
+  // from any position, including one with no checkmate on the board.
   useEffect(() => {
     if (typeof window === 'undefined' || !mateKingPos) return;
-    const w = window as unknown as { subutaiFX?: Record<string, unknown> };
-    if (!w.subutaiFX) return;
-    w.subutaiFX.mate = () => {
-      setMateSeq('iris');
-      setTimeout(() => setMateSeq('shatter'), MATE_IRIS_MS + MATE_HOLD_MS);
-      setTimeout(() => setMateSeq('idle'), MATE_IRIS_MS + MATE_HOLD_MS + MATE_SHATTER_MS);
+    const w = window as unknown as {
+      subutaiFX?: Record<string, unknown>;
+      subutaiVictory?: (t?: VictoryTheme) => void;
+      __triggerVictory?: (t?: VictoryTheme) => void;
+      subutaiDefeat?: () => void;
+      subutaiEndgame?: (kind?: EndgameKind, opts?: { full?: boolean }) => void;
     };
-  }, [mateKingPos]);
+    const run = (kind: EndgameKind, full: boolean) => {
+      void importEndgameScene();
+      const loser: Color = kind === 'victory' ? 'black' : HUMAN_COLOR;
+      if (!full) {
+        launchEndgame(kind, { loser, fromIris: true });
+        return;
+      }
+      setMateSeq('iris');
+      setTimeout(() => {
+        setMateSeq('idle');
+        launchEndgame(kind, { loser, fromIris: true });
+      }, MATE_IRIS_MS + MATE_HOLD_MS);
+    };
+    w.subutaiEndgame = (kind = 'victory', opts) => run(kind, opts?.full ?? false);
+    w.subutaiVictory = () => run('victory', false);
+    w.__triggerVictory = w.subutaiVictory; // legacy alias used in dev tooling
+    w.subutaiDefeat = () => run('defeat', false);
+    if (w.subutaiFX) {
+      w.subutaiFX.mate = () => {
+        setMateSeq('iris');
+        setTimeout(() => setMateSeq('shatter'), MATE_IRIS_MS + MATE_HOLD_MS);
+        setTimeout(() => setMateSeq('idle'), MATE_IRIS_MS + MATE_HOLD_MS + MATE_SHATTER_MS);
+      };
+    }
+  }, [mateKingPos, launchEndgame]);
 
-  // R6 — fire the pixel victory cinematic on a TENSE win: the human won
-  // after being clearly behind at some point (worst eval ≤ -2 pawns). A
-  // clean, never-in-danger win just gets the usual summary. Solo only.
-  // M.21 — waits for the checkmate death cinematic (mateSeqActive) to
-  // finish first so the two full-screen sequences never overlap; the ref
-  // guard is needed because this effect now legitimately re-runs (deps
-  // include mateSeqActive) without gameOutcome itself changing.
-  const victoryFiredForLogRef = useRef<string | null>(null);
+  // V1 — the endgame cut for games that do NOT end in checkmate: a flag
+  // fall, a resignation, a captured king. Checkmates are handed over by the
+  // iris effect above instead, so they are skipped here.
+  //
+  // R6 used to gate the cinematic on a come-from-behind win (worst eval
+  // ≤ -2 pawns) and play nothing at all on a loss, which meant most games
+  // just blinked into a modal. Both results get their own cut now; a draw
+  // still gets none, because there is nothing to dramatise.
   useEffect(() => {
-    if (gameOutcome !== 'human-win') return;
-    if (isMultiplayer || isLocalMode) return;
+    if (!gameOutcome || gameOutcome === 'draw') return;
+    if (isMultiplayer || isLocalMode || watchingGame || isAutoMode) return;
+    if (gameStatus === 'checkmate') return; // the iris hands that one over
     if (mateSeqActive) return;
-    if (worstHumanEvalRef.current > -2.0) return; // was never really in danger
-    if (victoryFiredForLogRef.current === log.id) return;
-    victoryFiredForLogRef.current = log.id;
-    launchVictory(Math.random() < 0.5 ? 'red' : 'blue');
-  }, [gameOutcome, isMultiplayer, isLocalMode, mateSeqActive, log.id, launchVictory]);
+    if (endgameFiredForLogRef.current === log.id) return;
+    endgameFiredForLogRef.current = log.id;
+    launchEndgame(gameOutcome === 'human-win' ? 'victory' : 'defeat', {
+      loser: gameOutcome === 'human-win' ? 'black' : HUMAN_COLOR,
+    });
+  }, [
+    gameOutcome,
+    gameStatus,
+    isMultiplayer,
+    isLocalMode,
+    watchingGame,
+    isAutoMode,
+    mateSeqActive,
+    log.id,
+    launchEndgame,
+  ]);
 
   // Highlight the last N piece-plies on the board. Roulette mode plays two
   // sub-moves per AI turn, so we widen the window to 2; classic stays at 1
@@ -5166,9 +5330,15 @@ function App() {
       <div className="app-body">
       <div className="board-area">
       {/* S2.5 — per-side clocks. Elapsed time normally; in a timed MP
-          match (B8) they switch to countdown, glowing red under 30s. */}
+          match (B8) they switch to countdown, glowing red under 30s.
+          V1 — shaped like the clock that actually sits on a tournament
+          table: one housing, two faces split by a dashed seam, the
+          running side lit. The readout itself stays digital (an unlit
+          88:88 ghost with the live digits burning through it), which is
+          how a DGT reads in the hall — the housing is the analogue part,
+          not the numbers. */}
       {gameStatus === 'active' && !watchingGame && (
-        <div className="game-clocks" aria-label="Game clocks">
+        <div className="tournament-clock" aria-label="Game clocks">
           {(['white', 'black'] as const).map((side) => {
             const soloCountdown = mpClocks === null && soloTcSec !== null;
             const ms = mpClocks
@@ -5177,14 +5347,27 @@ function App() {
                 ? Math.max(0, soloTcSec * 1000 - clockMs[side])
                 : clockMs[side];
             const low = (mpClocks !== null || soloCountdown) && ms < 30_000;
+            const face = formatClockFace(ms);
+            const running = state.sideToMove === side;
             return (
-              <span
+              <div
                 key={side}
-                className={`clock-chip clock-chip-${side}${state.sideToMove === side ? ' is-running' : ''}${low ? ' is-low' : ''}`}
+                className={`tc-face tc-face-${side}${running ? ' is-running' : ''}${low ? ' is-low' : ''}`}
               >
-                <span className="clock-chip-dot" aria-hidden />
-                {side === 'white' ? 'White' : 'Black'} {formatClock(ms)}
-              </span>
+                <span className="tc-readout">
+                  {/* Every segment of the display, unlit — the live digits
+                      sit exactly on top, so the glass reads as a real
+                      seven-segment panel instead of floating text. */}
+                  <span className="tc-ghost" aria-hidden>
+                    {face.replace(/\d/g, '8')}
+                  </span>
+                  <span className="tc-digits">{face}</span>
+                </span>
+                <span className="tc-name">
+                  <span className="tc-lamp" aria-hidden />
+                  {side === 'white' ? 'White' : 'Black'}
+                </span>
+              </div>
             );
           })}
         </div>
@@ -6222,7 +6405,7 @@ function App() {
           }}
           title="Paste a move log to replay a game"
         >
-          <Icon icon={Upload} size="sm" aria-hidden /> Load replay
+          <Icon icon={Upload} size={12} aria-hidden /> Load replay
         </button>
         )}
         <span className="position-label" title="This game's Chess960 starting rank">
@@ -6242,7 +6425,7 @@ function App() {
             }}
             title="Start from a specific Chess960 position"
           >
-            <Icon icon={Pencil} size="sm" aria-hidden /> Set position
+            <Icon icon={Pencil} size={12} aria-hidden /> Set position
           </button>
         ) : (
           <span className="position-input-wrap">
@@ -6793,7 +6976,7 @@ function App() {
         </div>
       )}
 
-      {summaryOpen && lastGamePoints && gameOutcome && !mateSeqActive && (
+      {summaryOpen && lastGamePoints && gameOutcome && !endgameSceneActive && (
         <GameSummary
           points={lastGamePoints}
           outcome={gameOutcome}
@@ -6958,10 +7141,17 @@ function App() {
 
       {/* R17b — the held-breath beat: a dim freeze before the cinematic. */}
       {victoryFreeze && <div className="victory-freeze" aria-hidden />}
-      {/* R6 — pixel victory cinematic on a come-from-behind win. */}
-      {victoryTheme && (
+      {/* V1 — the endgame cut: the losing king lifts off its square as
+          pixels and the win or the loss plays out around it. */}
+      {endgameCut && (
         <Suspense fallback={null}>
-          <VictoryScene theme={victoryTheme} onDone={() => setVictoryTheme(null)} />
+          <EndgameScene
+            kind={endgameCut.kind}
+            theme={endgameCut.theme}
+            king={endgameCut.king}
+            prelude={endgameCut.prelude}
+            onDone={() => setEndgameCut(null)}
+          />
         </Suspense>
       )}
 
