@@ -22,10 +22,13 @@
 
 /* ═══════════════════════════════════════════════════════════════════
    DESIGN TOKENS
-   Three palettes: warm-wood (default), wood-light, cyberpunk (subtle).
-   Theme is selected via [data-theme="…"] on <html>, persisted in
-   localStorage by <ThemeToggle/>. Wood reproduces the pre-Sprint-1
-   palette 1:1 — no visual regression.
+   Four palettes: neon (default), warm-wood, wood-light, fantasy. The
+   resolved theme is written to [data-theme] on <html> by
+   src/ui/themeStore.ts, which also implements the "Adaptive" choice
+   (neon in topology A, wood-light in topology B). Wood reproduces the
+   pre-Sprint-1 palette 1:1 — no visual regression.
+   V1 retired the cyberpunk palette: it sat between neon and wood without
+   committing to either, and saved copies of it migrate to neon.
 
    NOTE: do NOT run search/replace passes that match raw hex values
    against this file. The replacement will rewrite hex literals
@@ -291,127 +294,6 @@
   color-scheme: light;
 }
 
-/* ─── Cyberpunk: subtle frosted-glass minimal ───────────────────── */
-[data-theme="cyberpunk"] {
-  /* Backgrounds — Sprint 2.6: pulled toward true black with only a 1%
-     blue hint. Previously read as "navy"; now reads as "deep matte
-     black, lit from beneath". Tiles dropped one stop too so the board
-     still separates from the page. */
-  --bg: #050608;
-  --bg-deep: #050608;
-  --bg-mid: #0c0e14;
-  --bg-elevated: #14171f;
-  --bg-elevated-hover: #1c2030;
-  --bg-panel: #14171f;
-  --bg-panel-deep: #0c0e14;
-  --bg-card: #0c0e14;
-  --bg-card-alt: #14171f;
-  --bg-overlay-dark: #050608;
-  --bg-popup: #14171f;
-  --bg-deeper: #050608;
-  --bg-danger-tint: #1a0e16;
-
-  /* Tiles — close-brightness, low contrast */
-  --tile-light: #1d2335;
-  --tile-dark: #0e1220;
-  --tile-light-alt: #2a3458;
-  --tile-dark-alt: #161c2e;
-  --tile-promo-light: #2a3458;
-  --tile-promo-dark: #0e1220;
-  --tile-promo-light-text: #d8e8f5;
-  --tile-promo-dark-text: #d8e8f5;
-
-  /* Pieces — frosted, semi-translucent feel */
-  --piece-white: #b8d8e5;
-  --piece-black: #d4a5c0;
-  --piece-text-on-bright: #0a1020;
-  --piece-white-flat: #b8d8e5;
-  --piece-black-flat: #d4a5c0;
-  --piece-white-shadow: 0 0 2px rgba(10, 16, 32, 0.6);
-  --piece-black-shadow: 0 0 2px rgba(10, 16, 32, 0.7);
-
-  /* Accents — saturated only for interactive states */
-  --accent-primary: #5dc8d6;
-  --accent-secondary: #d65d8c;
-  --accent-gold: #5dc8d6;
-  --accent-gold-bright: #7ad8e3;
-  --accent-gold-orange: #d6995d;
-  --accent-gold-light: #7ad8e3;
-  --accent-amber-mid: #d6b25d;
-  --accent-amber-bright: #d6c45d;
-  --accent-amber-warm: #d6995d;
-  --accent-peach: #d68a8a;
-  --text-on-bright-gold: #0a1020;
-
-  /* Secondary */
-  --accent-teal: #5dd6a8;
-  --accent-teal-bright: #5dc8d6;
-  --accent-info: #5dc8d6;
-  --accent-orange: #d6995d;
-
-  /* Status — muted magenta/mint */
-  --accent-danger: #d65d8c;
-  --danger: #d65d8c;
-  --danger-bright: #d65d8c;
-  --danger-coral: #d65d8c;
-  --danger-coral-light: #e08aac;
-  --danger-mid: #b8487a;
-  --danger-dark: #9a3a66;
-  --danger-light: #d65d8c;
-  --danger-very-light: #e08aac;
-  --danger-pale: #e8b5c8;
-  --danger-short: #d65d8c;
-
-  --accent-success: #5dd6a8;
-  --success: #5dd6a8;
-  --success-light: #7adcb3;
-  --success-mint: #5dd6a8;
-
-  /* Text — high readability */
-  --text: #d8e8f5;
-  --text-primary: #d8e8f5;
-  --text-secondary: rgba(216, 232, 245, 0.65);
-  --text-muted: rgba(216, 232, 245, 0.4);
-  --text-muted-warm: rgba(216, 232, 245, 0.55);
-  --text-white: #d8e8f5;
-  --text-on-light: #0a1020;
-  --text-grey-mid: rgba(216, 232, 245, 0.35);
-  --text-grey-light: rgba(216, 232, 245, 0.45);
-  --text-grey-lighter: rgba(216, 232, 245, 0.55);
-
-  /* Buttons */
-  --btn-bg: #1d2640;
-  --btn-border: rgba(93, 200, 214, 0.18);
-
-  /* Borders — thin neon */
-  --border-subtle: rgba(93, 200, 214, 0.12);
-  --border-strong: rgba(93, 200, 214, 0.35);
-
-  /* Glows — subtle, only for interactive states */
-  --glow-accent: 0 0 8px rgba(93, 200, 214, 0.4);
-  --glow-danger: 0 0 8px rgba(214, 93, 140, 0.35);
-  --glow-success: 0 0 8px rgba(93, 214, 168, 0.35);
-  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(93, 200, 214, 0.1);
-
-  /* Seam: faint cyan */
-  --seam-color: rgba(93, 200, 214, 0.22);
-
-  /* Last move: the theme's own muted cyan */
-  --last-move-fill: rgba(93, 200, 214, 0.26);
-  --last-move-fill-strong: rgba(93, 200, 214, 0.36);
-  --last-move-ring: rgba(140, 225, 235, 0.5);
-
-  /* Sacrifice: brighter neon violet on the matte-black page. */
-  --sacrifice-color: 200, 100, 255;
-
-  /* Monospace UI font */
-  --font-display: 'JetBrains Mono', 'Consolas', monospace;
-  --font-body: 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Consolas', monospace;
-
-  color-scheme: dark;
-}
-
 /* ─── Fantasy: gothic bronze/gold chess set ─────────────────────── */
 [data-theme="fantasy"] {
   /* Backgrounds — near-black with warm bronze undertone */
@@ -536,9 +418,8 @@
   color-scheme: dark;
 }
 
-/* ─── Neon: Stitch redesign try-on — vivid indigo + cyan/magenta glow ───
-   Unlike cyberpunk (matte, restrained), neon IS the garish one: gradient
-   room, dual-color glowing borders, rose vs ice pieces. */
+/* ─── Neon: the default room — vivid indigo + cyan/magenta glow.
+   Gradient room, dual-color glowing borders, rose vs ice pieces. */
 [data-theme="neon"] {
   /* Backgrounds — deep indigo, never true black */
   --bg: #131022;
@@ -7982,7 +7863,7 @@ body.checkmate-flash::after {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   THEME TOGGLE — switches data-theme between wood/cyberpunk
+   THEME TOGGLE — cycles the theme CHOICE (see src/ui/themeStore.ts)
    ═══════════════════════════════════════════════════════════════════ */
 
 .theme-toggle {
@@ -8024,61 +7905,6 @@ body.checkmate-flash::after {
    independent. Nothing to override here anymore; the board / pieces /
    tokens already pick up correct values from the theme block above.
    ═══════════════════════════════════════════════════════════════════ */
-
-/* ═══════════════════════════════════════════════════════════════════
-   CYBERPUNK THEME — subtle, frosted-glass enhancements
-   Tone: atmospheric, minimal, monospace. NOT garish neon.
-   Pieces, tiles, glows all live in tokens — overrides here are
-   additive structure (ambient bg, monospace title, mild halos).
-   ═══════════════════════════════════════════════════════════════════ */
-
-/* Faint corner gradients — barely perceptible atmosphere */
-[data-theme="cyberpunk"] .app-shell::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background:
-    radial-gradient(circle at 18% 22%, rgba(93, 200, 214, 0.04), transparent 55%),
-    radial-gradient(circle at 82% 78%, rgba(214, 93, 140, 0.03), transparent 55%);
-  pointer-events: none;
-  z-index: 0;
-}
-
-[data-theme="cyberpunk"] .app-root {
-  position: relative;
-  z-index: 1;
-}
-
-/* Board: thin hairline border, no inner glow blast */
-[data-theme="cyberpunk"] .board {
-  box-shadow:
-    var(--shadow-elevated),
-    inset 0 0 0 1px var(--border-subtle);
-}
-
-/* Last-move tiles: muted cyan wash, no heavy outline */
-[data-theme="cyberpunk"] .tile.last-from::before {
-  background: rgba(93, 200, 214, 0.16);
-}
-[data-theme="cyberpunk"] .tile.last-to::before {
-  background: rgba(93, 200, 214, 0.22);
-  box-shadow: inset 0 0 0 1px rgba(93, 200, 214, 0.45);
-}
-
-/* Buttons: very mild halo on hover only */
-[data-theme="cyberpunk"] .action-btn:hover,
-[data-theme="cyberpunk"] .rotate-btn:hover,
-[data-theme="cyberpunk"] .mode-btn:hover,
-[data-theme="cyberpunk"] .opponent-mode-btn:hover {
-  box-shadow: var(--glow-accent);
-}
-
-/* Brand title — M.16: keep ONE wordmark across every theme. Only the
-   colour / glow adapts per theme; font-family + letter-spacing stay on the
-   base rule so "subutai" is always the same inscription. */
-[data-theme="cyberpunk"] .app-header h1 {
-  text-shadow: 0 0 12px rgba(93, 200, 214, 0.55);
-}
 
 /* ═══════════════════════════════════════════════════════════════════
    PREFERS-REDUCED-MOTION
@@ -9851,6 +9677,193 @@ button:active:not(:disabled) {
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 30px rgba(255, 79, 216, 0.12);
 }
 
+/* V1 — "Beat Strong" outranks the generic Bot Slayer pill: same shape, the
+   theme's secondary accent so the two read as different achievements. */
+.victor-badge.strong-badge {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent-secondary) 85%, transparent),
+    color-mix(in srgb, var(--accent-primary) 70%, transparent)
+  );
+  color: var(--text-on-bright-gold);
+  border-color: var(--accent-secondary);
+  box-shadow: var(--glow-danger);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   V1 CHROME PASS — the controls that never got a design pass: the status
+   bar, the 960 / replay row under the board, and the Memory panel. They
+   were the last places still using 4px radii, bare text buttons and
+   transparent backgrounds while the rest of the app moved to pills and
+   cards. All token-driven, so every theme follows.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.app-status-bar {
+  font-size: 12.5px;
+}
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--btn-border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-weight: 600;
+}
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+.status-chip-mine {
+  border-color: var(--accent-primary);
+  color: var(--text-primary);
+}
+.status-chip-mine .status-dot {
+  background: var(--accent-primary);
+  box-shadow: 0 0 8px var(--accent-primary);
+}
+.status-chip-theirs .status-dot {
+  background: var(--accent-secondary);
+  animation: status-thinking 1.4s ease-in-out infinite;
+}
+.status-chip-over {
+  border-color: var(--border-strong);
+}
+@keyframes status-thinking {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .status-chip-theirs .status-dot { animation: none; }
+}
+.status-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-muted);
+}
+.status-meta-item strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+  margin-left: 4px;
+}
+.status-mono {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+/* The 960 / replay row reads as one strip of pills. */
+.position-label-wrap {
+  gap: var(--space-2);
+}
+.position-replay-btn,
+.position-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  border-radius: 999px;
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, box-shadow 0.2s ease;
+}
+.position-replay-btn:hover,
+.position-edit-btn:hover {
+  color: var(--text);
+  border-color: var(--accent-primary);
+  box-shadow: var(--glow-accent);
+}
+.position-label-wrap .position-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  font-size: 13px;
+  letter-spacing: 1.5px;
+  color: var(--text-secondary);
+}
+.position-label-key {
+  font-family: var(--font-body);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+}
+.position-input {
+  border-radius: 999px;
+  padding: 5px 12px;
+}
+
+/* Memory panel: a card in the same family as the sidebar panels. */
+.memory-details {
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  border-color: var(--border-subtle);
+}
+.memory-details summary {
+  padding: 10px 16px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-secondary);
+}
+.memory-details[open] summary {
+  border-bottom: 1px solid var(--border-subtle);
+}
+.memory-content {
+  padding: var(--space-3) 16px 16px;
+}
+.memory-sort-select,
+.memory-sort-dir,
+.memory-filter-input,
+.memory-filter-clear,
+.memory-refresh-btn {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.memory-filter-input {
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text);
+}
+.memory-sort-dir:hover,
+.memory-filter-clear:hover,
+.memory-refresh-btn:hover {
+  color: var(--text);
+  border-color: var(--accent-primary);
+}
+.memory-game-card {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-mid);
+  transition: border-color 0.15s ease, box-shadow 0.2s ease;
+}
+.memory-game-card:hover {
+  border-color: var(--accent-primary);
+  box-shadow: var(--glow-accent);
+}
+
 /* V1 — busy overlay: covers a transition that does its work in one React
    commit (leaving a replay, restoring a saved game) so the tab never looks
    frozen without explanation. */
@@ -9889,8 +9902,9 @@ button:active:not(:disabled) {
   .busy-overlay { animation: none; }
 }
 
-/* V1 — first-visit welcome screen. Full takeover, theme-token driven so it
-   reads correctly on wood and fantasy as well as neon. */
+/* V1 — first-visit welcome. One mark, one line, one button: everything it
+   could explain, the tour explains better on the real board. Token-driven
+   so it belongs to whichever theme is on. */
 .welcome-root {
   position: fixed;
   inset: 0;
@@ -9898,127 +9912,102 @@ button:active:not(:disabled) {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-3);
+  padding: var(--space-4) var(--space-3);
   overflow-y: auto;
   background:
-    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent-primary) 12%, transparent), transparent 60%),
+    radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--accent-primary) 14%, transparent), transparent 62%),
+    radial-gradient(circle at 50% 100%, color-mix(in srgb, var(--accent-secondary) 10%, transparent), transparent 55%),
     var(--bg-deep);
-  animation: busy-fade-in 200ms ease-out;
+  animation: busy-fade-in 260ms ease-out;
 }
-.welcome-card {
-  width: min(560px, 100%);
+.welcome-stage {
   margin: auto;
-  padding: var(--space-5) var(--space-4);
-  border-radius: var(--radius-lg);
-  background: var(--bg-card);
-  border: 1px solid var(--border-strong);
-  box-shadow: var(--shadow-elevated);
+  width: min(460px, 100%);
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
+
+/* The mark: two squares sharing a centre, the top one easing into the
+   rotation the whole game is built on. */
+.welcome-mark {
+  width: 116px;
+  height: 116px;
+  margin-bottom: var(--space-3);
+}
+.welcome-mark svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--accent-primary) 45%, transparent));
+}
+.welcome-mark-b {
+  transform-origin: center;
+  opacity: 0.85;
+  animation: welcome-turn 6s cubic-bezier(0.65, 0, 0.35, 1) 600ms infinite;
+}
+@keyframes welcome-turn {
+  0%, 18% { transform: rotate(0deg); }
+  32%, 68% { transform: rotate(45deg); }
+  82%, 100% { transform: rotate(0deg); }
+}
+
 .welcome-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 44px;
+  font-size: clamp(40px, 11vw, 58px);
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   line-height: 1;
   color: var(--text-primary);
-  text-shadow: 0 0 18px color-mix(in srgb, var(--accent-primary) 40%, transparent);
+  text-shadow: 0 0 22px color-mix(in srgb, var(--accent-primary) 45%, transparent);
 }
-.welcome-tagline {
-  margin: var(--space-2) 0 var(--space-4);
+.welcome-lede {
+  margin: var(--space-2) 0 var(--space-5);
   font-size: 15px;
-  color: var(--text-secondary);
-}
-.welcome-points {
-  list-style: none;
-  margin: 0 0 var(--space-4);
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  text-align: left;
-}
-.welcome-points li {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-  font-size: 13.5px;
   line-height: 1.5;
   color: var(--text-secondary);
 }
-.welcome-points strong {
-  color: var(--text-primary);
-}
-.welcome-point-icon {
-  flex-shrink: 0;
+
+.welcome-cta {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-md);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-subtle);
-  color: var(--accent-primary);
-}
-.welcome-actions {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-.welcome-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  padding: 12px var(--space-4);
-  border-radius: var(--radius-md);
+  gap: 10px;
+  padding: 15px var(--space-5);
+  border-radius: 999px;
+  border: 1px solid var(--accent-primary);
+  background: var(--accent-primary);
+  color: var(--text-on-bright-gold);
   font-family: inherit;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
   cursor: pointer;
-  transition: filter 0.15s ease, transform 0.15s ease, border-color 0.15s ease, box-shadow 0.2s ease;
-}
-.welcome-btn:hover {
-  transform: translateY(-1px);
-}
-.welcome-btn:active {
-  transform: translateY(0);
-}
-.welcome-btn-primary {
-  background: var(--accent-primary);
-  border: 1px solid var(--accent-primary);
-  color: var(--text-on-bright-gold);
   box-shadow: var(--glow-accent);
 }
-.welcome-btn-primary:hover {
+.welcome-cta:hover {
   filter: brightness(1.08);
 }
-.welcome-btn-secondary {
-  background: var(--btn-bg);
-  border: 1px solid var(--btn-border);
-  color: var(--text-primary);
-}
-.welcome-btn-secondary:hover {
-  border-color: var(--accent-primary);
-}
-.welcome-footnote {
-  margin: var(--space-3) 0 0;
-  font-size: 11.5px;
+.welcome-skip {
+  margin-top: var(--space-3);
+  padding: 8px 12px;
+  border: 0;
+  background: none;
   color: var(--text-muted);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
-@media (max-width: 480px) {
-  .welcome-card {
-    padding: var(--space-4) var(--space-3);
-  }
-  .welcome-title {
-    font-size: 34px;
-  }
+.welcome-skip:hover {
+  color: var(--text-secondary);
 }
+
 @media (prefers-reduced-motion: reduce) {
   .welcome-root { animation: none; }
-  .welcome-btn:hover { transform: none; }
+  .welcome-mark-b { animation: none; transform: rotate(45deg); }
 }
 
 /* Game Review 2.0: turning-point card + phase bars. */

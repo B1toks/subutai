@@ -27,6 +27,11 @@ export interface UserProfile {
   bestGameSnapshot?: BestGameSnapshot;
   longestSurvivalMoves?: number;
   lastGameAt?: Timestamp;
+  /** V1 — wins against the full-strength bot, the only level that is
+   *  ranked. Practice levels never touch this, so the leaderboard badge
+   *  it drives means exactly one thing: they beat the real engine.
+   *  Absent on profiles that predate bot levels. */
+  strongWins?: number;
   // Stage O — roulette-mode aggregates live alongside in a separate field
   // group so the two leaderboards never cross-contaminate. Absent until the
   // player completes their first roulette game.

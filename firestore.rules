@@ -74,8 +74,18 @@ service cloud.firestore {
                          'uid', 'displayName', 'displayNameLower', 'createdAt', 'lastActive',
                          'lastGameAt', 'gamesPlayed', 'gamesWon', 'gamesDrawn',
                          'bestGamePoints', 'bestGameId', 'bestGameSnapshot', 'longestSurvivalMoves',
-                         'rouletteGamesPlayed', 'rouletteBestPoints', 'rouletteBestGameId', 'rouletteBestSnapshot'
+                         'rouletteGamesPlayed', 'rouletteBestPoints', 'rouletteBestGameId', 'rouletteBestSnapshot',
+                         'strongWins'
                        ])
+                    // V1 — the "Beat Strong" achievement counter may only
+                    // ever grow, one game at a time.
+                    && (
+                      !('strongWins' in request.resource.data)
+                      || (request.resource.data.strongWins is int
+                          && request.resource.data.strongWins >= 0
+                          && request.resource.data.strongWins
+                             <= (('strongWins' in resource.data) ? resource.data.strongWins + 1 : 1))
+                    )
                     // A leaderboard number may only change to the total of a
                     // /games doc this player saved (write-once, see below).
                     && (

@@ -61,10 +61,12 @@ import {
   Lightbulb,
   Lock,
   MessageSquare,
+  Pencil,
   RotateCw,
   Sparkles,
   Trophy,
   Cast,
+  Upload,
   Users,
   UsersRound,
 } from 'lucide-react';
@@ -102,6 +104,7 @@ import type { SavedGame } from './memory/types';
 import { NotationParseError, parseMemoryNotation } from './memory/notation';
 import { moveVoting, type VoteMode, type VoteRound, type GuessWinner } from './twitch/moveVoting';
 import { dockLayout, type DockState } from './ui/dockLayout';
+import { themeStore } from './ui/themeStore';
 import { micEq } from './audio/micEqualizer';
 import { PerimeterEqualizer } from './components/PerimeterEqualizer';
 import { BackgroundWaveGrid } from './components/BackgroundWaveGrid';
@@ -1883,6 +1886,14 @@ function App() {
     // watchingGame snapshot only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchingGame?.autoplay, watchingGame?.currentMoveIdx]);
+
+  // V1 — Adaptive theme: the room follows the COMMITTED topology (never the
+  // rotate button's hover preview, same rule the dust-wave FX follows), so
+  // topology A is the neon night room and B is daylight. No-op for anyone
+  // who pinned a specific theme. See src/ui/themeStore.ts.
+  useEffect(() => {
+    themeStore.setTopology(state.topologyState);
+  }, [state.topologyState]);
 
   // Brief glowing outline on the board container whenever topology flips,
   // so rotations don't feel invisible. Fires for both manual rotates and
@@ -6209,23 +6220,29 @@ function App() {
             setReplayError(null);
             setShowReplayDialog(true);
           }}
-          title="Paste a move log to replay"
+          title="Paste a move log to replay a game"
         >
-          Replay
+          <Icon icon={Upload} size="sm" aria-hidden /> Load replay
         </button>
         )}
-        <span className="position-label">Chess960: {positionLabel}</span>
+        <span className="position-label" title="This game's Chess960 starting rank">
+          <span className="position-label-key">960</span>
+          {positionLabel}
+        </span>
         {isMultiplayer || watchingGame ? null : !formationInputMode ? (
+          // V1 — this was a bare "edit" that only responded to a DOUBLE
+          // click, with the instruction hidden in a title attribute. A
+          // single click opens it now, like every other control.
           <button
             type="button"
             className="position-edit-btn"
-            onDoubleClick={() => {
+            onClick={() => {
               setFormationInputValue(positionLabel);
               setFormationInputMode(true);
             }}
-            title="Double-click to enter formation code"
+            title="Start from a specific Chess960 position"
           >
-            edit
+            <Icon icon={Pencil} size="sm" aria-hidden /> Set position
           </button>
         ) : (
           <span className="position-input-wrap">
@@ -6532,24 +6549,58 @@ function App() {
         </div>
       )}
 
+      {/* V1 — the status bar used to say "Ready" / "In play" and a raw move,
+          which told the player nothing they could act on. It now answers the
+          one question a status bar should: whose move is it, and how far
+          along are we. */}
       <footer className="app-status-bar">
-        {/* Sprint 2.7 — dropped the persistent "Your turn / Waiting"
-            indicator. The AFK alert covers the attention case; whose
-            turn it is can be read from the board + sidebar opponent
-            panel. Status bar now just shows last move + game state. */}
-        <span className="status-game-state">
-          {gameStatus !== 'active'
-            ? gameOverMessage ?? 'Game over'
-            : log.moves.length > 0
-              ? 'In play'
-              : 'Ready'}
-        </span>
-        <span className="status-last-move">
-          {log.moves.length > 0
-            ? `Last: ${log.moves[log.moves.length - 1]?.san ??
-                `${log.moves[log.moves.length - 1]?.move.from ?? ''}→${log.moves[log.moves.length - 1]?.move.to ?? ''}`}`
-            : '—'}
-        </span>
+        {(() => {
+          const lastEntry = log.moves[log.moves.length - 1];
+          const lastText = lastEntry
+            ? lastEntry.san ?? `${lastEntry.move.from ?? ''}→${lastEntry.move.to ?? ''}`
+            : null;
+          const fullMoves = Math.ceil(log.moves.length / 2);
+          let tone: 'over' | 'mine' | 'theirs' | 'idle' = 'idle';
+          let text: string;
+          if (gameStatus !== 'active') {
+            tone = 'over';
+            text = gameOverMessage ?? 'Game over';
+          } else if (watchingGame) {
+            text = `Watching ${watchingGame.playerName}'s game`;
+          } else if (isMultiplayer && mpSync) {
+            tone = mpSync.isMyTurn ? 'mine' : 'theirs';
+            text = mpSync.isMyTurn
+              ? 'Your move'
+              : `${mpSync.opponentDisplayName} is thinking`;
+          } else if (isLocalMode) {
+            tone = 'mine';
+            text = `${state.sideToMove === 'white' ? 'White' : 'Black'} to move`;
+          } else if (currentPlayer === 'human') {
+            tone = 'mine';
+            text = log.moves.length === 0 ? 'Your move: make the first one' : 'Your move';
+          } else {
+            tone = 'theirs';
+            text = 'Bot is thinking';
+          }
+          return (
+            <>
+              <span className={`status-chip status-chip-${tone}`}>
+                <span className="status-dot" aria-hidden />
+                {text}
+              </span>
+              <span className="status-meta">
+                <span className="status-meta-item">
+                  Move <strong>{fullMoves}</strong>
+                </span>
+                {lastText && (
+                  <span className="status-meta-item">
+                    Last <strong className="status-mono">{lastText}</strong>
+                  </span>
+                )}
+              </span>
+            </>
+          );
+        })()}
       </footer>
 
       {!isMultiplayer && (
@@ -6872,8 +6923,8 @@ function App() {
           tour. Never for a shared-game link or the kiosk/auto modes. */}
       {showWelcome && view === 'game' && !watchingGame && !sharedGameId && (
         <WelcomeScreen
-          onPlay={() => dismissWelcome(false)}
-          onTour={() => dismissWelcome(true)}
+          onStart={() => dismissWelcome(true)}
+          onSkip={() => dismissWelcome(false)}
         />
       )}
 

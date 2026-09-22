@@ -20,6 +20,8 @@ export interface LeaderboardEntry {
   bestGameSnapshot?: BestGameSnapshot;
   gamesPlayed: number;
   longestSurvivalMoves: number;
+  /** V1 — wins against the full-strength bot (drives the badge). */
+  strongWins: number;
 }
 
 export type LeaderboardCursor = QueryDocumentSnapshot<DocumentData> | null;
@@ -65,6 +67,7 @@ export async function fetchLeaderboardPage(
         // Roulette has no survival-moves analogue yet — pass 0 so the
         // existing UI just renders "—".
         longestSurvivalMoves: 0,
+        strongWins: p.strongWins ?? 0,
       };
     }
     return {
@@ -75,6 +78,7 @@ export async function fetchLeaderboardPage(
       bestGameSnapshot: p.bestGameSnapshot,
       gamesPlayed: p.gamesPlayed ?? 0,
       longestSurvivalMoves: p.longestSurvivalMoves ?? 0,
+      strongWins: p.strongWins ?? 0,
     };
   });
 

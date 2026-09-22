@@ -172,6 +172,13 @@ export async function saveCompletedGame(args: {
           patch.bestGameSnapshot = snapshot;
         }
       }
+      // V1 — a win over the full-strength bot is the one achievement the
+      // leaderboard advertises, and it counts in either mode. Practice
+      // levels can't reach this line at all: their points are marked
+      // uncounted, and the whole block is gated on points.counted.
+      if (outcome === 'human-win' && (botLevel ?? 'strong') === 'strong') {
+        patch.strongWins = ((cur.strongWins as number | undefined) ?? 0) + 1;
+      }
       tx.update(userRef, patch);
     });
   }

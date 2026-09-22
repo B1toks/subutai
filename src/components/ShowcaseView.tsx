@@ -337,6 +337,7 @@ function ShowcaseLeaderboard({ highlightedUser }: LeaderboardProps) {
       bestGamePoints: 0,
       gamesPlayed: 0,
       longestSurvivalMoves: 0,
+      strongWins: 0,
     };
     return [...entries, ghost];
   }, [entries, highlightedUser]);
