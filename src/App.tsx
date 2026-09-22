@@ -4413,13 +4413,17 @@ function App() {
    * summary, the same way the iris and the shatter already hide themselves.
    */
   const launchEndgame = useCallback(
-    (kind: EndgameKind, opts?: { loser?: Color; fromIris?: boolean }) => {
+    (
+      kind: EndgameKind,
+      opts?: { loser?: Color; fromIris?: boolean; theme?: VictoryTheme },
+    ) => {
       if (typeof window === 'undefined') return;
       if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
       void importEndgameScene(); // no-op if the iris already warmed it
       const loser: Color = opts?.loser ?? (kind === 'victory' ? 'black' : HUMAN_COLOR);
       const king = kingOriginFor(loser);
-      const theme: VictoryTheme = Math.random() < 0.5 ? 'red' : 'blue';
+      // The colour roll is the win's only variable; the loss ignores it.
+      const theme: VictoryTheme = opts?.theme ?? (Math.random() < 0.5 ? 'red' : 'blue');
       if (victoryFreezeTimer.current) clearTimeout(victoryFreezeTimer.current);
       if (opts?.fromIris) {
         setEndgameCut({ kind, theme, king, prelude: 0 });
@@ -4506,8 +4510,9 @@ function App() {
   // console-seams effect (check/strobe/dust) already created.
   //
   //   subutaiVictory()            the win cut (king lift → crown → VICTORY)
+  //   subutaiVictory('blue')      …in the blue palette instead of a coin flip
   //   subutaiDefeat()             the loss cut (king lift → topple → DEFEAT)
-  //   subutaiEndgame('victory' | 'defeat', { full: true })
+  //   subutaiEndgame('victory' | 'defeat', { full: true, theme: 'blue' })
   //                               same, but `full` plays the checkmate iris
   //                               first and hands over exactly as a real
   //                               game does — this is the whole thing
@@ -4522,23 +4527,28 @@ function App() {
       subutaiVictory?: (t?: VictoryTheme) => void;
       __triggerVictory?: (t?: VictoryTheme) => void;
       subutaiDefeat?: () => void;
-      subutaiEndgame?: (kind?: EndgameKind, opts?: { full?: boolean }) => void;
+      subutaiEndgame?: (
+        kind?: EndgameKind,
+        opts?: { full?: boolean; theme?: VictoryTheme },
+      ) => void;
     };
-    const run = (kind: EndgameKind, full: boolean) => {
+    const run = (kind: EndgameKind, full: boolean, theme?: VictoryTheme) => {
       void importEndgameScene();
       const loser: Color = kind === 'victory' ? 'black' : HUMAN_COLOR;
+      const go = () => launchEndgame(kind, { loser, fromIris: true, theme });
       if (!full) {
-        launchEndgame(kind, { loser, fromIris: true });
+        go();
         return;
       }
       setMateSeq('iris');
       setTimeout(() => {
         setMateSeq('idle');
-        launchEndgame(kind, { loser, fromIris: true });
+        go();
       }, MATE_IRIS_MS + MATE_HOLD_MS);
     };
-    w.subutaiEndgame = (kind = 'victory', opts) => run(kind, opts?.full ?? false);
-    w.subutaiVictory = () => run('victory', false);
+    w.subutaiEndgame = (kind = 'victory', opts) =>
+      run(kind, opts?.full ?? false, opts?.theme);
+    w.subutaiVictory = (t) => run('victory', false, t);
     w.__triggerVictory = w.subutaiVictory; // legacy alias used in dev tooling
     w.subutaiDefeat = () => run('defeat', false);
     if (w.subutaiFX) {

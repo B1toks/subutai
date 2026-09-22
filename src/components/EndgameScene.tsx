@@ -215,8 +215,11 @@ export function EndgameScene({ kind, theme, king, prelude, onDone }: Props) {
     let startPx = 1;
 
     function resize() {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
+      // The CANVAS's own box, not the window's: `innerWidth` includes the
+      // scrollbar, and the king's origin is a viewport coordinate that has
+      // to map onto this element's frame, not onto a slightly wider one.
+      const w = cv.clientWidth || window.innerWidth;
+      const h = cv.clientHeight || window.innerHeight;
       cv.width = w;
       cv.height = h;
       bh = BUFFER_H;
