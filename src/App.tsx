@@ -2310,6 +2310,25 @@ function App() {
     setFormationInputValue('');
   }
 
+  /**
+   * V1 — blur means "I'm done", so it must always leave the editor.
+   *
+   * `applyFormationCode` returns early on an invalid code without
+   * clearing the mode, which used to keep the field open forever. That
+   * was survivable while a separate "Set position" button existed; now
+   * that the code chip IS the control and the only place the starting
+   * rank is shown, a stuck editor hides the position behind a half-typed
+   * string. Clicking away on garbage just gives up, like Escape.
+   */
+  function commitFormationOnBlur() {
+    const raw = formationInputValue.trim().toUpperCase();
+    if (raw && !isValidChess960Key(raw)) {
+      cancelFormationInput();
+      return;
+    }
+    applyFormationCode();
+  }
+
   const tileBase = boardSize / 8;
 
   function checkKingCaptured(nextState: BoardState): boolean {
@@ -5633,6 +5652,13 @@ function App() {
                 isLastTo ? 'last-to' : '',
                 olderHighlight ? 'last-older' : '',
                 isCheckedKing ? (gameStatus === 'checkmate' ? 'mated-king' : 'checked-king') : '',
+                /* V1 — while the iris closes, the mated king rises off
+                   the board, so the endgame cut picks up a piece that is
+                   already in the air instead of one appearing from
+                   nowhere. Uses the existing [data-3d] perspective; with
+                   3D off there is no Z to rise along and the rule does
+                   not apply. */
+                mateSeq === 'iris' && mateKingPos?.sq === sq ? 'is-mate-rise' : '',
                 /* Sprint 4.1 — pulse own pieces whose type matches an
                    unused roulette slot for THIS turn. Only on the
                    active client (currentPlayer === 'human') so the
@@ -6418,27 +6444,21 @@ function App() {
           <Icon icon={Upload} size={12} aria-hidden /> Load replay
         </button>
         )}
-        <span className="position-label" title="This game's Chess960 starting rank">
-          <span className="position-label-key">960</span>
-          {positionLabel}
-        </span>
-        {isMultiplayer || watchingGame ? null : !formationInputMode ? (
-          // V1 — this was a bare "edit" that only responded to a DOUBLE
-          // click, with the instruction hidden in a title attribute. A
-          // single click opens it now, like every other control.
-          <button
-            type="button"
-            className="position-edit-btn"
-            onClick={() => {
-              setFormationInputValue(positionLabel);
-              setFormationInputMode(true);
-            }}
-            title="Start from a specific Chess960 position"
-          >
-            <Icon icon={Pencil} size={12} aria-hidden /> Set position
-          </button>
-        ) : (
-          <span className="position-input-wrap">
+        {/* V1 rev 3 — the code IS the control.
+            It used to be a read-only label with a separate "Set position"
+            button next to it, which put two objects on screen for one
+            idea. The code now sits quiet and flat until you touch it;
+            clicking it grows the chip and turns the code itself into the
+            field you type in. Nothing else on the row changes size, so
+            the growth is the whole affordance. */}
+        {isMultiplayer || watchingGame ? (
+          <span className="position-code is-static" title="This game's Chess960 starting rank">
+            <span className="position-label-key">960</span>
+            <span className="position-code-value">{positionLabel}</span>
+          </span>
+        ) : formationInputMode ? (
+          <span className="position-code is-editing">
+            <span className="position-label-key">960</span>
             <input
               ref={formationInputRef}
               type="text"
@@ -6449,14 +6469,29 @@ function App() {
                 if (e.key === 'Enter') applyFormationCode();
                 if (e.key === 'Escape') cancelFormationInput();
               }}
-              onBlur={applyFormationCode}
-              placeholder="e.g. RQKRNBBN"
+              onBlur={commitFormationOnBlur}
+              placeholder="RQKRNBBN"
               maxLength={8}
+              aria-label="Chess960 starting rank"
             />
             {formationInputValue && !isValidChess960Key(formationInputValue.trim().toUpperCase()) && (
               <span className="position-input-error">Invalid 960 code</span>
             )}
           </span>
+        ) : (
+          <button
+            type="button"
+            className="position-code"
+            onClick={() => {
+              setFormationInputValue(positionLabel);
+              setFormationInputMode(true);
+            }}
+            title="Click to start from a specific Chess960 position"
+          >
+            <span className="position-label-key">960</span>
+            <span className="position-code-value">{positionLabel}</span>
+            <Icon icon={Pencil} size={11} className="position-code-pencil" aria-hidden />
+          </button>
         )}
       </div>
       </div>

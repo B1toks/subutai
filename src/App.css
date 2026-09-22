@@ -2460,30 +2460,9 @@ body.checkmate-flash::after {
   flex-wrap: wrap;
 }
 
-.position-label {
-  font-size: 1em;
-  font-family: ui-monospace, 'Menlo', 'Consolas', monospace;
-  color: var(--text-muted);
-  letter-spacing: 2px;
-}
-
-.position-label-wrap .position-label {
-  font-size: 16px;
-}
-
-.position-edit-btn {
-  font-size: 11px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  border: 1px solid var(--btn-border);
-  background: var(--btn-bg);
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.position-edit-btn:hover {
-  color: var(--text);
-}
+/* V1 — `.position-label` and `.position-edit-btn` are gone: the label and
+   the separate edit button collapsed into one control, `.position-code`,
+   styled down in the V1 chrome pass. */
 
 .position-replay-btn {
   font-size: 11px;
@@ -2535,24 +2514,8 @@ body.checkmate-flash::after {
   margin-top: 12px;
 }
 
-.position-input-wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.position-input {
-  font-size: 14px;
-  font-family: ui-monospace, 'Menlo', 'Consolas', monospace;
-  letter-spacing: 1px;
-  width: 100px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--btn-border);
-  background: var(--bg);
-  color: var(--text);
-}
-
+/* The input now lives inside `.position-code.is-editing` and inherits
+   its type and colour from the chip; see the V1 chrome pass. */
 .position-input-error {
   font-size: 11px;
   color: var(--danger);
@@ -4633,13 +4596,16 @@ body.checkmate-flash::after {
    shows; only the body is analogue.
    The running face doubles as the turn indicator, as the old chips did. */
 
+/* The housing carries no border of its own: each half carries the three
+   OUTER edges of the unit, and the dashed seam is the only thing between
+   them. So when a side is running, what lights is its outer edge and its
+   half of the fill, right up to the seam — there is no second rectangle
+   drawn inside the first. */
 .tournament-clock {
   position: relative;
   display: flex;
   width: fit-content;
   margin: var(--space-2) auto;
-  padding: 5px;
-  border: 1px solid var(--btn-border);
   border-radius: 14px;
   background: linear-gradient(180deg, var(--bg-elevated), var(--bg-card));
   box-shadow:
@@ -4647,8 +4613,8 @@ body.checkmate-flash::after {
     0 4px 12px rgba(0, 0, 0, 0.18);
 }
 
-/* The seam. A pseudo-element rather than a border on the second face, so
-   it stays visible when the running face paints its own background. */
+/* The seam. A pseudo-element rather than a border on one of the faces, so
+   it stays put and stays visible when a face paints its own background. */
 .tournament-clock::before {
   content: '';
   position: absolute;
@@ -4658,6 +4624,7 @@ body.checkmate-flash::after {
   border-left: 1px dashed var(--border-subtle);
   opacity: 0.85;
   pointer-events: none;
+  z-index: 1;
 }
 
 .tc-face {
@@ -4666,9 +4633,19 @@ body.checkmate-flash::after {
   align-items: center;
   gap: 3px;
   min-width: 108px;
-  padding: 7px 18px 6px;
-  border-radius: 10px;
-  transition: background 0.2s, box-shadow 0.2s;
+  padding: 8px 18px 7px;
+  border: 1px solid var(--btn-border);
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+/* Each half owns the outer corners and drops the edge facing the seam. */
+.tc-face-white {
+  border-right: 0;
+  border-radius: 14px 0 0 14px;
+}
+.tc-face-black {
+  border-left: 0;
+  border-radius: 0 14px 14px 0;
 }
 
 .tc-readout {
@@ -4721,9 +4698,8 @@ body.checkmate-flash::after {
 
 .tc-face.is-running {
   background: var(--bg-card);
-  box-shadow:
-    inset 0 0 0 1px var(--accent-primary),
-    0 0 10px -3px var(--accent-primary);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 10px -3px var(--accent-primary);
 }
 
 .tc-face.is-running .tc-digits {
@@ -4741,9 +4717,8 @@ body.checkmate-flash::after {
 .tc-face.is-low .tc-digits { color: var(--danger-pale); }
 
 .tc-face.is-low.is-running {
-  box-shadow:
-    inset 0 0 0 1px var(--accent-danger),
-    0 0 12px -3px var(--accent-danger);
+  border-color: var(--accent-danger);
+  box-shadow: 0 0 12px -3px var(--accent-danger);
   animation: afk-breathe 1s ease-in-out infinite;
 }
 
@@ -8025,6 +8000,7 @@ body.checkmate-flash::after {
   }
   .piece-slide-wrap.is-sliding-in,
   .piece.is-rotating-in,
+  [data-3d="on"] .tile.is-mate-rise .piece-slide-wrap,
   .tile.is-sacrifice::before,
   .tile.is-sacrifice::after,
   .tile.checked-king::before,
@@ -9158,6 +9134,33 @@ button:active:not(:disabled) {
   100% { opacity: 0; transform: scale(2.4); }
 }
 
+/* V1 — the 3D pass and the endgame cut, joined up.
+   The board already has perspective and already lifts a piece on hover
+   under [data-3d="on"]; this is the same trick at the one moment it
+   carries the most weight. While the iris closes, the mated king rises
+   off its square, so when the cinematic takes over it is lifting a piece
+   that is already in the air rather than conjuring a new one. With 3D
+   effects off there is no Z to rise along, so the rule simply does not
+   apply and the ending is the flat one it always was.
+
+   The 0% keyframe is the piece's natural resting state, so a stalled
+   animation engine leaves the king exactly where it belongs. */
+[data-3d="on"] .tile.is-mate-rise .piece-slide-wrap {
+  animation: checkmate-king-rise 1220ms cubic-bezier(0.34, 0, 0.2, 1) both;
+  z-index: 40;
+}
+
+@keyframes checkmate-king-rise {
+  0% {
+    transform: translateZ(0) scale(1);
+    filter: none;
+  }
+  100% {
+    transform: translateZ(52px) scale(1.24);
+    filter: drop-shadow(0 18px 20px rgba(0, 0, 0, 0.6));
+  }
+}
+
 /* The king glyph itself, held frozen through the iris + hold, then
    scaled/faded away in sync with the shard burst above. */
 .checkmate-king-fade {
@@ -9547,20 +9550,21 @@ button:active:not(:disabled) {
 [data-theme="neon"] .tournament-clock::before {
   border-left-color: rgba(78, 225, 255, 0.3);
 }
+[data-theme="neon"] .tc-face {
+  border-color: rgba(78, 225, 255, 0.18);
+}
 [data-theme="neon"] .tc-face.is-running {
   background: rgba(78, 225, 255, 0.07);
-  box-shadow:
-    inset 0 0 0 1px rgba(78, 225, 255, 0.55),
-    0 0 14px -2px rgba(78, 225, 255, 0.5);
+  border-color: rgba(78, 225, 255, 0.6);
+  box-shadow: 0 0 14px -2px rgba(78, 225, 255, 0.5);
 }
 [data-theme="neon"] .tc-face.is-running .tc-digits {
   text-shadow: 0 0 12px rgba(78, 225, 255, 0.85);
 }
 [data-theme="neon"] .tc-face.is-low.is-running {
   background: rgba(255, 79, 216, 0.08);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 79, 216, 0.65),
-    0 0 14px -2px rgba(255, 79, 216, 0.55);
+  border-color: rgba(255, 79, 216, 0.7);
+  box-shadow: 0 0 14px -2px rgba(255, 79, 216, 0.55);
 }
 [data-theme="neon"] .tc-face.is-low.is-running .tc-digits {
   text-shadow: 0 0 12px rgba(255, 79, 216, 0.8);
@@ -9850,60 +9854,113 @@ button:active:not(:disabled) {
 }
 
 /* The 960 / replay row reads as one strip of pills. */
-/* V1 rev 2 — this row was three separate 12px pills, which gave the
-   starting-rank code and two rarely-used utilities the same visual weight
-   as the board actions directly above them. It is one quiet strip now:
-   a single hairline container, the three slots divided by 1px seams,
-   everything one step smaller and one step dimmer. It only lights up
-   under the cursor. */
+/* V1 rev 3 — the row under the board.
+   It went from three equal 12px pills, to one strip of three slots, to
+   this: two separate things, because they are two separate ideas. On the
+   left, an action you can take. On the right, the fact of which position
+   you are playing — flat, borderless and quiet until you touch it, at
+   which point it grows and becomes the field you type the new code into.
+   The separate "Set position" button is gone; the code is the control. */
 .position-label-wrap {
   width: fit-content;
   max-width: 100%;
   margin: 0 auto;
-  gap: 0;
-  padding: 2px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  background: var(--bg-card);
+  gap: 14px;
+  padding: 0;
+  border: 0;
+  background: none;
 }
-/* Seams between slots. Drawn with box-shadow rather than a border so
-   adding one never shifts the row by a pixel. */
-.position-label-wrap > * + * {
-  box-shadow: -1px 0 0 var(--border-subtle);
-}
-.position-replay-btn,
-.position-edit-btn {
+.position-replay-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 9px;
+  padding: 3px 10px;
   font-size: 11px;
   font-weight: 600;
   font-family: inherit;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-card);
   color: var(--text-muted);
   cursor: pointer;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
 }
-.position-replay-btn:hover,
-.position-edit-btn:hover {
+.position-replay-btn:hover {
   color: var(--text);
+  border-color: var(--accent-primary);
   background: var(--bg-elevated);
 }
-.position-label-wrap .position-label {
+
+/* The code chip: flat by default — no border, no fill, no shadow. */
+.position-code {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 9px;
-  border: 0;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
   border-radius: 8px;
-  background: transparent;
+  background: none;
+  font-family: ui-monospace, 'Menlo', 'Consolas', monospace;
   font-size: 11.5px;
   letter-spacing: 1.2px;
-  color: var(--text-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease,
+    padding 0.18s ease, font-size 0.18s ease;
 }
+.position-code.is-static {
+  cursor: default;
+}
+.position-code:not(.is-static):hover {
+  color: var(--text);
+  border-color: var(--border-subtle);
+  background: var(--bg-card);
+}
+.position-code-value {
+  font-weight: 600;
+}
+/* The pencil only shows the chip is live; it is not a second button. */
+.position-code-pencil {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.position-code:hover .position-code-pencil,
+.position-code:focus-visible .position-code-pencil {
+  opacity: 0.7;
+}
+
+/* Editing: the same chip, grown. This is the whole interaction — you
+   pressed the code and the code got bigger and started taking input. */
+.position-code.is-editing {
+  padding: 6px 12px;
+  /* 16px exactly: anything smaller and iOS zooms the page on focus. */
+  font-size: 16px;
+  letter-spacing: 2px;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border-color: var(--accent-primary);
+  box-shadow: var(--glow-accent);
+  cursor: text;
+}
+.position-code.is-editing .position-label-key {
+  font-size: 9.5px;
+}
+.position-code .position-input {
+  width: 9ch;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  text-transform: uppercase;
+  outline: none;
+}
+.position-code .position-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.55;
+}
+
 .position-label-key {
   font-family: var(--font-body);
   font-size: 8.5px;
@@ -9913,11 +9970,10 @@ button:active:not(:disabled) {
   border-radius: 999px;
   background: var(--bg-elevated);
   color: var(--text-muted);
+  transition: font-size 0.18s ease;
 }
-.position-input {
-  border-radius: 8px;
-  padding: 3px 9px;
-  font-size: 11.5px;
+.position-code.is-editing .position-label-key {
+  background: var(--bg-card);
 }
 
 /* Memory panel: a card in the same family as the sidebar panels. */
