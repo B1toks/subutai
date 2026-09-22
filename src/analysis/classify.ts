@@ -272,7 +272,28 @@ export function classifyMove(
   // afterSearch.score is from stateAfter.sideToMove's perspective (opponent).
   // Flip to mover's perspective to compare apples-to-apples with bestSearch.score.
   const actualEvalForMover = -afterSearch.score;
-  const cpl = Math.max(0, bestSearch.score - actualEvalForMover);
+
+  /**
+   * Playing the engine's own first choice cannot cost anything.
+   *
+   * The two searches above are independent: different roots, separate time
+   * budgets, and horizons one ply apart. On the same move their scores can
+   * disagree by hundreds of centipawns, and the raw subtraction then
+   * produced annotations that contradicted themselves in the move list —
+   * "Nf6→h5?? ← Better: Nf6→h5". Whatever the search noise is, a player
+   * who found the top move did not lose material by finding it, so the
+   * loss is zero and the move classifies as best.
+   */
+  const bestMoveFound = bestSearch.bestMove ?? undefined;
+  const playedTheBestMove =
+    !!bestMoveFound &&
+    bestMoveFound.kind === move.kind &&
+    bestMoveFound.from === move.from &&
+    bestMoveFound.to === move.to &&
+    bestMoveFound.promotion === move.promotion;
+  const cpl = playedTheBestMove
+    ? 0
+    : Math.max(0, bestSearch.score - actualEvalForMover);
 
   // White-perspective version of the same number, for the eval bar / gradient.
   const searchScoreFromWhite =
@@ -283,7 +304,7 @@ export function classifyMove(
   const isMate = Math.abs(afterSearch.score) >= MATE_THRESHOLD;
   const mateInPlies = isMate ? MATE_SCORE - Math.abs(afterSearch.score) : undefined;
 
-  const bestMove = bestSearch.bestMove ?? undefined;
+  const bestMove = bestMoveFound;
   const bestMoveSan = bestMove ? shortSan(stateBefore, bestMove) : undefined;
   const bestPvSan =
     bestSearch.pv.length > 0 ? pvToSans(stateBefore, bestSearch.pv) : undefined;
@@ -363,12 +384,7 @@ export function classifyMove(
     const movedPieceValue = pieceValueOn(stateAfter, movedTo);
     // Don't dignify hanging a pawn with "brilliant" — needs a real piece.
     const meaningful = movedPieceValue >= MINOR_PIECE_THRESHOLD;
-    const bestMatches =
-      bestMove &&
-      bestMove.from === move.from &&
-      bestMove.to === move.to &&
-      bestMove.kind === move.kind;
-    if (meaningful && (bestMatches || cpl < 30)) {
+    if (meaningful && (playedTheBestMove || cpl < 30)) {
       classification = 'brilliant';
     }
   }

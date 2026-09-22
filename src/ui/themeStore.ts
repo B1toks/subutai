@@ -71,6 +71,7 @@ class ThemeStore {
   private choice: ThemeChoice = readStoredChoice();
   private topology: Topology = 'A';
   private listeners = new Set<Listener>();
+  private swapTimer: ReturnType<typeof setTimeout> | null = null;
 
   getChoice(): ThemeChoice {
     return this.choice;
@@ -117,7 +118,26 @@ class ThemeStore {
   apply(): void {
     const resolved = this.getResolved();
     if (typeof document !== 'undefined') {
-      document.documentElement.setAttribute('data-theme', resolved);
+      const el = document.documentElement;
+      // Changing the theme restyles every element in the document. If each
+      // of those elements also runs its own transition, the browser is
+      // asked to animate the whole page at once, which is most of what a
+      // theme change actually costs. Nothing is mid-gesture at this point,
+      // so transitions are cut for a moment either side of the swap; see
+      // the [data-theme-swap] rule in App.css.
+      //
+      // A timer, not requestAnimationFrame: rAF is paused in a hidden tab,
+      // and an attribute that disables every transition in the app must
+      // never be able to get stuck on.
+      if (el.getAttribute('data-theme') !== resolved) {
+        el.setAttribute('data-theme-swap', '');
+        if (this.swapTimer) clearTimeout(this.swapTimer);
+        this.swapTimer = setTimeout(() => {
+          el.removeAttribute('data-theme-swap');
+          this.swapTimer = null;
+        }, 90);
+      }
+      el.setAttribute('data-theme', resolved);
     }
     this.listeners.forEach((cb) => {
       try {

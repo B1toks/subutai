@@ -38,7 +38,7 @@ import { useEffect, useRef } from 'react';
 import { beatEngine } from '../music/beatEngine';
 
 export type VictoryTheme = 'red' | 'blue';
-export type EndgameKind = 'victory' | 'defeat';
+export type EndgameKind = 'victory' | 'defeat' | 'draw';
 
 /** Where the king stood when the game ended, in viewport pixels. */
 export interface KingOrigin {
@@ -93,11 +93,42 @@ const DEFEAT_PALETTE: Palette = {
   r: 158, g: 34, b: 44, spark: '#6f7482', word: 'DEFEAT',
 };
 
-/** Lettering colour: the win burns white, the loss is bone. */
+/** Steel. A draw is neither warm nor bleeding — it is two people agreeing. */
+const DRAW_PALETTE: Palette = {
+  r: 96, g: 122, b: 150, spark: '#d7e2ef', word: 'DRAW',
+};
+
+/** Lettering colour: the win burns white, the loss is bone, the draw steel. */
 const WORD_INK: Record<EndgameKind, string> = {
   victory: '#ffffff',
   defeat: '#cbc4d0',
+  draw: '#e4ecf5',
 };
+
+/**
+ * A forearm with a fist on its right end, 15 x 9. Drawn once and mirrored
+ * for the other side. Blunt on purpose: at the size this lands on screen
+ * the silhouette of two arms meeting is the entire read, and anything
+ * finer turns to noise once it is upscaled.
+ */
+const HAND_SPRITE = [
+  '..........####.',
+  '........#######',
+  '.......########',
+  '###############',
+  '###############',
+  '###############',
+  '.......########',
+  '........#######',
+  '..........####.',
+];
+const HAND_W = 15;
+const HAND_H = 9;
+
+const HAND_SKIN = [
+  { fill: '#e8dfd4', edge: '#4a3f38' }, // the light side's arm
+  { fill: '#3a3340', edge: '#c4bcd0' }, // the dark side's, rim-lit
+] as const;
 
 const KING_SKIN: Record<'white' | 'black', { fill: string; edge: string }> = {
   white: { fill: '#ece9f5', edge: '#3b3550' },
@@ -164,6 +195,7 @@ const GLYPHS: Record<string, string[]> = {
   E: ['11111', '10000', '10000', '11110', '10000', '10000', '11111'],
   F: ['11111', '10000', '10000', '11110', '10000', '10000', '10000'],
   A: ['01110', '10001', '10001', '11111', '10001', '10001', '10001'],
+  W: ['10001', '10001', '10001', '10101', '10101', '11011', '10001'],
 };
 
 interface Spark {
@@ -193,7 +225,8 @@ export function EndgameScene({ kind, theme, king, prelude, onDone }: Props) {
     const vx: CanvasRenderingContext2D = view;
 
     const win = kind === 'victory';
-    const col = win ? VICTORY_PALETTE[theme] : DEFEAT_PALETTE;
+    const drawn = kind === 'draw';
+    const col = win ? VICTORY_PALETTE[theme] : drawn ? DRAW_PALETTE : DEFEAT_PALETTE;
     const skin = KING_SKIN[king?.color ?? 'white'];
 
     // Phase boundaries, absolute ms from scene start.
@@ -337,6 +370,47 @@ export function EndgameScene({ kind, theme, king, prelude, onDone }: Props) {
       bctx.globalAlpha = 1;
     };
 
+    /**
+     * One forearm, reaching in from `side`. `x` is the position of the
+     * FIST (the sprite's inner end), so the two arms can be driven toward
+     * each other by a single closing distance.
+     */
+    const drawHand = (
+      side: -1 | 1,
+      fistX: number,
+      cy: number,
+      px: number,
+      alpha: number,
+    ) => {
+      const skinIdx = side < 0 ? 0 : 1;
+      const paint = HAND_SKIN[skinIdx];
+      const w = HAND_W * px;
+      const h = HAND_H * px;
+      bctx.save();
+      bctx.globalAlpha = alpha;
+      bctx.translate(fistX, cy - h / 2);
+      if (side > 0) bctx.scale(-1, 1); // the right arm is the same arm, mirrored
+      bctx.translate(-w, 0);
+
+      const cell = (r: number, c: number) => HAND_SPRITE[r][c] === '#';
+      bctx.fillStyle = paint.edge;
+      for (let r = 0; r < HAND_H; r++) {
+        for (let c = 0; c < HAND_W; c++) {
+          if (!cell(r, c)) continue;
+          bctx.fillRect((c - 0.35) * px, (r - 0.35) * px, px * 1.7, px * 1.7);
+        }
+      }
+      bctx.fillStyle = paint.fill;
+      for (let r = 0; r < HAND_H; r++) {
+        for (let c = 0; c < HAND_W; c++) {
+          if (!cell(r, c)) continue;
+          bctx.fillRect(c * px, r * px, px, px);
+        }
+      }
+      bctx.restore();
+      bctx.globalAlpha = 1;
+    };
+
     const drawCrown = (cx: number, cy: number, s: number, alpha: number) => {
       bctx.globalAlpha = alpha;
       bctx.fillStyle = '#e8c24a';
@@ -394,6 +468,68 @@ export function EndgameScene({ kind, theme, king, prelude, onDone }: Props) {
       bctx.fillRect(0, 0, bw, bh);
     };
 
+    /**
+     * The draw storyboard. Nobody's king is the subject of a draw, so
+     * nothing is lifted off the board: two arms simply come in from the
+     * edges, meet in the middle and shake on it.
+     *
+     *   lift    the arms slide in and clasp
+     *   build   the grip settles, dust off the contact, the light comes up
+     *   impact  three shakes
+     *   drop    they hold, "DRAW" comes up over them
+     *   settle  fade
+     */
+    const renderDraw = (t: number) => {
+      // Sized so the pair spans a little over half the width: big enough
+      // to read as two arms, not so big that the clasp fills the screen.
+      const px = (bh * 0.23) / HAND_H;
+      const armLen = HAND_W * px;
+      const cx = bw / 2;
+      const cy = bh * 0.54;
+      const overlap = px * 2;
+      const restLeft = cx + overlap;
+      const restRight = cx - overlap;
+      const wpx = Math.max(1, Math.round(bh / 46));
+
+      // how far in the arms have come, 0..1
+      const closing = t < T_LIFT ? easeOut(Math.max(0, t - prelude) / LIFT_MS) : 1;
+      const leftX = -armLen + (restLeft + armLen) * closing;
+      const rightX = bw + armLen + (restRight - bw - armLen) * closing;
+
+      // the shake: three cycles, entirely inside the impact phase
+      let shakeY = 0;
+      if (t >= T_BUILD && t < T_IMPACT) {
+        const k = (t - T_BUILD) / IMPACT_MS;
+        shakeY = Math.sin(k * Math.PI * 6) * px * 2.2 * (1 - k * 0.35);
+      }
+
+      drawVignette(1);
+      // a steel floor glow that rises once they are holding
+      if (t >= T_LIFT) {
+        const k = Math.min(1, (t - T_LIFT) / (BUILD_MS + IMPACT_MS));
+        const g = bctx.createLinearGradient(0, bh, 0, 0);
+        g.addColorStop(0, `rgba(${col.r},${col.g},${col.b},${0.05 + k * 0.14})`);
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        bctx.fillStyle = g;
+        bctx.fillRect(0, 0, bw, bh);
+      }
+
+      drawHand(-1, leftX, cy + shakeY, px, 1);
+      drawHand(1, rightX, cy + shakeY, px, 1);
+
+      // one puff of dust at the moment of contact
+      if (t >= T_LIFT && !impactFired) {
+        impactFired = true;
+        spawnBurst(26, 1.1, cx, cy);
+      }
+
+      if (t >= T_IMPACT) {
+        const fade = Math.min(1, (t - T_IMPACT) / 600);
+        const settle = t >= T_DROP ? (t - T_DROP) / SETTLE_MS : 0;
+        drawWord(col.word, cx, bh * 0.22, wpx, fade * (1 - settle * 0.4), WORD_INK.draw);
+      }
+    };
+
     function frame(now: number) {
       if (!start) {
         start = now;
@@ -430,8 +566,14 @@ export function EndgameScene({ kind, theme, king, prelude, onDone }: Props) {
         shakeX = (Math.random() - 0.5) * beatPulse * 6;
         shakeY = (Math.random() - 0.5) * beatPulse * 6;
       }
+      // The draw gets one small bump, on contact.
+      if (drawn && t >= T_LIFT && t < T_LIFT + 180) {
+        const k = 1 - (t - T_LIFT) / 180;
+        shakeX = (Math.random() - 0.5) * k * 3;
+        shakeY = (Math.random() - 0.5) * k * 3;
+      }
       // The loss gets exactly one shake: the moment the king hits the floor.
-      if (!win && t >= T_IMPACT && t < T_IMPACT + 260) {
+      if (!win && !drawn && t >= T_IMPACT && t < T_IMPACT + 260) {
         const k = 1 - (t - T_IMPACT) / 260;
         shakeX = (Math.random() - 0.5) * k * 7;
         shakeY = (Math.random() - 0.5) * k * 5;
@@ -439,8 +581,10 @@ export function EndgameScene({ kind, theme, king, prelude, onDone }: Props) {
       bctx.save();
       bctx.translate(shakeX, shakeY);
 
-      // ── phase: prelude + lift ──────────────────────────────────────
-      if (t < T_LIFT) {
+      // ── the draw runs its own storyboard end to end ────────────────
+      if (drawn) {
+        renderDraw(t);
+      } else if (t < T_LIFT) {
         const lt = Math.max(0, t - prelude) / LIFT_MS; // 0..1
         const reveal = Math.min(1, lt / 0.28); // materialise first
         const travel = easeOut(Math.min(1, lt));

@@ -97,6 +97,10 @@
 
   /* Status colors */
   --accent-danger: #dc2626;
+  /* V1 — the OTHER side. Used where two sides must be told apart at a
+     glance (the tournament clock's running half). Distinct from
+     --accent-danger, which means "something is wrong". */
+  --accent-opponent: #c0594f;
   --danger: #dc2626;
   --danger-bright: #ee5050;
   --danger-coral: #ee5253;
@@ -233,6 +237,10 @@
 
   /* Status — muted */
   --accent-danger: #b85450;
+  /* V1 — the OTHER side. Used where two sides must be told apart at a
+     glance (the tournament clock's running half). Distinct from
+     --accent-danger, which means "something is wrong". */
+  --accent-opponent: #b85450;
   --danger: #b85450;
   --danger-bright: #c4625e;
   --danger-coral: #b85450;
@@ -355,6 +363,10 @@
 
   /* Status — oxblood red, moss green */
   --accent-danger: #8b3a3a;
+  /* V1 — the OTHER side. Used where two sides must be told apart at a
+     glance (the tournament clock's running half). Distinct from
+     --accent-danger, which means "something is wrong". */
+  --accent-opponent: #c05a52;
   --danger: #8b3a3a;
   --danger-bright: #a04848;
   --danger-coral: #8b3a3a;
@@ -476,6 +488,10 @@
 
   /* Status — hot magenta danger, mint success */
   --accent-danger: #ff4f8f;
+  /* V1 — the OTHER side. Used where two sides must be told apart at a
+     glance (the tournament clock's running half). Distinct from
+     --accent-danger, which means "something is wrong". */
+  --accent-opponent: #ff4fd8;
   --danger: #ff4f8f;
   --danger-bright: #ff6ba1;
   --danger-coral: #ff4f8f;
@@ -4696,10 +4712,18 @@ body.checkmate-flash::after {
   box-shadow: 0 0 0 1px var(--text-muted);
 }
 
+/* The running half is lit in one colour when it is yours and the other
+   when it is not — one glance tells you whose time is burning. The hue
+   comes from a token so every theme answers in its own voice. */
 .tc-face.is-running {
+  --tc-lit: var(--accent-primary);
   background: var(--bg-card);
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 10px -3px var(--accent-primary);
+  border-color: var(--tc-lit);
+  box-shadow: 0 0 10px -3px var(--tc-lit);
+}
+
+.tc-face.is-theirs.is-running {
+  --tc-lit: var(--accent-opponent);
 }
 
 .tc-face.is-running .tc-digits {
@@ -4708,9 +4732,9 @@ body.checkmate-flash::after {
 }
 
 .tc-face.is-running .tc-name { color: var(--text-secondary); }
-.tc-face-white.is-running .tc-lamp { box-shadow: 0 0 8px var(--accent-primary); }
+.tc-face-white.is-running .tc-lamp { box-shadow: 0 0 8px var(--tc-lit); }
 .tc-face-black.is-running .tc-lamp {
-  box-shadow: 0 0 0 1px var(--text-muted), 0 0 8px var(--accent-primary);
+  box-shadow: 0 0 0 1px var(--text-muted), 0 0 8px var(--tc-lit);
 }
 
 /* B8 — timed match, under 30s: that face turns urgent. */
@@ -9558,8 +9582,16 @@ button:active:not(:disabled) {
   border-color: rgba(78, 225, 255, 0.6);
   box-shadow: 0 0 14px -2px rgba(78, 225, 255, 0.5);
 }
+[data-theme="neon"] .tc-face.is-theirs.is-running {
+  background: rgba(255, 79, 216, 0.07);
+  border-color: rgba(255, 79, 216, 0.6);
+  box-shadow: 0 0 14px -2px rgba(255, 79, 216, 0.5);
+}
 [data-theme="neon"] .tc-face.is-running .tc-digits {
   text-shadow: 0 0 12px rgba(78, 225, 255, 0.85);
+}
+[data-theme="neon"] .tc-face.is-theirs.is-running .tc-digits {
+  text-shadow: 0 0 12px rgba(255, 79, 216, 0.8);
 }
 [data-theme="neon"] .tc-face.is-low.is-running {
   background: rgba(255, 79, 216, 0.08);
@@ -10427,3 +10459,80 @@ select:focus-visible,
 [data-theme="neon"] .music-dock-file-btn:hover {
   box-shadow: 0 0 10px -2px var(--accent-primary);
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   V1 — theme swap: cut every transition for the moment of the change.
+
+   `data-theme` lives on <html>, so changing it invalidates the computed
+   style of every element in the document. If each of those elements then
+   also runs its own colour/border/shadow transition, the browser animates
+   the entire page in one go — which, landing in the same frames as the
+   board's rotation animation, is what made rotating in Adaptive stutter.
+   themeStore.apply() sets this attribute for ~90ms around the swap.
+
+   Only `transition` is cut. Animations are left alone, so a cinematic or
+   a rotation that happens to overlap still plays.
+   ═══════════════════════════════════════════════════════════════════ */
+html[data-theme-swap] *,
+html[data-theme-swap] *::before,
+html[data-theme-swap] *::after {
+  transition: none !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   V1 — coaching tools on the LIGHT board.
+
+   The support arrows, the threat wash and the hint highlight were all
+   tuned against a dark board: thin strokes and 8-22% alpha, which read
+   fine on near-black and vanish entirely on cream. Nothing here changes
+   what the tools mean, only how loudly they say it on wood-light.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Threat map. The wash is a percentage per attacker, so it starts almost
+   invisible by design; on cream it has to start from a floor that can
+   actually be seen, and in a red dark enough to sit on a pale square. */
+[data-theme="wood-light"] .tile.threatened::before {
+  background: rgba(158, 26, 26, calc(0.10 + 0.13 * var(--threat-n, 1)));
+}
+[data-theme="wood-light"] .tile.threatening-piece::before {
+  box-shadow:
+    inset 0 0 0 3px rgba(158, 26, 26, 0.95),
+    0 0 10px rgba(158, 26, 26, 0.35);
+}
+
+/* Support arrows. A 1.8px mid-teal hairline over cream is a scratch;
+   thicker, darker and fully opaque, with a soft light halo underneath so
+   it stays legible where it crosses a dark square too. */
+[data-theme="wood-light"] .support-arrow {
+  --support-stroke: #14705c;
+  stroke-width: 2.8;
+  opacity: 1;
+  paint-order: stroke;
+  filter: drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.9));
+}
+[data-theme="wood-light"] .support-arrow-hover {
+  --support-hover-stroke: #b8560c;
+}
+
+/* Hint. Teal at 22% is nothing on cream; this keeps the same hue and
+   adds a ring so the pair of squares reads as one suggested move. */
+[data-theme="wood-light"] .tile.hint-from::before {
+  background: rgba(13, 148, 136, 0.30);
+  box-shadow: inset 0 0 0 3px rgba(13, 148, 136, 0.75);
+}
+[data-theme="wood-light"] .tile.hint-to::before {
+  background: rgba(13, 148, 136, 0.48);
+  box-shadow: inset 0 0 0 3px rgba(13, 148, 136, 0.9);
+}
+
+/* Drawn arrows and square marks: the flat chess.com palette is tuned for
+   a mid-tone board and washes out on cream. Same four colours, deeper. */
+[data-theme="wood-light"] .annotation-arrow { opacity: 0.9; }
+[data-theme="wood-light"] .annotation-color-green  { stroke: #15803d; fill: #15803d; }
+[data-theme="wood-light"] .annotation-color-red    { stroke: #b91c1c; fill: #b91c1c; }
+[data-theme="wood-light"] .annotation-color-yellow { stroke: #a16207; fill: #a16207; }
+[data-theme="wood-light"] .annotation-color-blue   { stroke: #1d4ed8; fill: #1d4ed8; }
+[data-theme="wood-light"] .tile-annotation-green  { background: rgba(21, 128, 61, 0.42); }
+[data-theme="wood-light"] .tile-annotation-red    { background: rgba(185, 28, 28, 0.42); }
+[data-theme="wood-light"] .tile-annotation-yellow { background: rgba(161, 98, 7, 0.42); }
+[data-theme="wood-light"] .tile-annotation-blue   { background: rgba(29, 78, 216, 0.38); }

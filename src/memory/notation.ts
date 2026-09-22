@@ -24,17 +24,30 @@ const PROMO_MAP: Record<string, PieceType> = {
   Q: 'queen', R: 'rook', B: 'bishop', N: 'knight',
 };
 
-/** Strip annotation markers our renderer appends to SAN: checkmate '#',
- *  brilliant '!!', blunder '??', mistake '?', best '⭐'. The parser only
- *  cares about the move itself, not the qualitative tag. */
+/**
+ * Strip everything our renderer decorates a move with: checkmate '#',
+ * check '+', brilliant '!!', blunder '??', mistake '?', best '⭐', and
+ * the whole "← Better: … (−123 cp)" tail. The parser only cares about
+ * the move itself, never the qualitative tag.
+ *
+ * The trailing strip is a blacklist of "not part of a move" rather than a
+ * whitelist of known markers, because a whitelist keeps losing. A star
+ * that has been through a chat client, an emoji keyboard or some
+ * clipboards arrives as U+2B50 U+FE0F — the variation selector sits after
+ * the star, an anchored `[⭐]+$` no longer reaches the end of the string,
+ * and the entire log is rejected with "Could not parse replay log."
+ * Every real move token ends in a letter or a digit (e4, =Q, @B, O-O,
+ * A→B), so anything else on the end can go, whatever it is.
+ */
 function stripMarkers(token: string): string {
   return token
-    // Drop the entire "← Better: ... (−123 cp)" suggestion tail. Matches
-    // any arrow-prefixed annotation (handles both Stage M's "Better:" and
-    // pre-Stage-M Ukrainian "краще:" wording for back-compat).
-    .replace(/\s*←\s.*$/u, '')
-    .replace(/\s*\(−\d+\s*cp\)\s*$/u, '')
-    .replace(/[!?#+★⭐]+$/u, '')
+    // Drop the "← Better: … " suggestion tail. Accepts the arrow glyph or
+    // an ASCII "<-", and both the Stage M "Better:" wording and the
+    // pre-Stage-M Ukrainian "краще:" one.
+    .replace(/\s*(?:←|<-)\s.*$/u, '')
+    .replace(/\s*\([−-]?\d+\s*cp\)\s*$/u, '')
+    .replace(/[^A-Za-z0-9]+$/u, '')
+    .replace(/^[^A-Za-z0-9]+/u, '')
     .trim();
 }
 

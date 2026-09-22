@@ -488,9 +488,28 @@ export function generateLegalMoves(
   });
 }
 
+/**
+ * A pawn promotes on the far rank OR wherever the topology leaves it with
+ * nowhere to go.
+ *
+ * The topological half was the original rule and it is the one that makes
+ * sense in a board that folds: a pawn with no square in front of it has
+ * finished its journey whatever the coordinates say. But it was the ONLY
+ * rule, and in topology B a pawn can step onto the geometric last rank
+ * and still have a forward neighbour there — so it did not promote, and
+ * after the next rotation that neighbour was gone and the pawn was stuck
+ * on rank 8 as a pawn, forever, unable to move or promote.
+ *
+ * Both conditions now count. A pawn can never end up frozen, and it can
+ * never sit on the far rank without becoming something, which is what a
+ * player looking at the board expects whichever topology is showing.
+ */
 function isPromotionRank(square: SquareId, color: Color, topology: TopologyState): boolean {
   const direction = color === 'white' ? 1 : -1;
-  return stepInDirection(square, 0, direction, topology) === null;
+  if (stepInDirection(square, 0, direction, topology) === null) return true;
+  // Rank index is 0-based here: white's far rank is 7, black's is 0.
+  const rank = Number(square[1]) - 1;
+  return color === 'white' ? rank === 7 : rank === 0;
 }
 
 const PROMOTION_PIECES: readonly ('queen' | 'rook' | 'bishop' | 'knight')[] =
@@ -675,12 +694,21 @@ export function applyMove(state: BoardState, move: Move): BoardState {
   let base: BoardState;
 
   if (move.kind === 'enPassant') {
-    // Stage T1: pawn moves diagonally to the EP target square; captured
-    // pawn sits one rank behind on the same file as `to`.
+    // Stage T1: the pawn moves diagonally onto the square the victim
+    // stepped THROUGH; the victim itself is one step further along its
+    // own direction of travel — which is one step backwards from the
+    // capturer's point of view.
+    //
+    // This was `to[0] + from[1]` — the file of the destination with the
+    // rank of the origin. That is the same square in topology A and the
+    // wrong one in B, where the capture is now legal too.
     let next = state;
     next = setPiece(next, move.from, null);
     next = setPiece(next, move.to, piece);
-    const capturedSquare = (move.to[0] + move.from[1]) as SquareId;
+    const victimDirection = piece.color === 'white' ? -1 : 1;
+    const capturedSquare =
+      stepInDirection(move.to, 0, victimDirection, state.topologyState) ??
+      ((move.to[0] + move.from[1]) as SquareId);
     next = setPiece(next, capturedSquare, null);
     base = {
       ...next,
@@ -742,21 +770,25 @@ export function applyMove(state: BoardState, move: Move): BoardState {
 
   // Stage T1: set the en-passant marker on a fresh 2-square pawn push so
   // the OPPONENT can en-passant capture on their next reply. Cleared on
-  // every other move. Restricted to topology A — auxetic B reshuffles
-  // squares enough that the "pass-through" semantic doesn't apply.
+  // every other move.
+  //
+  // This used to be restricted to topology A and derived from file/rank
+  // arithmetic, on the grounds that B "reshuffles squares enough that the
+  // pass-through semantic doesn't apply". It does apply: a double push in
+  // B still steps through exactly one square, B just disagrees with the
+  // coordinates about which one. Asking the topology for the two forward
+  // targets gives the passed square directly and is correct in both — so
+  // en passant now happens wherever it arises, which is what a player who
+  // just watched a pawn run past theirs expects.
+  //
+  // The right still expires on the very next move, rotation included
+  // (applyRotationMove clears it — DEF-1), so a marker created in B can
+  // never be taken in A.
   let enPassantTarget: SquareId | null = null;
-  if (
-    isPawnMove &&
-    move.from &&
-    move.to &&
-    state.topologyState === 'A' &&
-    move.from[0] === move.to[0]
-  ) {
-    const fromRank = Number(move.from[1]);
-    const toRank = Number(move.to[1]);
-    if (Math.abs(toRank - fromRank) === 2) {
-      const passedRank = (fromRank + toRank) / 2;
-      enPassantTarget = `${move.from[0]}${passedRank}` as SquareId;
+  if (isPawnMove && move.from && move.to) {
+    const { one, two } = pawnForwardTargets(move.from, piece.color, state.topologyState);
+    if (one && two && move.to === two) {
+      enPassantTarget = one;
     }
   }
 

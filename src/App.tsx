@@ -423,10 +423,16 @@ function evalToColors(evalCp: number, topology: TopologyState): { c1: string; c2
       };
     }
     if (t < -0.1) {
+      // V1 — this used to go violet (hsl 275). Neon can carry violet;
+      // wood and fantasy cannot — a purple room over a bronze board and
+      // gothic gold read as a rendering fault, not as "you are losing".
+      // The room just goes dark instead, with barely enough red left in
+      // it to feel warm rather than switched off. Losing badly is the
+      // light going out, which is the right feeling anyway.
       const i = Math.min(-t, 1);
       return {
-        c1: `hsl(275, ${25 + 35 * i}%, ${12 + 4 * i}%)`,
-        c2: `hsl(265, ${20 + 25 * i}%, ${6 + 3 * i}%)`,
+        c1: `hsl(350, ${8 + 10 * i}%, ${11 - 5 * i}%)`,
+        c2: `hsl(345, ${6 + 8 * i}%, ${6 - 3 * i}%)`,
       };
     }
     return { c1: '#1a1c2a', c2: '#12131f' };
@@ -1906,8 +1912,16 @@ function App() {
   // rotate button's hover preview, same rule the dust-wave FX follows), so
   // topology A is the neon night room and B is daylight. No-op for anyone
   // who pinned a specific theme. See src/ui/themeStore.ts.
+  //
+  // Deliberately DELAYED past the board's rotation animation (560-650ms).
+  // Swapping `data-theme` restyles every element in the document; doing
+  // that in the same frame as a transform animation on the board and all
+  // 64 tiles turned the rotation into a visible stutter. Letting the board
+  // finish turning before the light changes costs nothing and reads better
+  // anyway — the board turns, then the room follows it.
   useEffect(() => {
-    themeStore.setTopology(state.topologyState);
+    const t = setTimeout(() => themeStore.setTopology(state.topologyState), 700);
+    return () => clearTimeout(t);
   }, [state.topologyState]);
 
   // Brief glowing outline on the board container whenever topology flips,
@@ -2530,12 +2544,15 @@ function App() {
     setClockMs({ white: 0, black: 0 });
   }, [logLocal.id]);
 
-  // V1 — with a solo time control the clocks arm on the first move (like
-  // every online chess clock); free play keeps counting from game start.
-  // Picking a control before the first move also zeroes whatever free-play
-  // elapsed time had already accumulated, so both sides start with the
-  // full budget (the pills lock once a game is under way).
-  const clockArmed = soloTcSec === null || logLocal.moves.length > 0;
+  // V1 — the clocks arm on the FIRST MOVE, always.
+  //
+  // This used to be `soloTcSec === null || moves.length > 0`, so free play
+  // (time control "None") started counting the moment the page loaded or a
+  // new game was created. Sitting on a fresh board reading the position is
+  // not thinking time you spent, and it made the clock look broken the
+  // instant a game began. Picking a control before the first move still
+  // zeroes whatever already accumulated, so both sides start whole.
+  const clockArmed = logLocal.moves.length > 0;
   useEffect(() => {
     if (logLocal.moves.length === 0) setClockMs({ white: 0, black: 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4375,21 +4392,31 @@ function App() {
   // nobody's actually in check, purely so the subutaiFX.mate() dev seam
   // (below) always has a real square to point at — the real gameplay
   // trigger effect still requires a genuine gameStatus === 'checkmate'.
-  const mateKingPos = useMemo(() => {
-    const kingSq = checkSquares.king ?? findKing(state, state.sideToMove);
-    if (!kingSq) return null;
-    const tile = tilePixelCenter(kingSq as SquareId, displayTopology, layout);
-    const flip = isMultiplayer && mpSync?.myColor === 'black';
-    return {
-      sq: kingSq as string,
-      // Whose king this is — the side to move is the side being mated.
-      // Carried here so the hand-off effect below can tell a win from a
-      // loss without reaching into `state` (which it does not depend on).
-      color: state.sideToMove,
-      cx: flip ? boardSize - tile.cx : tile.cx,
-      cy: flip ? boardSize - tile.cy : tile.cy,
-    };
-  }, [checkSquares.king, state, displayTopology, layout, boardSize, isMultiplayer, mpSync]);
+  /** A king's centre in BOARD pixels, for the iris and the shatter. */
+  const boardKingPos = useCallback(
+    (sq: string | null, color: Color) => {
+      if (!sq) return null;
+      const tile = tilePixelCenter(sq as SquareId, displayTopology, layout);
+      const flip = isMultiplayer && mpSync?.myColor === 'black';
+      return {
+        sq,
+        color,
+        cx: flip ? boardSize - tile.cx : tile.cx,
+        cy: flip ? boardSize - tile.cy : tile.cy,
+      };
+    },
+    [displayTopology, layout, boardSize, isMultiplayer, mpSync],
+  );
+
+  const mateKingPos = useMemo(
+    () =>
+      boardKingPos(
+        checkSquares.king ?? findKing(state, state.sideToMove),
+        // Whose king this is — the side to move is the side being mated.
+        state.sideToMove,
+      ),
+    [checkSquares.king, state, boardKingPos],
+  );
 
   /**
    * V1 — where a given side's king is on screen, in VIEWPORT pixels.
@@ -4401,6 +4428,43 @@ function App() {
    * padding, so its rect origin and the board's own coordinate origin are
    * the same point.
    */
+  /**
+   * V1 — who won a decisive game, or null if it is not decided or drawn.
+   * On a checkmate the mated side is the one to move, so the winner is
+   * the other one.
+   */
+  const decisiveWinner: Color | null = useMemo(() => {
+    if (gameStatus === 'checkmate') return state.sideToMove === 'white' ? 'black' : 'white';
+    if (gameStatus === 'king_captured_white_wins') return 'white';
+    if (gameStatus === 'king_captured_black_wins') return 'black';
+    if (gameStatus === 'timeout_white') return 'black';
+    if (gameStatus === 'timeout_black') return 'white';
+    return null;
+  }, [gameStatus, state.sideToMove]);
+
+  /**
+   * V1 — WHOSE king the endgame cut is about.
+   *
+   * The cut used to lift the losing king in every case, which meant a win
+   * ended with a crown descending onto the bot's king. It belongs to the
+   * player it is played for:
+   *
+   *   solo         your king — you are white, win or lose
+   *   multiplayer  your king only, whichever colour you were given
+   *   hot-seat     the winning king, because neither side is "you" and
+   *                the only thing worth dramatising is who took it
+   *   spectating / bot-vs-bot   nobody: no cut, the old iris + shatter
+   *
+   * Null means "no cinematic in this mode", which is also what keeps
+   * multiplayer and hot-seat from playing one on a draw.
+   */
+  const cutSubjectColor: Color | null = useMemo(() => {
+    if (watchingGame || isAutoMode) return null;
+    if (isMultiplayer) return mpSync?.myColor ?? null;
+    if (isLocalMode) return decisiveWinner;
+    return HUMAN_COLOR;
+  }, [watchingGame, isAutoMode, isMultiplayer, isLocalMode, mpSync?.myColor, decisiveWinner]);
+
   const kingOriginFor = useCallback(
     (color: Color): KingOrigin | null => {
       const sq = findKing(state, color);
@@ -4434,13 +4498,15 @@ function App() {
   const launchEndgame = useCallback(
     (
       kind: EndgameKind,
-      opts?: { loser?: Color; fromIris?: boolean; theme?: VictoryTheme },
+      /** `king` is the SUBJECT of the cut, not the loser: the king the
+       *  scene lifts and the one the iris closed on. See cutSubjectColor. */
+      opts?: { king?: Color; fromIris?: boolean; theme?: VictoryTheme },
     ) => {
       if (typeof window === 'undefined') return;
       if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
       void importEndgameScene(); // no-op if the iris already warmed it
-      const loser: Color = opts?.loser ?? (kind === 'victory' ? 'black' : HUMAN_COLOR);
-      const king = kingOriginFor(loser);
+      const subject: Color = opts?.king ?? cutSubjectColor ?? HUMAN_COLOR;
+      const king = kingOriginFor(subject);
       // The colour roll is the win's only variable; the loss ignores it.
       const theme: VictoryTheme = opts?.theme ?? (Math.random() < 0.5 ? 'red' : 'blue');
       if (victoryFreezeTimer.current) clearTimeout(victoryFreezeTimer.current);
@@ -4454,8 +4520,24 @@ function App() {
         setEndgameCut({ kind, theme, king, prelude: 300 });
       }, 650);
     },
-    [kingOriginFor],
+    [kingOriginFor, cutSubjectColor],
   );
+
+  /**
+   * V1 — the king the iris actually closes on.
+   *
+   * When a cut follows, it has to be the cut's subject: narrowing the
+   * screen down onto one king and then lifting a different one out of the
+   * dark reads as two clips spliced together, which is exactly what this
+   * whole sequence was built to stop. With no cut (spectating,
+   * bot-vs-bot) it stays on the mated king, because then the shatter is
+   * the ending and the mated king is what the shatter is about.
+   */
+  const irisKingPos = useMemo(() => {
+    if (!cutSubjectColor || !mateKingPos) return mateKingPos;
+    if (cutSubjectColor === mateKingPos.color) return mateKingPos;
+    return boardKingPos(findKing(state, cutSubjectColor), cutSubjectColor) ?? mateKingPos;
+  }, [cutSubjectColor, mateKingPos, state, boardKingPos]);
 
   const MATE_IRIS_MS = 900;
   const MATE_HOLD_MS = 320;
@@ -4475,26 +4557,22 @@ function App() {
     if (mateSeqStartedRef.current === log.id) return;
     mateSeqStartedRef.current = log.id;
     setMateSeq('iris');
-    // V1 — in a solo game the iris no longer ends in a shatter: it hands
-    // the king over to the endgame cinematic, which picks it up as pixels
-    // on the same square and carries it to the middle of the screen. The
-    // shatter stays as the ending for every mode that does NOT get a
-    // cinematic (multiplayer, hot-seat, spectating, bot-vs-bot), so those
-    // keep exactly the ending they had.
-    const matedColor = mateKingPos.color;
-    const cinematic =
-      !isMultiplayer && !isLocalMode && !watchingGame && !isAutoMode;
-    if (cinematic && endgameFiredForLogRef.current !== log.id) {
+    // V1 — the iris no longer ends in a shatter when a cut will follow: it
+    // hands its king over to the cinematic, which picks the same piece up
+    // as pixels on the same square and carries it to the middle of the
+    // screen. The shatter remains the ending wherever there is no cut —
+    // spectating and bot-vs-bot, and any draw — so those keep exactly the
+    // ending they had.
+    if (cutSubjectColor && endgameFiredForLogRef.current !== log.id) {
       endgameFiredForLogRef.current = log.id;
       // Warm the chunk during the 1.2s the iris takes to close, so the
       // hand-off is a cut and not a gap.
       void importEndgameScene();
+      const subject = cutSubjectColor;
+      const won = decisiveWinner === subject;
       const handOff = setTimeout(() => {
         setMateSeq('idle');
-        launchEndgame(matedColor === HUMAN_COLOR ? 'defeat' : 'victory', {
-          loser: matedColor,
-          fromIris: true,
-        });
+        launchEndgame(won ? 'victory' : 'defeat', { king: subject, fromIris: true });
       }, MATE_IRIS_MS + MATE_HOLD_MS);
       return () => clearTimeout(handOff);
     }
@@ -4511,10 +4589,8 @@ function App() {
     gameStatus,
     mateKingPos,
     log.id,
-    isMultiplayer,
-    isLocalMode,
-    watchingGame,
-    isAutoMode,
+    cutSubjectColor,
+    decisiveWinner,
     launchEndgame,
   ]);
   const mateSeqActive = mateSeq !== 'idle';
@@ -4531,6 +4607,7 @@ function App() {
   //   subutaiVictory()            the win cut (king lift → crown → VICTORY)
   //   subutaiVictory('blue')      …in the blue palette instead of a coin flip
   //   subutaiDefeat()             the loss cut (king lift → topple → DEFEAT)
+  //   subutaiDraw()               the draw cut (two hands meet and shake)
   //   subutaiEndgame('victory' | 'defeat', { full: true, theme: 'blue' })
   //                               same, but `full` plays the checkmate iris
   //                               first and hands over exactly as a real
@@ -4546,6 +4623,7 @@ function App() {
       subutaiVictory?: (t?: VictoryTheme) => void;
       __triggerVictory?: (t?: VictoryTheme) => void;
       subutaiDefeat?: () => void;
+      subutaiDraw?: () => void;
       subutaiEndgame?: (
         kind?: EndgameKind,
         opts?: { full?: boolean; theme?: VictoryTheme },
@@ -4553,8 +4631,8 @@ function App() {
     };
     const run = (kind: EndgameKind, full: boolean, theme?: VictoryTheme) => {
       void importEndgameScene();
-      const loser: Color = kind === 'victory' ? 'black' : HUMAN_COLOR;
-      const go = () => launchEndgame(kind, { loser, fromIris: true, theme });
+      const subject: Color = cutSubjectColor ?? HUMAN_COLOR;
+      const go = () => launchEndgame(kind, { king: subject, fromIris: true, theme });
       if (!full) {
         go();
         return;
@@ -4570,6 +4648,7 @@ function App() {
     w.subutaiVictory = (t) => run('victory', false, t);
     w.__triggerVictory = w.subutaiVictory; // legacy alias used in dev tooling
     w.subutaiDefeat = () => run('defeat', false);
+    w.subutaiDraw = () => run('draw', false);
     if (w.subutaiFX) {
       w.subutaiFX.mate = () => {
         setMateSeq('iris');
@@ -4577,7 +4656,7 @@ function App() {
         setTimeout(() => setMateSeq('idle'), MATE_IRIS_MS + MATE_HOLD_MS + MATE_SHATTER_MS);
       };
     }
-  }, [mateKingPos, launchEndgame]);
+  }, [mateKingPos, launchEndgame, cutSubjectColor]);
 
   // V1 — the endgame cut for games that do NOT end in checkmate: a flag
   // fall, a resignation, a captured king. Checkmates are handed over by the
@@ -4588,22 +4667,33 @@ function App() {
   // just blinked into a modal. Both results get their own cut now; a draw
   // still gets none, because there is nothing to dramatise.
   useEffect(() => {
-    if (!gameOutcome || gameOutcome === 'draw') return;
-    if (isMultiplayer || isLocalMode || watchingGame || isAutoMode) return;
+    if (watchingGame || isAutoMode) return; // spectating gets no cut
+    if (gameStatus === 'active') return;
     if (gameStatus === 'checkmate') return; // the iris hands that one over
     if (mateSeqActive) return;
     if (endgameFiredForLogRef.current === log.id) return;
+
+    // A draw belongs to neither player, so it has no subject king and no
+    // winner to ask about — it gets its own storyboard: two hands meeting
+    // in the middle. It plays in every mode a human is actually sitting
+    // in, including hot-seat, where cutSubjectColor is deliberately null.
+    if (gameStatus.startsWith('draw')) {
+      endgameFiredForLogRef.current = log.id;
+      launchEndgame('draw');
+      return;
+    }
+
+    if (!cutSubjectColor || !decisiveWinner) return;
     endgameFiredForLogRef.current = log.id;
-    launchEndgame(gameOutcome === 'human-win' ? 'victory' : 'defeat', {
-      loser: gameOutcome === 'human-win' ? 'black' : HUMAN_COLOR,
+    launchEndgame(decisiveWinner === cutSubjectColor ? 'victory' : 'defeat', {
+      king: cutSubjectColor,
     });
   }, [
-    gameOutcome,
-    gameStatus,
-    isMultiplayer,
-    isLocalMode,
     watchingGame,
     isAutoMode,
+    cutSubjectColor,
+    decisiveWinner,
+    gameStatus,
     mateSeqActive,
     log.id,
     launchEndgame,
@@ -5378,10 +5468,16 @@ function App() {
             const low = (mpClocks !== null || soloCountdown) && ms < 30_000;
             const face = formatClockFace(ms);
             const running = state.sideToMove === side;
+            // V1 — the running half is lit in the theme accent when it is
+            // YOUR clock and in the opponent accent when it is not, so the
+            // two are never confusable at a glance. Online it follows the
+            // colour you were actually dealt; in hot-seat nobody is "you",
+            // so the two seats simply get the two colours.
+            const mine = side === (isMultiplayer ? mpSync?.myColor ?? 'white' : 'white');
             return (
               <div
                 key={side}
-                className={`tc-face tc-face-${side}${running ? ' is-running' : ''}${low ? ' is-low' : ''}`}
+                className={`tc-face tc-face-${side}${running ? ' is-running' : ''}${low ? ' is-low' : ''}${mine ? ' is-mine' : ' is-theirs'}`}
               >
                 <span className="tc-readout">
                   {/* Every segment of the display, unlit — the live digits
@@ -5658,7 +5754,7 @@ function App() {
                    nowhere. Uses the existing [data-3d] perspective; with
                    3D off there is no Z to rise along and the rule does
                    not apply. */
-                mateSeq === 'iris' && mateKingPos?.sq === sq ? 'is-mate-rise' : '',
+                mateSeq === 'iris' && irisKingPos?.sq === sq ? 'is-mate-rise' : '',
                 /* Sprint 4.1 — pulse own pieces whose type matches an
                    unused roulette slot for THIS turn. Only on the
                    active client (currentPlayer === 'human') so the
@@ -6038,12 +6134,12 @@ function App() {
           <div className={`capture-strobe is-${captureStrobe}`} aria-hidden />
         )}
         {rotationDust && <div className="rotation-dust" aria-hidden />}
-        {mateKingPos && mateSeqActive && (
+        {irisKingPos && mateSeqActive && (
           <div
             className="checkmate-iris"
             style={{
-              '--iris-cx': `${mateKingPos.cx}px`,
-              '--iris-cy': `${mateKingPos.cy}px`,
+              '--iris-cx': `${irisKingPos.cx}px`,
+              '--iris-cy': `${irisKingPos.cy}px`,
             } as React.CSSProperties}
             aria-hidden
           />
@@ -6835,8 +6931,14 @@ function App() {
         <MemoryPanel onGameActivate={onMemoryGameActivate} />
       )}
 
-      {/* The name prompt waits its turn behind the welcome screen. */}
-      {!authLoading && user && !displayName && !showWelcome && (
+      {/* The name prompt waits its turn behind BOTH the welcome screen and
+          the tour. It used to wait only for the welcome screen, so taking
+          the "start the tour" button dropped a modal straight on top of
+          the first tour step — the field sat over the tooltip and neither
+          could be read. The tour teaches; the name is what you pick once
+          you have decided to stay, so it comes after. Skipping the tour
+          still brings it up immediately. */}
+      {!authLoading && user && !displayName && !showWelcome && !showTutorial && (
         <NamePicker
           mode="initial"
           uid={user.uid}
@@ -6888,7 +6990,7 @@ function App() {
         />
       )}
 
-      {isMultiplayer && mpSync && mpEndOutcome && !mateSeqActive && (() => {
+      {isMultiplayer && mpSync && mpEndOutcome && !endgameSceneActive && (() => {
         const myView = translateOutcomeForPlayer(
           mpEndOutcome,
           {
@@ -6990,7 +7092,7 @@ function App() {
           prompt, unlike every other mode. Reuses the MP completion dialog's
           styling (mp-completion-*) - same shape, no scoring, just the
           outcome + a clear way to start again. */}
-      {isLocalMode && gameStatus !== 'active' && !localGameOverDismissed && !mateSeqActive && log.moves.length > 0 && (
+      {isLocalMode && gameStatus !== 'active' && !localGameOverDismissed && !endgameSceneActive && log.moves.length > 0 && (
         <div
           className="mp-completion-backdrop"
           onClick={() => setLocalGameOverDismissed(true)}
