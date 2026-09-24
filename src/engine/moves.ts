@@ -489,27 +489,24 @@ export function generateLegalMoves(
 }
 
 /**
- * A pawn promotes on the far rank OR wherever the topology leaves it with
- * nowhere to go.
+ * A pawn promotes on the far rank. Only there.
  *
- * The topological half was the original rule and it is the one that makes
- * sense in a board that folds: a pawn with no square in front of it has
- * finished its journey whatever the coordinates say. But it was the ONLY
- * rule, and in topology B a pawn can step onto the geometric last rank
- * and still have a forward neighbour there — so it did not promote, and
- * after the next rotation that neighbour was gone and the pawn was stuck
- * on rank 8 as a pawn, forever, unable to move or promote.
+ * This used to be topological — "no square in front of me, so the journey
+ * is over" — which is a tempting reading of a board that folds, and it is
+ * wrong. In topology B the squares a7, d7, e7 and h7 have no forward
+ * neighbour (and a2/d2/e2/h2 for black), so a pawn that captured onto one
+ * of them promoted on the SEVENTH rank. It did not deserve to: rotating
+ * back to A gives that square its forward neighbour again, so a dead end
+ * in B is a temporary fold, not the end of the board.
  *
- * Both conditions now count. A pawn can never end up frozen, and it can
- * never sit on the far rank without becoming something, which is what a
- * player looking at the board expects whichever topology is showing.
+ * Topology A has no dead ends below rank 8 at all, so nothing can be
+ * stranded either: a pawn with nowhere to go in B can capture, or wait
+ * one rotation. The far rank is the far rank, whichever topology is
+ * showing — which is also the only rule a player can read off the board.
  */
-function isPromotionRank(square: SquareId, color: Color, topology: TopologyState): boolean {
-  const direction = color === 'white' ? 1 : -1;
-  if (stepInDirection(square, 0, direction, topology) === null) return true;
-  // Rank index is 0-based here: white's far rank is 7, black's is 0.
-  const rank = Number(square[1]) - 1;
-  return color === 'white' ? rank === 7 : rank === 0;
+function isPromotionRank(square: SquareId, color: Color, _topology: TopologyState): boolean {
+  const rank = Number(square[1]);
+  return color === 'white' ? rank === 8 : rank === 1;
 }
 
 const PROMOTION_PIECES: readonly ('queen' | 'rook' | 'bishop' | 'knight')[] =

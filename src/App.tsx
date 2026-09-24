@@ -62,7 +62,9 @@ import {
   Lock,
   MessageSquare,
   Pencil,
+  Menu,
   RotateCw,
+  SlidersHorizontal,
   Sparkles,
   Trophy,
   Cast,
@@ -321,6 +323,40 @@ const BEAT_SLIDE_MS = 260;
 
 // S2.5 — mm:ss elapsed-time display for the per-side clocks.
 /**
+ * How big the board should be right now.
+ *
+ * Module level because BOTH the initial state and the resize handler have
+ * to use it. They used to disagree: the first render hardcoded
+ * `min(innerWidth - 32, 520)` while the effect computed the real value a
+ * frame later, so every page load painted a 520px board inside a layout
+ * sized for a much bigger one and then snapped — which is the stretch you
+ * see on a reload. One formula, used twice, and the first paint is right.
+ */
+function computeBoardSize(uiScale: number, dockLeft: number, dockRight: number): number {
+  // Layout runs in zoom space: divide the device viewport by the scale.
+  const vw = window.innerWidth / uiScale;
+  const vh = window.innerHeight / uiScale;
+  // Side docks reserve space only on desktop; below the breakpoint the
+  // panels become full-width bottom bars and reserve nothing.
+  const reserved = window.innerWidth > 720 ? dockLeft + dockRight : 0;
+  // Above the grid collapse (880px, device px — CSS media queries ignore
+  // zoom) the right sidebar + gaps/padding stay clear; below it the board
+  // takes the full width minus shell padding. The sidebar is not a flat
+  // 320: it steps up on big monitors (SIDEBAR_STEPS in App.css), so the
+  // reserved chrome and the board cap follow the same steps. They must
+  // stay in sync or the board overflows its column.
+  const w = window.innerWidth;
+  const sidebar = w >= 2100 ? 460 : w >= 1700 ? 400 : 320;
+  const chrome = w > 880 ? sidebar + 72 : 32;
+  const capPx = w >= 2100 ? 1000 : w >= 1700 ? 900 : 820;
+  const cap = Math.min(capPx, Math.round(vh * 0.7));
+  // R9 — floored at 240px: a hidden/headless tab can report innerWidth 0
+  // during init, and without the floor boardSize goes NEGATIVE (tile math,
+  // dash arrays and overlays all silently break until the next resize).
+  return Math.max(240, Math.min(vw - chrome - reserved, cap));
+}
+
+/**
  * V1 — fixed-width MM:SS for the tournament clock face.
  *
  * This used to be a "m:ss" formatter, which is fine in a sentence but
@@ -334,6 +370,9 @@ function formatClockFace(ms: number): string {
   const s = totalSec % 60;
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
+
+/** How long two heavy board effects count as "back to back". */
+const FX_WINDOW_MS = 2600;
 
 const MOVE_CLASS_MARKER: Record<MoveClass, string> = {
   best: ' ⭐',
@@ -777,6 +816,38 @@ function App() {
   const [gameStatus, setGameStatus] = useState<GameStatus>('active');
   const [previewTopology, setPreviewTopology] = useState<TopologyState | null>(null);
   const [lastMoveLocal, setLastMove] = useState<{ from?: SquareId; to?: SquareId } | null>(null);
+  /**
+   * V1 — mobile panels.
+   *
+   * On a phone the icon rail was folded into the header as a second row
+   * of small targets and GAME SETUP was pushed below the board, where
+   * nobody scrolled to find it. Both become off-canvas drawers instead:
+   * the rail slides in from the left, the setup panel from the right, one
+   * at a time, behind a scrim. Buttons rather than swipes — this is a web
+   * page, a horizontal swipe belongs to the browser's back gesture, and a
+   * control the user cannot see is a control they do not have.
+   */
+  const [mobilePanel, setMobilePanel] = useState<'none' | 'menu' | 'setup'>('none');
+  const closeMobilePanel = useCallback(() => setMobilePanel('none'), []);
+  useEffect(() => {
+    if (mobilePanel === 'none') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobilePanel('none');
+    };
+    // A drawer is a narrow-screen idea. Growing past the breakpoint with
+    // one open would leave the page scrimmed over a panel that is back in
+    // the normal layout anyway.
+    const onResize = () => {
+      if (window.innerWidth > 720) setMobilePanel('none');
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [mobilePanel]);
+
   const [showHelp, setShowHelp] = useState(false);
   // S2.2 — first-launch tour. Defaults to open until the user finishes
   // or skips it once; replayable from the Help dialog.
@@ -1046,7 +1117,34 @@ function App() {
   const [rotationDust, setRotationDust] = useState(false);
   // R17b — red vignette pulse when a REAL check lands (preview-induced
   // "checks" from the rotation eye are ignored).
-  const [checkVignette, setCheckVignette] = useState(false);
+  const [checkVignette, setCheckVignette] = useState<'full' | 'damped' | null>(null);
+  /**
+   * V1 — the loudness governor.
+   *
+   * Captures, checks and the screen shake each look good once. Played
+   * back to back — an exchange, a check, a recapture — they stack into a
+   * board that is genuinely hard to read, which is the opposite of what
+   * an effect meant to draw the eye should do.
+   *
+   * So every heavy effect registers itself here first. The first one in a
+   * window plays in full; anything landing on top of it is damped — no
+   * screen shake, no strobe, a weaker vignette — and once three or more
+   * pile up, the sequence is reported as a streak instead, which is the
+   * information the flashing was carrying anyway.
+   */
+  const fxRecentRef = useRef<number[]>([]);
+  const [fxStreak, setFxStreak] = useState(0);
+  const fxStreakTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const registerFx = useCallback((): 'full' | 'damped' => {
+    const now = Date.now();
+    const recent = fxRecentRef.current.filter((t) => now - t < FX_WINDOW_MS);
+    recent.push(now);
+    fxRecentRef.current = recent;
+    setFxStreak(recent.length >= 3 ? recent.length : 0);
+    if (fxStreakTimer.current) clearTimeout(fxStreakTimer.current);
+    fxStreakTimer.current = setTimeout(() => setFxStreak(0), FX_WINDOW_MS);
+    return recent.length >= 2 ? 'damped' : 'full';
+  }, []);
   // R17b — the storyboard's "зрив темпу": a dim freeze-frame beat before
   // the victory cinematic slams in.
   const [victoryFreeze, setVictoryFreeze] = useState(false);
@@ -1204,37 +1302,15 @@ function App() {
     }
   }, []);
 
-  // R9 — floored at 240px: a hidden/headless tab can report innerWidth 0
-  // during init, and without the floor boardSize goes NEGATIVE (tile math,
-  // dash arrays and overlays all silently break until the next resize).
   // R14 — the cap is no longer a flat 520: it follows the viewport
   // (70% of height, up to 820) so big monitors actually get a big board.
-  const [boardSize, setBoardSize] = useState(() =>
-    Math.max(240, Math.min(window.innerWidth - 32, 520)),
-  );
+  // Docks start closed, so reserving nothing for them on the very first
+  // paint is correct; the effect below re-runs the moment one opens.
+  const [boardSize, setBoardSize] = useState(() => computeBoardSize(uiScale, 0, 0));
 
   useEffect(() => {
-    function recompute() {
-      // Layout runs in zoom space: divide the device viewport by the scale.
-      const vw = window.innerWidth / uiScale;
-      const vh = window.innerHeight / uiScale;
-      // Side docks reserve space only on desktop; below the breakpoint
-      // the panels become full-width bottom bars and reserve nothing.
-      const reserved = window.innerWidth > 720 ? dock.left + dock.right : 0;
-      // Above the grid collapse (880px, device px — CSS media queries
-      // ignore zoom) the right sidebar + gaps/padding stay clear; below it
-      // the board takes the full width minus shell padding.
-      // V1 — the sidebar is no longer a flat 320: it steps up on big
-      // monitors (see the SIDEBAR_STEPS media queries in App.css), so the
-      // reserved chrome and the board cap follow the same steps. They must
-      // stay in sync or the board overflows its column.
-      const w = window.innerWidth;
-      const sidebar = w >= 2100 ? 460 : w >= 1700 ? 400 : 320;
-      const chrome = w > 880 ? sidebar + 72 : 32;
-      const capPx = w >= 2100 ? 1000 : w >= 1700 ? 900 : 820;
-      const cap = Math.min(capPx, Math.round(vh * 0.7));
-      setBoardSize(Math.max(240, Math.min(vw - chrome - reserved, cap)));
-    }
+    const recompute = () =>
+      setBoardSize(computeBoardSize(uiScale, dock.left, dock.right));
     recompute();
     window.addEventListener('resize', recompute);
     return () => window.removeEventListener('resize', recompute);
@@ -1310,8 +1386,8 @@ function App() {
     };
     const fx = {
       check: () => {
-        setCheckVignette(true);
-        window.setTimeout(() => setCheckVignette(false), 900);
+        setCheckVignette('full');
+        window.setTimeout(() => setCheckVignette(null), 900);
       },
       strobe: (piece: 'queen' | 'rook' | 'bishop' | 'knight' = 'queen') => {
         setCaptureStrobe(piece);
@@ -1919,8 +1995,13 @@ function App() {
   // 64 tiles turned the rotation into a visible stutter. Letting the board
   // finish turning before the light changes costs nothing and reads better
   // anyway — the board turns, then the room follows it.
+  //
+  // The store cross-fades the swap itself (a short dip, see themeStore),
+  // so this only has to clear the rotation, not hide the change: 560ms
+  // here plus the veil's own 170ms lead-in lands the swap right as the
+  // board settles.
   useEffect(() => {
-    const t = setTimeout(() => themeStore.setTopology(state.topologyState), 700);
+    const t = setTimeout(() => themeStore.setTopology(state.topologyState), 560);
     return () => clearTimeout(t);
   }, [state.topologyState]);
 
@@ -2594,13 +2675,18 @@ function App() {
 
   const [mpNow, setMpNow] = useState(() => Date.now());
   useEffect(() => {
-    if (!mpTimeControl || !mpMatchLive) return;
+    // V1 — ticks for ANY live match, not only a timed one. Without a time
+    // control the clocks used to sit at 00:00 for the whole game, which
+    // makes the one piece of information both players actually want —
+    // who is burning the time — unavailable exactly when there is no
+    // limit to enforce it.
+    if (!mpMatchLive) return;
     const id = setInterval(() => setMpNow(Date.now()), 500);
     return () => clearInterval(id);
-  }, [mpTimeControl, mpMatchLive]);
+  }, [mpMatchLive]);
 
   const mpClocks = useMemo(() => {
-    if (!mpTimeControl || !mpSync) return null;
+    if (!isMultiplayer || !mpSync) return null;
     const moves = mpSync.matchState.log.moves;
     // R13 — Fischer increment: every completed move credits its mover.
     const incMs = (mpSync.matchState.timeIncrementSec ?? 0) * 1000;
@@ -2618,6 +2704,11 @@ function App() {
       if (moves.length % 2 === 0) usedWhite += live;
       else usedBlack += live;
     }
+    // No time control: just show what each side has spent. Same numbers,
+    // counted up instead of down, and nothing can flag.
+    if (!mpTimeControl) {
+      return { white: usedWhite, black: usedBlack, countdown: false };
+    }
     // Completed-move counts: entries alternate W,B,W,B… so white made
     // ceil(n/2) of them and black the rest.
     const whiteMoves = Math.ceil(moves.length / 2);
@@ -2626,8 +2717,9 @@ function App() {
     return {
       white: Math.max(0, total + whiteMoves * incMs - usedWhite),
       black: Math.max(0, total + blackMoves * incMs - usedBlack),
+      countdown: true,
     };
-  }, [mpTimeControl, mpSync, mpNow, mpMatchLive]);
+  }, [isMultiplayer, mpTimeControl, mpSync, mpNow, mpMatchLive]);
 
   const flagFiredRef = useRef(false);
   useEffect(() => {
@@ -3672,8 +3764,12 @@ function App() {
     if (!last) return;
     const mv = last.move;
     if (mv.kind !== 'capture' || !mv.to) return;
+    const loudness = registerFx();
+    // The spark on the captured square always plays: it is local, it says
+    // WHERE, and it never moves the board. Only the whole-screen parts
+    // stand down.
     setCaptureFxSquare(mv.to as SquareId);
-    setCaptureShake(true);
+    if (loudness === 'full') setCaptureShake(true);
     const t1 = setTimeout(() => setCaptureFxSquare(null), 620);
     const t2 = setTimeout(() => setCaptureShake(false), 300);
     // R17c/M.22 — strobe frames on any non-pawn capture. Pawns keep just
@@ -3683,6 +3779,7 @@ function App() {
     const victim = prevBoardRef.current?.pieces[mv.to as SquareId];
     let t3: ReturnType<typeof setTimeout> | null = null;
     if (
+      loudness === 'full' &&
       victim &&
       (victim.type === 'queen' ||
         victim.type === 'rook' ||
@@ -3697,6 +3794,8 @@ function App() {
       clearTimeout(t2);
       if (t3) clearTimeout(t3);
     };
+    // registerFx is stable; the effect keys off the move count as before.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [log.moves.length]);
 
   // R17c — dust shockwave when a topology rotation commits.
@@ -3768,10 +3867,10 @@ function App() {
     const was = prevCheckKingRef.current;
     prevCheckKingRef.current = king;
     if (!king || was) return;
-    setCheckVignette(true);
-    const t = setTimeout(() => setCheckVignette(false), 900);
+    setCheckVignette(registerFx());
+    const t = setTimeout(() => setCheckVignette(null), 900);
     return () => clearTimeout(t);
-  }, [checkSquares.king, previewTopology]);
+  }, [checkSquares.king, previewTopology, registerFx]);
 
   // Motion scaffold — soft tactile sound the instant a piece is picked up.
   // Central effect (not scattered at every setSelected call site) so it
@@ -4883,8 +4982,22 @@ function App() {
     }
   }
 
-  // Notation string for copy
-  const notationString = useMemo(() => {
+  /**
+   * The move log, in two versions.
+   *
+   * On screen it carries the coaching marks — ⭐ for the engine's own
+   * choice, ? and ?? for mistakes, and the "← Better: … (−123 cp)" tail.
+   * That is the whole point of the panel and it stays.
+   *
+   * What goes on the clipboard is the bare log. A pasted log is an INPUT:
+   * it gets fed back through the replay importer, mailed to someone,
+   * pasted into a chat. The marks survived none of those trips intact —
+   * a star that has been through a chat client comes back as U+2B50
+   * U+FE0F — and every one of them is noise to whoever reads it. The
+   * parser is now forgiving about them either way, but the honest fix is
+   * not to ship them where they were never wanted.
+   */
+  const buildNotation = useCallback((annotate: boolean) => {
     const lines: string[] = [
       `[Chess960 "${positionLabel}"]`,
       `[Seed "${seed}"]`,
@@ -4916,7 +5029,7 @@ function App() {
         if (entry.move.kind !== 'topologyToggle' && entry.topology === 'B') {
           if (!san.includes('@')) san += '@B';
         }
-        const a = entry.analysis;
+        const a = annotate ? entry.analysis : undefined;
         if (a) {
           const marker = MOVE_CLASS_MARKER[a.classification];
           if (marker) san += marker;
@@ -4946,8 +5059,10 @@ function App() {
     return lines.join('\n');
   }, [log.moves, positionLabel, seed]);
 
+  const notationString = useMemo(() => buildNotation(true), [buildNotation]);
+
   function copyNotation() {
-    navigator.clipboard.writeText(notationString).then(() => {
+    navigator.clipboard.writeText(buildNotation(false)).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });
@@ -5087,6 +5202,13 @@ function App() {
           meta={activeReviewMeta ?? undefined}
           gameId={sharedGameId ?? lastGameId ?? null}
           onBack={() => {
+            // V1 — leaving the review rebuilds the whole board view in one
+            // commit: the board, 64 tiles, the panels and whatever
+            // analysis was mid-flight. On a long game that is a few
+            // hundred milliseconds during which the tab simply stops
+            // repainting, which reads as a hang with no explanation.
+            // Paint the spinner first, same as restoring a saved game.
+            beginBusy('Leaving review');
             setView('game');
             // Drop the snapshot so the next plain Review opens the live log.
             setActiveReviewLog(null);
@@ -5208,7 +5330,18 @@ function App() {
         ))}
       </div>
     )}
-    <div className="app-root" style={{ '--board-size': `${boardSize}px` } as React.CSSProperties}>
+    <div
+      className="app-root"
+      data-mobile-panel={mobilePanel}
+      style={{ '--board-size': `${boardSize}px` } as React.CSSProperties}
+    >
+      {/* Closes whichever drawer is open; inert while both are shut. */}
+      <div
+        className="mobile-scrim"
+        onClick={closeMobilePanel}
+        role="presentation"
+        aria-hidden
+      />
       <header className="app-header">
         <div className="app-brand">
           <NeonLogo />
@@ -5237,25 +5370,54 @@ function App() {
                 </span>
               );
             })()}
-            <span
-              className="live-title"
-              title={
+            {(() => {
+              // V1 — this line is the first thing to go when the header
+              // runs out of room. It is context, not a control: which
+              // opponent and which game id. Below 600px it moves into the
+              // LIVE pill's own tooltip, where a hover or a long-press
+              // still reaches it, and the header stops being three things
+              // fighting over one row.
+              const label =
+                isMultiplayer && mpSync
+                  ? `vs ${mpSync.opponentDisplayName} · ${mpSync.matchState.code}`
+                  : `vs AI · #${Math.abs(seed).toString(36).toUpperCase().slice(-5) || '0'}`;
+              const hint =
                 !isMultiplayer && gameMode === 'classic' && opponentMode === 'ai'
                   ? 'Try to survive 50 moves against the AI'
-                  : undefined
-              }
-            >
-              {isMultiplayer && mpSync ? (
-                <>
-                  vs <strong>{mpSync.opponentDisplayName}</strong> · {mpSync.matchState.code}
-                </>
-              ) : (
-                <>
-                  vs AI · #{Math.abs(seed).toString(36).toUpperCase().slice(-5) || '0'}
-                </>
-              )}
-            </span>
+                  : undefined;
+              return (
+                <span className="live-title" title={hint ?? label} data-label={label}>
+                  {isMultiplayer && mpSync ? (
+                    <>
+                      vs <strong>{mpSync.opponentDisplayName}</strong> · {mpSync.matchState.code}
+                    </>
+                  ) : (
+                    label
+                  )}
+                </span>
+              );
+            })()}
           </div>
+        </div>
+        <div className="mobile-panel-buttons">
+          <button
+            type="button"
+            className="mobile-panel-btn"
+            onClick={() => setMobilePanel((v) => (v === 'menu' ? 'none' : 'menu'))}
+            aria-expanded={mobilePanel === 'menu'}
+            aria-label="Tools and settings"
+          >
+            <Icon icon={Menu} size="md" aria-hidden />
+          </button>
+          <button
+            type="button"
+            className="mobile-panel-btn"
+            onClick={() => setMobilePanel((v) => (v === 'setup' ? 'none' : 'setup'))}
+            aria-expanded={mobilePanel === 'setup'}
+            aria-label="Game setup"
+          >
+            <Icon icon={SlidersHorizontal} size="md" aria-hidden />
+          </button>
         </div>
         <div className="header-controls" data-tour="header">
           <Tooltip text={showMusicDock ? 'Hide music dock' : 'Spotify + beat sync (beta)'} side="bottom">
@@ -5465,7 +5627,10 @@ function App() {
               : soloCountdown
                 ? Math.max(0, soloTcSec * 1000 - clockMs[side])
                 : clockMs[side];
-            const low = (mpClocks !== null || soloCountdown) && ms < 30_000;
+            // Only a real countdown can be "low". An elapsed clock reads
+            // low for its first 30 seconds, which would paint every game
+            // red at the start.
+            const low = (mpClocks?.countdown || soloCountdown) && ms < 30_000;
             const face = formatClockFace(ms);
             const running = state.sideToMove === side;
             // V1 — the running half is lit in the theme accent when it is
@@ -5742,6 +5907,14 @@ function App() {
                 isDark ? 'dark' : 'light',
                 isSelected ? 'selected' : '',
                 isEnPassantTarget ? 'target-enpassant' : isTarget ? 'target' : '',
+                /* V1 — a destination that holds an enemy piece is not the
+                   same offer as an empty square, and until now both got
+                   the identical 4px ring. A capture keeps the ring; a
+                   quiet move becomes a dot in the middle, so the piece
+                   underneath a capture target stays fully visible. */
+                isTarget && piece && piece.color !== state.sideToMove
+                  ? 'is-capture-target'
+                  : '',
                 isEnPassantExplosion ? 'enpassant-explosion' : '',
                 captureFxSquare === sq ? 'is-capture-burst' : '',
                 isLastFrom ? 'last-from' : '',
@@ -6129,7 +6302,21 @@ function App() {
             </svg>
           );
         })()}
-        {checkVignette && <div className="check-vignette" aria-hidden />}
+        {checkVignette && (
+          <div
+            className={`check-vignette${checkVignette === 'damped' ? ' is-damped' : ''}`}
+            aria-hidden
+          />
+        )}
+        {/* V1 — what the flashing was saying, said once. Appears only
+            when three or more heavy moves land inside the window, and it
+            is the only thing on screen at that point that moves. */}
+        {fxStreak >= 3 && (
+          <div className="fx-streak" aria-live="polite">
+            <span className="fx-streak-count">×{fxStreak}</span>
+            <span className="fx-streak-label">exchange</span>
+          </div>
+        )}
         {captureStrobe && (
           <div className={`capture-strobe is-${captureStrobe}`} aria-hidden />
         )}
@@ -6343,7 +6530,13 @@ function App() {
                       <Icon icon={AlertTriangle} size="md" aria-hidden />
                     </button>
                   </Tooltip>
-                  {gameMode === 'classic' && (
+                  {/* V1 — no engine hints against another person. The
+                      support and threat maps read the position you can
+                      already see; the hint runs a search and hands you a
+                      move, which in an online game is just an engine at
+                      the board. Hot-seat keeps it: both players share the
+                      screen and can see it being used. */}
+                  {gameMode === 'classic' && !isMultiplayer && (
                     <Tooltip text="Hint: engine suggests a move" side="top">
                       <button
                         type="button"

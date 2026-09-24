@@ -3,8 +3,13 @@ import { useToast } from './Toast';
 import { audio } from '../audio/AudioController';
 
 /* The app-wide brand mark: a diamond with rotation arrows around a crown
- * (rotation = auxetic topology, crown = capture-the-king), plus four riffs
- * on the same language. Click to cycle; the pick persists.
+ * (rotation = auxetic topology, crown = capture-the-king), and one riff on
+ * the same language. Click to switch; the pick persists.
+ *
+ * V1 rev 2 — down to TWO. Five candidates were useful while the identity
+ * was still being chosen and became clutter once it was: the checker ring,
+ * the hex badge and the S monogram are gone, and anyone who had one stored
+ * lands back on the diamond.
  *
  * V1 — the mark is drawn from THEME TOKENS, not the neon palette it was
  * born in. It shipped with hardcoded cyan/magenta, which read as a sticker
@@ -14,13 +19,7 @@ import { audio } from '../audio/AudioController';
  * in fantasy, cyan/magenta in neon. */
 
 const STORAGE_KEY = 'subutai_logo_variant';
-const NAMES = [
-  'Diamond orbit',
-  'Twin squares',
-  'Checker ring',
-  'Hex crown',
-  'S monogram',
-] as const;
+const NAMES = ['Diamond orbit', 'Twin squares'] as const;
 
 /** Primary line (the frame), secondary (the crown), and the light core. */
 const CYAN = 'var(--accent-primary)';
@@ -65,7 +64,7 @@ function variantSvg(i: number) {
           <g transform="translate(20 20) rotate(135)"><OrbitArrow color={CYAN} /></g>
         </svg>
       );
-    case 1: // Twin squares — the auxetic A/B flip
+    default: // Twin squares — the auxetic A/B flip
       return (
         <svg viewBox="-32 -32 64 64" role="img" aria-hidden>
           <rect x="-17" y="-17" width="34" height="34" fill="none" stroke={CYAN} strokeWidth="2.4" strokeLinejoin="round" opacity="0.9" />
@@ -73,52 +72,19 @@ function variantSvg(i: number) {
           <g transform="translate(0 2)"><Crown size={7} /></g>
         </svg>
       );
-    case 2: // Checker ring — board bent into orbit
-      return (
-        <svg viewBox="-32 -32 64 64" role="img" aria-hidden>
-          <circle r="21" fill="none" stroke={CYAN} strokeWidth="2.2" />
-          <circle r="15.5" fill="none" stroke={ICE} strokeWidth="5" strokeDasharray="6.1 6.1" opacity="0.75" />
-          <g transform="translate(0 2)"><Crown size={7.5} /></g>
-          <g transform="translate(24 -13) rotate(65)"><OrbitArrow /></g>
-          <g transform="translate(-24 13) rotate(245)"><OrbitArrow /></g>
-        </svg>
-      );
-    case 3: // Hex crown — arena badge
-      return (
-        <svg viewBox="-32 -32 64 64" role="img" aria-hidden>
-          <polygon points="0,-24 21,-12 21,12 0,24 -21,12 -21,-12" fill="none" stroke={CYAN} strokeWidth="2.6" strokeLinejoin="round" />
-          <polygon points="0,-17 15,-8.5 15,8.5 0,17 -15,8.5 -15,-8.5" fill="none" stroke={MAGENTA} strokeWidth="1.3" opacity="0.7" />
-          <g transform="translate(0 2)"><Crown size={8} /></g>
-        </svg>
-      );
-    default: // S monogram — wordmark seed
-      return (
-        <svg viewBox="-32 -32 64 64" role="img" aria-hidden>
-          <defs>
-            {/* stop-color also accepts custom properties, so the monogram
-                gradient tracks the theme like every other variant. */}
-            <linearGradient id="neon-s-grad" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0" stopColor={CYAN} />
-              <stop offset="1" stopColor={MAGENTA} />
-            </linearGradient>
-          </defs>
-          <path
-            d="M14 -14 C14 -22 -14 -22 -14 -8 C-14 4 14 -2 14 10 C14 22 -14 22 -14 12"
-            fill="none"
-            stroke="url(#neon-s-grad)"
-            strokeWidth="5"
-            strokeLinecap="round"
-          />
-          <g transform="translate(15 -24)"><Crown size={5} /></g>
-        </svg>
-      );
   }
 }
 
 function readInitial(): number {
   if (typeof window === 'undefined') return 0;
-  const raw = Number(window.localStorage.getItem(STORAGE_KEY));
-  return Number.isInteger(raw) && raw >= 0 && raw < NAMES.length ? raw : 0;
+  try {
+    const raw = Number(window.localStorage.getItem(STORAGE_KEY));
+    // Anyone holding a retired variant (2-4) comes back to the diamond.
+    if (Number.isInteger(raw) && raw >= 0 && raw < NAMES.length) return raw;
+  } catch {
+    /* private mode */
+  }
+  return 0;
 }
 
 export function NeonLogo() {

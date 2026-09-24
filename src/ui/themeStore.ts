@@ -47,6 +47,11 @@ const ADAPTIVE_BY_TOPOLOGY: Record<Topology, ResolvedTheme> = {
 
 type Listener = (resolved: ResolvedTheme, choice: ThemeChoice) => void;
 
+/** Total length of the cross-fade, and where in it the swap happens.
+ *  Must match the `theme-veil` keyframes in App.css. */
+const VEIL_MS = 440;
+const VEIL_PEAK_MS = 170;
+
 function readStoredChoice(): ThemeChoice {
   if (typeof window === 'undefined') return 'adaptive';
   try {
@@ -71,7 +76,8 @@ class ThemeStore {
   private choice: ThemeChoice = readStoredChoice();
   private topology: Topology = 'A';
   private listeners = new Set<Listener>();
-  private swapTimer: ReturnType<typeof setTimeout> | null = null;
+  private swapTimers: ReturnType<typeof setTimeout>[] = [];
+  private veil: HTMLElement | null = null;
 
   getChoice(): ThemeChoice {
     return this.choice;
@@ -114,31 +120,7 @@ class ThemeStore {
     };
   }
 
-  /** Write the resolved theme to the DOM and tell everyone. */
-  apply(): void {
-    const resolved = this.getResolved();
-    if (typeof document !== 'undefined') {
-      const el = document.documentElement;
-      // Changing the theme restyles every element in the document. If each
-      // of those elements also runs its own transition, the browser is
-      // asked to animate the whole page at once, which is most of what a
-      // theme change actually costs. Nothing is mid-gesture at this point,
-      // so transitions are cut for a moment either side of the swap; see
-      // the [data-theme-swap] rule in App.css.
-      //
-      // A timer, not requestAnimationFrame: rAF is paused in a hidden tab,
-      // and an attribute that disables every transition in the app must
-      // never be able to get stuck on.
-      if (el.getAttribute('data-theme') !== resolved) {
-        el.setAttribute('data-theme-swap', '');
-        if (this.swapTimer) clearTimeout(this.swapTimer);
-        this.swapTimer = setTimeout(() => {
-          el.removeAttribute('data-theme-swap');
-          this.swapTimer = null;
-        }, 90);
-      }
-      el.setAttribute('data-theme', resolved);
-    }
+  private notify(resolved: ResolvedTheme): void {
     this.listeners.forEach((cb) => {
       try {
         cb(resolved, this.choice);
@@ -146,6 +128,80 @@ class ThemeStore {
         /* a listener must never break theming */
       }
     });
+  }
+
+  /**
+   * The veil that covers a theme change.
+   *
+   * Cutting transitions made the swap cheap but it also made it abrupt —
+   * the whole room changed between two frames, which reads as the app
+   * hiccupping rather than as something it meant to do. So the change
+   * happens underneath a short dip: the veil fades in holding the OLD
+   * background colour, the theme is swapped while it is at its darkest,
+   * and it fades out already holding the NEW one.
+   *
+   * Driven by a CSS animation, not a transition, for two reasons: the
+   * [data-theme-swap] rule that cuts transitions would otherwise cut this
+   * one too, and if the animation engine never runs, the failure mode is
+   * simply "no dip" — the theme still changes, because the swap is on a
+   * timer of its own and never waits for a frame or an event.
+   */
+  private ensureVeil(): HTMLElement | null {
+    if (typeof document === 'undefined' || !document.body) return null;
+    if (!this.veil || !this.veil.isConnected) {
+      const el = document.createElement('div');
+      el.className = 'theme-veil';
+      el.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(el);
+      this.veil = el;
+    }
+    return this.veil;
+  }
+
+  /** Write the resolved theme to the DOM and tell everyone. */
+  apply(): void {
+    const resolved = this.getResolved();
+    if (typeof document === 'undefined') {
+      this.notify(resolved);
+      return;
+    }
+    const el = document.documentElement;
+    const current = el.getAttribute('data-theme');
+
+    // Same theme, or the very first paint before React mounts: nothing to
+    // cross-fade, just write it.
+    if (current === resolved || !current) {
+      el.setAttribute('data-theme', resolved);
+      this.notify(resolved);
+      return;
+    }
+
+    this.swapTimers.forEach(clearTimeout);
+    this.swapTimers = [];
+
+    const veil = this.ensureVeil();
+    if (veil) {
+      veil.classList.remove('is-running');
+      void veil.offsetWidth; // restart the animation on a repeated swap
+      veil.classList.add('is-running');
+    }
+
+    // Swap while the veil is at its darkest, with per-element transitions
+    // cut so the restyle lands in one frame instead of animating the whole
+    // document at once.
+    this.swapTimers.push(
+      setTimeout(() => {
+        el.setAttribute('data-theme-swap', '');
+        el.setAttribute('data-theme', resolved);
+        this.notify(resolved);
+      }, VEIL_PEAK_MS),
+    );
+    this.swapTimers.push(
+      setTimeout(() => el.removeAttribute('data-theme-swap'), VEIL_PEAK_MS + 80),
+    );
+    this.swapTimers.push(
+      setTimeout(() => veil?.classList.remove('is-running'), VEIL_MS + 60),
+    );
   }
 }
 

@@ -101,6 +101,10 @@
      glance (the tournament clock's running half). Distinct from
      --accent-danger, which means "something is wrong". */
   --accent-opponent: #c0594f;
+  /* V1 — where a piece may legally land. Was hardcoded --accent-teal,
+     which is a green that belongs to neon and reads as paint from another
+     product on a wooden or cream board. */
+  --move-target: rgba(235, 226, 205, 0.92);
   --danger: #dc2626;
   --danger-bright: #ee5050;
   --danger-coral: #ee5253;
@@ -241,6 +245,10 @@
      glance (the tournament clock's running half). Distinct from
      --accent-danger, which means "something is wrong". */
   --accent-opponent: #b85450;
+  /* V1 — where a piece may legally land. Was hardcoded --accent-teal,
+     which is a green that belongs to neon and reads as paint from another
+     product on a wooden or cream board. */
+  --move-target: rgba(90, 58, 40, 0.85);
   --danger: #b85450;
   --danger-bright: #c4625e;
   --danger-coral: #b85450;
@@ -367,6 +375,10 @@
      glance (the tournament clock's running half). Distinct from
      --accent-danger, which means "something is wrong". */
   --accent-opponent: #c05a52;
+  /* V1 — where a piece may legally land. Was hardcoded --accent-teal,
+     which is a green that belongs to neon and reads as paint from another
+     product on a wooden or cream board. */
+  --move-target: rgba(226, 208, 168, 0.9);
   --danger: #8b3a3a;
   --danger-bright: #a04848;
   --danger-coral: #8b3a3a;
@@ -492,6 +504,10 @@
      glance (the tournament clock's running half). Distinct from
      --accent-danger, which means "something is wrong". */
   --accent-opponent: #ff4fd8;
+  /* V1 — where a piece may legally land. Was hardcoded --accent-teal,
+     which is a green that belongs to neon and reads as paint from another
+     product on a wooden or cream board. */
+  --move-target: #52f5c3;
   --danger: #ff4f8f;
   --danger-bright: #ff6ba1;
   --danger-coral: #ff4f8f;
@@ -9607,15 +9623,9 @@ button:active:not(:disabled) {
       geometry points them under the fixed rail edge).
    2. A left-docked music panel starts AFTER the rail instead of under it. */
 @media (min-width: 721px) {
-  .header-controls .tooltip {
-    --tip-tx: 0;
-    --tip-ty: -50%;
-    left: calc(100% + 8px);
-    right: auto;
-    top: 50%;
-    bottom: auto;
-    transform: translateY(-50%);
-  }
+  /* The rail-tooltip override that used to live here moved into
+     Tooltip.tsx — the element is portalled to <body> now, so a
+     descendant selector on .header-controls no longer reaches it. */
   .music-dock.is-docked-left {
     left: 68px;
   }
@@ -10536,3 +10546,425 @@ html[data-theme-swap] *::after {
 [data-theme="wood-light"] .tile-annotation-red    { background: rgba(185, 28, 28, 0.42); }
 [data-theme="wood-light"] .tile-annotation-yellow { background: rgba(161, 98, 7, 0.42); }
 [data-theme="wood-light"] .tile-annotation-blue   { background: rgba(29, 78, 216, 0.38); }
+
+/* V1 — the veil that covers a theme change. See themeStore.apply().
+   A dip, not a blackout: the room dims to its own background colour, the
+   theme is swapped at the bottom of the dip, and it comes back up already
+   in the new one. Deliberately an animation and not a transition — the
+   [data-theme-swap] rule above cuts transitions, and a stalled animation
+   engine must leave the theme changed and the veil invisible, never the
+   other way round. */
+.theme-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 9300; /* under the endgame freeze (9400) and everything above it */
+  pointer-events: none;
+  opacity: 0;
+  background: var(--bg, #0b0a14);
+}
+
+.theme-veil.is-running {
+  animation: theme-veil 440ms ease-in-out both;
+}
+
+@keyframes theme-veil {
+  0%   { opacity: 0; }
+  38%  { opacity: 0.62; }
+  62%  { opacity: 0.62; }
+  100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-veil.is-running { animation: none; }
+}
+
+/* V1 — portalled tooltips. The element now lives on <body> in fixed
+   coordinates measured from its trigger (see Tooltip.tsx), so the
+   side classes only have to say which way to nudge it off the anchor
+   point; `left`/`top` come from the component. */
+.tooltip.tooltip-portal {
+  position: fixed;
+  right: auto;
+  bottom: auto;
+}
+.tooltip.tooltip-portal.tooltip-top {
+  --tip-tx: -50%;
+  --tip-ty: -100%;
+  transform: translate(-50%, -100%);
+}
+.tooltip.tooltip-portal.tooltip-bottom {
+  --tip-tx: -50%;
+  --tip-ty: 0;
+  transform: translate(-50%, 0);
+}
+.tooltip.tooltip-portal.tooltip-left {
+  --tip-tx: -100%;
+  --tip-ty: -50%;
+  transform: translate(-100%, -50%);
+}
+.tooltip.tooltip-portal.tooltip-right {
+  --tip-tx: 0;
+  --tip-ty: -50%;
+  transform: translate(0, -50%);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   V1 — where a piece may land.
+
+   Both a quiet destination and a capture used to get the same 4px
+   --accent-teal ring. Two problems: the green belongs to neon and reads
+   as paint from another product on wood, wood-light and fantasy, and a
+   ring drawn around an enemy piece says nothing a dot in the middle of
+   an empty square does not already say.
+
+   So: a quiet move is a DOT, a capture is a RING (the standard reading —
+   the ring frames the thing you would take), both in --move-target,
+   which every theme answers in its own material.
+   ═══════════════════════════════════════════════════════════════════ */
+.tile.target::before {
+  box-shadow: none;
+  background-image: radial-gradient(
+    circle at 50% 50%,
+    var(--move-target) 0,
+    var(--move-target) 15%,
+    transparent 16%
+  );
+}
+
+.tile.target.is-capture-target::before {
+  background-image: none;
+  box-shadow: inset 0 0 0 4px var(--move-target);
+}
+
+/* Hovering a target promotes the dot to a full ring — the affordance
+   grows under the cursor instead of the cursor having to find a dot. */
+@media (hover: hover) {
+  .tile.target:hover::before {
+    background-image: none;
+    box-shadow: inset 0 0 0 4px var(--move-target);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   V1 — MOBILE PANELS
+
+   The phone layout used to fold the desktop chrome into the page: the
+   icon rail became a second row of 40px targets under the title, and
+   GAME SETUP was pushed below the board where nobody scrolled to find
+   it. Neither is a layout — they are a desktop design squeezed until it
+   fits.
+
+   Both become drawers instead. The rail comes in from the left, the
+   setup panel from the right, one at a time, behind a scrim, each opened
+   by a button that is visible in the header. Buttons and not swipes: a
+   horizontal swipe on a web page belongs to the browser's back gesture,
+   and a control nobody can see is a control nobody has.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.mobile-panel-buttons { display: none; }
+.mobile-scrim { display: none; }
+
+@media (max-width: 720px) {
+  .mobile-panel-buttons {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+  }
+  .mobile-panel-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    border: 1px solid var(--btn-border);
+    background: var(--bg-elevated);
+    color: var(--text);
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  .mobile-panel-btn[aria-expanded='true'] {
+    border-color: var(--accent-primary);
+    background: var(--bg-card);
+  }
+
+  .mobile-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 930;
+    background: rgba(4, 3, 8, 0.55);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s ease;
+  }
+  .app-root[data-mobile-panel='menu'] .mobile-scrim,
+  .app-root[data-mobile-panel='setup'] .mobile-scrim {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* ── left drawer: the icon rail ── */
+  .header-controls {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 86px;
+    z-index: 940;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 14px 0 calc(14px + env(safe-area-inset-bottom, 0px));
+    background: var(--bg-card);
+    border-right: 1px solid var(--border-subtle);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+    transform: translateX(-100%);
+    transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .header-controls::-webkit-scrollbar { display: none; }
+  .app-root[data-mobile-panel='menu'] .header-controls { transform: none; }
+
+  /* ── right drawer: GAME SETUP ── */
+  .right-sidebar {
+    position: fixed;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: min(86vw, 340px);
+    z-index: 940;
+    margin: 0;
+    padding: 14px 14px calc(14px + env(safe-area-inset-bottom, 0px));
+    background: var(--bg);
+    border-left: 1px solid var(--border-subtle);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    transform: translateX(100%);
+    transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .app-root[data-mobile-panel='setup'] .right-sidebar { transform: none; }
+
+  /* With the sidebar out of the flow the board gets the whole width. */
+  .app-body { grid-template-columns: minmax(0, 1fr); }
+
+  /* The drawers are the reason the header fits now, so let it stay on
+     one line: mark, title, pill, then the two buttons. */
+  .app-header { flex-wrap: nowrap; gap: var(--space-2); }
+  .app-brand { min-width: 0; flex: 1; }
+  .live-strip { min-width: 0; }
+}
+
+/* The game label is context, not a control — first thing to go when the
+   header runs out of room. It stays reachable as the element's own
+   tooltip (hover on a desktop that happens to be this narrow, long-press
+   on a phone). */
+@media (max-width: 600px) {
+  .live-title { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header-controls,
+  .right-sidebar,
+  .mobile-scrim {
+    transition: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   V1 — leaderboard on a phone.
+
+   The row is a six-column grid whose fixed columns alone add up to
+   412px, so on a 375px screen the last one — the replay button, the only
+   thing in the row you can actually press — was pushed off the right
+   edge with nothing to scroll it into view.
+
+   Below 720px the row becomes two lines: rank, name and score on the
+   first, the game's details and its button on the second. Nothing is
+   hidden; it just stops pretending to be a table.
+   ═══════════════════════════════════════════════════════════════════ */
+@media (max-width: 720px) {
+  .leaderboard-row {
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    grid-template-areas:
+      'rank name points'
+      'rank meta action';
+    row-gap: 4px;
+    padding: var(--space-2) var(--space-3);
+    font-size: 14px;
+  }
+  .lb-rank { grid-area: rank; align-self: center; }
+  .lb-name { grid-area: name; min-width: 0; }
+  .lb-points { grid-area: points; justify-self: end; }
+  .lb-action { grid-area: action; justify-self: end; }
+
+  /* The two descriptive columns share the second line. */
+  .lb-survived,
+  .lb-outcome {
+    grid-area: meta;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .lb-survived { justify-self: start; }
+  .lb-outcome {
+    justify-self: start;
+    margin-left: 84px; /* clears the survived column on the same cell */
+  }
+
+  /* The header row has no second line to describe. */
+  .leaderboard-row-head .lb-survived,
+  .leaderboard-row-head .lb-outcome {
+    display: none;
+  }
+
+  .leaderboard-replay-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   V1 — FX loudness. See registerFx() in App.tsx.
+
+   A damped check vignette still says "you are in check" — it just stops
+   competing with the capture spark that landed half a second earlier.
+   And once three heavy moves stack up, the streak chip carries the news
+   instead of three overlapping full-screen effects.
+   ═══════════════════════════════════════════════════════════════════ */
+.check-vignette.is-damped {
+  opacity: 0.4;
+  animation-duration: 600ms;
+}
+
+.fx-streak {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-primary);
+  background: var(--bg-card);
+  box-shadow: 0 0 14px -4px var(--accent-primary);
+  pointer-events: none;
+  animation: fx-streak-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.fx-streak-count {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--accent-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.fx-streak-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+@keyframes fx-streak-in {
+  from { opacity: 0; transform: translate(-50%, -6px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-streak { animation: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   V1 — Key moments strip in Game Review.
+
+   The old card only ever reported the single worst move. This one steps
+   through both ends of the game in the order they happened, so the same
+   space now praises as well as corrects.
+   ═══════════════════════════════════════════════════════════════════ */
+.review-moments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.review-moments-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.review-moments-kicker {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.review-moments-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.review-moment-step {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid var(--btn-border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.review-moment-step:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent-primary);
+}
+.review-moment-step:disabled { opacity: 0.4; cursor: default; }
+
+.review-moments-count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  min-width: 30px;
+  text-align: center;
+}
+
+/* Tone: a loss is framed in the danger colour, a find in the accent. The
+   card shape itself is the existing .review-turning. */
+.review-turning.is-good {
+  border-color: var(--accent-success, var(--accent-primary));
+}
+.review-turning.is-good .review-turning-kicker {
+  color: var(--accent-success, var(--accent-primary));
+}
+
+.review-moments-dots {
+  display: flex;
+  gap: 5px;
+  justify-content: center;
+}
+
+.review-moment-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  opacity: 0.35;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.review-moment-dot.is-good { background: var(--accent-success, var(--accent-primary)); }
+.review-moment-dot.is-bad { background: var(--accent-danger); }
+.review-moment-dot.is-on { opacity: 1; transform: scale(1.3); }

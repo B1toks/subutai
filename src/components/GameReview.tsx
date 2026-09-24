@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Check, Link2 } from 'lucide-react';
 import { Icon } from './Icon';
 import { useToast } from './Toast';
@@ -137,6 +137,113 @@ function findTurningPoint(
     };
   }
   return best;
+}
+
+/**
+ * V1 — the game's key moments, in the order they happened.
+ *
+ * The turning-point card only ever talked about the single worst move,
+ * which makes a review that is all reprimand and never tells a player
+ * what they got right. This walks the human's moves and picks out both
+ * ends: the losses worth explaining and the moves that were genuinely
+ * the best available. Ordered by move number, so stepping through them
+ * with the arrows retells the game in sequence.
+ *
+ * Capped at five. A list of every inaccuracy is a spreadsheet, not a
+ * review; five moments is what someone will actually read.
+ */
+export interface KeyMoment {
+  idx: number;
+  tone: 'good' | 'bad';
+  kicker: string;
+  san: string;
+  /** The sentence under the heading: praise, or what it cost and why. */
+  line: string;
+  better: string | null;
+  note: string | null;
+}
+
+const MAX_MOMENTS = 5;
+
+function keyMoments(
+  log: GameLog,
+  analyses: readonly MoveAnalysis[],
+  human: readonly boolean[],
+  turning: TurningPoint | null,
+  roulette: boolean,
+): KeyMoment[] {
+  const bad: KeyMoment[] = [];
+  const good: KeyMoment[] = [];
+
+  for (let i = 0; i < log.moves.length; i++) {
+    const a = analyses[i];
+    if (!human[i] || !a) continue;
+    if (log.moves[i].move.kind === 'topologyToggle') continue;
+    if (turning && i === turning.idx) continue; // it gets its own card
+    const san = shortMoveText(log.moves[i]);
+    const moveNo = Math.floor(i / 2) + 1;
+
+    if (a.classification === 'brilliant') {
+      good.push({
+        idx: i,
+        tone: 'good',
+        kicker: 'Brilliant',
+        san,
+        line: `Move ${moveNo}: ${san} — a sacrifice the engine agrees with.`,
+        better: null,
+        note: null,
+      });
+    } else if (a.classification === 'best' && a.cpl < 5) {
+      good.push({
+        idx: i,
+        tone: 'good',
+        kicker: 'Best move',
+        san,
+        line: `Move ${moveNo}: ${san} — the engine's own first choice.`,
+        better: null,
+        note: null,
+      });
+    } else if (a.cpl >= 100) {
+      const decisive = a.cpl >= MATE_SCALE_CPL;
+      bad.push({
+        idx: i,
+        tone: 'bad',
+        kicker: a.cpl >= 300 ? 'Blunder' : 'Mistake',
+        san,
+        line: decisive
+          ? `Move ${moveNo}: ${san} ${roulette ? 'left the king to be captured' : 'allowed a forced mate'}.`
+          : `Move ${moveNo}: ${san} cost ${Math.round(a.cpl)} cp.`,
+        better: a.bestMoveSan ?? a.bestPvSan?.[0] ?? null,
+        note: null,
+      });
+    }
+  }
+
+  // Worst losses and cleanest finds first, then put the survivors back in
+  // the order they were played so the strip reads as the game did.
+  bad.sort((x, y) => y.idx - x.idx);
+  const picked = [
+    ...bad.slice(0, 2),
+    ...good.slice(0, MAX_MOMENTS - 1 - Math.min(bad.length, 2)),
+  ];
+
+  if (turning) {
+    picked.push({
+      idx: turning.idx,
+      tone: 'bad',
+      kicker: 'Turning point',
+      san: turning.san,
+      line: turning.decisive
+        ? `Move ${Math.floor(turning.idx / 2) + 1}: ${turning.san} ${roulette ? 'left the king to be captured' : 'allowed a forced mate'}.`
+        : `Move ${Math.floor(turning.idx / 2) + 1}: ${turning.san} cost ${turning.cpl} cp — the most of any move.`,
+      better: turning.better,
+      note: turning.afterOwnRotation
+        ? 'Right after your own rotation. 1 in 4 first blunders happen exactly here: re-check every piece after you twist the board.'
+        : null,
+    });
+  }
+
+  return picked.sort((x, y) => x.idx - y.idx).slice(0, MAX_MOMENTS);
 }
 
 interface PhaseRow {
@@ -359,6 +466,28 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
     () => (result ? phaseReport(log, result.moves, humanMask) : []),
     [log, result, humanMask],
   );
+  const moments = useMemo(
+    () =>
+      result
+        ? keyMoments(log, result.moves, humanMask, turningPoint, log.gameMode === 'roulette')
+        : [],
+    [log, result, humanMask, turningPoint],
+  );
+  /** Which moment the strip is showing. Stepping it also moves the board,
+   *  so the arrows walk the game through its own highlights. */
+  const [momentIdx, setMomentIdx] = useState(0);
+  useEffect(() => {
+    setMomentIdx(0);
+  }, [moments.length]);
+  const goToMoment = useCallback(
+    (n: number) => {
+      if (moments.length === 0) return;
+      const next = (n + moments.length) % moments.length;
+      setMomentIdx(next);
+      setReviewIdx(moments[next].idx + 1);
+    },
+    [moments],
+  );
 
   const boardSnapshot = useMemo(
     () => rebuildBoardAt(log, reviewIdx),
@@ -546,39 +675,74 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
             </div>
           )}
 
-          {/* V1 — the one move that decided the game, click to jump to it. */}
-          {result && turningPoint && (
-            <button
-              type="button"
-              className={`review-turning${turningPoint.idx + 1 === reviewIdx ? ' is-current' : ''}`}
-              onClick={() => setReviewIdx(turningPoint.idx + 1)}
-              title="Jump to this position"
-            >
-              <span className="review-turning-kicker">Turning point</span>
-              <span className="review-turning-line">
-                Move {Math.floor(turningPoint.idx / 2) + 1}: <strong>{turningPoint.san}</strong>{' '}
-                {turningPoint.decisive
-                  ? log.gameMode === 'roulette'
-                    ? 'left the king to be captured'
-                    : 'allowed a forced mate'
-                  : `cost ${turningPoint.cpl} cp`}
-                {turningPoint.better ? (
-                  <>
-                    . Better: <strong>{turningPoint.better}</strong>
-                  </>
-                ) : null}
-              </span>
-              {turningPoint.afterOwnRotation && (
-                <span className="review-turning-note">
-                  Right after your own rotation. 1 in 4 first blunders happen exactly here:
-                  re-check every piece after you twist the board.
+          {/* V1 — the game's key moments, both ends of it, in order.
+              The arrows step through them and carry the board along, so a
+              player can walk their own game from one decision to the next
+              instead of reading a single reprimand. */}
+          {result && moments.length > 0 && (
+            <div className="review-moments">
+              <div className="review-moments-head">
+                <span className="review-moments-kicker">Key moments</span>
+                <span className="review-moments-nav">
+                  <button
+                    type="button"
+                    className="review-moment-step"
+                    onClick={() => goToMoment(momentIdx - 1)}
+                    aria-label="Previous key moment"
+                    disabled={moments.length < 2}
+                  >
+                    ‹
+                  </button>
+                  <span className="review-moments-count">
+                    {momentIdx + 1}/{moments.length}
+                  </span>
+                  <button
+                    type="button"
+                    className="review-moment-step"
+                    onClick={() => goToMoment(momentIdx + 1)}
+                    aria-label="Next key moment"
+                    disabled={moments.length < 2}
+                  >
+                    ›
+                  </button>
                 </span>
-              )}
-            </button>
+              </div>
+              {(() => {
+                const m = moments[Math.min(momentIdx, moments.length - 1)];
+                return (
+                  <button
+                    type="button"
+                    className={`review-turning is-${m.tone}${m.idx + 1 === reviewIdx ? ' is-current' : ''}`}
+                    onClick={() => setReviewIdx(m.idx + 1)}
+                    title="Jump to this position"
+                  >
+                    <span className="review-turning-kicker">{m.kicker}</span>
+                    <span className="review-turning-line">
+                      {m.line}
+                      {m.better ? (
+                        <>
+                          {' '}
+                          Better: <strong>{m.better}</strong>
+                        </>
+                      ) : null}
+                    </span>
+                    {m.note && <span className="review-turning-note">{m.note}</span>}
+                  </button>
+                );
+              })()}
+              <div className="review-moments-dots" aria-hidden>
+                {moments.map((m, i) => (
+                  <span
+                    key={m.idx}
+                    className={`review-moment-dot is-${m.tone}${i === momentIdx ? ' is-on' : ''}`}
+                  />
+                ))}
+              </div>
+            </div>
           )}
-          {result && !turningPoint && (
+          {result && moments.length === 0 && (
             <div className="review-turning review-turning-clean">
-              <span className="review-turning-kicker">No turning point</span>
+              <span className="review-turning-kicker">Nothing to flag</span>
               <span className="review-turning-line">
                 No move lost 100 cp or more. Clean game.
               </span>
