@@ -103,7 +103,10 @@ import { buildSavedGameFromLog, buildSavedGameSnapshot } from './memory/build';
 import { localStorageAdapter } from './memory/storage';
 import { MemoryPanel } from './memory/MemoryPanel';
 import type { SavedGame } from './memory/types';
-import { NotationParseError, parseMemoryNotation } from './memory/notation';
+import { NotationParseError } from './memory/notation';
+// rotateIsLegal (R10) decides whether chat rounds accept "rotate"; it lives
+// with the replay importer, which checks rotations the same way (QA-02).
+import { replayFromNotation, rotateIsLegal } from './memory/replayImport';
 import { moveVoting, type VoteMode, type VoteRound, type GuessWinner } from './twitch/moveVoting';
 import { dockLayout, type DockState } from './ui/dockLayout';
 import { themeStore } from './ui/themeStore';
@@ -581,19 +584,6 @@ function evalToColors(evalCp: number, topology: TopologyState): { c1: string; c2
 
 const HUMAN_COLOR: Color = 'white';
 
-/** R10 — is a board rotation currently a legal turn (classic rules)?
- *  Mirrors handleRotate's own guard: no back-to-back rotations, and the
- *  toggled board must not leave the mover's king attacked. Used to
- *  decide whether chat rounds accept the "rotate" command. */
-function rotateIsLegal(bs: BoardState): boolean {
-  if (bs.lastMoveWasRotation) return false;
-  const toggled = toggleTopology(bs);
-  const king = findKing(toggled, bs.sideToMove);
-  if (!king) return false;
-  const opp = bs.sideToMove === 'white' ? 'black' : 'white';
-  return !isSquareAttacked(toggled, king, opp as Color, toggled.topologyState);
-}
-
 /* R5 — encouragement in a losing position. When the human (white) has
  * been meaningfully behind for a couple of moves, drop a supportive nudge
  * instead of letting them spiral into a resign. Rotate-flavoured lines
@@ -777,6 +767,11 @@ function App() {
   const [showAfkAlert, setShowAfkAlert] = useState(false);
   const lastActivityRef = useRef<number>(Date.now());
   const completedLogIdRef = useRef<string | null>(null);
+  // QA-02 — the log id of a game that came from Load replay (or a Memory
+  // entry marked imported). Such a game is never ranked.
+  const importedLogIdRef = useRef<string | null>(null);
+  // Whether the game the summary is about was imported (for its wording).
+  const [lastGameImported, setLastGameImported] = useState(false);
   const [view, setView] = useState<
     'game' | 'review' | 'leaderboard' | 'friend-lobby'
   >('game');
@@ -1504,6 +1499,7 @@ function App() {
       termination,
       sourceId,
       resigned ? (gameStatus === 'resigned_white' ? 'black' : 'white') : undefined,
+      importedLogIdRef.current === log.id,
     );
     if (localStorageAdapter.saveOrUpdateGame) {
       localStorageAdapter.saveOrUpdateGame(saved);
@@ -1525,7 +1521,7 @@ function App() {
     if (log.moves.length === 0) return;
     const liveId = liveSavedGameIdRef.current;
     if (!liveId) return;
-    const snapshot = buildSavedGameSnapshot(log, liveId);
+    const snapshot = buildSavedGameSnapshot(log, liveId, importedLogIdRef.current === log.id);
     if (localStorageAdapter.saveOrUpdateGame) {
       localStorageAdapter.saveOrUpdateGame(snapshot);
     } else {
@@ -1694,7 +1690,12 @@ function App() {
     // the full breakdown on screen and are saved (with their level) for the
     // data pipeline, but never touch personal best / leaderboard stats.
     const rankedLevel = botLevel === 'strong';
-    const points: GamePoints = rankedLevel ? computed : { ...computed, counted: false };
+    // QA-02 — nor is a game loaded from a pasted log, at any level: its
+    // moves were never played here. counted: false also keeps strongWins
+    // (gated on counted in saveCompletedGame) from growing.
+    const imported = importedLogIdRef.current === log.id;
+    setLastGameImported(imported);
+    const points: GamePoints = rankedLevel && !imported ? computed : { ...computed, counted: false };
     const durationMs = Date.now() - gameStartedAtRef.current;
     setGameOutcome(outcome);
     setLastGamePoints(points);
@@ -2554,20 +2555,6 @@ function App() {
     setGameStatus((prev) => (prev === 'active' ? status : prev));
   }
 
-  function checkKingCaptured(nextState: BoardState): boolean {
-    const whiteKing = findKing(nextState, 'white');
-    const blackKing = findKing(nextState, 'black');
-    if (!whiteKing) {
-      endGameWith('king_captured_black_wins');
-      return true;
-    }
-    if (!blackKing) {
-      endGameWith('king_captured_white_wins');
-      return true;
-    }
-    return false;
-  }
-
   // Moves playable given a spin + already-used slots. Q.D.5: delegates to
   // isPieceMovableInRoulette so the in-check override is automatic.
   function playableRouletteMoves(
@@ -2663,25 +2650,33 @@ function App() {
     }, 2300);
   }
 
-  function checkGameOver(nextState: BoardState, lastMoveWasRotation: boolean = false) {
+  /** The ending this board is in under the current mode's rules, if any. */
+  function boardEnding(
+    nextState: BoardState,
+    lastMoveWasRotation: boolean = false,
+  ): Exclude<GameStatus, 'active'> | null {
     // Q.D.8: roulette is capture-the-king — the ONLY terminal is a missing
     // king. No checkmate, no stalemate, no draws (the variant deliberately
     // skips them so play continues until a king is actually taken).
     if (gameMode === 'roulette') {
-      checkKingCaptured(nextState);
-      return;
+      if (!findKing(nextState, 'white')) return 'king_captured_black_wins';
+      if (!findKing(nextState, 'black')) return 'king_captured_white_wins';
+      return null;
     }
     // Classic mode: standard chess termination — checkmate, stalemate,
     // draw by repetition / 50-move / insufficient material.
-    if (isCheckmate(nextState, lastMoveWasRotation)) {
-      endGameWith('checkmate');
-      return;
-    }
+    if (isCheckmate(nextState, lastMoveWasRotation)) return 'checkmate';
     const draw = checkDrawConditions(nextState, lastMoveWasRotation);
-    if (draw === 'stalemate') endGameWith('draw_stalemate');
-    else if (draw === 'insufficient_material') endGameWith('draw_material');
-    else if (draw === 'threefold_repetition') endGameWith('draw_repetition');
-    else if (draw === 'fifty_move_rule') endGameWith('draw_50move');
+    if (draw === 'stalemate') return 'draw_stalemate';
+    if (draw === 'insufficient_material') return 'draw_material';
+    if (draw === 'threefold_repetition') return 'draw_repetition';
+    if (draw === 'fifty_move_rule') return 'draw_50move';
+    return null;
+  }
+
+  function checkGameOver(nextState: BoardState, lastMoveWasRotation: boolean = false) {
+    const ending = boardEnding(nextState, lastMoveWasRotation);
+    if (ending) endGameWith(ending);
   }
 
   function startNewGame() {
@@ -2744,6 +2739,7 @@ function App() {
     setLastGameId(null);
     setMilestoneShown(false);
     setShowMilestoneModal(false);
+    setLastGameImported(false);
     completedLogIdRef.current = null;
     gameStartedAtRef.current = Date.now();
   }
@@ -5113,6 +5109,7 @@ function App() {
     setSearchEvalFromWhite(null);
     setSearchMateInPlies(null);
     resetGameEndState();
+    importedLogIdRef.current = game.imported ? nextLog.id : null;
     classifyImportedLog(nextLog);
   }
   // Keep the ref pointing at the latest resumeGame closure so the stable
@@ -5158,65 +5155,14 @@ function App() {
 
   function importReplayFromNotation() {
     try {
-      const parsed = parseMemoryNotation(replayText);
-      const initial = createPositionFromBackRankKey(parsed.config960);
-      let current: BoardState = initial;
-      let replayLog: GameLog = createGameLog(`replay-${Date.now()}`, initial, Date.now());
-
-      for (const token of parsed.moves) {
-        const mv = token.move;
-
-        // Auto-switch topology if @B/@A suffix requires it.
-        // T1.2: use the pure `toggleTopology` (doesn't flip sideToMove or
-        // record a move). Previously this called applyRotationMove which
-        // burned a turn — and then castles by the (now wrong) side failed
-        // with "No legal castle". The @B suffix is informational; if the
-        // game really included a rotation, the log carries it as its own
-        // entry and the toggleTopology no-ops when topology already matches.
-        if (token.requiredTopology && current.topologyState !== token.requiredTopology) {
-          current = toggleTopology(current);
-        }
-
-        if (mv.kind === 'topologyToggle') {
-          const topoBefore = current.topologyState;
-          const san = computeSAN(current, mv);
-          current = applyRotationMove(current);
-          replayLog = appendMove(replayLog, mv, san, topoBefore);
-        } else if (mv.kind === 'castle') {
-          // Resolve castle from legal moves
-          const legal = getLegalMoves(current);
-          const targetFile = token.castleSide === 'queen' ? 'c' : 'g';
-          const castleMove = legal.find(
-            (m) => m.kind === 'castle' && m.to && m.to[0] === targetFile,
-          );
-          if (!castleMove) {
-            throw new NotationParseError('No legal castle move available at this position.');
-          }
-          const topoBefore = current.topologyState;
-          const san = computeSAN(current, castleMove);
-          current = applyMove(current, castleMove);
-          replayLog = appendMove(replayLog, castleMove, san, topoBefore);
-        } else if (mv.from && mv.to) {
-          if (!current.pieces[mv.from]) {
-            throw new NotationParseError(`Illegal move: no piece on ${mv.from}.`);
-          }
-          // Match against legal moves to get correct kind (capture vs normal)
-          const legal = getLegalMoves(current);
-          const matched = legal.find(
-            (m) =>
-              m.from === mv.from &&
-              m.to === mv.to &&
-              (!mv.promotion || m.promotion === mv.promotion),
-          ) ?? mv;
-          const topoBefore = current.topologyState;
-          const san = computeSAN(current, matched);
-          current = applyMove(current, matched);
-          replayLog = appendMove(replayLog, matched, san, topoBefore);
-        }
-      }
+      // QA-02 — strict: every entry has to be a move the live game would
+      // have allowed at that point, or the whole log is refused with the
+      // move it failed on. See replayFromNotation.
+      const replay = replayFromNotation(replayText, { roulette: gameMode === 'roulette' });
+      const { initial, final: current, log: replayLog } = replay;
 
       const id = `replay-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const snapshot = buildSavedGameSnapshot(replayLog, id);
+      const snapshot = buildSavedGameSnapshot(replayLog, id, true);
       if (localStorageAdapter.saveOrUpdateGame) {
         localStorageAdapter.saveOrUpdateGame(snapshot);
       } else {
@@ -5226,7 +5172,7 @@ function App() {
       // Load into the board as an unfinished game so it can be continued.
       liveSavedGameIdRef.current = id;
       setFormationLocked(true);
-      setLockedFormationKey(parsed.config960);
+      setLockedFormationKey(replay.config960);
       setInitialState(initial);
       setState(current);
       setSelected(null);
@@ -5239,6 +5185,14 @@ function App() {
       setSearchEvalFromWhite(null);
       setSearchMateInPlies(null);
       resetGameEndState();
+      // QA-02 — an imported game is never ranked, whatever the bot level.
+      // The mark lives here and in the Memory entry (never in /games), so a
+      // resume from Memory keeps it.
+      importedLogIdRef.current = replayLog.id;
+      // A log that already ends the game loads as over. That ending is not
+      // one the player just reached, so it gets no summary and no save.
+      if (boardEnding(current, replay.lastWasRotation)) completedLogIdRef.current = replayLog.id;
+      checkGameOver(current, replay.lastWasRotation);
       classifyImportedLog(replayLog);
 
       setReplayError(null);
@@ -7674,10 +7628,13 @@ function App() {
           durationMs={lastGameDurationMs ?? undefined}
           gameMode={gameMode}
           uncountedReason={
-            botLevel !== 'strong'
-              ? `Played vs the ${BOT_STRENGTH_LABEL[botLevel]} bot. Only Strong-bot games are ranked.`
-              : undefined
+            lastGameImported
+              ? 'Loaded from a replay log. Imported games are never ranked.'
+              : botLevel !== 'strong'
+                ? `Played vs the ${BOT_STRENGTH_LABEL[botLevel]} bot. Only Strong-bot games are ranked.`
+                : undefined
           }
+          uncountedTitle={lastGameImported ? 'Imported game' : undefined}
           onClose={() => setSummaryOpen(false)}
           onPlayAgain={() => {
             setSummaryOpen(false);

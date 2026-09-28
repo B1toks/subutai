@@ -123,6 +123,8 @@ export function buildSavedGameFromLog(
   sourceGameId?: string,
   /** QA-11 — a resignation is not decided by who is to move. */
   winnerOverride?: 'white' | 'black',
+  /** QA-02 — came from Load replay; never ranked, even after a resume. */
+  imported?: boolean,
 ): SavedGame {
   const base = buildBaseFromLog(log);
 
@@ -153,12 +155,14 @@ export function buildSavedGameFromLog(
     notation: base.notation,
     config960: base.config960,
     sourceGameId,
+    ...(imported ? { imported: true } : {}),
   };
 }
 
 export function buildSavedGameSnapshot(
   log: GameLog,
   id: string,
+  imported?: boolean,
 ): SavedGame {
   const base = buildBaseFromLog(log);
   return {
@@ -172,6 +176,7 @@ export function buildSavedGameSnapshot(
     scoreHistory: base.scoreHistory,
     notation: base.notation,
     config960: base.config960,
+    ...(imported ? { imported: true } : {}),
   };
 }
 

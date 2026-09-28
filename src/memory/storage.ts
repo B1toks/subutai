@@ -33,6 +33,7 @@ function isSavedGame(v: unknown): v is SavedGame {
   if (typeof v.notation !== 'string') return false;
   if (typeof v.config960 !== 'string' || !isValidChess960Key(v.config960)) return false;
   if (v.status !== undefined && v.status !== 'incomplete' && v.status !== 'complete') return false;
+  if (v.imported !== undefined && typeof v.imported !== 'boolean') return false;
   if (!isFiniteNumber(v.moveCount) || !isFiniteNumber(v.movesInA) || !isFiniteNumber(v.movesInB)) {
     return false;
   }

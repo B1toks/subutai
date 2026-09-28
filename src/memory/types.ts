@@ -18,6 +18,11 @@ export interface SavedGame {
    * this points back to the original game's id.
    */
   readonly sourceGameId?: string;
+  /**
+   * QA-02 — the game was loaded from a pasted log (Load replay). Local
+   * only, never written to Firestore; it keeps a resumed import unranked.
+   */
+  readonly imported?: boolean;
 }
 
 export interface GameStorage {
