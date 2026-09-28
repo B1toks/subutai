@@ -366,6 +366,10 @@ interface LiveSession {
   gameMode: string;
   timed: boolean;
   savedAt: number;
+  /** The level the game was started against. The level pills are locked
+   *  mid-game; without this a resume would silently take whatever level
+   *  another tab has written since. Absent in pre-fix pointers. */
+  botLevel?: BotStrength;
 }
 function writeLiveSession(s: LiveSession): void {
   try {
@@ -386,6 +390,7 @@ function readLiveSession(): LiveSession | null {
       gameMode: typeof v.gameMode === 'string' ? v.gameMode : 'classic',
       timed: v.timed === true,
       savedAt: v.savedAt,
+      botLevel: isBotStrength(v.botLevel) ? v.botLevel : undefined,
     };
   } catch {
     return null;
@@ -1521,8 +1526,9 @@ function App() {
       gameMode,
       timed: soloTcSec !== null,
       savedAt: Date.now(),
+      botLevel,
     });
-  }, [gameStatus, log, isMultiplayer, opponentMode, gameMode, soloTcSec]);
+  }, [gameStatus, log, isMultiplayer, opponentMode, gameMode, soloTcSec, botLevel]);
 
   // The pointer only means anything while that game is still going. It
   // goes when the game ends — and when a FRESH board replaces it (new game,
@@ -5099,6 +5105,7 @@ function App() {
       if (!game || game.moves.length === 0) return;
       beginBusy('Picking up your game');
       setOpponentMode(session.opponentMode);
+      if (session.botLevel) setBotLevel(session.botLevel);
       resumeGameRef.current(game);
     });
     // Once, on the first render that has everything it needs.
