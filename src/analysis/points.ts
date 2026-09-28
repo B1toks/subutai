@@ -42,6 +42,16 @@ const PIECE_VALUE_CP: Record<PieceType, number> = {
 };
 
 const MIN_COUNTED_MOVES = 10;
+// Ceiling the /games rule enforces on capturePoints (firestore.rules,
+// plausiblePoints): a full army is 4000cp, but a captured PROMOTED piece
+// counts at its new value, so capturing nearly everything plus a queen
+// that used to be a pawn crosses it, and the whole save is rejected.
+const MAX_CAPTURE_POINTS = 400;
+
+function capturePointsFor(captureValueCp: number): number {
+  return Math.min(MAX_CAPTURE_POINTS, Math.floor(captureValueCp / 10));
+}
+
 // S2.3 — rotation rewards. Each rotation costs a tempo, so the per-use
 // bonus is self-limiting; the cap is a backstop against A↔B ping-pong
 // farming in dead positions. The strike bonus pays for *tactical*
@@ -112,7 +122,7 @@ function computeClassicPoints(
 
   const movePoints = moveCount * 5;
   const captureValueCp = sumHumanCaptures(log, humanColor);
-  const capturePoints = Math.floor(captureValueCp / 10);
+  const capturePoints = capturePointsFor(captureValueCp);
   const rotationPoints = computeRotationBonus(log, humanColor);
 
   let outcomeBonus = 0;
@@ -232,7 +242,7 @@ function computeRoulettePoints(
   const speedBonus =
     Math.max(0, ROULETTE_SPEED_CUTOFF - moveCount) * ROULETTE_SPEED_PER_MOVE;
   const captureValueCp = sumHumanCaptures(log, humanColor);
-  const capturePoints = Math.floor(captureValueCp / 10);
+  const capturePoints = capturePointsFor(captureValueCp);
   const total = ROULETTE_WIN_BASE + speedBonus + capturePoints;
 
   return {
