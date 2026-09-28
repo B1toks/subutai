@@ -4,6 +4,7 @@ import './index.css'
 import App from './App.tsx'
 import { ToastProvider } from './components/Toast'
 import { BusyOverlay } from './components/BusyOverlay'
+import { AppErrorBoundary } from './components/AppErrorBoundary'
 
 // Sprint 4.4 — kiosk view is code-split: regular players never pay for it.
 const ShowcaseView = lazy(() =>
@@ -58,11 +59,14 @@ root.render(
         <ShowcaseView />
       </Suspense>
     ) : (
-      <ToastProvider>
-        <App />
-        {/* V1 — outside App's view tree, so it exists on every screen. */}
-        <BusyOverlay />
-      </ToastProvider>
+      // QA-07 — a render error shows a way out instead of a blank page.
+      <AppErrorBoundary>
+        <ToastProvider>
+          <App />
+          {/* V1 — outside App's view tree, so it exists on every screen. */}
+          <BusyOverlay />
+        </ToastProvider>
+      </AppErrorBoundary>
     )}
   </StrictMode>,
 )
