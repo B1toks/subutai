@@ -1,0 +1,22 @@
+{
+ "mate-B": {
+  "notation": "[Chess960 \"RKBNQRNB\"]\n[Seed \"19\"]\n\n1. g2→g3  h7→h5\n2. g3→g4  e7→e5\n3. f2→f4  d7→d6\n4. Bh1→c6  A→B\n5. Bc6→e4@B  Kb8→b5@B\n6. e2→f2@B  Bc8→e4@B\n7. c2→c3@B  g7→g6@B\n8. h2→g3@B  Ng8→h6@B\n9. c3→d3@B  B→A\n10. f4→e5  b7→b6\n11. Qe1→e4  A→B\n12. Qe4→c8@B  Kb5→a5@B",
+  "finalMove": {
+   "from": "c8",
+   "to": "d5",
+   "promo": null,
+   "token": "Qc8→d5@B"
+  },
+  "leadPlies": 24
+ },
+ "mate-A": {
+  "notation": "[Chess960 \"QRKRNBBN\"]\n[Seed \"38\"]\n\n1. d2→d4  a7→a5\n2. A→B  Ne8→f6@B\n3. Kc1→c3@B  b7→b6@B\n4. f2→f3@B  B→A\n5. Ne1→d3  h7→h6\n6. b2→b3  A→B\n7. Rb1→a4@B  Kc8→b5@B\n8. d4→a5@B  h6→h3@B\n9. Qa1→b2@B  B→A\n10. a5→b6  d7→d6\n11. e2→e4  Rb8→b6",
+  "finalMove": {
+   "from": "d3",
+   "to": "e5",
+   "promo": null,
+   "token": "Nd3→e5"
+  },
+  "leadPlies": 22
+ }
+}
