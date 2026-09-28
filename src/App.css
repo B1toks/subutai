@@ -22,10 +22,13 @@
 
 /* ═══════════════════════════════════════════════════════════════════
    DESIGN TOKENS
-   Three palettes: warm-wood (default), wood-light, cyberpunk (subtle).
-   Theme is selected via [data-theme="…"] on <html>, persisted in
-   localStorage by <ThemeToggle/>. Wood reproduces the pre-Sprint-1
-   palette 1:1 — no visual regression.
+   Four palettes: neon (default), warm-wood, wood-light, fantasy. The
+   resolved theme is written to [data-theme] on <html> by
+   src/ui/themeStore.ts, which also implements the "Adaptive" choice
+   (neon in topology A, wood-light in topology B). Wood reproduces the
+   pre-Sprint-1 palette 1:1 — no visual regression.
+   V1 retired the cyberpunk palette: it sat between neon and wood without
+   committing to either, and saved copies of it migrate to neon.
 
    NOTE: do NOT run search/replace passes that match raw hex values
    against this file. The replacement will rewrite hex literals
@@ -94,6 +97,14 @@
 
   /* Status colors */
   --accent-danger: #dc2626;
+  /* V1 — the OTHER side. Used where two sides must be told apart at a
+     glance (the tournament clock's running half). Distinct from
+     --accent-danger, which means "something is wrong". */
+  --accent-opponent: #c0594f;
+  /* V1 — where a piece may legally land. Was hardcoded --accent-teal,
+     which is a green that belongs to neon and reads as paint from another
+     product on a wooden or cream board. */
+  --move-target: rgba(235, 226, 205, 0.92);
   --danger: #dc2626;
   --danger-bright: #ee5050;
   --danger-coral: #ee5253;
@@ -138,6 +149,14 @@
 
   /* Subutai signature: 2×2 block seam-line color */
   --seam-color: rgba(212, 175, 55, 0.15);
+
+  /* V1 — last-move highlight. Used to be one hardcoded cornflower blue in
+     every theme, which fought the wood room and the fantasy parchment.
+     Each theme now names its own; the selected-square outline stays gold/
+     accent so the two never read as the same signal. */
+  --last-move-fill: rgba(196, 150, 60, 0.3);
+  --last-move-fill-strong: rgba(214, 170, 74, 0.42);
+  --last-move-ring: rgba(240, 206, 130, 0.55);
 
   /* Sprint 2.7 — sacrifice highlight tone (R, G, B as bare numbers so
      animation rules can compose rgba(var(--sacrifice-color), alpha)). */
@@ -222,6 +241,14 @@
 
   /* Status — muted */
   --accent-danger: #b85450;
+  /* V1 — the OTHER side. Used where two sides must be told apart at a
+     glance (the tournament clock's running half). Distinct from
+     --accent-danger, which means "something is wrong". */
+  --accent-opponent: #b85450;
+  /* V1 — where a piece may legally land. Was hardcoded --accent-teal,
+     which is a green that belongs to neon and reads as paint from another
+     product on a wooden or cream board. */
+  --move-target: rgba(90, 58, 40, 0.85);
   --danger: #b85450;
   --danger-bright: #c4625e;
   --danger-coral: #b85450;
@@ -267,6 +294,11 @@
   /* Seam: faint dark hint */
   --seam-color: rgba(42, 24, 16, 0.1);
 
+  /* Last move: warm ochre, readable on a bright board */
+  --last-move-fill: rgba(206, 158, 48, 0.36);
+  --last-move-fill-strong: rgba(198, 146, 30, 0.5);
+  --last-move-ring: rgba(150, 105, 20, 0.5);
+
   /* Sacrifice: deeper violet for contrast on the off-white page. */
   --sacrifice-color: 124, 58, 237;
 
@@ -276,122 +308,6 @@
   --font-mono: 'JetBrains Mono', 'Consolas', monospace;
 
   color-scheme: light;
-}
-
-/* ─── Cyberpunk: subtle frosted-glass minimal ───────────────────── */
-[data-theme="cyberpunk"] {
-  /* Backgrounds — Sprint 2.6: pulled toward true black with only a 1%
-     blue hint. Previously read as "navy"; now reads as "deep matte
-     black, lit from beneath". Tiles dropped one stop too so the board
-     still separates from the page. */
-  --bg: #050608;
-  --bg-deep: #050608;
-  --bg-mid: #0c0e14;
-  --bg-elevated: #14171f;
-  --bg-elevated-hover: #1c2030;
-  --bg-panel: #14171f;
-  --bg-panel-deep: #0c0e14;
-  --bg-card: #0c0e14;
-  --bg-card-alt: #14171f;
-  --bg-overlay-dark: #050608;
-  --bg-popup: #14171f;
-  --bg-deeper: #050608;
-  --bg-danger-tint: #1a0e16;
-
-  /* Tiles — close-brightness, low contrast */
-  --tile-light: #1d2335;
-  --tile-dark: #0e1220;
-  --tile-light-alt: #2a3458;
-  --tile-dark-alt: #161c2e;
-  --tile-promo-light: #2a3458;
-  --tile-promo-dark: #0e1220;
-  --tile-promo-light-text: #d8e8f5;
-  --tile-promo-dark-text: #d8e8f5;
-
-  /* Pieces — frosted, semi-translucent feel */
-  --piece-white: #b8d8e5;
-  --piece-black: #d4a5c0;
-  --piece-text-on-bright: #0a1020;
-  --piece-white-flat: #b8d8e5;
-  --piece-black-flat: #d4a5c0;
-  --piece-white-shadow: 0 0 2px rgba(10, 16, 32, 0.6);
-  --piece-black-shadow: 0 0 2px rgba(10, 16, 32, 0.7);
-
-  /* Accents — saturated only for interactive states */
-  --accent-primary: #5dc8d6;
-  --accent-secondary: #d65d8c;
-  --accent-gold: #5dc8d6;
-  --accent-gold-bright: #7ad8e3;
-  --accent-gold-orange: #d6995d;
-  --accent-gold-light: #7ad8e3;
-  --accent-amber-mid: #d6b25d;
-  --accent-amber-bright: #d6c45d;
-  --accent-amber-warm: #d6995d;
-  --accent-peach: #d68a8a;
-  --text-on-bright-gold: #0a1020;
-
-  /* Secondary */
-  --accent-teal: #5dd6a8;
-  --accent-teal-bright: #5dc8d6;
-  --accent-info: #5dc8d6;
-  --accent-orange: #d6995d;
-
-  /* Status — muted magenta/mint */
-  --accent-danger: #d65d8c;
-  --danger: #d65d8c;
-  --danger-bright: #d65d8c;
-  --danger-coral: #d65d8c;
-  --danger-coral-light: #e08aac;
-  --danger-mid: #b8487a;
-  --danger-dark: #9a3a66;
-  --danger-light: #d65d8c;
-  --danger-very-light: #e08aac;
-  --danger-pale: #e8b5c8;
-  --danger-short: #d65d8c;
-
-  --accent-success: #5dd6a8;
-  --success: #5dd6a8;
-  --success-light: #7adcb3;
-  --success-mint: #5dd6a8;
-
-  /* Text — high readability */
-  --text: #d8e8f5;
-  --text-primary: #d8e8f5;
-  --text-secondary: rgba(216, 232, 245, 0.65);
-  --text-muted: rgba(216, 232, 245, 0.4);
-  --text-muted-warm: rgba(216, 232, 245, 0.55);
-  --text-white: #d8e8f5;
-  --text-on-light: #0a1020;
-  --text-grey-mid: rgba(216, 232, 245, 0.35);
-  --text-grey-light: rgba(216, 232, 245, 0.45);
-  --text-grey-lighter: rgba(216, 232, 245, 0.55);
-
-  /* Buttons */
-  --btn-bg: #1d2640;
-  --btn-border: rgba(93, 200, 214, 0.18);
-
-  /* Borders — thin neon */
-  --border-subtle: rgba(93, 200, 214, 0.12);
-  --border-strong: rgba(93, 200, 214, 0.35);
-
-  /* Glows — subtle, only for interactive states */
-  --glow-accent: 0 0 8px rgba(93, 200, 214, 0.4);
-  --glow-danger: 0 0 8px rgba(214, 93, 140, 0.35);
-  --glow-success: 0 0 8px rgba(93, 214, 168, 0.35);
-  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(93, 200, 214, 0.1);
-
-  /* Seam: faint cyan */
-  --seam-color: rgba(93, 200, 214, 0.22);
-
-  /* Sacrifice: brighter neon violet on the matte-black page. */
-  --sacrifice-color: 200, 100, 255;
-
-  /* Monospace UI font */
-  --font-display: 'JetBrains Mono', 'Consolas', monospace;
-  --font-body: 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Consolas', monospace;
-
-  color-scheme: dark;
 }
 
 /* ─── Fantasy: gothic bronze/gold chess set ─────────────────────── */
@@ -455,6 +371,14 @@
 
   /* Status — oxblood red, moss green */
   --accent-danger: #8b3a3a;
+  /* V1 — the OTHER side. Used where two sides must be told apart at a
+     glance (the tournament clock's running half). Distinct from
+     --accent-danger, which means "something is wrong". */
+  --accent-opponent: #c05a52;
+  /* V1 — where a piece may legally land. Was hardcoded --accent-teal,
+     which is a green that belongs to neon and reads as paint from another
+     product on a wooden or cream board. */
+  --move-target: rgba(226, 208, 168, 0.9);
   --danger: #8b3a3a;
   --danger-bright: #a04848;
   --danger-coral: #8b3a3a;
@@ -502,12 +426,143 @@
   /* Seam: warm gold */
   --seam-color: rgba(201, 160, 98, 0.2);
 
+  /* Last move: arcane violet, the theme's secondary voice */
+  --last-move-fill: rgba(150, 110, 210, 0.3);
+  --last-move-fill-strong: rgba(160, 120, 224, 0.42);
+  --last-move-ring: rgba(196, 164, 250, 0.55);
+
   /* Sacrifice: royal gold */
   --sacrifice-color: 218, 165, 32;
 
   /* Typography — gothic display */
   --font-display: 'Cinzel Decorative', 'Cinzel', 'Times New Roman', serif;
   --font-body: 'Cormorant Garamond', 'Inter', serif;
+  --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+
+  color-scheme: dark;
+}
+
+/* ─── Neon: the default room — vivid indigo + cyan/magenta glow.
+   Gradient room, dual-color glowing borders, rose vs ice pieces. */
+[data-theme="neon"] {
+  /* Backgrounds — deep indigo, never true black */
+  --bg: #131022;
+  --bg-deep: #100d1d;
+  --bg-mid: #191532;
+  --bg-elevated: #201c3c;
+  --bg-elevated-hover: #292450;
+  --bg-panel: #1a1636;
+  --bg-panel-deep: #151129;
+  --bg-card: #1a1636;
+  --bg-card-alt: #201c3c;
+  --bg-overlay-dark: #0e0b1a;
+  --bg-popup: #1e1a3a;
+  --bg-deeper: #100d1d;
+  --bg-danger-tint: #241030;
+
+  /* Tiles — muted violet-navy, low contrast like the mock */
+  --tile-light: #292544;
+  --tile-dark: #181528;
+  --tile-light-alt: #35305c;
+  --tile-dark-alt: #211d38;
+  --tile-promo-light: #35305c;
+  --tile-promo-dark: #181528;
+  --tile-promo-light-text: #e9edff;
+  --tile-promo-dark-text: #e9edff;
+
+  /* Pieces — ice white vs rose pink, both softly lit */
+  --piece-white: #e9edff;
+  --piece-black: #f3a8d2;
+  --piece-text-on-bright: #131022;
+  --piece-white-flat: #e9edff;
+  --piece-black-flat: #f3a8d2;
+  --piece-white-shadow: 0 0 3px rgba(78, 225, 255, 0.55), 0 0 10px rgba(78, 225, 255, 0.25);
+  --piece-black-shadow: 0 0 3px rgba(255, 79, 216, 0.55), 0 0 10px rgba(255, 79, 216, 0.25);
+
+  /* Accents — electric cyan primary, hot magenta secondary */
+  --accent-primary: #4ee1ff;
+  --accent-secondary: #ff4fd8;
+  --accent-gold: #4ee1ff;
+  --accent-gold-bright: #7deeff;
+  --accent-gold-orange: #ff9de8;
+  --accent-gold-light: #7deeff;
+  --accent-amber-mid: #b48cff;
+  --accent-amber-bright: #c9a8ff;
+  --accent-amber-warm: #ff9de8;
+  --accent-peach: #ff9de8;
+  --text-on-bright-gold: #0e0b1a;
+
+  /* Secondary */
+  --accent-teal: #52f5c3;
+  --accent-teal-bright: #4ee1ff;
+  --accent-info: #4ee1ff;
+  --accent-orange: #ffb04f;
+
+  /* Status — hot magenta danger, mint success */
+  --accent-danger: #ff4f8f;
+  /* V1 — the OTHER side. Used where two sides must be told apart at a
+     glance (the tournament clock's running half). Distinct from
+     --accent-danger, which means "something is wrong". */
+  --accent-opponent: #ff4fd8;
+  /* V1 — where a piece may legally land. Was hardcoded --accent-teal,
+     which is a green that belongs to neon and reads as paint from another
+     product on a wooden or cream board. */
+  --move-target: #52f5c3;
+  --danger: #ff4f8f;
+  --danger-bright: #ff6ba1;
+  --danger-coral: #ff4f8f;
+  --danger-coral-light: #ff8ab8;
+  --danger-mid: #d63a75;
+  --danger-dark: #b02e60;
+  --danger-light: #ff8ab8;
+  --danger-very-light: #ffa8c9;
+  --danger-pale: #ffc4da;
+  --danger-short: #ff6ba1;
+
+  --accent-success: #52f5c3;
+  --success: #52f5c3;
+  --success-light: #7df8d3;
+  --success-mint: #52f5c3;
+
+  /* Text */
+  --text: #e9edff;
+  --text-primary: #e9edff;
+  --text-secondary: rgba(233, 237, 255, 0.68);
+  --text-muted: rgba(233, 237, 255, 0.42);
+  --text-muted-warm: rgba(233, 237, 255, 0.55);
+  --text-white: #ffffff;
+  --text-on-light: #0e0b1a;
+  --text-grey-mid: rgba(233, 237, 255, 0.35);
+  --text-grey-light: rgba(233, 237, 255, 0.45);
+  --text-grey-lighter: rgba(233, 237, 255, 0.6);
+
+  /* Buttons */
+  --btn-bg: #221d42;
+  --btn-border: rgba(78, 225, 255, 0.35);
+
+  /* Borders — visible neon hairlines */
+  --border-subtle: rgba(78, 225, 255, 0.18);
+  --border-strong: rgba(78, 225, 255, 0.5);
+
+  /* Glows — the point of the theme */
+  --glow-accent: 0 0 10px rgba(78, 225, 255, 0.5), 0 0 22px rgba(78, 225, 255, 0.2);
+  --glow-danger: 0 0 10px rgba(255, 79, 216, 0.45), 0 0 22px rgba(255, 79, 216, 0.18);
+  --glow-success: 0 0 10px rgba(82, 245, 195, 0.45);
+  --shadow-elevated: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(78, 225, 255, 0.15);
+
+  /* Seam: cyan */
+  --seam-color: rgba(78, 225, 255, 0.3);
+
+  /* Last move: electric cyan (replaces the old per-theme override block) */
+  --last-move-fill: rgba(78, 225, 255, 0.16);
+  --last-move-fill-strong: rgba(78, 225, 255, 0.24);
+  --last-move-ring: rgba(78, 225, 255, 0.55);
+
+  /* Sacrifice: hot magenta */
+  --sacrifice-color: 255, 79, 216;
+
+  --font-display: 'JetBrains Mono', 'Consolas', monospace;
+  --font-body: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Consolas', monospace;
 
   color-scheme: dark;
@@ -1087,6 +1142,45 @@
   }
 }
 
+/* V1 SIDEBAR_STEPS — the right column used to stop growing at 320px, so on
+   a 1440p/4K screen the board kept scaling while the panels stayed a thin
+   strip. Both step up together; the board-size effect in App.tsx mirrors
+   these exact numbers (sidebar 320 / 400 / 460, cap 820 / 900 / 1000). */
+@media (min-width: 1700px) {
+  .app-root {
+    max-width: 1500px;
+  }
+  .app-body {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
+  }
+  .sidebar-panel {
+    padding: var(--space-4);
+  }
+  .sidebar-moves .move-log-text {
+    max-height: 340px;
+    font-size: 13px;
+  }
+}
+
+@media (min-width: 2100px) {
+  .app-root {
+    max-width: 1760px;
+  }
+  .app-body {
+    grid-template-columns: minmax(0, 1fr) minmax(380px, 460px);
+  }
+  .sidebar-panel-title {
+    font-size: 12px;
+  }
+  .sidebar-analysis .analysis-eval {
+    font-size: 26px;
+  }
+  .sidebar-moves .move-log-text {
+    max-height: 420px;
+    font-size: 14px;
+  }
+}
+
 /* R14 — display-scale row in the help dialog. */
 .help-scale-row {
   display: flex;
@@ -1651,12 +1745,12 @@
 }
 
 .tile.last-from::before {
-  background: rgba(100, 140, 220, 0.45);
+  background: var(--last-move-fill);
 }
 
 .tile.last-to::before {
-  background: rgba(100, 140, 220, 0.55);
-  box-shadow: inset 0 0 0 2px rgba(140, 180, 255, 0.6);
+  background: var(--last-move-fill-strong);
+  box-shadow: inset 0 0 0 2px var(--last-move-ring);
 }
 
 /* S2.4 — engine hint pair. Teal so it can't be confused with the blue
@@ -2398,30 +2492,9 @@ body.checkmate-flash::after {
   flex-wrap: wrap;
 }
 
-.position-label {
-  font-size: 1em;
-  font-family: ui-monospace, 'Menlo', 'Consolas', monospace;
-  color: var(--text-muted);
-  letter-spacing: 2px;
-}
-
-.position-label-wrap .position-label {
-  font-size: 16px;
-}
-
-.position-edit-btn {
-  font-size: 11px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  border: 1px solid var(--btn-border);
-  background: var(--btn-bg);
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.position-edit-btn:hover {
-  color: var(--text);
-}
+/* V1 — `.position-label` and `.position-edit-btn` are gone: the label and
+   the separate edit button collapsed into one control, `.position-code`,
+   styled down in the V1 chrome pass. */
 
 .position-replay-btn {
   font-size: 11px;
@@ -2473,24 +2546,8 @@ body.checkmate-flash::after {
   margin-top: 12px;
 }
 
-.position-input-wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.position-input {
-  font-size: 14px;
-  font-family: ui-monospace, 'Menlo', 'Consolas', monospace;
-  letter-spacing: 1px;
-  width: 100px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--btn-border);
-  background: var(--bg);
-  color: var(--text);
-}
-
+/* The input now lives inside `.position-code.is-editing` and inherits
+   its type and colour from the chip; see the V1 chrome pass. */
 .position-input-error {
   font-size: 11px;
   color: var(--danger);
@@ -3617,7 +3674,13 @@ body.checkmate-flash::after {
   inset: 0;
   z-index: 9500;
   cursor: pointer;
-  animation: victory-fade-in 0.2s ease-out both;
+  /* V1 — deliberately NO entrance animation. The scene used to fade in
+     from opacity 0 with fill-mode `both`, which means a stalled animation
+     engine leaves a full-screen overlay that is invisible but still on
+     top of everything. The canvas paints near-black on its very first
+     frame anyway, and it is handed the screen by an iris that has already
+     gone black, so there is nothing for a fade to smooth over. */
+  opacity: 1;
 }
 
 .victory-canvas {
@@ -3637,11 +3700,6 @@ body.checkmate-flash::after {
   color: rgba(255, 255, 255, 0.55);
   pointer-events: none;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
-}
-
-@keyframes victory-fade-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
 }
 
 /* R4 — first-press coach-mark inside the music dock. Slides in under
@@ -4560,57 +4618,153 @@ body.checkmate-flash::after {
 .music-style-dot[data-style="dark"] { background: #8b5cf6; }
 .music-style-dot[data-style="adaptive"] { background: var(--accent-teal-bright); }
 
-/* ── S2.5: per-side elapsed clocks ────────────────────────────────────
-   Sits between the mode cards and the board. The running side's chip
-   lights up, so this also reads as a quiet turn indicator. */
+/* ── S2.5 / V1: the tournament clock ──────────────────────────────────
+   Sits between the mode cards and the board. Two separate floating chips
+   read as two unrelated labels; the thing a player actually recognises is
+   the single unit on the table with two faces and a seam down the middle,
+   so that is what this is: one housing, two faces, a dashed seam, and the
+   running side lit. The numbers stay digital — an unlit 88:88 ghost with
+   the live time burning through it — because that is what a real DGT
+   shows; only the body is analogue.
+   The running face doubles as the turn indicator, as the old chips did. */
 
-.game-clocks {
+/* The housing carries no border of its own: each half carries the three
+   OUTER edges of the unit, and the dashed seam is the only thing between
+   them. So when a side is running, what lights is its outer edge and its
+   half of the fill, right up to the seam — there is no second rectangle
+   drawn inside the first. */
+.tournament-clock {
+  position: relative;
   display: flex;
-  justify-content: center;
-  gap: var(--space-3);
-  margin: var(--space-2) 0;
+  width: fit-content;
+  margin: var(--space-2) auto;
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--bg-elevated), var(--bg-card));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 4px 12px rgba(0, 0, 0, 0.18);
 }
 
-.clock-chip {
+/* The seam. A pseudo-element rather than a border on one of the faces, so
+   it stays put and stays visible when a face paints its own background. */
+.tournament-clock::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 9px;
+  bottom: 9px;
+  border-left: 1px dashed var(--border-subtle);
+  opacity: 0.85;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.tc-face {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 108px;
+  padding: 8px 18px 7px;
+  border: 1px solid var(--btn-border);
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+/* Each half owns the outer corners and drops the edge facing the seam. */
+.tc-face-white {
+  border-right: 0;
+  border-radius: 14px 0 0 14px;
+}
+.tc-face-black {
+  border-left: 0;
+  border-radius: 0 14px 14px 0;
+}
+
+.tc-readout {
+  position: relative;
+  display: inline-block;
+  font-family: ui-monospace, 'Menlo', 'Consolas', monospace;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+}
+
+.tc-ghost {
+  position: absolute;
+  inset: 0;
+  color: var(--text-muted);
+  opacity: 0.15;
+}
+
+.tc-digits {
+  position: relative;
+  color: var(--text-secondary);
+  transition: color 0.2s, text-shadow 0.2s;
+}
+
+.tc-name {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  border-radius: var(--radius-full, 999px);
-  border: 1px solid var(--btn-border);
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  transition: color 0.2s, border-color 0.2s, box-shadow 0.2s;
+  gap: 5px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
-.clock-chip-dot {
-  width: 8px;
-  height: 8px;
+.tc-lamp {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: currentColor;
-  opacity: 0.5;
 }
 
-.clock-chip-white .clock-chip-dot { background: var(--piece-white-flat); opacity: 0.9; }
-.clock-chip-black .clock-chip-dot { background: var(--piece-black-flat); opacity: 0.9; box-shadow: 0 0 0 1px var(--text-muted); }
+.tc-face-white .tc-lamp { background: var(--piece-white-flat); opacity: 0.9; }
+.tc-face-black .tc-lamp {
+  background: var(--piece-black-flat);
+  opacity: 0.9;
+  box-shadow: 0 0 0 1px var(--text-muted);
+}
 
-.clock-chip.is-running {
+/* The running half is lit in one colour when it is yours and the other
+   when it is not — one glance tells you whose time is burning. The hue
+   comes from a token so every theme answers in its own voice. */
+.tc-face.is-running {
+  --tc-lit: var(--accent-primary);
+  background: var(--bg-card);
+  border-color: var(--tc-lit);
+  box-shadow: 0 0 10px -3px var(--tc-lit);
+}
+
+.tc-face.is-theirs.is-running {
+  --tc-lit: var(--accent-opponent);
+}
+
+.tc-face.is-running .tc-digits {
   color: var(--text);
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 8px rgba(212, 168, 67, 0.25);
+  text-shadow: 0 0 10px currentColor;
 }
 
-/* B8 — timed match, under 30s: the chip turns urgent. */
-.clock-chip.is-low {
-  color: var(--danger-pale);
+.tc-face.is-running .tc-name { color: var(--text-secondary); }
+.tc-face-white.is-running .tc-lamp { box-shadow: 0 0 8px var(--tc-lit); }
+.tc-face-black.is-running .tc-lamp {
+  box-shadow: 0 0 0 1px var(--text-muted), 0 0 8px var(--tc-lit);
+}
+
+/* B8 — timed match, under 30s: that face turns urgent. */
+.tc-face.is-low .tc-digits { color: var(--danger-pale); }
+
+.tc-face.is-low.is-running {
   border-color: var(--accent-danger);
+  box-shadow: 0 0 12px -3px var(--accent-danger);
+  animation: afk-breathe 1s ease-in-out infinite;
 }
 
-.clock-chip.is-low.is-running {
-  box-shadow: 0 0 10px rgba(220, 38, 38, 0.45);
-  animation: afk-breathe 1s ease-in-out infinite;
+@media (max-width: 720px) {
+  .tc-face { min-width: 88px; padding: 6px 12px 5px; }
+  .tc-readout { font-size: 18px; }
 }
 
 /* B8 — lobby time-control checkbox, matches the mode cards. */
@@ -6538,9 +6692,10 @@ body.checkmate-flash::after {
    those buttons + add a stale material-score chip and a second rotate
    icon, so we hide it wholesale. Reveals again on game-over so the
    user can hit "New game" / "Lock formation" from the standard row. */
-.app-shell[data-opponent-mode='local'][data-game-active='1'] .board-actions {
-  display: none;
-}
+/* V1 — the standard action row stays visible in local hot-seat too: it is
+   the white seat's row (and the only place with New game / Lock formation).
+   Hiding it used to leave the board with a duplicate, differently-aligned
+   set of buttons before the first move and no way to restart mid-game. */
 
 /* Sprint 4.3.1 — soft-locked opponent tab during an active local game.
    Uses aria-disabled + class (not the disabled attribute) so the click
@@ -7800,7 +7955,7 @@ body.checkmate-flash::after {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   THEME TOGGLE — switches data-theme between wood/cyberpunk
+   THEME TOGGLE — cycles the theme CHOICE (see src/ui/themeStore.ts)
    ═══════════════════════════════════════════════════════════════════ */
 
 .theme-toggle {
@@ -7844,61 +7999,6 @@ body.checkmate-flash::after {
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ═══════════════════════════════════════════════════════════════════
-   CYBERPUNK THEME — subtle, frosted-glass enhancements
-   Tone: atmospheric, minimal, monospace. NOT garish neon.
-   Pieces, tiles, glows all live in tokens — overrides here are
-   additive structure (ambient bg, monospace title, mild halos).
-   ═══════════════════════════════════════════════════════════════════ */
-
-/* Faint corner gradients — barely perceptible atmosphere */
-[data-theme="cyberpunk"] .app-shell::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background:
-    radial-gradient(circle at 18% 22%, rgba(93, 200, 214, 0.04), transparent 55%),
-    radial-gradient(circle at 82% 78%, rgba(214, 93, 140, 0.03), transparent 55%);
-  pointer-events: none;
-  z-index: 0;
-}
-
-[data-theme="cyberpunk"] .app-root {
-  position: relative;
-  z-index: 1;
-}
-
-/* Board: thin hairline border, no inner glow blast */
-[data-theme="cyberpunk"] .board {
-  box-shadow:
-    var(--shadow-elevated),
-    inset 0 0 0 1px var(--border-subtle);
-}
-
-/* Last-move tiles: muted cyan wash, no heavy outline */
-[data-theme="cyberpunk"] .tile.last-from::before {
-  background: rgba(93, 200, 214, 0.16);
-}
-[data-theme="cyberpunk"] .tile.last-to::before {
-  background: rgba(93, 200, 214, 0.22);
-  box-shadow: inset 0 0 0 1px rgba(93, 200, 214, 0.45);
-}
-
-/* Buttons: very mild halo on hover only */
-[data-theme="cyberpunk"] .action-btn:hover,
-[data-theme="cyberpunk"] .rotate-btn:hover,
-[data-theme="cyberpunk"] .mode-btn:hover,
-[data-theme="cyberpunk"] .opponent-mode-btn:hover {
-  box-shadow: var(--glow-accent);
-}
-
-/* Brand title — M.16: keep ONE wordmark across every theme. Only the
-   colour / glow adapts per theme; font-family + letter-spacing stay on the
-   base rule so "subutai" is always the same inscription. */
-[data-theme="cyberpunk"] .app-header h1 {
-  text-shadow: 0 0 12px rgba(93, 200, 214, 0.55);
-}
-
-/* ═══════════════════════════════════════════════════════════════════
    PREFERS-REDUCED-MOTION
    Disable the punchy animations added in Sprint 3.2 for users who've
    asked the OS / browser to reduce motion. Transitions and infinite
@@ -7940,6 +8040,7 @@ body.checkmate-flash::after {
   }
   .piece-slide-wrap.is-sliding-in,
   .piece.is-rotating-in,
+  [data-3d="on"] .tile.is-mate-rise .piece-slide-wrap,
   .tile.is-sacrifice::before,
   .tile.is-sacrifice::after,
   .tile.checked-king::before,
@@ -9073,6 +9174,33 @@ button:active:not(:disabled) {
   100% { opacity: 0; transform: scale(2.4); }
 }
 
+/* V1 — the 3D pass and the endgame cut, joined up.
+   The board already has perspective and already lifts a piece on hover
+   under [data-3d="on"]; this is the same trick at the one moment it
+   carries the most weight. While the iris closes, the mated king rises
+   off its square, so when the cinematic takes over it is lifting a piece
+   that is already in the air rather than conjuring a new one. With 3D
+   effects off there is no Z to rise along, so the rule simply does not
+   apply and the ending is the flat one it always was.
+
+   The 0% keyframe is the piece's natural resting state, so a stalled
+   animation engine leaves the king exactly where it belongs. */
+[data-3d="on"] .tile.is-mate-rise .piece-slide-wrap {
+  animation: checkmate-king-rise 1220ms cubic-bezier(0.34, 0, 0.2, 1) both;
+  z-index: 40;
+}
+
+@keyframes checkmate-king-rise {
+  0% {
+    transform: translateZ(0) scale(1);
+    filter: none;
+  }
+  100% {
+    transform: translateZ(52px) scale(1.24);
+    filter: drop-shadow(0 18px 20px rgba(0, 0, 0, 0.6));
+  }
+}
+
 /* The king glyph itself, held frozen through the iris + hold, then
    scaled/faded away in sync with the shard burst above. */
 .checkmate-king-fade {
@@ -9109,4 +9237,1792 @@ button:active:not(:disabled) {
   gap: var(--space-2);
   flex-wrap: wrap;
   margin-bottom: var(--space-2);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   NEON THEME — Stitch redesign try-on (design/neon-stitch branch).
+   Tokens live in the [data-theme="neon"] block up top; everything here
+   is additive structure: the gradient room, glowing card borders, the
+   dual-color mode cards and the wordmark treatment.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* The room: indigo base + magenta glow top-right, cyan low-left, faint
+   violet wash. Fixed so it doesn't scroll away. */
+[data-theme="neon"] .app-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(circle at 88% 6%, rgba(255, 79, 216, 0.16), transparent 45%),
+    radial-gradient(circle at 6% 88%, rgba(78, 225, 255, 0.12), transparent 45%),
+    radial-gradient(circle at 50% 130%, rgba(140, 90, 255, 0.14), transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+[data-theme="neon"] .app-root {
+  position: relative;
+  z-index: 1;
+}
+
+/* Board: floating neon slab — cyan hairline + ambient glow */
+[data-theme="neon"] .board {
+  border-radius: 10px;
+  box-shadow:
+    0 14px 40px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(78, 225, 255, 0.28),
+    0 0 24px rgba(78, 225, 255, 0.12),
+    0 0 60px rgba(255, 79, 216, 0.08);
+}
+
+/* Right-column cards: rounded, hairline-bordered, softly lit */
+[data-theme="neon"] .sidebar-panel {
+  background: rgba(26, 22, 54, 0.82);
+  border: 1px solid rgba(78, 225, 255, 0.22);
+  border-radius: 12px;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.45),
+    0 0 14px rgba(78, 225, 255, 0.06);
+  backdrop-filter: blur(6px);
+}
+
+[data-theme="neon"] .sidebar-panel-title {
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Mode cards: Classic wears cyan, Roulette wears magenta — matching the
+   two Stitch cards. Selected card lights up its own color. */
+[data-theme="neon"] .mode-card {
+  border: 1px solid rgba(78, 225, 255, 0.3);
+  border-radius: 12px;
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+[data-theme="neon"] .mode-card:last-child {
+  border-color: rgba(255, 79, 216, 0.35);
+}
+[data-theme="neon"] .mode-card.is-active,
+[data-theme="neon"] .mode-card:hover {
+  border-color: rgba(78, 225, 255, 0.75);
+  box-shadow: 0 0 12px rgba(78, 225, 255, 0.35), inset 0 0 12px rgba(78, 225, 255, 0.08);
+}
+[data-theme="neon"] .mode-card:last-child.is-active,
+[data-theme="neon"] .mode-card:last-child:hover {
+  border-color: rgba(255, 79, 216, 0.8);
+  box-shadow: 0 0 12px rgba(255, 79, 216, 0.35), inset 0 0 12px rgba(255, 79, 216, 0.08);
+}
+
+/* Opponent pills + header action tiles: neon outline on hover/active */
+[data-theme="neon"] .opp-tab,
+[data-theme="neon"] .header-action-btn,
+[data-theme="neon"] .action-btn,
+[data-theme="neon"] .rotate-btn {
+  border-radius: 10px;
+}
+[data-theme="neon"] .opp-tab:hover,
+[data-theme="neon"] .opp-tab.is-active,
+[data-theme="neon"] .header-action-btn:hover,
+[data-theme="neon"] .header-action-btn.is-active,
+[data-theme="neon"] .action-btn:hover,
+[data-theme="neon"] .rotate-btn:hover {
+  box-shadow: var(--glow-accent);
+}
+
+/* Last-move tiles are token-driven now (--last-move-* per theme). */
+
+/* V1 — the wordmark gets a soft halo in every theme, in that theme's own
+   accent; neon keeps its louder dual-color version below. */
+.app-header h1 {
+  text-shadow: 0 0 14px color-mix(in srgb, var(--accent-primary) 35%, transparent);
+}
+
+/* Wordmark: ice core with a dual cyan/magenta halo, like the logo */
+[data-theme="neon"] .app-header h1 {
+  color: #f4f7ff;
+  text-shadow:
+    0 0 10px rgba(78, 225, 255, 0.55),
+    0 0 26px rgba(255, 79, 216, 0.35);
+}
+
+/* Toasts pick up the glass card look */
+[data-theme="neon"] .toast {
+  border: 1px solid rgba(78, 225, 255, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 14px rgba(78, 225, 255, 0.12);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme="neon"] .app-header h1 {
+    animation: neon-breathe 4.5s ease-in-out infinite;
+  }
+  @keyframes neon-breathe {
+    0%, 100% { text-shadow: 0 0 10px rgba(78, 225, 255, 0.55), 0 0 26px rgba(255, 79, 216, 0.35); }
+    50% { text-shadow: 0 0 14px rgba(78, 225, 255, 0.75), 0 0 34px rgba(255, 79, 216, 0.5); }
+  }
+}
+
+/* ─── Neon logo (5 variants, click to cycle) ─────────────────────── */
+.neon-logo-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 4px;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+  align-self: center;
+  transition: transform 0.15s, filter 0.2s;
+}
+.neon-logo-btn:hover {
+  transform: scale(1.06);
+  /* Theme-driven like the mark itself (was a fixed cyan glow). */
+  filter: drop-shadow(0 0 8px var(--accent-primary));
+}
+.neon-logo-btn svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   LAYOUT EXPERIMENT — design/neon-stitch branch only.
+   Full Stitch-mock structure: fixed left icon rail (the old header
+   buttons), top bar with LIVE strip, GAME SETUP consolidated in the
+   right sidebar (opponent + mode + time control), clock chips above
+   the board (existing S2.5 strip, now countdown-capable in solo).
+   Uses theme tokens throughout so all five themes survive; tuned for
+   neon. Desktop-only rail — mobile keeps the stock header row.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Brand: bigger mark, optically centered against the wordmark */
+.app-brand {
+  align-items: center;
+}
+.neon-logo-btn {
+  width: 58px;
+  height: 58px;
+}
+
+/* Top bar reads as a floating pill bar */
+.app-header {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  padding: 8px 16px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+/* NOTE: no backdrop-filter here. A backdrop-filter makes the header the
+   containing block for position:fixed descendants, which would trap the
+   left icon rail (a fixed child of this header on desktop) inside the
+   header box. The rail carries its own blur instead. */
+[data-theme="neon"] .app-header {
+  background: rgba(26, 22, 54, 0.92);
+  border-color: rgba(78, 225, 255, 0.22);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45), 0 0 16px rgba(255, 79, 216, 0.07);
+}
+
+/* LIVE strip */
+.live-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-on-bright-gold);
+  background: var(--accent-secondary);
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.25);
+}
+[data-theme="neon"] .live-pill {
+  background: linear-gradient(90deg, #ff4fd8, #b44fff);
+  color: #fff;
+  box-shadow: 0 0 12px rgba(255, 79, 216, 0.5);
+}
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: live-dot-blink 1.6s ease-in-out infinite;
+}
+@keyframes live-dot-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-dot { animation: none; }
+}
+.live-title {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.live-title strong {
+  color: var(--text);
+}
+
+/* Left icon rail: the header controls become a fixed vertical dock */
+@media (min-width: 721px) {
+  .header-controls {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 68px;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: var(--space-2);
+    padding: 14px 0 calc(14px + env(safe-area-inset-bottom, 0px));
+    background: var(--bg-card);
+    border-right: 1px solid var(--border-subtle);
+    overflow-y: auto;
+    scrollbar-width: none;
+    z-index: 860; /* under docks/popups (880+), over the page */
+  }
+  .header-controls::-webkit-scrollbar { display: none; }
+  [data-theme="neon"] .header-controls {
+    background: rgba(19, 16, 34, 0.88);
+    border-right: 1px solid rgba(78, 225, 255, 0.18);
+    backdrop-filter: blur(8px);
+    box-shadow: 8px 0 24px rgba(0, 0, 0, 0.35);
+  }
+  /* Content steps aside for the rail */
+  .app-root {
+    padding-left: 84px;
+  }
+}
+
+/* GAME SETUP sub-sections in the right sidebar */
+.setup-sub-label {
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+.sidebar-opponent .setup-sub-label:first-of-type {
+  margin-top: 0;
+}
+
+/* Mode cards squeezed into the sidebar: stacked, compact */
+.right-sidebar .game-mode-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  margin: 0;
+}
+.right-sidebar .mode-card {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-2);
+}
+.right-sidebar .mode-card-icon svg {
+  width: 26px;
+  height: 26px;
+}
+.right-sidebar .mode-card-title {
+  font-size: 14px;
+}
+.right-sidebar .mode-card-subtitle {
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+/* Time-control pills */
+.tc-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.tc-pill {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, color 0.15s;
+}
+.tc-pill:hover:not(:disabled) {
+  border-color: var(--accent-primary);
+  color: var(--text);
+}
+.tc-pill.is-active {
+  border-color: var(--accent-primary);
+  color: var(--text);
+  box-shadow: var(--glow-accent);
+}
+.tc-pill:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Clock chips: glassier, mock-sized */
+/* Neon: the housing turns into a smoked-glass panel and the lit face
+   glows cyan, the way the rest of the neon chrome does. */
+[data-theme="neon"] .tournament-clock {
+  background: linear-gradient(180deg, rgba(32, 27, 66, 0.92), rgba(18, 15, 40, 0.92));
+  border-color: rgba(78, 225, 255, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 6px 18px rgba(0, 0, 0, 0.35);
+}
+[data-theme="neon"] .tournament-clock::before {
+  border-left-color: rgba(78, 225, 255, 0.3);
+}
+[data-theme="neon"] .tc-face {
+  border-color: rgba(78, 225, 255, 0.18);
+}
+[data-theme="neon"] .tc-face.is-running {
+  background: rgba(78, 225, 255, 0.07);
+  border-color: rgba(78, 225, 255, 0.6);
+  box-shadow: 0 0 14px -2px rgba(78, 225, 255, 0.5);
+}
+[data-theme="neon"] .tc-face.is-theirs.is-running {
+  background: rgba(255, 79, 216, 0.07);
+  border-color: rgba(255, 79, 216, 0.6);
+  box-shadow: 0 0 14px -2px rgba(255, 79, 216, 0.5);
+}
+[data-theme="neon"] .tc-face.is-running .tc-digits {
+  text-shadow: 0 0 12px rgba(78, 225, 255, 0.85);
+}
+[data-theme="neon"] .tc-face.is-theirs.is-running .tc-digits {
+  text-shadow: 0 0 12px rgba(255, 79, 216, 0.8);
+}
+[data-theme="neon"] .tc-face.is-low.is-running {
+  background: rgba(255, 79, 216, 0.08);
+  border-color: rgba(255, 79, 216, 0.7);
+  box-shadow: 0 0 14px -2px rgba(255, 79, 216, 0.55);
+}
+[data-theme="neon"] .tc-face.is-low.is-running .tc-digits {
+  text-shadow: 0 0 12px rgba(255, 79, 216, 0.8);
+}
+
+/* Layout experiment follow-ups (design/neon-stitch):
+   1. Rail tooltips open to the RIGHT of the icons (the stock side="bottom"
+      geometry points them under the fixed rail edge).
+   2. A left-docked music panel starts AFTER the rail instead of under it. */
+@media (min-width: 721px) {
+  /* The rail-tooltip override that used to live here moved into
+     Tooltip.tsx — the element is portalled to <body> now, so a
+     descendant selector on .header-controls no longer reaches it. */
+  .music-dock.is-docked-left {
+    left: 68px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   V1 LAUNCH LAYOUT — top-bar actions, rail grouping, game-setup panel.
+   Builds on the Stitch rail above; neon is the default theme but every
+   rule reads through tokens so the other four themes keep working.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Top bar: brand | (rail on desktop) | actions. */
+.app-header {
+  gap: var(--space-3);
+}
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.topbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.2s ease, transform 0.15s ease, background 0.15s ease;
+}
+.topbar-btn:hover {
+  border-color: var(--accent-primary);
+  box-shadow: var(--glow-accent);
+  transform: translateY(-1px);
+}
+.topbar-btn:active {
+  transform: translateY(0);
+}
+[data-theme="neon"] .topbar-btn {
+  background: rgba(78, 225, 255, 0.08);
+  border-color: rgba(78, 225, 255, 0.35);
+}
+.topbar-actions .user-menu-trigger {
+  height: 34px;
+  border-radius: 999px;
+  padding: 0 12px;
+}
+[data-theme="neon"] .topbar-actions .user-menu-trigger {
+  background: rgba(255, 79, 216, 0.08);
+  border-color: rgba(255, 79, 216, 0.35);
+}
+[data-theme="neon"] .topbar-actions .user-menu-trigger:hover {
+  border-color: var(--accent-secondary);
+  box-shadow: var(--glow-danger);
+}
+@media (max-width: 640px) {
+  .topbar-btn-label {
+    display: none;
+  }
+  .topbar-btn {
+    width: 34px;
+    padding: 0;
+    justify-content: center;
+  }
+}
+
+/* LIVE pill phases */
+.live-pill.is-ready,
+.live-pill.is-over {
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  box-shadow: none;
+  border: 1px solid var(--border-subtle);
+}
+.live-pill.is-ready .live-dot,
+.live-pill.is-over .live-dot {
+  animation: none;
+  opacity: 0.55;
+}
+[data-theme="neon"] .live-pill.is-ready {
+  background: rgba(78, 225, 255, 0.1);
+  border-color: rgba(78, 225, 255, 0.4);
+  color: #7deeff;
+}
+[data-theme="neon"] .live-pill.is-over {
+  background: rgba(233, 237, 255, 0.06);
+  border-color: rgba(233, 237, 255, 0.2);
+  color: var(--text-muted-warm);
+}
+
+/* Rail: bigger, grouped tiles with hairline separators (desktop only). */
+.rail-sep {
+  display: none;
+}
+@media (min-width: 721px) {
+  .header-controls > * {
+    flex-shrink: 0;
+  }
+  .header-controls .rail-sep {
+    display: block;
+    width: 28px;
+    height: 1px;
+    margin: 4px 0;
+    background: var(--border-subtle);
+  }
+  [data-theme="neon"] .header-controls .rail-sep {
+    background: rgba(78, 225, 255, 0.22);
+  }
+  .header-controls .header-action-btn,
+  .header-controls .theme-toggle {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+  }
+  .header-controls .header-action-btn svg,
+  .header-controls .theme-toggle svg {
+    width: 20px;
+    height: 20px;
+  }
+  .header-controls .header-action-btn.is-active {
+    border-color: var(--accent-primary);
+    box-shadow: var(--glow-accent);
+    color: var(--accent-primary);
+  }
+  .header-controls .beta-corner {
+    top: -4px;
+    right: -4px;
+  }
+  /* Sound/3D/theme sit at the bottom of the rail like a settings tray
+     (auto margin only bites when the rail has spare height). */
+  .header-controls .rail-sep-tray {
+    margin-top: auto;
+  }
+}
+
+/* Game setup: opponent as one segmented row, hints under pill groups. */
+.sidebar-opponent .opponent-tabs-vertical {
+  flex-direction: row;
+  gap: var(--space-1);
+}
+.sidebar-opponent .opp-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+  padding: 8px 6px;
+  font-size: 12px;
+  gap: 6px;
+}
+.sidebar-opponent .opp-tab span {
+  white-space: nowrap;
+}
+.setup-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+.tc-pill.is-ranked::after {
+  content: '★';
+  margin-left: 4px;
+  font-size: 10px;
+  opacity: 0.75;
+}
+[data-theme="neon"] .tc-pill.is-ranked.is-active {
+  border-color: var(--accent-secondary);
+  box-shadow: var(--glow-danger);
+}
+
+/* Status bar + panels pick up the glass look on neon. */
+[data-theme="neon"] .app-status-bar {
+  background: rgba(26, 22, 54, 0.7);
+  border-color: rgba(78, 225, 255, 0.18);
+  backdrop-filter: blur(6px);
+}
+[data-theme="neon"] .modal-dialog,
+[data-theme="neon"] .help-dialog,
+[data-theme="neon"] .mp-completion-dialog {
+  border: 1px solid rgba(78, 225, 255, 0.28);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 30px rgba(255, 79, 216, 0.12);
+}
+
+/* V1 — "Beat Strong" outranks the generic Bot Slayer pill: same shape, the
+   theme's secondary accent so the two read as different achievements. */
+.victor-badge.strong-badge {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent-secondary) 85%, transparent),
+    color-mix(in srgb, var(--accent-primary) 70%, transparent)
+  );
+  color: var(--text-on-bright-gold);
+  border-color: var(--accent-secondary);
+  box-shadow: var(--glow-danger);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   V1 CHROME PASS — the controls that never got a design pass: the status
+   bar, the 960 / replay row under the board, and the Memory panel. They
+   were the last places still using 4px radii, bare text buttons and
+   transparent backgrounds while the rest of the app moved to pills and
+   cards. All token-driven, so every theme follows.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.app-status-bar {
+  font-size: 12.5px;
+}
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--btn-border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-weight: 600;
+}
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+.status-chip-mine {
+  border-color: var(--accent-primary);
+  color: var(--text-primary);
+}
+.status-chip-mine .status-dot {
+  background: var(--accent-primary);
+  box-shadow: 0 0 8px var(--accent-primary);
+}
+.status-chip-theirs .status-dot {
+  background: var(--accent-secondary);
+  animation: status-thinking 1.4s ease-in-out infinite;
+}
+.status-chip-over {
+  border-color: var(--border-strong);
+}
+@keyframes status-thinking {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .status-chip-theirs .status-dot { animation: none; }
+}
+.status-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-muted);
+}
+.status-meta-item strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+  margin-left: 4px;
+}
+.status-mono {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+/* The 960 / replay row reads as one strip of pills. */
+/* V1 rev 3 — the row under the board.
+   It went from three equal 12px pills, to one strip of three slots, to
+   this: two separate things, because they are two separate ideas. On the
+   left, an action you can take. On the right, the fact of which position
+   you are playing — flat, borderless and quiet until you touch it, at
+   which point it grows and becomes the field you type the new code into.
+   The separate "Set position" button is gone; the code is the control. */
+.position-label-wrap {
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
+  gap: 14px;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.position-replay-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.position-replay-btn:hover {
+  color: var(--text);
+  border-color: var(--accent-primary);
+  background: var(--bg-elevated);
+}
+
+/* The code chip: flat by default — no border, no fill, no shadow. */
+.position-code {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  font-family: ui-monospace, 'Menlo', 'Consolas', monospace;
+  font-size: 11.5px;
+  letter-spacing: 1.2px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease,
+    padding 0.18s ease, font-size 0.18s ease;
+}
+.position-code.is-static {
+  cursor: default;
+}
+.position-code:not(.is-static):hover {
+  color: var(--text);
+  border-color: var(--border-subtle);
+  background: var(--bg-card);
+}
+.position-code-value {
+  font-weight: 600;
+}
+/* The pencil only shows the chip is live; it is not a second button. */
+.position-code-pencil {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.position-code:hover .position-code-pencil,
+.position-code:focus-visible .position-code-pencil {
+  opacity: 0.7;
+}
+
+/* Editing: the same chip, grown. This is the whole interaction — you
+   pressed the code and the code got bigger and started taking input. */
+.position-code.is-editing {
+  padding: 6px 12px;
+  /* 16px exactly: anything smaller and iOS zooms the page on focus. */
+  font-size: 16px;
+  letter-spacing: 2px;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border-color: var(--accent-primary);
+  box-shadow: var(--glow-accent);
+  cursor: text;
+}
+.position-code.is-editing .position-label-key {
+  font-size: 9.5px;
+}
+.position-code .position-input {
+  width: 9ch;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  text-transform: uppercase;
+  outline: none;
+}
+.position-code .position-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.55;
+}
+
+.position-label-key {
+  font-family: var(--font-body);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  transition: font-size 0.18s ease;
+}
+.position-code.is-editing .position-label-key {
+  background: var(--bg-card);
+}
+
+/* Memory panel: a card in the same family as the sidebar panels. */
+.memory-details {
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  border-color: var(--border-subtle);
+}
+.memory-details summary {
+  padding: 10px 16px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-secondary);
+}
+.memory-details[open] summary {
+  border-bottom: 1px solid var(--border-subtle);
+}
+.memory-content {
+  padding: var(--space-3) 16px 16px;
+}
+.memory-sort-select,
+.memory-sort-dir,
+.memory-filter-input,
+.memory-filter-clear,
+.memory-refresh-btn {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.memory-filter-input {
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text);
+}
+.memory-sort-dir:hover,
+.memory-filter-clear:hover,
+.memory-refresh-btn:hover {
+  color: var(--text);
+  border-color: var(--accent-primary);
+}
+.memory-game-card {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-mid);
+  transition: border-color 0.15s ease, box-shadow 0.2s ease;
+}
+.memory-game-card:hover {
+  border-color: var(--accent-primary);
+  box-shadow: var(--glow-accent);
+}
+
+/* V1 — busy overlay: covers a transition that does its work in one React
+   commit (leaving a replay, restoring a saved game) so the tab never looks
+   frozen without explanation. */
+.busy-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg-deep) 72%, transparent);
+  backdrop-filter: blur(3px);
+  animation: busy-fade-in 120ms ease-out;
+}
+@keyframes busy-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.busy-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-elevated);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+.busy-label {
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .busy-overlay { animation: none; }
+}
+
+/* V1 — first-visit welcome. One mark, one line, one button: everything it
+   could explain, the tour explains better on the real board. Token-driven
+   so it belongs to whichever theme is on. */
+.welcome-root {
+  position: fixed;
+  inset: 0;
+  z-index: 9600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4) var(--space-3);
+  overflow-y: auto;
+  background:
+    radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--accent-primary) 14%, transparent), transparent 62%),
+    radial-gradient(circle at 50% 100%, color-mix(in srgb, var(--accent-secondary) 10%, transparent), transparent 55%),
+    var(--bg-deep);
+  animation: busy-fade-in 260ms ease-out;
+}
+.welcome-stage {
+  margin: auto;
+  width: min(460px, 100%);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* The mark: two squares sharing a centre, the top one easing into the
+   rotation the whole game is built on. */
+.welcome-mark {
+  width: 116px;
+  height: 116px;
+  margin-bottom: var(--space-3);
+}
+.welcome-mark svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--accent-primary) 45%, transparent));
+}
+.welcome-mark-b {
+  transform-origin: center;
+  opacity: 0.85;
+  animation: welcome-turn 6s cubic-bezier(0.65, 0, 0.35, 1) 600ms infinite;
+}
+@keyframes welcome-turn {
+  0%, 18% { transform: rotate(0deg); }
+  32%, 68% { transform: rotate(45deg); }
+  82%, 100% { transform: rotate(0deg); }
+}
+
+.welcome-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(40px, 11vw, 58px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  color: var(--text-primary);
+  text-shadow: 0 0 22px color-mix(in srgb, var(--accent-primary) 45%, transparent);
+}
+.welcome-lede {
+  margin: var(--space-2) 0 var(--space-5);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.welcome-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 15px var(--space-5);
+  border-radius: 999px;
+  border: 1px solid var(--accent-primary);
+  background: var(--accent-primary);
+  color: var(--text-on-bright-gold);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--glow-accent);
+}
+.welcome-cta:hover {
+  filter: brightness(1.08);
+}
+.welcome-skip {
+  margin-top: var(--space-3);
+  padding: 8px 12px;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.welcome-skip:hover {
+  color: var(--text-secondary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-root { animation: none; }
+  .welcome-mark-b { animation: none; transform: rotate(45deg); }
+}
+
+/* Game Review 2.0: turning-point card + phase bars. */
+.review-turning {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  font-family: inherit;
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--danger-mid);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.2s ease;
+}
+.review-turning:hover,
+.review-turning.is-current {
+  border-color: var(--danger-bright);
+  box-shadow: var(--glow-danger);
+}
+.review-turning-clean {
+  border-color: var(--success);
+  cursor: default;
+}
+.review-turning-clean:hover {
+  box-shadow: none;
+  border-color: var(--success);
+}
+.review-turning-kicker {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.review-turning-line {
+  font-size: 13px;
+  line-height: 1.4;
+}
+.review-turning-line strong {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.review-turning-note {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--accent-amber-warm);
+}
+.review-phases {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-md);
+}
+.review-phases-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+.review-phase-row {
+  display: grid;
+  grid-template-columns: 82px 1fr 58px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.review-phase-label {
+  color: var(--text-secondary);
+}
+.review-phase-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.review-phase-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--success);
+  transition: width 0.4s ease;
+}
+.review-phase-fill.is-mid {
+  background: var(--accent-amber-warm);
+}
+.review-phase-fill.is-bad {
+  background: var(--danger-bright);
+}
+.review-phase-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* Mobile: the header row wraps brand / controls / actions cleanly. */
+@media (max-width: 720px) {
+  .app-header {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  .app-brand {
+    order: 0;
+  }
+  .topbar-actions {
+    order: 1;
+  }
+  .header-controls {
+    order: 2;
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .neon-logo-btn {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   V1 BUTTON SWEEP — every remaining control.
+
+   The redesign had reached the chrome around the board but stopped at
+   the edge of the dialogs, the tour, the lobby, the music dock and the
+   Twitch panel. Those were still carrying four different corner radii
+   (4 / 6 / 8 / --radius-md), no hover feedback on half of them, and no
+   focus ring anywhere, which is what makes a UI feel like two products
+   stitched together.
+
+   This is a system, not fourteen one-off blocks:
+     · 999px  small inline secondary actions (copy, watch, stop, replay)
+     · 10px   standard buttons inside cards and dialogs
+     · 12px   full-width primary actions
+   plus one hover treatment and one keyboard focus ring for all of them.
+   Nothing here touches display, width or layout — only the surface —
+   so no existing arrangement can shift.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── small inline secondary: pills ───────────────────────────────── */
+.copy-btn,
+.watch-btn,
+.watch-btn-stop,
+.auto-stop-btn,
+.leaderboard-replay-btn,
+.memory-refresh-btn,
+.music-dock-tap-btn,
+.music-dock-beat-btn {
+  border-radius: 999px;
+  font-weight: 600;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease,
+    box-shadow 0.2s ease;
+}
+
+.copy-btn:hover,
+.watch-btn:hover,
+.auto-stop-btn:hover,
+.leaderboard-replay-btn:hover,
+.music-dock-tap-btn:hover,
+.music-dock-beat-btn:hover {
+  color: var(--text);
+  border-color: var(--accent-primary);
+}
+
+/* ── standard: buttons that live inside a card or a dialog ───────── */
+.modal-btn,
+.mp-btn,
+.mp-back-btn,
+.summary-action-btn,
+.summary-share-btn,
+.help-tour-btn,
+.help-close-btn,
+.tour-next-btn,
+.tour-back-btn,
+.tour-skip-btn,
+.twitch-connect-btn,
+.twitch-close-btn,
+.friend-lobby-secondary-btn,
+.music-dock-load-btn,
+.music-dock-file-btn,
+.music-dock-pl-analyze-btn,
+.music-dock-pl-newbtn {
+  border-radius: 10px;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    box-shadow 0.2s ease;
+}
+
+/* ── full-width primary actions ──────────────────────────────────── */
+.panel-action-btn,
+.friend-lobby-primary-btn,
+.spin-roulette-btn-compact {
+  border-radius: 12px;
+}
+
+/* A bordered button lights its border under the cursor; a filled one
+   lifts instead, because a border it does not have cannot glow. */
+.modal-btn-secondary:hover,
+.mp-btn-secondary:hover,
+.help-tour-btn:hover,
+.tour-back-btn:hover,
+.tour-skip-btn:hover,
+.friend-lobby-secondary-btn:hover,
+.music-dock-load-btn:hover,
+.music-dock-file-btn:hover {
+  border-color: var(--accent-primary);
+  color: var(--text);
+}
+
+.modal-btn-primary:hover,
+.modal-btn-danger:hover,
+.mp-btn-primary:hover,
+.tour-next-btn:hover,
+.twitch-connect-btn:hover,
+.friend-lobby-primary-btn:hover,
+.panel-action-btn:hover {
+  filter: brightness(1.08);
+}
+
+/* ── one keyboard focus ring for the whole app ───────────────────── */
+/* None of these had one. :focus-visible only fires for keyboard and
+   assistive-tech focus, so pointer users never see it. */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  /* No border-radius here: the outline already follows the element's own
+     corners, and setting one would make a focused button change shape. */
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+/* Neon: the same sweep, with the glow this theme uses everywhere else. */
+[data-theme="neon"] .copy-btn:hover,
+[data-theme="neon"] .watch-btn:hover,
+[data-theme="neon"] .auto-stop-btn:hover,
+[data-theme="neon"] .leaderboard-replay-btn:hover,
+[data-theme="neon"] .modal-btn-secondary:hover,
+[data-theme="neon"] .mp-btn-secondary:hover,
+[data-theme="neon"] .help-tour-btn:hover,
+[data-theme="neon"] .tour-back-btn:hover,
+[data-theme="neon"] .friend-lobby-secondary-btn:hover,
+[data-theme="neon"] .music-dock-load-btn:hover,
+[data-theme="neon"] .music-dock-file-btn:hover {
+  box-shadow: 0 0 10px -2px var(--accent-primary);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   V1 — theme swap: cut every transition for the moment of the change.
+
+   `data-theme` lives on <html>, so changing it invalidates the computed
+   style of every element in the document. If each of those elements then
+   also runs its own colour/border/shadow transition, the browser animates
+   the entire page in one go — which, landing in the same frames as the
+   board's rotation animation, is what made rotating in Adaptive stutter.
+   themeStore.apply() sets this attribute for ~90ms around the swap.
+
+   Only `transition` is cut. Animations are left alone, so a cinematic or
+   a rotation that happens to overlap still plays.
+   ═══════════════════════════════════════════════════════════════════ */
+html[data-theme-swap] *,
+html[data-theme-swap] *::before,
+html[data-theme-swap] *::after {
+  transition: none !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   V1 — coaching tools on the LIGHT board.
+
+   The support arrows, the threat wash and the hint highlight were all
+   tuned against a dark board: thin strokes and 8-22% alpha, which read
+   fine on near-black and vanish entirely on cream. Nothing here changes
+   what the tools mean, only how loudly they say it on wood-light.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Threat map. The wash is a percentage per attacker, so it starts almost
+   invisible by design; on cream it has to start from a floor that can
+   actually be seen, and in a red dark enough to sit on a pale square. */
+[data-theme="wood-light"] .tile.threatened::before {
+  background: rgba(158, 26, 26, calc(0.10 + 0.13 * var(--threat-n, 1)));
+}
+[data-theme="wood-light"] .tile.threatening-piece::before {
+  box-shadow:
+    inset 0 0 0 3px rgba(158, 26, 26, 0.95),
+    0 0 10px rgba(158, 26, 26, 0.35);
+}
+
+/* Support arrows. A 1.8px mid-teal hairline over cream is a scratch;
+   thicker, darker and fully opaque, with a soft light halo underneath so
+   it stays legible where it crosses a dark square too. */
+[data-theme="wood-light"] .support-arrow {
+  --support-stroke: #14705c;
+  stroke-width: 2.8;
+  opacity: 1;
+  paint-order: stroke;
+  filter: drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.9));
+}
+[data-theme="wood-light"] .support-arrow-hover {
+  --support-hover-stroke: #b8560c;
+}
+
+/* Hint. Teal at 22% is nothing on cream; this keeps the same hue and
+   adds a ring so the pair of squares reads as one suggested move. */
+[data-theme="wood-light"] .tile.hint-from::before {
+  background: rgba(13, 148, 136, 0.30);
+  box-shadow: inset 0 0 0 3px rgba(13, 148, 136, 0.75);
+}
+[data-theme="wood-light"] .tile.hint-to::before {
+  background: rgba(13, 148, 136, 0.48);
+  box-shadow: inset 0 0 0 3px rgba(13, 148, 136, 0.9);
+}
+
+/* Drawn arrows and square marks: the flat chess.com palette is tuned for
+   a mid-tone board and washes out on cream. Same four colours, deeper. */
+[data-theme="wood-light"] .annotation-arrow { opacity: 0.9; }
+[data-theme="wood-light"] .annotation-color-green  { stroke: #15803d; fill: #15803d; }
+[data-theme="wood-light"] .annotation-color-red    { stroke: #b91c1c; fill: #b91c1c; }
+[data-theme="wood-light"] .annotation-color-yellow { stroke: #a16207; fill: #a16207; }
+[data-theme="wood-light"] .annotation-color-blue   { stroke: #1d4ed8; fill: #1d4ed8; }
+[data-theme="wood-light"] .tile-annotation-green  { background: rgba(21, 128, 61, 0.42); }
+[data-theme="wood-light"] .tile-annotation-red    { background: rgba(185, 28, 28, 0.42); }
+[data-theme="wood-light"] .tile-annotation-yellow { background: rgba(161, 98, 7, 0.42); }
+[data-theme="wood-light"] .tile-annotation-blue   { background: rgba(29, 78, 216, 0.38); }
+
+/* V1 — the veil that covers a theme change. See themeStore.apply().
+   A dip, not a blackout: the room dims to its own background colour, the
+   theme is swapped at the bottom of the dip, and it comes back up already
+   in the new one. Deliberately an animation and not a transition — the
+   [data-theme-swap] rule above cuts transitions, and a stalled animation
+   engine must leave the theme changed and the veil invisible, never the
+   other way round. */
+.theme-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 9300; /* under the endgame freeze (9400) and everything above it */
+  pointer-events: none;
+  opacity: 0;
+  background: var(--bg, #0b0a14);
+}
+
+.theme-veil.is-running {
+  animation: theme-veil 440ms ease-in-out both;
+}
+
+@keyframes theme-veil {
+  0%   { opacity: 0; }
+  38%  { opacity: 0.62; }
+  62%  { opacity: 0.62; }
+  100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-veil.is-running { animation: none; }
+}
+
+/* V1 — portalled tooltips. The element now lives on <body> in fixed
+   coordinates measured from its trigger (see Tooltip.tsx), so the
+   side classes only have to say which way to nudge it off the anchor
+   point; `left`/`top` come from the component. */
+.tooltip.tooltip-portal {
+  position: fixed;
+  right: auto;
+  bottom: auto;
+}
+.tooltip.tooltip-portal.tooltip-top {
+  --tip-tx: -50%;
+  --tip-ty: -100%;
+  transform: translate(-50%, -100%);
+}
+.tooltip.tooltip-portal.tooltip-bottom {
+  --tip-tx: -50%;
+  --tip-ty: 0;
+  transform: translate(-50%, 0);
+}
+.tooltip.tooltip-portal.tooltip-left {
+  --tip-tx: -100%;
+  --tip-ty: -50%;
+  transform: translate(-100%, -50%);
+}
+.tooltip.tooltip-portal.tooltip-right {
+  --tip-tx: 0;
+  --tip-ty: -50%;
+  transform: translate(0, -50%);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   V1 — where a piece may land.
+
+   Both a quiet destination and a capture used to get the same 4px
+   --accent-teal ring. Two problems: the green belongs to neon and reads
+   as paint from another product on wood, wood-light and fantasy, and a
+   ring drawn around an enemy piece says nothing a dot in the middle of
+   an empty square does not already say.
+
+   So: a quiet move is a DOT, a capture is a RING (the standard reading —
+   the ring frames the thing you would take), both in --move-target,
+   which every theme answers in its own material.
+   ═══════════════════════════════════════════════════════════════════ */
+.tile.target::before {
+  box-shadow: none;
+  background-image: radial-gradient(
+    circle at 50% 50%,
+    var(--move-target) 0,
+    var(--move-target) 15%,
+    transparent 16%
+  );
+}
+
+.tile.target.is-capture-target::before {
+  background-image: none;
+  box-shadow: inset 0 0 0 4px var(--move-target);
+}
+
+/* Hovering a target promotes the dot to a full ring — the affordance
+   grows under the cursor instead of the cursor having to find a dot. */
+@media (hover: hover) {
+  .tile.target:hover::before {
+    background-image: none;
+    box-shadow: inset 0 0 0 4px var(--move-target);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   V1 — MOBILE PANELS
+
+   The phone layout used to fold the desktop chrome into the page: the
+   icon rail became a second row of 40px targets under the title, and
+   GAME SETUP was pushed below the board where nobody scrolled to find
+   it. Neither is a layout — they are a desktop design squeezed until it
+   fits.
+
+   Both become drawers instead. The rail comes in from the left, the
+   setup panel from the right, one at a time, behind a scrim, each opened
+   by a button that is visible in the header. Buttons and not swipes: a
+   horizontal swipe on a web page belongs to the browser's back gesture,
+   and a control nobody can see is a control nobody has.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.mobile-panel-buttons { display: none; }
+.mobile-scrim { display: none; }
+
+@media (max-width: 720px) {
+  .mobile-panel-buttons {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+  }
+  .mobile-panel-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    border: 1px solid var(--btn-border);
+    background: var(--bg-elevated);
+    color: var(--text);
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  .mobile-panel-btn[aria-expanded='true'] {
+    border-color: var(--accent-primary);
+    background: var(--bg-card);
+  }
+
+  .mobile-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 930;
+    background: rgba(4, 3, 8, 0.55);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s ease;
+  }
+  .app-root[data-mobile-panel='menu'] .mobile-scrim,
+  .app-root[data-mobile-panel='setup'] .mobile-scrim {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* ── left drawer: the icon rail ── */
+  .header-controls {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 86px;
+    z-index: 940;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 14px 0 calc(14px + env(safe-area-inset-bottom, 0px));
+    background: var(--bg-card);
+    border-right: 1px solid var(--border-subtle);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+    transform: translateX(-100%);
+    transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .header-controls::-webkit-scrollbar { display: none; }
+  .app-root[data-mobile-panel='menu'] .header-controls { transform: none; }
+
+  /* ── right drawer: GAME SETUP ── */
+  .right-sidebar {
+    position: fixed;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: min(86vw, 340px);
+    z-index: 940;
+    margin: 0;
+    padding: 14px 14px calc(14px + env(safe-area-inset-bottom, 0px));
+    background: var(--bg);
+    border-left: 1px solid var(--border-subtle);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    transform: translateX(100%);
+    transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .app-root[data-mobile-panel='setup'] .right-sidebar { transform: none; }
+
+  /* With the sidebar out of the flow the board gets the whole width. */
+  .app-body { grid-template-columns: minmax(0, 1fr); }
+
+  /* The drawers are the reason the header fits now, so let it stay on
+     one line: mark, title, pill, then the two buttons. */
+  .app-header { flex-wrap: nowrap; gap: var(--space-2); }
+  .app-brand { min-width: 0; flex: 1; }
+  .live-strip { min-width: 0; }
+}
+
+/* The game label is context, not a control — first thing to go when the
+   header runs out of room. It stays reachable as the element's own
+   tooltip (hover on a desktop that happens to be this narrow, long-press
+   on a phone). */
+@media (max-width: 600px) {
+  .live-title { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header-controls,
+  .right-sidebar,
+  .mobile-scrim {
+    transition: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   V1 — leaderboard on a phone.
+
+   The row is a six-column grid whose fixed columns alone add up to
+   412px, so on a 375px screen the last one — the replay button, the only
+   thing in the row you can actually press — was pushed off the right
+   edge with nothing to scroll it into view.
+
+   Below 720px the row becomes two lines: rank, name and score on the
+   first, the game's details and its button on the second. Nothing is
+   hidden; it just stops pretending to be a table.
+   ═══════════════════════════════════════════════════════════════════ */
+@media (max-width: 720px) {
+  .leaderboard-row {
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    grid-template-areas:
+      'rank name points'
+      'rank meta action';
+    row-gap: 4px;
+    padding: var(--space-2) var(--space-3);
+    font-size: 14px;
+  }
+  .lb-rank { grid-area: rank; align-self: center; }
+  .lb-name { grid-area: name; min-width: 0; }
+  .lb-points { grid-area: points; justify-self: end; }
+  .lb-action { grid-area: action; justify-self: end; }
+
+  /* The two descriptive columns share the second line. */
+  .lb-survived,
+  .lb-outcome {
+    grid-area: meta;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .lb-survived { justify-self: start; }
+  .lb-outcome {
+    justify-self: start;
+    margin-left: 84px; /* clears the survived column on the same cell */
+  }
+
+  /* The header row has no second line to describe. */
+  .leaderboard-row-head .lb-survived,
+  .leaderboard-row-head .lb-outcome {
+    display: none;
+  }
+
+  .leaderboard-replay-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   V1 — FX loudness. See registerFx() in App.tsx.
+
+   Every heavy effect still plays; --fx-intensity only turns its volume
+   down when effects arrive back to back: 1 for the first, 0.6 for the
+   second, 0.4 after that. The shake scales its travel, the overlays
+   scale their opacity. Set inline on the element that owns each effect.
+   ═══════════════════════════════════════════════════════════════════ */
+@keyframes capture-shake {
+  0%   { transform: translate(0, 0); }
+  20%  { transform: translate(calc(2px * var(--fx-intensity, 1)), calc(-1px * var(--fx-intensity, 1))); }
+  40%  { transform: translate(calc(-2px * var(--fx-intensity, 1)), calc(1px * var(--fx-intensity, 1))); }
+  60%  { transform: translate(calc(1px * var(--fx-intensity, 1)), calc(2px * var(--fx-intensity, 1))); }
+  80%  { transform: translate(calc(-1px * var(--fx-intensity, 1)), calc(-1px * var(--fx-intensity, 1))); }
+  100% { transform: translate(0, 0); }
+}
+.check-vignette,
+.capture-strobe {
+  opacity: var(--fx-intensity, 1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   V1 — Key moments strip in Game Review.
+
+   The old card only ever reported the single worst move. This one steps
+   through both ends of the game in the order they happened, so the same
+   space now praises as well as corrects.
+   ═══════════════════════════════════════════════════════════════════ */
+.review-moments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.review-moments-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.review-moments-kicker {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.review-moments-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.review-moment-step {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid var(--btn-border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.review-moment-step:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent-primary);
+}
+.review-moment-step:disabled { opacity: 0.4; cursor: default; }
+
+.review-moments-count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  min-width: 30px;
+  text-align: center;
+}
+
+/* Tone: a loss is framed in the danger colour, a find in the accent. The
+   card shape itself is the existing .review-turning. */
+.review-turning.is-good {
+  border-color: var(--accent-success, var(--accent-primary));
+}
+.review-turning.is-good .review-turning-kicker {
+  color: var(--accent-success, var(--accent-primary));
+}
+
+.review-moments-dots {
+  display: flex;
+  gap: 5px;
+  justify-content: center;
+}
+
+.review-moment-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  opacity: 0.35;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.review-moment-dot.is-good { background: var(--accent-success, var(--accent-primary)); }
+.review-moment-dot.is-bad { background: var(--accent-danger); }
+.review-moment-dot.is-on { opacity: 1; transform: scale(1.3); }
+
+/* V1 — GAME SETUP while a replay plays: inert and visibly so. */
+.sidebar-opponent.is-inert > :not(.sidebar-panel-title):not(.setup-inert-note) {
+  opacity: 0.45;
+  filter: grayscale(0.4);
+}
+.setup-inert-note {
+  margin: 0 0 var(--space-2);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* V1 — Subutai's remark in a key-moment card, and the review's legend. */
+.review-comment {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border-subtle);
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--text-secondary);
+  text-align: left;
+}
+.review-comment-who {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  background: var(--accent-primary);
+  color: var(--bg);
+  font-size: 11px;
+  font-weight: 800;
+  font-style: normal;
+}
+.review-legend {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.review-legend strong { color: var(--text-secondary); }
+
+/* V1 — hot-seat "whose move" chip, inside each player's own row. */
+.local-turn-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: var(--text-muted);
+  opacity: 0.7;
+  transition: color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+.local-turn-lamp {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.local-turn-slot.is-white .local-turn-lamp { background: var(--piece-white-flat); }
+.local-turn-slot.is-black .local-turn-lamp {
+  background: var(--piece-black-flat);
+  box-shadow: 0 0 0 1px var(--text-muted);
+}
+.local-turn-slot.is-to-move {
+  opacity: 1;
+  color: var(--text);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 12px -4px var(--accent-primary);
+}
+
+/* V1 — the menu button lives on the header's left edge, outside the
+   right-hand group; it only exists on narrow screens. */
+.mobile-panel-btn-menu { display: none; }
+@media (max-width: 720px) {
+  .mobile-panel-btn-menu {
+    display: inline-flex;
+    flex: 0 0 auto;
+    order: -1;
+  }
 }

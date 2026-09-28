@@ -19,7 +19,7 @@
  * Volume capped at 0.4 (master gain) so music sits below the SFX layer.
  */
 
-export type AmbientTheme = 'wood' | 'wood-light' | 'cyberpunk' | 'fantasy';
+export type AmbientTheme = 'wood' | 'wood-light' | 'fantasy' | 'neon';
 export type StingerKind = 'danger' | 'sacrifice';
 
 /* M.5.2 — musical directions sharing one engine:
@@ -106,19 +106,19 @@ const THEMES: Record<AmbientTheme, ThemeSpec> = {
       [220, 293.66, 329.63, 440],
     ],
   },
-  cyberpunk: {
+  // V1 — the synthwave stack (was shared with the retired cyberpunk theme).
+  // A minor pentatonic blips over Am7 → Fmaj7 → Cmaj7 → G.
+  neon: {
     drones: [
       { freq: 55, type: 'sine', gainMul: 0.35 },
       { freq: 110, type: 'triangle', gainMul: 0.25, filterFreq: 500 },
     ],
-    // A minor pentatonic blips.
     scale: [220, 261.63, 293.66, 329.63, 392, 440, 523.25],
     tenseScale: [220, 233.08, 293.66, 311.13, 415.3, 440],
     noteType: 'sawtooth',
     noteFilter: 1200,
     noteIntervalMs: [2200, 4800],
     tensionRoot: 220,
-    // Synthwave-friendly Am7 → Fmaj7 → Cmaj7 → G.
     progression: [
       [220, 261.63, 329.63, 392],
       [174.61, 220, 261.63, 329.63],

@@ -5,14 +5,12 @@ import { Tooltip } from './Tooltip';
 import { useToast } from './Toast';
 import { audio } from '../audio/AudioController';
 import type { AmbientTheme } from '../audio/AudioController';
+import { themeStore } from '../ui/themeStore';
 
 function readCurrentTheme(): AmbientTheme {
-  if (typeof document === 'undefined') return 'wood';
-  const raw = document.documentElement.getAttribute('data-theme');
-  if (raw === 'wood-light' || raw === 'cyberpunk' || raw === 'fantasy' || raw === 'wood') {
-    return raw;
-  }
-  return 'wood';
+  // The theme store owns <html data-theme> and already resolves "adaptive"
+  // down to a real palette, so reading it here is always a concrete stack.
+  return themeStore.getResolved();
 }
 
 /**
@@ -20,19 +18,24 @@ function readCurrentTheme(): AmbientTheme {
  * from AudioToggle because users often want SFX without music (or
  * vice versa). Default OFF.
  *
- * M.5.2/3: the button cycles Off → Warm → Dark → Adaptive → Off.
- * Warm is the cozy chord-pad + kalimba direction (default); Dark keeps
- * the M.5.1 eerie drone as a deliberate mode; Adaptive follows the
- * board — warm when neutral, dark when losing, a victory voice when
- * winning. Per-theme synth stacks live in ../audio/ambient.ts.
+ * M.5.2/3: Warm is the cozy chord-pad + kalimba direction; Dark keeps the
+ * M.5.1 eerie drone as a deliberate mode; Adaptive follows the board —
+ * warm when neutral, dark when losing, a victory voice when winning.
+ * Per-theme synth stacks live in ../audio/ambient.ts.
+ *
+ * V1 — the cycle now opens on ADAPTIVE (Off → Adaptive → Warm → Dark →
+ * Off), so the first press gives the music that reacts to the game rather
+ * than a flat pad. Music still cannot start by itself: browsers only let an
+ * AudioContext run after a real click, so "default" here means the default
+ * the first press lands on, not autoplay.
  */
 type MusicState = 'off' | 'warm' | 'dark' | 'adaptive';
 
 const NEXT_STATE: Record<MusicState, MusicState> = {
-  off: 'warm',
+  off: 'adaptive',
+  adaptive: 'warm',
   warm: 'dark',
-  dark: 'adaptive',
-  adaptive: 'off',
+  dark: 'off',
 };
 
 const STATE_TOAST: Record<Exclude<MusicState, 'off'>, string> = {
@@ -62,11 +65,11 @@ export function MusicToggle() {
 
   const tooltip =
     state === 'off'
-      ? 'Play music (warm)'
-      : state === 'warm'
-        ? 'Switch music to dark mode'
-        : state === 'dark'
-          ? 'Switch music to adaptive mode (follows the board)'
+      ? 'Play music (adaptive: follows the board)'
+      : state === 'adaptive'
+        ? 'Switch music to warm'
+        : state === 'warm'
+          ? 'Switch music to dark'
           : 'Turn music off';
 
   return (

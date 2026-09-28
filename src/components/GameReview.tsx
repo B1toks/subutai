@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Check, Link2 } from 'lucide-react';
 import { Icon } from './Icon';
 import { useToast } from './Toast';
@@ -11,6 +11,7 @@ import {
   applyRotationMove,
   computeBoardLayout,
   tilePixelCenter,
+  toTileFrame,
 } from '../engine/auxetic';
 import { allSquares } from '../engine/board';
 import type { BoardState, Color, SquareId } from '../engine/types';
@@ -74,6 +75,311 @@ function shortMoveText(entry: GameLog['moves'][number]): string {
   return entry.san ?? '?';
 }
 
+/** V1 — which log entries were the human's own actions. Replays the log
+ *  properly (rotations flip the side too), so roulette's 2-actions-per-turn
+ *  economy is handled instead of assuming even = human. */
+function humanTurnMask(log: GameLog): boolean[] {
+  let state: BoardState = log.initialState;
+  const mask: boolean[] = [];
+  for (const entry of log.moves) {
+    mask.push(state.sideToMove === HUMAN_COLOR);
+    if (entry.move.kind === 'topologyToggle') {
+      state = applyRotationMove(state);
+    } else if (entry.move.from && entry.move.to) {
+      state = applyMove(state, entry.move);
+    }
+  }
+  return mask;
+}
+
+interface TurningPoint {
+  idx: number;
+  cpl: number;
+  /** The move allowed a forced mate (classic) or hung the king (roulette):
+   *  the classifier reports a mate-scale loss there, which reads as a
+   *  nonsense number, so the card says what happened instead. */
+  decisive: boolean;
+  san: string;
+  better: string | null;
+  /** The human rotated on their previous action and blundered right after. */
+  afterOwnRotation: boolean;
+}
+
+/** Mate-scale losses (search returns ~100000 for a lost king) would swamp
+ *  any average; cap a single move's loss at a queen and a half. */
+const CPL_CAP = 1200;
+const MATE_SCALE_CPL = 50_000;
+
+/**
+ * V1 — losses in words a player already has.
+ *
+ * "412 cp" means nothing to someone who has never read an engine's
+ * output, and a rating is the wrong analogy (it grades the player, and
+ * people take it personally). Every chess player does, however, know what
+ * a pawn, a knight, a rook and a queen are worth — so that is the scale:
+ * the number becomes pawns, and a big loss gets the piece it amounts to.
+ * 100 centipawns is one pawn by definition, so nothing is approximated
+ * beyond rounding.
+ */
+function pawns(cp: number): string {
+  const v = cp / 100;
+  return v >= 10 ? v.toFixed(0) : v.toFixed(1);
+}
+
+function lossInPieces(cp: number): string {
+  if (cp < 50) return 'a sliver';
+  if (cp < 150) return 'about a pawn';
+  if (cp < 250) return 'about two pawns';
+  if (cp < 400) return 'a knight or a bishop';
+  if (cp < 650) return 'about a rook';
+  if (cp < 1100) return 'about a queen';
+  return 'more than a queen';
+}
+
+/** V1 (data plan §5.1/5.2) — the human move that cost the most. R15 data:
+ *  25% of first blunders come straight after the player's OWN rotation,
+ *  so that case gets called out explicitly. */
+function findTurningPoint(
+  log: GameLog,
+  analyses: readonly MoveAnalysis[],
+  human: readonly boolean[],
+): TurningPoint | null {
+  let best: TurningPoint | null = null;
+  for (let i = 0; i < log.moves.length; i++) {
+    const a = analyses[i];
+    if (!human[i] || !a || log.moves[i].move.kind === 'topologyToggle') continue;
+    if (a.classification === 'brilliant' || a.classification === 'checkmate') continue;
+    if (a.cpl < 100) continue;
+    if (best && a.cpl <= best.cpl) continue;
+    let prevHuman = i - 1;
+    while (prevHuman >= 0 && !human[prevHuman]) prevHuman--;
+    best = {
+      idx: i,
+      cpl: Math.round(a.cpl),
+      decisive: a.cpl >= MATE_SCALE_CPL,
+      san: shortMoveText(log.moves[i]),
+      better: a.bestMoveSan ?? a.bestPvSan?.[0] ?? null,
+      afterOwnRotation:
+        prevHuman >= 0 && log.moves[prevHuman].move.kind === 'topologyToggle',
+    };
+  }
+  return best;
+}
+
+/**
+ * V1 — the game's key moments, in the order they happened.
+ *
+ * The turning-point card only ever talked about the single worst move,
+ * which makes a review that is all reprimand and never tells a player
+ * what they got right. This walks the human's moves and picks out both
+ * ends: the losses worth explaining and the moves that were genuinely
+ * the best available. Ordered by move number, so stepping through them
+ * with the arrows retells the game in sequence.
+ *
+ * Capped at five. A list of every inaccuracy is a spreadsheet, not a
+ * review; five moments is what someone will actually read.
+ */
+export interface KeyMoment {
+  idx: number;
+  tone: 'good' | 'bad';
+  kicker: string;
+  san: string;
+  /** The sentence under the heading: praise, or what it cost and why. */
+  line: string;
+  better: string | null;
+  note: string | null;
+  /** A short remark in Subutai's own voice. */
+  comment: string;
+}
+
+/**
+ * V1 — what Subutai says about a moment.
+ *
+ * The facts in a key-moment card are right but they read like a report.
+ * A line in a voice turns it into a conversation about the game: praise
+ * when it was earned, a nudge when it was not, and never a lecture. Each
+ * context has several so a long game does not repeat itself.
+ *
+ * Picked by move index, not at random, so the same review always says the
+ * same thing — a comment that changes on every re-render reads as noise.
+ */
+type CommentContext =
+  | 'brilliant'
+  | 'best'
+  | 'mistake'
+  | 'blunder'
+  | 'mate'
+  | 'turning'
+  | 'rotation';
+
+const SUBUTAI_SAYS: Record<CommentContext, readonly string[]> = {
+  brilliant: [
+    'Now that is chess. The engine had to look twice.',
+    'Bold, and right. Keep playing like this.',
+    'A sacrifice that actually holds up. Beautiful.',
+  ],
+  best: [
+    'Exactly what the engine would have played. Well done.',
+    'Clean and precise — the top move.',
+    'You found it. Trust that instinct.',
+  ],
+  mistake: [
+    'Close, but there was something better here.',
+    'A small leak. Check every capture before you commit.',
+  ],
+  blunder: [
+    'Ouch. On moves like this, look at what they can take first.',
+    'This is where it slipped. One more second of checking would have saved it.',
+  ],
+  mate: [
+    'Oh no — this one walked straight into mate.',
+    'The king was left in the open. Always ask: what are they threatening?',
+  ],
+  turning: [
+    'This is the move the whole game turned on.',
+    'If you replay one moment, make it this one.',
+  ],
+  rotation: [
+    'Twisting the board changes every line — re-check your pieces right after.',
+  ],
+};
+
+function subutaiSays(context: CommentContext, idx: number): string {
+  const bank = SUBUTAI_SAYS[context];
+  return bank[idx % bank.length];
+}
+
+/** What Subutai says when there was nothing to flag at all. */
+const SUBUTAI_CLEAN_GAME = 'Not a single real slip. That is a game to be proud of.';
+
+const MAX_MOMENTS = 5;
+
+function keyMoments(
+  log: GameLog,
+  analyses: readonly MoveAnalysis[],
+  human: readonly boolean[],
+  turning: TurningPoint | null,
+  roulette: boolean,
+): KeyMoment[] {
+  const bad: KeyMoment[] = [];
+  const good: KeyMoment[] = [];
+
+  for (let i = 0; i < log.moves.length; i++) {
+    const a = analyses[i];
+    if (!human[i] || !a) continue;
+    if (log.moves[i].move.kind === 'topologyToggle') continue;
+    if (turning && i === turning.idx) continue; // it gets its own card
+    const san = shortMoveText(log.moves[i]);
+    const moveNo = Math.floor(i / 2) + 1;
+
+    if (a.classification === 'brilliant') {
+      good.push({
+        idx: i,
+        tone: 'good',
+        kicker: 'Brilliant',
+        san,
+        line: `Move ${moveNo}: ${san} — a sacrifice the engine agrees with.`,
+        better: null,
+        note: null,
+        comment: subutaiSays('brilliant', i),
+      });
+    } else if (a.classification === 'best' && a.cpl < 5) {
+      good.push({
+        idx: i,
+        tone: 'good',
+        kicker: 'Best move',
+        san,
+        line: `Move ${moveNo}: ${san} — the engine's own first choice.`,
+        better: null,
+        note: null,
+        comment: subutaiSays('best', i),
+      });
+    } else if (a.cpl >= 100) {
+      const decisive = a.cpl >= MATE_SCALE_CPL;
+      bad.push({
+        idx: i,
+        tone: 'bad',
+        kicker: a.cpl >= 300 ? 'Blunder' : 'Mistake',
+        san,
+        line: decisive
+          ? `Move ${moveNo}: ${san} ${roulette ? 'left the king to be captured' : 'allowed a forced mate'}.`
+          : `Move ${moveNo}: ${san} gave away ${lossInPieces(a.cpl)} (−${pawns(a.cpl)} pawns).`,
+        better: a.bestMoveSan ?? a.bestPvSan?.[0] ?? null,
+        note: null,
+        comment: subutaiSays(decisive ? 'mate' : a.cpl >= 300 ? 'blunder' : 'mistake', i),
+      });
+    }
+  }
+
+  // Worst losses and cleanest finds first, then put the survivors back in
+  // the order they were played so the strip reads as the game did.
+  bad.sort((x, y) => y.idx - x.idx);
+  const picked = [
+    ...bad.slice(0, 2),
+    ...good.slice(0, MAX_MOMENTS - 1 - Math.min(bad.length, 2)),
+  ];
+
+  if (turning) {
+    picked.push({
+      idx: turning.idx,
+      tone: 'bad',
+      kicker: 'Turning point',
+      san: turning.san,
+      line: turning.decisive
+        ? `Move ${Math.floor(turning.idx / 2) + 1}: ${turning.san} ${roulette ? 'left the king to be captured' : 'allowed a forced mate'}.`
+        : `Move ${Math.floor(turning.idx / 2) + 1}: ${turning.san} gave away ${lossInPieces(turning.cpl)} (−${pawns(turning.cpl)} pawns) — the most of any move.`,
+      better: turning.better,
+      note: turning.afterOwnRotation
+        ? 'Right after your own rotation. 1 in 4 first blunders happen exactly here: re-check every piece after you twist the board.'
+        : null,
+      comment: subutaiSays(
+        turning.afterOwnRotation ? 'rotation' : turning.decisive ? 'mate' : 'turning',
+        turning.idx,
+      ),
+    });
+  }
+
+  return picked.sort((x, y) => x.idx - y.idx).slice(0, MAX_MOMENTS);
+}
+
+interface PhaseRow {
+  label: string;
+  avgCpl: number | null;
+  moves: number;
+}
+
+/** V1 (data plan §5.4) — average human CPL by game phase. The R15 corpus
+ *  says the opening (moves 1-10) is where people lose games; showing the
+ *  split makes that visible per game. */
+function phaseReport(
+  log: GameLog,
+  analyses: readonly MoveAnalysis[],
+  human: readonly boolean[],
+): PhaseRow[] {
+  const buckets = [
+    { label: 'Moves 1-10', lo: 1, hi: 10, sum: 0, n: 0 },
+    { label: 'Moves 11-20', lo: 11, hi: 20, sum: 0, n: 0 },
+    { label: 'Moves 21+', lo: 21, hi: Infinity, sum: 0, n: 0 },
+  ];
+  let fullMove = 0;
+  for (let i = 0; i < log.moves.length; i++) {
+    if (human[i]) fullMove++;
+    const a = analyses[i];
+    if (!human[i] || !a || log.moves[i].move.kind === 'topologyToggle') continue;
+    if (a.classification === 'brilliant' || a.classification === 'checkmate') continue;
+    const b = buckets.find((bk) => fullMove >= bk.lo && fullMove <= bk.hi);
+    if (b) {
+      b.sum += Math.min(CPL_CAP, a.cpl);
+      b.n++;
+    }
+  }
+  return buckets.map((b) => ({
+    label: b.label,
+    avgCpl: b.n ? Math.round(b.sum / b.n) : null,
+    moves: b.n,
+  }));
+}
+
 function humanQualityBonus(
   log: GameLog,
   analyses: readonly MoveAnalysis[],
@@ -129,11 +435,16 @@ function ReviewBoard({
   lastFrom,
   lastTo,
   boardSize,
+  slide,
 }: {
   state: BoardState;
   lastFrom: SquareId | null;
   lastTo: SquareId | null;
   boardSize: number;
+  /** V1 — the one piece to glide this step: it sits on `at` and arrives
+   *  from `from`. `key` changes every step so the animation restarts even
+   *  when the same square slides twice in a row. */
+  slide: { at: SquareId; from: SquareId; key: number } | null;
 }) {
   const layout = useMemo(
     () => computeBoardLayout(state.topologyState, boardSize),
@@ -186,14 +497,36 @@ function ReviewBoard({
               pointerEvents: 'none',
             }}
           >
-            {piece && (
-              <span
-                className={`piece piece-${piece.color}`}
-                style={angle ? { transform: `rotate(${-angle}deg)` } : undefined}
-              >
-                {PIECE_GLYPH[piece.type] ?? ''}
-              </span>
-            )}
+            {piece && (() => {
+              const glyph = (
+                <span
+                  className={`piece piece-${piece.color}`}
+                  style={angle ? { transform: `rotate(${-angle}deg)` } : undefined}
+                >
+                  {PIECE_GLYPH[piece.type] ?? ''}
+                </span>
+              );
+              if (!slide || slide.at !== sq) return glyph;
+              // The same glide the live board uses, expressed in this
+              // tile's own (rotated, scaled) frame.
+              const from = tilePixelCenter(slide.from, state.topologyState, layout);
+              const local = toTileFrame(from.cx - cx, from.cy - cy, angle, scale);
+              return (
+                <span
+                  key={slide.key}
+                  className="piece-slide-wrap is-sliding-in"
+                  style={
+                    {
+                      '--slide-dx': `${local.x}px`,
+                      '--slide-dy': `${local.y}px`,
+                      '--slide-ms': '240ms',
+                    } as React.CSSProperties
+                  }
+                >
+                  {glyph}
+                </span>
+              );
+            })()}
           </div>
         );
       })}
@@ -247,6 +580,37 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
     () => (result ? humanQualityBonus(log, result.moves) : 0),
     [log, result],
   );
+  const humanMask = useMemo(() => humanTurnMask(log), [log]);
+  const turningPoint = useMemo(
+    () => (result ? findTurningPoint(log, result.moves, humanMask) : null),
+    [log, result, humanMask],
+  );
+  const phases = useMemo(
+    () => (result ? phaseReport(log, result.moves, humanMask) : []),
+    [log, result, humanMask],
+  );
+  const moments = useMemo(
+    () =>
+      result
+        ? keyMoments(log, result.moves, humanMask, turningPoint, log.gameMode === 'roulette')
+        : [],
+    [log, result, humanMask, turningPoint],
+  );
+  /** Which moment the strip is showing. Stepping it also moves the board,
+   *  so the arrows walk the game through its own highlights. */
+  const [momentIdx, setMomentIdx] = useState(0);
+  useEffect(() => {
+    setMomentIdx(0);
+  }, [moments.length]);
+  const goToMoment = useCallback(
+    (n: number) => {
+      if (moments.length === 0) return;
+      const next = (n + moments.length) % moments.length;
+      setMomentIdx(next);
+      setReviewIdx(moments[next].idx + 1);
+    },
+    [moments],
+  );
 
   const boardSnapshot = useMemo(
     () => rebuildBoardAt(log, reviewIdx),
@@ -265,6 +629,42 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
       to: (entry.move.to as SquareId | undefined) ?? null,
     };
   }, [log, reviewIdx]);
+
+  /**
+   * V1 — which piece to glide on this step, and which way.
+   *
+   * Stepping one move FORWARD plays that move: the piece arrives on its
+   * destination from where it stood. Stepping one move BACK un-plays it:
+   * the piece arrives back on its origin from where it had gone. Any
+   * bigger jump (a key-moment click, Home/End) cuts, because a glide from
+   * three moves ago would describe nothing that happened.
+   */
+  const [slideSpec, setSlideSpec] = useState<{
+    at: SquareId;
+    from: SquareId;
+    key: number;
+  } | null>(null);
+  const [lastSeenIdx, setLastSeenIdx] = useState(reviewIdx);
+  if (lastSeenIdx !== reviewIdx) {
+    // Derived during render (the React-sanctioned "adjust state when a
+    // value changes" pattern), so the slide is part of the same render
+    // that shows the new position — never a frame late.
+    const prev = lastSeenIdx;
+    setLastSeenIdx(reviewIdx);
+    let next: { at: SquareId; from: SquareId; key: number } | null = null;
+    if (reviewIdx === prev + 1) {
+      const m = log.moves[reviewIdx - 1]?.move;
+      if (m && m.kind !== 'topologyToggle' && m.from && m.to) {
+        next = { at: m.to as SquareId, from: m.from as SquareId, key: reviewIdx };
+      }
+    } else if (reviewIdx === prev - 1) {
+      const m = log.moves[prev - 1]?.move;
+      if (m && m.kind !== 'topologyToggle' && m.from && m.to) {
+        next = { at: m.from as SquareId, from: m.to as SquareId, key: -prev };
+      }
+    }
+    setSlideSpec(next);
+  }
 
   // Reset to end whenever a different log loads (e.g. switching shared games).
   useEffect(() => {
@@ -378,6 +778,7 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
             lastFrom={lastMoveForIdx.from}
             lastTo={lastMoveForIdx.to}
             boardSize={boardSize}
+            slide={slideSpec}
           />
           <div className="game-review-controls">
             <button
@@ -434,6 +835,92 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
             </div>
           )}
 
+          {/* V1 — the game's key moments, both ends of it, in order.
+              The arrows step through them and carry the board along, so a
+              player can walk their own game from one decision to the next
+              instead of reading a single reprimand. */}
+          {result && moments.length > 0 && (
+            <div className="review-moments">
+              <div className="review-moments-head">
+                <span className="review-moments-kicker">Key moments</span>
+                <span className="review-moments-nav">
+                  <button
+                    type="button"
+                    className="review-moment-step"
+                    onClick={() => goToMoment(momentIdx - 1)}
+                    aria-label="Previous key moment"
+                    disabled={moments.length < 2}
+                  >
+                    ‹
+                  </button>
+                  <span className="review-moments-count">
+                    {momentIdx + 1}/{moments.length}
+                  </span>
+                  <button
+                    type="button"
+                    className="review-moment-step"
+                    onClick={() => goToMoment(momentIdx + 1)}
+                    aria-label="Next key moment"
+                    disabled={moments.length < 2}
+                  >
+                    ›
+                  </button>
+                </span>
+              </div>
+              {(() => {
+                const m = moments[Math.min(momentIdx, moments.length - 1)];
+                return (
+                  <button
+                    type="button"
+                    className={`review-turning is-${m.tone}${m.idx + 1 === reviewIdx ? ' is-current' : ''}`}
+                    onClick={() => setReviewIdx(m.idx + 1)}
+                    title="Jump to this position"
+                  >
+                    <span className="review-turning-kicker">{m.kicker}</span>
+                    <span className="review-turning-line">
+                      {m.line}
+                      {m.better ? (
+                        <>
+                          {' '}
+                          Better: <strong>{m.better}</strong>
+                        </>
+                      ) : null}
+                    </span>
+                    {m.note && <span className="review-turning-note">{m.note}</span>}
+                    <span className="review-comment">
+                      <span className="review-comment-who" aria-hidden>
+                        S
+                      </span>
+                      {m.comment}
+                    </span>
+                  </button>
+                );
+              })()}
+              <div className="review-moments-dots" aria-hidden>
+                {moments.map((m, i) => (
+                  <span
+                    key={m.idx}
+                    className={`review-moment-dot is-${m.tone}${i === momentIdx ? ' is-on' : ''}`}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+          {result && moments.length === 0 && (
+            <div className="review-turning review-turning-clean">
+              <span className="review-turning-kicker">Nothing to flag</span>
+              <span className="review-turning-line">
+                No move gave away as much as a pawn. Clean game.
+              </span>
+              <span className="review-comment">
+                <span className="review-comment-who" aria-hidden>
+                  S
+                </span>
+                {SUBUTAI_CLEAN_GAME}
+              </span>
+            </div>
+          )}
+
           {result && (
             <div className="game-review-stats">
               <Stat
@@ -464,8 +951,8 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
                 tone="blunder"
               />
               <Stat
-                label="Avg. CPL"
-                value={result.stats.averageCpl}
+                label="Avg. loss / move"
+                value={`${pawns(result.stats.averageCpl)}`}
                 tone="neutral"
               />
               {qualityBonus > 0 && (
@@ -476,6 +963,44 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
                   prefix="+"
                 />
               )}
+            </div>
+          )}
+
+          {/* V1 — the one sentence that makes every number here readable. */}
+          {result && (
+            <p className="review-legend">
+              Losses are counted in <strong>pawns</strong>: a knight or bishop is
+              worth about 3, a rook 5, a queen 9. <strong>Best</strong> means you
+              found the engine's own first choice.
+            </p>
+          )}
+
+          {/* V1 — your average loss per phase. Bars scale to 3 pawns. */}
+          {result && phases.some((p) => p.avgCpl !== null) && (
+            <div className="review-phases" aria-label="Accuracy by phase">
+              <div className="review-phases-title">Your average loss per move, by phase</div>
+              {phases.map((p) => (
+                <div key={p.label} className="review-phase-row">
+                  <span className="review-phase-label">{p.label}</span>
+                  <span className="review-phase-bar" aria-hidden>
+                    <span
+                      className={`review-phase-fill${
+                        p.avgCpl === null
+                          ? ''
+                          : p.avgCpl >= 150
+                            ? ' is-bad'
+                            : p.avgCpl >= 60
+                              ? ' is-mid'
+                              : ' is-good'
+                      }`}
+                      style={{ width: `${p.avgCpl === null ? 0 : Math.min(100, (p.avgCpl / 300) * 100)}%` }}
+                    />
+                  </span>
+                  <span className="review-phase-value">
+                    {p.avgCpl === null ? 'no moves' : `${pawns(p.avgCpl)} pawns`}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
 
@@ -516,7 +1041,11 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
                   )}
                   {showCpl && a && (
                     <span className="review-cpl">
-                      (−{Math.round(a.cpl)} cp)
+                      {a.cpl >= MATE_SCALE_CPL
+                        ? log.gameMode === 'roulette'
+                          ? '(hangs the king)'
+                          : '(allows mate)'
+                        : `(−${pawns(a.cpl)} pawns · ${lossInPieces(a.cpl)})`}
                     </span>
                   )}
                   {betterText && (

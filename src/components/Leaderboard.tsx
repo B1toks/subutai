@@ -6,6 +6,7 @@ import {
   Dices,
   Flag,
   Handshake,
+  Swords,
   Trophy,
   XCircle,
 } from 'lucide-react';
@@ -183,6 +184,10 @@ export function Leaderboard({ currentUid, onBack, onWatchGame, watchDisabled }: 
             // game ended in a human-win. Stays gated on the snapshot so old
             // entries (no outcome stored) get nothing.
             const isVictor = snap?.outcome === 'human-win';
+            // V1 — beating the full-strength bot is its own achievement now
+            // that the lower levels exist. It outranks the generic badge,
+            // which any ranked win used to earn.
+            const strongWins = e.strongWins ?? 0;
             // Stage P addendum 7: tooltip with best-game time when available.
             const rowTitle =
               typeof snap?.durationMs === 'number'
@@ -197,19 +202,33 @@ export function Leaderboard({ currentUid, onBack, onWatchGame, watchDisabled }: 
                 <span className="lb-rank">#{rank}</span>
                 <span className="lb-name">
                   {e.displayName}
-                  {isMe && !isVictor && (
+                  {isMe && !isVictor && strongWins === 0 && (
                     <span className="lb-me-badge" title="That’s you">
                       <Icon icon={Crown} size="sm" aria-hidden />
                     </span>
                   )}
-                  {isVictor && (
+                  {strongWins > 0 ? (
                     <span
-                      className={`victor-badge${isMe ? ' my-victor' : ''}`}
-                      title="Defeated the AI!"
+                      className={`victor-badge strong-badge${isMe ? ' my-victor' : ''}`}
+                      title={
+                        strongWins === 1
+                          ? 'Beat the full-strength bot'
+                          : `Beat the full-strength bot ${strongWins} times`
+                      }
                     >
-                      <Icon icon={Crown} size={13} strokeWidth={2.4} aria-hidden />
-                      <span>Bot Slayer</span>
+                      <Icon icon={Swords} size={13} strokeWidth={2.4} aria-hidden />
+                      <span>Beat Strong{strongWins > 1 ? ` ×${strongWins}` : ''}</span>
                     </span>
+                  ) : (
+                    isVictor && (
+                      <span
+                        className={`victor-badge${isMe ? ' my-victor' : ''}`}
+                        title="Defeated the AI!"
+                      >
+                        <Icon icon={Crown} size={13} strokeWidth={2.4} aria-hidden />
+                        <span>Bot Slayer</span>
+                      </span>
+                    )
                   )}
                 </span>
                 <span className="lb-points">{e.bestGamePoints}</span>

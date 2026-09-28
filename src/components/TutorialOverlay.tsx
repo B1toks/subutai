@@ -9,6 +9,8 @@ import {
   Settings,
   Disc3,
   Cast,
+  Menu,
+  SlidersHorizontal,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Icon } from './Icon';
@@ -124,6 +126,63 @@ const STEPS: TourStep[] = [
   },
 ];
 
+/**
+ * V1 — the tour on a phone.
+ *
+ * Below 720px the setup panel and the tool rail are drawers that sit off
+ * screen until opened, so half of the desktop tour spotlit elements that
+ * were not there. The phone tour points at the two buttons that open the
+ * drawers instead, talks about tapping rather than hovering (there is no
+ * hover on a phone), and drops the steps whose targets only exist on a
+ * wide screen.
+ */
+const STEPS_MOBILE: TourStep[] = [
+  STEPS[0],
+  STEPS[1],
+  STEPS[2],
+  {
+    target: 'preview',
+    icon: Eye,
+    title: 'Look before you twist',
+    body:
+      'Tap the eye to see what a rotation would do, and tap it again to put ' +
+      'it away. Looking is free; only Rotate spends your turn.',
+  },
+  {
+    target: 'coach',
+    icon: GraduationCap,
+    title: 'Coaching tools',
+    body:
+      'The cap switches on your helper kit: who defends whom, what is under ' +
+      'attack, and a Hint button that suggests a strong move. Turn it off ' +
+      'for a pure game.',
+  },
+  {
+    target: 'mobile-setup',
+    icon: SlidersHorizontal,
+    title: 'Game setup',
+    body:
+      'This slides in the setup panel from the right: your opponent (the ' +
+      'bot, someone online, or a friend on this phone), Classic or ' +
+      'Roulette, how strong the bot plays, and a clock.',
+  },
+  {
+    target: 'mobile-menu',
+    icon: Menu,
+    title: 'Everything else',
+    body:
+      'Music, Twitch chat, the theme, sound and the rules live in the ' +
+      'drawer behind this button, on the left.',
+  },
+  {
+    icon: BarChart3,
+    title: 'Learn as you play',
+    body:
+      'The bar beside the board shows who is winning, move by move. After ' +
+      'a game, Review walks you through your best and worst moments.',
+  },
+];
+
 interface SpotRect {
   top: number;
   left: number;
@@ -138,8 +197,13 @@ interface TutorialOverlayProps {
 export function TutorialOverlay({ onClose }: TutorialOverlayProps) {
   const [stepIdx, setStepIdx] = useState(0);
   const [rect, setRect] = useState<SpotRect | null>(null);
+  // Chosen once, when the tour opens: switching step lists mid-tour
+  // because a phone was rotated would renumber the steps under the user.
+  const [steps] = useState<TourStep[]>(() =>
+    typeof window !== 'undefined' && window.innerWidth <= 720 ? STEPS_MOBILE : STEPS,
+  );
 
-  const step = STEPS[stepIdx];
+  const step = steps[stepIdx];
 
   // Measure the target; re-measure on resize/scroll so the spotlight
   // tracks the element across layout changes.
@@ -178,15 +242,15 @@ export function TutorialOverlay({ onClose }: TutorialOverlayProps) {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose();
       if (e.key === 'ArrowRight' || e.key === 'Enter') {
-        setStepIdx((i) => (i < STEPS.length - 1 ? i + 1 : (onClose(), i)));
+        setStepIdx((i) => (i < steps.length - 1 ? i + 1 : (onClose(), i)));
       }
       if (e.key === 'ArrowLeft') setStepIdx((i) => Math.max(0, i - 1));
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, steps.length]);
 
-  const isLast = stepIdx === STEPS.length - 1;
+  const isLast = stepIdx === steps.length - 1;
 
   // Place the card below the spotlight when there's room, otherwise above;
   // centered when there's no target.
@@ -218,8 +282,8 @@ export function TutorialOverlay({ onClose }: TutorialOverlayProps) {
           <button type="button" className="tour-skip-btn" onClick={onClose}>
             Skip
           </button>
-          <span className="tour-dots" role="img" aria-label={`Step ${stepIdx + 1} of ${STEPS.length}`}>
-            {STEPS.map((_, i) => (
+          <span className="tour-dots" role="img" aria-label={`Step ${stepIdx + 1} of ${steps.length}`}>
+            {steps.map((_, i) => (
               <span key={i} className={`tour-dot${i === stepIdx ? ' is-active' : ''}`} />
             ))}
           </span>
@@ -248,7 +312,8 @@ export function TutorialOverlay({ onClose }: TutorialOverlayProps) {
 }
 
 function clampLeft(left: number, width: number): number {
-  const CARD_W = 340;
+  // The card is 340px wide, or the screen minus its margins on a phone.
+  const CARD_W = Math.min(340, window.innerWidth - 24);
   const centered = left + width / 2 - CARD_W / 2;
   return Math.max(12, Math.min(centered, window.innerWidth - CARD_W - 12));
 }

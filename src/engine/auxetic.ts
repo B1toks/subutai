@@ -120,6 +120,29 @@ export function computeBoardLayout(
   };
 }
 
+/**
+ * V1 — a board-space offset, expressed in a tile's own frame.
+ *
+ * Tiles are placed with `translate(...) rotate(angle) scale(s)`, and a
+ * piece's slide offset is applied to an element INSIDE the tile, so it is
+ * interpreted in the tile's rotated, scaled coordinates. In topology A
+ * every angle is 0 and the two frames agree; in B every tile is turned
+ * ±90° and they do not. Inverse-rotate, then undo the scale.
+ */
+export function toTileFrame(
+  dx: number,
+  dy: number,
+  angleDeg: number,
+  scale: number,
+): { x: number; y: number } {
+  if (!angleDeg && scale === 1) return { x: dx, y: dy };
+  const a = (angleDeg * Math.PI) / 180;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  const k = scale || 1;
+  return { x: (c * dx + s * dy) / k, y: (-s * dx + c * dy) / k };
+}
+
 export function tilePixelCenter(
   square: SquareId,
   topology: TopologyState,
@@ -252,15 +275,23 @@ export function pawnCaptureTargets(
 }
 
 /**
- * Pure rotation: flips the board topology between 'A' and 'B' and nothing else.
- * The turn does NOT advance — callers that want rotation to cost a move must
- * use `applyRotationMove` instead.
+ * Pure rotation: flips the board topology between 'A' and 'B'. The turn
+ * does NOT advance — callers that want rotation to cost a move must use
+ * `applyRotationMove` instead.
+ *
+ * V1 — "and nothing else" is no longer quite true: pawns the flip leaves
+ * on their far row are promoted here (see promoteStrandedPawns). It has
+ * to happen in THIS function rather than only in applyRotationMove,
+ * because this is what every "what if we rotate" question asks — king
+ * safety, escaping check by rotating, the chat vote's legality, the
+ * rotation preview. A promotion the real move makes but the hypothetical
+ * does not would let a rotation be judged safe while it hands the enemy
+ * a queen giving check.
  */
 export function toggleTopology(state: BoardState): BoardState {
-  return {
-    ...state,
-    topologyState: state.topologyState === 'A' ? 'B' : 'A',
-  };
+  const topologyState: TopologyState = state.topologyState === 'A' ? 'B' : 'A';
+  const { pieces } = promoteStrandedPawns(state.pieces, topologyState);
+  return { ...state, pieces, topologyState };
 }
 
 /**
@@ -288,12 +319,53 @@ export function applyPassMove(state: BoardState): BoardState {
   };
 }
 
+/**
+ * V1 — pawns a rotation leaves on their far row become queens.
+ *
+ * A pawn promotes on the row the current topology draws as the edge (see
+ * isPromotionRank). Moving onto that row is covered at move time; this is
+ * the other way to get there: the pawn stands still and the BOARD turns
+ * under it. b8 is drawn on the seventh row in B and on the eighth in A, so
+ * a white pawn resting on b8 in B is at the edge the moment the board
+ * rotates back — and before this it just stayed there, a pawn on the last
+ * row that could neither move nor promote.
+ *
+ * Auto-queen, for both colours: nobody made a move, so there is no moment
+ * to ask, and this has to be identical on both clients of an online game
+ * and in every replay of it — which a choice cannot be, and a rule is.
+ */
+export function promoteStrandedPawns(
+  pieces: BoardState['pieces'],
+  topology: TopologyState,
+): { pieces: BoardState['pieces']; promoted: SquareId[] } {
+  const promoted: SquareId[] = [];
+  for (const [sq, piece] of Object.entries(pieces)) {
+    if (!piece || piece.type !== 'pawn') continue;
+    const direction = piece.color === 'white' ? 1 : -1;
+    if (stepInDirection(sq as SquareId, 0, direction, topology) !== null) continue;
+    promoted.push(sq as SquareId);
+  }
+  // The common case — nothing to promote — hands back the SAME object, so
+  // callers can tell "unchanged" by identity (applyRotationMove does).
+  if (promoted.length === 0) return { pieces, promoted };
+  const promotedSet = new Set<string>(promoted);
+  const next = Object.fromEntries(
+    Object.entries(pieces).map(([sq, piece]) =>
+      piece && promotedSet.has(sq) ? [sq, { ...piece, type: 'queen' as const }] : [sq, piece],
+    ),
+  ) as BoardState['pieces'];
+  return { pieces: next, promoted };
+}
+
 export function applyRotationMove(state: BoardState): BoardState {
+  const flipped = toggleTopology(state);
+  // A promotion is irreversible: it resets the fifty-move count and the
+  // repetition history, exactly as a promoting pawn MOVE would.
+  const promotedSomething = flipped.pieces !== state.pieces;
   const base: BoardState = {
-    ...state,
-    topologyState: state.topologyState === 'A' ? 'B' : 'A',
+    ...flipped,
     sideToMove: state.sideToMove === 'white' ? 'black' : 'white',
-    halfmoveClock: state.halfmoveClock + 1,
+    halfmoveClock: promotedSomething ? 0 : state.halfmoveClock + 1,
     fullmoveNumber:
       state.sideToMove === 'black' ? state.fullmoveNumber + 1 : state.fullmoveNumber,
     lastMoveWasRotation: true,
@@ -302,5 +374,8 @@ export function applyRotationMove(state: BoardState): BoardState {
     enPassantTarget: null,
   };
   const sig = positionSignature(base);
-  return { ...base, positionHistory: [...state.positionHistory, sig] };
+  return {
+    ...base,
+    positionHistory: promotedSomething ? [sig] : [...state.positionHistory, sig],
+  };
 }

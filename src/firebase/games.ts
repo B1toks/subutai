@@ -46,6 +46,10 @@ export interface SavedGameDoc {
    *  rules the game was played under. Optional for back-compat with
    *  pre-Q.D.8 docs (treated as 'classic' when absent). */
   gameMode?: 'classic' | 'roulette';
+  /** V1 — bot strength the game was played at. Absent on older docs
+   *  (all of which were full-strength). Practice levels are saved with
+   *  points.counted === false so they never feed the leaderboard. */
+  botLevel?: 'casual' | 'normal' | 'strong';
 }
 
 export interface SaveGameResult {
@@ -74,6 +78,9 @@ export async function saveCompletedGame(args: {
   // Stage P addendum 7: wall-clock duration of the run in ms. Persisted on
   // the /games doc and (when this is a new best) on bestGameSnapshot.
   durationMs?: number;
+  /** V1 — bot strength; persisted so the data pipeline can split ranked
+   *  (strong) games from practice games. */
+  botLevel?: 'casual' | 'normal' | 'strong';
 }): Promise<SaveGameResult> {
   const {
     uid,
@@ -85,6 +92,7 @@ export async function saveCompletedGame(args: {
     seed,
     humanColor,
     durationMs,
+    botLevel,
   } = args;
   const gameMode = args.gameMode ?? 'classic';
 
@@ -103,6 +111,7 @@ export async function saveCompletedGame(args: {
     createdAt: serverTimestamp(),
   };
   if (typeof durationMs === 'number') gamePayload.durationMs = durationMs;
+  if (botLevel) gamePayload.botLevel = botLevel;
   const gameRef = await addDoc(collection(db, 'games'), gamePayload);
 
   let isNewBest = false;
@@ -162,6 +171,13 @@ export async function saveCompletedGame(args: {
           if (typeof durationMs === 'number') snapshot.durationMs = durationMs;
           patch.bestGameSnapshot = snapshot;
         }
+      }
+      // V1 — a win over the full-strength bot is the one achievement the
+      // leaderboard advertises, and it counts in either mode. Practice
+      // levels can't reach this line at all: their points are marked
+      // uncounted, and the whole block is gated on points.counted.
+      if (outcome === 'human-win' && (botLevel ?? 'strong') === 'strong') {
+        patch.strongWins = ((cur.strongWins as number | undefined) ?? 0) + 1;
       }
       tx.update(userRef, patch);
     });

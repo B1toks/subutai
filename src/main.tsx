@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { ToastProvider } from './components/Toast'
+import { BusyOverlay } from './components/BusyOverlay'
 
 // Sprint 4.4 — kiosk view is code-split: regular players never pay for it.
 const ShowcaseView = lazy(() =>
@@ -15,6 +16,20 @@ const ShowcaseView = lazy(() =>
 // (data-collection mode); showcase is a public consumer of read-only
 // Firestore data and never writes anything back.
 const isShowcase = new URLSearchParams(window.location.search).get('showcase') === '1';
+
+// V1 — async font swap. index.html loads the decorative theme faces with
+// media="print" so they never block first paint; this flips them live once
+// downloaded. Used to be an inline onload= handler, which the production
+// Content-Security-Policy (no 'unsafe-inline' for scripts) now forbids.
+for (const link of Array.from(
+  document.querySelectorAll<HTMLLinkElement>('link[data-async-font]'),
+)) {
+  const swap = () => {
+    link.media = 'all';
+  };
+  if (link.sheet) swap();
+  else link.addEventListener('load', swap, { once: true });
+}
 
 // Sprint 4.4 — PWA service worker. Production only: in dev it would
 // cache Vite's transformed modules and serve stale code after edits.
@@ -45,6 +60,8 @@ root.render(
     ) : (
       <ToastProvider>
         <App />
+        {/* V1 — outside App's view tree, so it exists on every screen. */}
+        <BusyOverlay />
       </ToastProvider>
     )}
   </StrictMode>,

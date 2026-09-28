@@ -1,109 +1,273 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ── V1 launch hardening ─────────────────────────────────────────────
+    // The app has no trusted server, so these rules are the only line of
+    // defence for data integrity. They cannot verify chess (a client can
+    // still write a legal-looking fake game), but they DO close the cheap
+    // attacks: oversized / malformed documents, leaderboard numbers that no
+    // saved game backs, foreign writes to other players' records, move
+    // appends off-turn, and rewriting a match's history.
+
+    function signedIn() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+    function str(v, max) {
+      return v is string && v.size() <= max;
+    }
+    function validName(n) {
+      return n is string && n.size() >= 1 && n.size() <= 20;
+    }
+    function intIn(v, lo, hi) {
+      return v is int && v >= lo && v <= hi;
+    }
+    function isMode(m) {
+      return m in ['classic', 'roulette'];
+    }
+    function isBotLevel(l) {
+      return l in ['casual', 'normal', 'strong'];
+    }
+    function validOutcome(o) {
+      return o in ['human-win', 'ai-win', 'draw', 'human-resign'];
+    }
+    // Points breakdown as computeGamePoints() produces it, with generous
+    // per-field ceilings (max material 3900cp/10, 10 quality pts per move,
+    // roulette win base 500 + speed bonus 900). Blocks the obvious
+    // "bestGamePoints: 999999" troll without needing to replay the game.
+    function plausiblePoints(p, moveCount) {
+      return p is map
+        && p.total is int && p.total >= 0
+        && p.moveCount is int
+        && p.counted is bool
+        && intIn(p.movePoints, 0, 1500)
+        && intIn(p.capturePoints, 0, 400)
+        && intIn(p.qualityPoints, 0, moveCount * 10 + 10)
+        && intIn(p.rotationPoints, 0, 600)
+        && intIn(p.outcomeBonus, 0, 500)
+        && p.total <= p.movePoints + p.capturePoints + p.qualityPoints + p.rotationPoints + p.outcomeBonus
+        && (p.counted == false || moveCount >= 10);
+    }
+    function gameBacksBest(uid, gameId, points) {
+      return gameId is string
+        && exists(/databases/$(database)/documents/games/$(gameId))
+        && get(/databases/$(database)/documents/games/$(gameId)).data.playerId == uid
+        && get(/databases/$(database)/documents/games/$(gameId)).data.points.total == points;
+    }
+
     match /users/{uid} {
       allow read: if true;
-      allow create, update: if request.auth != null && request.auth.uid == uid;
+      allow create: if isOwner(uid)
+                    && request.resource.data.uid == uid
+                    && validName(request.resource.data.displayName)
+                    && str(request.resource.data.displayNameLower, 20)
+                    && !('bestGamePoints' in request.resource.data)
+                    && !('rouletteBestPoints' in request.resource.data)
+                    // A new profile has beaten nobody yet; the counter only
+                    // grows through the +1-per-write update rule below.
+                    && !('strongWins' in request.resource.data);
+      allow update: if isOwner(uid)
+                    && request.resource.data.uid == uid
+                    && validName(request.resource.data.displayName)
+                    && str(request.resource.data.displayNameLower, 20)
+                    && request.resource.data.keys().hasOnly([
+                         'uid', 'displayName', 'displayNameLower', 'createdAt', 'lastActive',
+                         'lastGameAt', 'gamesPlayed', 'gamesWon', 'gamesDrawn',
+                         'bestGamePoints', 'bestGameId', 'bestGameSnapshot', 'longestSurvivalMoves',
+                         'rouletteGamesPlayed', 'rouletteBestPoints', 'rouletteBestGameId', 'rouletteBestSnapshot',
+                         'strongWins'
+                       ])
+                    // V1 — the "Beat Strong" achievement counter may only
+                    // ever grow, one game at a time.
+                    && (
+                      !('strongWins' in request.resource.data)
+                      || (request.resource.data.strongWins is int
+                          && request.resource.data.strongWins >= 0
+                          && request.resource.data.strongWins
+                             <= (('strongWins' in resource.data) ? resource.data.strongWins + 1 : 1))
+                    )
+                    // A leaderboard number may only change to the total of a
+                    // /games doc this player saved (write-once, see below).
+                    && (
+                      !('bestGamePoints' in request.resource.data)
+                      || ('bestGamePoints' in resource.data
+                          && request.resource.data.bestGamePoints == resource.data.bestGamePoints)
+                      || gameBacksBest(uid, request.resource.data.bestGameId, request.resource.data.bestGamePoints)
+                    )
+                    && (
+                      !('rouletteBestPoints' in request.resource.data)
+                      || ('rouletteBestPoints' in resource.data
+                          && request.resource.data.rouletteBestPoints == resource.data.rouletteBestPoints)
+                      || gameBacksBest(uid, request.resource.data.rouletteBestGameId, request.resource.data.rouletteBestPoints)
+                    );
       allow delete: if false;
     }
 
     match /displayNames/{name} {
       allow read: if true;
-      allow create: if request.auth != null
-                    && request.resource.data.uid == request.auth.uid;
-      allow update: if request.auth != null
+      allow create: if signedIn()
+                    && request.resource.data.uid == request.auth.uid
+                    && name.size() >= 1 && name.size() <= 20;
+      allow update: if signedIn()
                     && resource.data.uid == request.auth.uid
                     && request.resource.data.uid == request.auth.uid;
-      allow delete: if request.auth != null
+      allow delete: if signedIn()
                     && resource.data.uid == request.auth.uid;
     }
 
     match /games/{gameId} {
       allow read: if true;
-      allow create: if request.auth != null
-                    && request.resource.data.playerId == request.auth.uid;
+      allow create: if signedIn()
+                    && request.resource.data.playerId == request.auth.uid
+                    && validName(request.resource.data.playerName)
+                    && str(request.resource.data.chess960Id, 8)
+                    && request.resource.data.humanColor in ['white', 'black']
+                    && validOutcome(request.resource.data.outcome)
+                    && intIn(request.resource.data.moveCount, 0, 300)
+                    && request.resource.data.log is map
+                    && request.resource.data.log.moves is list
+                    && request.resource.data.log.moves.size() <= 700
+                    && request.resource.data.log.moves.size() >= request.resource.data.moveCount * 2 - 1
+                    && plausiblePoints(request.resource.data.points, request.resource.data.moveCount)
+                    && (!('gameMode' in request.resource.data) || isMode(request.resource.data.gameMode))
+                    && (!('botLevel' in request.resource.data) || isBotLevel(request.resource.data.botLevel))
+                    // Practice bot levels are never ranked.
+                    && (!('botLevel' in request.resource.data)
+                        || request.resource.data.botLevel == 'strong'
+                        || request.resource.data.points.counted == false);
       allow update, delete: if false;
     }
 
     match /game_starts/{id} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null
-                    && request.resource.data.playerId == request.auth.uid;
+      allow read: if signedIn();
+      allow create: if signedIn()
+                    && request.resource.data.playerId == request.auth.uid
+                    && str(request.resource.data.chess960Id, 8)
+                    && isMode(request.resource.data.gameMode)
+                    && request.resource.data.keys().hasOnly(['playerId', 'chess960Id', 'seed', 'gameMode', 'createdAt']);
       allow update, delete: if false;
     }
 
     match /feedback/{id} {
-      allow read: if request.auth != null
+      allow read: if signedIn()
                   && resource.data.playerId == request.auth.uid;
-      allow create: if request.auth != null
+      allow create: if signedIn()
                     && request.resource.data.playerId == request.auth.uid
-                    && request.resource.data.type in ['game', 'general'];
+                    && request.resource.data.type in ['game', 'general']
+                    && validName(request.resource.data.playerName)
+                    && str(request.resource.data.userAgent, 200)
+                    && (!('rating' in request.resource.data) || request.resource.data.rating in ['love', 'good', 'meh', 'bad'])
+                    && (!('liked' in request.resource.data) || str(request.resource.data.liked, 1000))
+                    && (!('disliked' in request.resource.data) || str(request.resource.data.disliked, 1000))
+                    && (!('comment' in request.resource.data) || str(request.resource.data.comment, 1000))
+                    && (!('gameId' in request.resource.data) || str(request.resource.data.gameId, 64))
+                    && request.resource.data.keys().hasOnly([
+                         'type', 'playerId', 'playerName', 'createdAt', 'userAgent',
+                         'rating', 'liked', 'disliked', 'comment', 'gameId', 'gameContext'
+                       ]);
       allow update, delete: if false;
     }
 
     match /training_games/{id} {
-      allow read: if request.auth != null;
+      allow read: if signedIn();
       // DEF-11: was `if true` (world-writable spam vector). The app signs in
       // anonymously before any auto-play write, so gating on auth is safe.
-      allow create: if request.auth != null;
+      allow create: if signedIn()
+                    && str(request.resource.data.chess960Id, 8)
+                    && validOutcome(request.resource.data.outcome)
+                    && intIn(request.resource.data.moveCount, 0, 400)
+                    && request.resource.data.log is map
+                    && request.resource.data.log.moves is list
+                    && request.resource.data.log.moves.size() <= 900
+                    && str(request.resource.data.aiVersion, 40);
       allow update, delete: if false;
     }
 
     match /presence/{uid} {
-      allow read: if request.auth != null;
-      allow create, update: if request.auth != null && request.auth.uid == uid;
+      allow read: if signedIn();
+      allow create, update: if isOwner(uid)
+                            && request.resource.data.keys().hasOnly(['lastSeen']);
       allow delete: if false;
     }
 
     match /mm_queue/{uid} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null
-                    && request.auth.uid == uid
+      allow read: if signedIn();
+      allow create: if isOwner(uid)
                     && request.resource.data.uid == uid
-                    && request.resource.data.matchCode == null;
+                    && validName(request.resource.data.displayName)
+                    && request.resource.data.matchCode == null
+                    && request.resource.data.keys().hasOnly(['uid', 'displayName', 'matchCode', 'createdAt']);
       // Owner may rewrite their own entry (re-queue). A FOREIGN writer may
       // only perform the claim: stamp matchCode+claimedBy on a still-
       // unclaimed entry, nothing else.
-      allow update: if request.auth != null && (
-        request.auth.uid == uid
+      allow update: if signedIn() && (
+        (request.auth.uid == uid
+          && request.resource.data.uid == uid
+          && validName(request.resource.data.displayName))
         || (resource.data.matchCode == null
             && request.resource.data.claimedBy == request.auth.uid
+            && str(request.resource.data.matchCode, 8)
             && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['matchCode', 'claimedBy']))
       );
-      allow delete: if request.auth != null && request.auth.uid == uid;
+      allow delete: if isOwner(uid);
     }
 
     match /matches/{code} {
-      allow read: if request.auth != null;
+      allow read: if signedIn();
 
-      allow create: if request.auth != null
+      allow create: if signedIn()
+                    && request.resource.data.code == code
+                    && code.size() == 6
                     && request.resource.data.host.uid == request.auth.uid
+                    && validName(request.resource.data.host.displayName)
+                    && request.resource.data.host.color in ['white', 'black']
+                    && str(request.resource.data.chess960Id, 8)
                     && request.resource.data.status == 'waiting'
-                    && request.resource.data.guest == null;
+                    && request.resource.data.guest == null
+                    && request.resource.data.outcome == null
+                    && request.resource.data.log.moves.size() == 0
+                    && (!('gameMode' in request.resource.data) || isMode(request.resource.data.gameMode));
 
-      // DEF-8 (partial hardening). Chess legality can't be expressed in
-      // rules — appended-move validity and turn ownership still need a
-      // trusted server / Cloud Function and remain open. What IS enforced
-      // here closes the highest-integrity holes without touching the
-      // log-append path legitimate play depends on:
+      // DEF-8 hardening (still partial: chess legality can't be expressed in
+      // rules, so a hand-crafted client can append a legal-looking illegal
+      // move on its own turn; a Cloud Function remains the full fix). What
+      // IS enforced closes every cheap hole:
       //   - identity fields (host, chess960Id, seed, code) are immutable;
-      //   - guest is write-once (null -> value, then frozen), so nobody can
-      //     rewrite the opponent's participant record;
-      //   - outcome is write-once, so a client can't force or flip a result.
-      // All three legit update paths (guest join, move append, outcome
-      // write) satisfy these: join only fills a null guest, moves touch
-      // neither guest nor outcome, and outcome writes only fill a null
-      // outcome.
-      allow update: if request.auth != null
+      //   - guest is write-once (null -> value, then frozen);
+      //   - outcome is write-once; status only takes known values;
+      //   - the move log only ever GROWS by at most one entry per write,
+      //     and only the player whose turn it is may grow it;
+      //   - currentTurn always names a seated player.
+      // Legit paths: guest join (no log change), move / rotate append on
+      // own turn (+1), spin (no log change), resign / flag / mate outcome
+      // writes (no log change) from either seat.
+      allow update: if signedIn()
         && request.resource.data.host == resource.data.host
         && request.resource.data.chess960Id == resource.data.chess960Id
         && request.resource.data.seed == resource.data.seed
         && request.resource.data.code == resource.data.code
+        && request.resource.data.status in ['waiting', 'active', 'completed']
         && (resource.data.guest == null
             || request.resource.data.guest == resource.data.guest)
+        && (request.resource.data.guest == null
+            || (validName(request.resource.data.guest.displayName)
+                && request.resource.data.guest.color in ['white', 'black']))
         && (resource.data.outcome == null
             || request.resource.data.outcome == resource.data.outcome)
+        && (request.resource.data.outcome == null
+            || request.resource.data.outcome in ['white-win', 'black-win', 'draw', 'host-resign', 'guest-resign'])
+        && request.resource.data.log.moves.size() >= resource.data.log.moves.size()
+        && request.resource.data.log.moves.size() <= resource.data.log.moves.size() + 1
+        && (request.resource.data.log.moves.size() == resource.data.log.moves.size()
+            || resource.data.currentTurn == request.auth.uid)
+        && (request.resource.data.currentTurn == ''
+            || request.resource.data.currentTurn == request.resource.data.host.uid
+            || (request.resource.data.guest != null
+                && request.resource.data.currentTurn == request.resource.data.guest.uid))
         && (
           resource.data.host.uid == request.auth.uid
           || (resource.data.guest != null && resource.data.guest.uid == request.auth.uid)

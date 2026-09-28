@@ -14,21 +14,28 @@ import {
   findKing,
   findCheckingPieces,
 } from './engine/moves';
-import { applyRotationMove, applyPassMove, toggleTopology, computeBoardLayout, tilePixelCenter } from './engine/auxetic';
-import { SubutaiAgent } from './ai/agents';
+import { applyRotationMove, applyPassMove, toggleTopology, computeBoardLayout, tilePixelCenter, promoteStrandedPawns, toTileFrame } from './engine/auxetic';
+import {
+  SubutaiAgent,
+  BOT_STRENGTHS,
+  BOT_STRENGTH_LABEL,
+  isBotStrength,
+  type BotStrength,
+} from './ai/agents';
 import { evaluate, PIECE_VALUE } from './ai/evaluate';
 import { searchPosition, ttClear } from './ai/search';
 import { type MoveClass, type MoveAnalysis } from './analysis/classify';
 import { classifyAsync } from './analysis/classifyClient';
 import { NamePicker } from './components/NamePicker';
 import { useToast } from './components/Toast';
-import type { VictoryTheme } from './components/VictoryScene';
+import type { EndgameKind, KingOrigin, VictoryTheme } from './components/EndgameScene';
 import { GameSummary } from './components/GameSummary';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { FeedbackModal } from './components/FeedbackModal';
 import { MilestoneModal } from './components/MilestoneModal';
 import { AutoPlayView } from './components/AutoPlayView';
 import { ThemeToggle } from './components/ThemeToggle';
+import { NeonLogo } from './components/NeonLogo';
 import { UserMenu } from './components/UserMenu';
 import { Effects3DToggle } from './components/Effects3DToggle';
 import { AudioToggle } from './components/AudioToggle';
@@ -37,6 +44,7 @@ import { audio } from './audio/AudioController';
 import { Icon } from './components/Icon';
 import { Tooltip } from './components/Tooltip';
 import { TutorialOverlay, TUTORIAL_DONE_KEY } from './components/TutorialOverlay';
+import { WelcomeScreen, WELCOME_SEEN_KEY } from './components/WelcomeScreen';
 import {
   AlarmClock,
   AlertTriangle,
@@ -53,10 +61,14 @@ import {
   Lightbulb,
   Lock,
   MessageSquare,
+  Pencil,
+  Menu,
   RotateCw,
+  SlidersHorizontal,
   Sparkles,
   Trophy,
   Cast,
+  Upload,
   Users,
   UsersRound,
 } from 'lucide-react';
@@ -94,6 +106,8 @@ import type { SavedGame } from './memory/types';
 import { NotationParseError, parseMemoryNotation } from './memory/notation';
 import { moveVoting, type VoteMode, type VoteRound, type GuessWinner } from './twitch/moveVoting';
 import { dockLayout, type DockState } from './ui/dockLayout';
+import { themeStore } from './ui/themeStore';
+import { busy } from './ui/busy';
 import { micEq } from './audio/micEqualizer';
 import { PerimeterEqualizer } from './components/PerimeterEqualizer';
 import { BackgroundWaveGrid } from './components/BackgroundWaveGrid';
@@ -132,8 +146,17 @@ const MusicDock = lazy(() =>
   import('./components/MusicDock').then((m) => ({ default: m.MusicDock })),
 );
 // R6 — pixel victory cinematic; loaded only when a tense win triggers it.
-const VictoryScene = lazy(() =>
-  import('./components/VictoryScene').then((m) => ({ default: m.VictoryScene })),
+/**
+ * The endgame cinematic is code-split, but it is handed the screen by the
+ * checkmate iris on a hard cut: if the chunk is still in flight when the
+ * iris ends, the board flashes back into view for a few hundred ms before
+ * going black again. So the import is also callable on its own, and the
+ * iris kicks it off the moment it starts closing — by the time it hands
+ * over, the module is in cache and React's lazy resolves in a microtask.
+ */
+const importEndgameScene = () => import('./components/EndgameScene');
+const EndgameScene = lazy(() =>
+  importEndgameScene().then((m) => ({ default: m.EndgameScene })),
 );
 
 type GameStatus =
@@ -144,9 +167,54 @@ type GameStatus =
   | 'draw_repetition'
   | 'draw_50move'
   | 'king_captured_white_wins'
-  | 'king_captured_black_wins';
+  | 'king_captured_black_wins'
+  // V1 — solo time control: the side that runs out of time loses.
+  | 'timeout_white'
+  | 'timeout_black';
 
 type GameMode = 'classic' | 'roulette';
+
+const BOT_LEVEL_KEY = 'subutai_bot_level';
+
+/** V1 — seed of the very first game of a page load (see the `seed` state). */
+const FIRST_SEED = Date.now();
+
+/** V1 — survival milestones below the 50-move modal. Percentages come from
+ *  the R15 solo funnel (docs/R15-DATA-FINDINGS.md §1). */
+const MOVE_MILESTONES: readonly { moves: number; text: string }[] = [
+  { moves: 10, text: '10 moves. You are past the point where 40% of games end.' },
+  { moves: 20, text: '20 moves. Longer than 72% of games. Keep it up.' },
+  { moves: 30, text: '30 moves. Only 1 game in 10 gets this far.' },
+];
+
+function readInitialBotLevel(): BotStrength {
+  try {
+    const raw = localStorage.getItem(BOT_LEVEL_KEY);
+    if (isBotStrength(raw)) return raw;
+  } catch {
+    /* private mode */
+  }
+  return 'strong';
+}
+
+/** V1 — what actually changes between levels, in the player's terms.
+ *  The numbers are the real search profile in src/ai/agents.ts, so the
+ *  panel never promises a difference the engine does not make. */
+const BOT_STRENGTH_HINT: Record<BotStrength, string> = {
+  casual:
+    'Looks 2 moves ahead and throws away about 1 move in 3 on purpose. It hangs pieces and misses simple tactics. Practice only, not ranked.',
+  normal:
+    'Looks 4 moves ahead and slips about 1 move in 10. It punishes anything you leave hanging but will hand you chances back. Practice only, not ranked.',
+  strong:
+    'Looks 6 moves ahead and never slips on purpose. Measured at about a quarter of the error the lower levels make. The leaderboard is this bot.',
+};
+
+/** One-line summary under the pills: the single fact that matters most. */
+const BOT_STRENGTH_SUMMARY: Record<BotStrength, string> = {
+  casual: 'Casual: 2 moves ahead, gives away 1 move in 3. Not ranked.',
+  normal: 'Normal: 4 moves ahead, slips 1 move in 10. Not ranked.',
+  strong: 'Strong: 6 moves ahead, no slips. Wins and survival count for the leaderboard.',
+};
 
 const ROULETTE_SLOT_COUNT = 4;
 const ROULETTE_MAX_ACTIONS = 2;
@@ -222,6 +290,19 @@ function backRankString(boardState: BoardState): string {
     .join('');
 }
 
+/** Same piece of the same colour on every occupied square. */
+function samePieces(a: BoardState['pieces'], b: BoardState['pieces']): boolean {
+  const occupied = (p: BoardState['pieces']) =>
+    Object.keys(p).filter((sq) => p[sq as SquareId]);
+  const squares = occupied(a);
+  if (squares.length !== occupied(b).length) return false;
+  return squares.every((sq) => {
+    const x = a[sq as SquareId];
+    const y = b[sq as SquareId];
+    return !!x && !!y && x.type === y.type && x.color === y.color;
+  });
+}
+
 // B3 — eval-bar stability. Dropping the search eval to null between
 // moves made the bar flicker: search → static fallback → worker. Now
 // the previous search eval is *bumped* by the move's material delta
@@ -255,12 +336,125 @@ function bumpEvalForMove(
 const BEAT_SLIDE_MS = 260;
 
 // S2.5 — mm:ss elapsed-time display for the per-side clocks.
-function formatClock(ms: number): string {
+/**
+ * V1 — the hot-seat turn indicator, as part of a player's own row.
+ *
+ * Each player gets one, in the row of buttons in front of them (black's
+ * row is drawn upside down, so black reads theirs upright). It lights and
+ * says "Your move" for the side that is to play; the other one dims and
+ * names whose turn it is instead.
+ */
+function LocalTurnSlot({ side, toMove }: { side: 'white' | 'black'; toMove: 'white' | 'black' }) {
+  const mine = side === toMove;
+  return (
+    <span
+      className={`local-turn-slot is-${side}${mine ? ' is-to-move' : ''}`}
+      role="status"
+      aria-live={mine ? 'polite' : undefined}
+    >
+      <span className="local-turn-lamp" aria-hidden />
+      {mine ? 'Your move' : `${toMove === 'white' ? 'White' : 'Black'} to move`}
+    </span>
+  );
+}
+
+/** V1 — pointer to the solo game in progress, for a new tab to resume. */
+const LIVE_SESSION_KEY = 'subutai_live_session';
+interface LiveSession {
+  gameId: string;
+  opponentMode: 'ai' | 'local';
+  gameMode: string;
+  timed: boolean;
+  savedAt: number;
+  /** The level the game was started against. The level pills are locked
+   *  mid-game; without this a resume would silently take whatever level
+   *  another tab has written since. Absent in pre-fix pointers. */
+  botLevel?: BotStrength;
+}
+function writeLiveSession(s: LiveSession): void {
+  try {
+    localStorage.setItem(LIVE_SESSION_KEY, JSON.stringify(s));
+  } catch {
+    /* private mode — the tab just starts fresh */
+  }
+}
+function readLiveSession(): LiveSession | null {
+  try {
+    const raw = localStorage.getItem(LIVE_SESSION_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Partial<LiveSession>;
+    if (typeof v.gameId !== 'string' || typeof v.savedAt !== 'number') return null;
+    return {
+      gameId: v.gameId,
+      opponentMode: v.opponentMode === 'local' ? 'local' : 'ai',
+      gameMode: typeof v.gameMode === 'string' ? v.gameMode : 'classic',
+      timed: v.timed === true,
+      savedAt: v.savedAt,
+      botLevel: isBotStrength(v.botLevel) ? v.botLevel : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+function clearLiveSession(): void {
+  try {
+    localStorage.removeItem(LIVE_SESSION_KEY);
+  } catch {
+    /* private mode */
+  }
+}
+
+/**
+ * How big the board should be right now.
+ *
+ * Module level because BOTH the initial state and the resize handler have
+ * to use it. They used to disagree: the first render hardcoded
+ * `min(innerWidth - 32, 520)` while the effect computed the real value a
+ * frame later, so every page load painted a 520px board inside a layout
+ * sized for a much bigger one and then snapped — which is the stretch you
+ * see on a reload. One formula, used twice, and the first paint is right.
+ */
+function computeBoardSize(uiScale: number, dockLeft: number, dockRight: number): number {
+  // Layout runs in zoom space: divide the device viewport by the scale.
+  const vw = window.innerWidth / uiScale;
+  const vh = window.innerHeight / uiScale;
+  // Side docks reserve space only on desktop; below the breakpoint the
+  // panels become full-width bottom bars and reserve nothing.
+  const reserved = window.innerWidth > 720 ? dockLeft + dockRight : 0;
+  // Above the grid collapse (880px, device px — CSS media queries ignore
+  // zoom) the right sidebar + gaps/padding stay clear; below it the board
+  // takes the full width minus shell padding. The sidebar is not a flat
+  // 320: it steps up on big monitors (SIDEBAR_STEPS in App.css), so the
+  // reserved chrome and the board cap follow the same steps. They must
+  // stay in sync or the board overflows its column.
+  const w = window.innerWidth;
+  const sidebar = w >= 2100 ? 460 : w >= 1700 ? 400 : 320;
+  const chrome = w > 880 ? sidebar + 72 : 32;
+  const capPx = w >= 2100 ? 1000 : w >= 1700 ? 900 : 820;
+  const cap = Math.min(capPx, Math.round(vh * 0.7));
+  // R9 — floored at 240px: a hidden/headless tab can report innerWidth 0
+  // during init, and without the floor boardSize goes NEGATIVE (tile math,
+  // dash arrays and overlays all silently break until the next resize).
+  return Math.max(240, Math.min(vw - chrome - reserved, cap));
+}
+
+/**
+ * V1 — fixed-width MM:SS for the tournament clock face.
+ *
+ * This used to be a "m:ss" formatter, which is fine in a sentence but
+ * wrong on a clock: the digits shift sideways the moment the tens column
+ * drops, and the unlit "88:88" ghost behind them stops lining up. Pads to
+ * two, and grows past 99 minutes rather than truncating.
+ */
+function formatClockFace(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
-  return `${m}:${String(s).padStart(2, '0')}`;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
+
+/** How long two heavy board effects count as "back to back". */
+const FX_WINDOW_MS = 2600;
 
 const MOVE_CLASS_MARKER: Record<MoveClass, string> = {
   best: ' ⭐',
@@ -317,6 +511,30 @@ function evalToColors(evalCp: number, topology: TopologyState): { c1: string; c2
     }
     return { c1: '#f6f1e8', c2: '#ede5d5' };
   }
+  // Neon: the room lives in the indigo family. Topology A leans cyan when
+  // winning / magenta when losing; topology B swaps to teal / violet so
+  // the "rotation tints the room" beat survives on this theme too.
+  if (document.documentElement.getAttribute('data-theme') === 'neon') {
+    const win = topology === 'B' ? 170 : 195;
+    const lose = topology === 'B' ? 275 : 320;
+    if (t > 0.1) {
+      const i = Math.min(t, 1);
+      return {
+        c1: `hsl(${win}, ${40 + 30 * i}%, ${13 + 5 * i}%)`,
+        c2: `hsl(${win + 40}, ${30 + 20 * i}%, ${9 + 3 * i}%)`,
+      };
+    }
+    if (t < -0.1) {
+      const i = Math.min(-t, 1);
+      return {
+        c1: `hsl(${lose}, ${35 + 35 * i}%, ${12 + 4 * i}%)`,
+        c2: `hsl(${lose - 35}, ${28 + 22 * i}%, ${8 + 3 * i}%)`,
+      };
+    }
+    return topology === 'B'
+      ? { c1: '#141a33', c2: '#0f1224' }
+      : { c1: '#1a1533', c2: '#12101f' };
+  }
   if (topology === 'B') {
     if (t > 0.1) {
       const i = Math.min(t, 1);
@@ -326,10 +544,16 @@ function evalToColors(evalCp: number, topology: TopologyState): { c1: string; c2
       };
     }
     if (t < -0.1) {
+      // V1 — this used to go violet (hsl 275). Neon can carry violet;
+      // wood and fantasy cannot — a purple room over a bronze board and
+      // gothic gold read as a rendering fault, not as "you are losing".
+      // The room just goes dark instead, with barely enough red left in
+      // it to feel warm rather than switched off. Losing badly is the
+      // light going out, which is the right feeling anyway.
       const i = Math.min(-t, 1);
       return {
-        c1: `hsl(275, ${25 + 35 * i}%, ${12 + 4 * i}%)`,
-        c2: `hsl(265, ${20 + 25 * i}%, ${6 + 3 * i}%)`,
+        c1: `hsl(350, ${8 + 10 * i}%, ${11 - 5 * i}%)`,
+        c2: `hsl(345, ${6 + 8 * i}%, ${6 - 3 * i}%)`,
       };
     }
     return { c1: '#1a1c2a', c2: '#12131f' };
@@ -493,10 +717,13 @@ function App() {
   );
   // T2: ?game=<id> loads a saved /games doc into the Review screen on
   // mount, so a copied share-link opens directly into playback.
-  const sharedGameId = useMemo(
-    () => new URLSearchParams(window.location.search).get('game'),
-    [],
-  );
+  const sharedGameId = useMemo(() => {
+    const raw = new URLSearchParams(window.location.search).get('game');
+    // Firestore auto-ids are 20 url-safe chars; anything else is junk that
+    // would only produce a confusing "could not load" banner (or a thrown
+    // invalid-path error for slashes). Ignore it up front.
+    return raw && /^[A-Za-z0-9_-]{1,64}$/.test(raw) ? raw : null;
+  }, []);
 
   const [autoGamesCompleted, setAutoGamesCompleted] = useState(0);
   const [autoLastOutcome, setAutoLastOutcome] = useState<GameOutcome | null>(null);
@@ -650,40 +877,99 @@ function App() {
   const [watchingGame, setWatchingGame] = useState<WatchingGame | null>(null);
   const watchAutoplayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gameBackupRef = useRef<GameBackup | null>(null);
-  const [seed, setSeed] = useState<number>(1);
+  // V1 — every visit starts from a fresh chess960 position. The old fixed
+  // seed 1 meant everyone's first game was the same RQKRNBBN board until
+  // they pressed New game.
+  const [seed, setSeed] = useState<number>(() => FIRST_SEED);
   // Local single-player engine state. In multiplayer (Q.B.2) the rest of
   // App reads through the `state` / `legalMoves` / `log` / `lastMove`
   // const aliases below, which swap to mpSync-derived values; the local
   // setters keep firing for safety but their writes are visually inert
   // because the aliases ignore them.
-  const [stateLocal, setState] = useState<BoardState>(() => createStartingPosition(1));
-  const [initialState, setInitialState] = useState<BoardState>(() => createStartingPosition(1));
+  const [stateLocal, setState] = useState<BoardState>(() => createStartingPosition(FIRST_SEED));
+  const [initialState, setInitialState] = useState<BoardState>(() => createStartingPosition(FIRST_SEED));
   const [selected, setSelected] = useState<string | null>(null);
   const [legalMovesLocal, setLegalMoves] = useState<Move[]>(() =>
-    generateLegalMoves(createStartingPosition(1)),
+    generateLegalMoves(createStartingPosition(FIRST_SEED)),
   );
   const [logLocal, setLog] = useState<GameLog>(() =>
-    createGameLog('game-1', createStartingPosition(1), 1),
+    createGameLog(`game-${FIRST_SEED}`, createStartingPosition(FIRST_SEED), FIRST_SEED),
   );
   const [gameStatus, setGameStatus] = useState<GameStatus>('active');
   const [previewTopology, setPreviewTopology] = useState<TopologyState | null>(null);
   const [lastMoveLocal, setLastMove] = useState<{ from?: SquareId; to?: SquareId } | null>(null);
+  /**
+   * V1 — mobile panels.
+   *
+   * On a phone the icon rail was folded into the header as a second row
+   * of small targets and GAME SETUP was pushed below the board, where
+   * nobody scrolled to find it. Both become off-canvas drawers instead:
+   * the rail slides in from the left, the setup panel from the right, one
+   * at a time, behind a scrim. Buttons rather than swipes — this is a web
+   * page, a horizontal swipe belongs to the browser's back gesture, and a
+   * control the user cannot see is a control they do not have.
+   */
+  const [mobilePanel, setMobilePanel] = useState<'none' | 'menu' | 'setup'>('none');
+  const closeMobilePanel = useCallback(() => setMobilePanel('none'), []);
+  useEffect(() => {
+    if (mobilePanel === 'none') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobilePanel('none');
+    };
+    // A drawer is a narrow-screen idea. Growing past the breakpoint with
+    // one open would leave the page scrimmed over a panel that is back in
+    // the normal layout anyway.
+    const onResize = () => {
+      if (window.innerWidth > 720) setMobilePanel('none');
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [mobilePanel]);
+
   const [showHelp, setShowHelp] = useState(false);
   // S2.2 — first-launch tour. Defaults to open until the user finishes
   // or skips it once; replayable from the Help dialog.
-  const [showTutorial, setShowTutorial] = useState<boolean>(() => {
+  /* V1 — the tour no longer ambushes a first-time visitor. The welcome
+   * screen below runs first and the tour starts only if they ask for it
+   * (or from Rules & info). Returning players who never finished it are
+   * left alone. */
+  const [showTutorial, setShowTutorial] = useState<boolean>(false);
+  const [showWelcome, setShowWelcome] = useState<boolean>(() => {
     try {
-      return localStorage.getItem(TUTORIAL_DONE_KEY) !== '1';
+      // Anyone who already finished the old tour is not a first-timer.
+      if (localStorage.getItem(TUTORIAL_DONE_KEY) === '1') return false;
+      return localStorage.getItem(WELCOME_SEEN_KEY) !== '1';
     } catch {
       return false;
     }
   });
+  const dismissWelcome = useCallback((startTour: boolean) => {
+    try {
+      localStorage.setItem(WELCOME_SEEN_KEY, '1');
+    } catch { /* private mode — it will greet them again next visit */ }
+    setShowWelcome(false);
+    if (startTour) setShowTutorial(true);
+  }, []);
   const closeTutorial = useCallback(() => {
     try {
       localStorage.setItem(TUTORIAL_DONE_KEY, '1');
     } catch { /* private mode — show it again next visit */ }
     setShowTutorial(false);
   }, []);
+  /* V1 — busy overlay. Some transitions (leaving a replay, loading a saved
+   * game) do their work inside one React commit, so the tab simply stops
+   * repainting for a moment and reads as a hang. beginBusy paints a labelled
+   * spinner first and clears it after the browser has had two frames plus a
+   * short beat, which is long enough for the commit to land and short enough
+   * that a fast machine sees a deliberate blink, not a stutter. */
+  // V1 — the overlay itself lives in src/ui/busy.ts and is mounted next to
+  // <App/>, so it exists on every screen, not only the board.
+  const beginBusy = useCallback((label: string) => busy.begin(label), []);
+
   const [showMaterialPopup, setShowMaterialPopup] = useState(false);
   const [copied, setCopied] = useState(false);
   // Sprint 3.7 (rev 2) — Threat / Support toggles restored after the
@@ -817,6 +1103,25 @@ function App() {
     white: 0,
     black: 0,
   });
+  // Design experiment (neon-stitch): optional solo time control in seconds.
+  // null = free play (chips keep showing elapsed). With a value the chips
+  // show remaining = tc - elapsed, floored at 0. Display-only in solo.
+  const [soloTcSec, setSoloTcSec] = useState<number | null>(null);
+  // V1 — bot strength. Persisted; mirrored in a ref because the AI
+  // scheduler is a memoised callback that must read the live value.
+  const [botLevel, setBotLevelState] = useState<BotStrength>(readInitialBotLevel);
+  const botLevelRef = useRef<BotStrength>(botLevel);
+  useEffect(() => {
+    botLevelRef.current = botLevel;
+  }, [botLevel]);
+  function setBotLevel(next: BotStrength) {
+    setBotLevelState(next);
+    try {
+      localStorage.setItem(BOT_LEVEL_KEY, next);
+    } catch {
+      /* private mode */
+    }
+  }
   const [previewLocked, setPreviewLocked] = useState(false);
   const [lockedPreviewTopology, setLockedPreviewTopology] = useState<TopologyState | null>(null);
   const [hoveredSquare, setHoveredSquare] = useState<string | null>(null);
@@ -880,6 +1185,31 @@ function App() {
   // R17b — red vignette pulse when a REAL check lands (preview-induced
   // "checks" from the rotation eye are ignored).
   const [checkVignette, setCheckVignette] = useState(false);
+  /**
+   * V1 — the loudness governor.
+   *
+   * Every heavy move still gets its full vocabulary — the shake, the
+   * strobe on a big capture, the red vignette on a check — because that
+   * is how the board says "that one hurt". What changes is the volume
+   * when they arrive back to back: an exchange, a check, a recapture used
+   * to stack three full-strength effects into a board nobody could read.
+   *
+   * So each effect registers here first and gets a level: the first in a
+   * window plays at 100%, the next at 60%, and anything after that at
+   * 40%. Quieter, never silent — the player still feels each one. The
+   * window resets once the board has been calm for FX_WINDOW_MS.
+   */
+  const fxRecentRef = useRef<number[]>([]);
+  const [fxIntensity, setFxIntensity] = useState(1);
+  const registerFx = useCallback((): number => {
+    const now = Date.now();
+    const recent = fxRecentRef.current.filter((t) => now - t < FX_WINDOW_MS);
+    recent.push(now);
+    fxRecentRef.current = recent;
+    const level = recent.length <= 1 ? 1 : recent.length === 2 ? 0.6 : 0.4;
+    setFxIntensity(level);
+    return level;
+  }, []);
   // R17b — the storyboard's "зрив темпу": a dim freeze-frame beat before
   // the victory cinematic slams in.
   const [victoryFreeze, setVictoryFreeze] = useState(false);
@@ -1037,30 +1367,15 @@ function App() {
     }
   }, []);
 
-  // R9 — floored at 240px: a hidden/headless tab can report innerWidth 0
-  // during init, and without the floor boardSize goes NEGATIVE (tile math,
-  // dash arrays and overlays all silently break until the next resize).
   // R14 — the cap is no longer a flat 520: it follows the viewport
   // (70% of height, up to 820) so big monitors actually get a big board.
-  const [boardSize, setBoardSize] = useState(() =>
-    Math.max(240, Math.min(window.innerWidth - 32, 520)),
-  );
+  // Docks start closed, so reserving nothing for them on the very first
+  // paint is correct; the effect below re-runs the moment one opens.
+  const [boardSize, setBoardSize] = useState(() => computeBoardSize(uiScale, 0, 0));
 
   useEffect(() => {
-    function recompute() {
-      // Layout runs in zoom space: divide the device viewport by the scale.
-      const vw = window.innerWidth / uiScale;
-      const vh = window.innerHeight / uiScale;
-      // Side docks reserve space only on desktop; below the breakpoint
-      // the panels become full-width bottom bars and reserve nothing.
-      const reserved = window.innerWidth > 720 ? dock.left + dock.right : 0;
-      // Above the grid collapse (880px, device px — CSS media queries
-      // ignore zoom) the right sidebar (320) + gaps/padding stay clear;
-      // below it the board takes the full width minus shell padding.
-      const chrome = window.innerWidth > 880 ? 392 : 32;
-      const cap = Math.min(820, Math.round(vh * 0.7));
-      setBoardSize(Math.max(240, Math.min(vw - chrome - reserved, cap)));
-    }
+    const recompute = () =>
+      setBoardSize(computeBoardSize(uiScale, dock.left, dock.right));
     recompute();
     window.addEventListener('resize', recompute);
     return () => window.removeEventListener('resize', recompute);
@@ -1077,6 +1392,8 @@ function App() {
     return () => stopPresenceHeartbeat();
   }, [user, displayName]);
 
+  // V1 — the solo time-control flag-fall effect lives further down, right
+  // after `isLocalMode` is declared (TDZ: hooks here can't read it yet).
   const encourageBadStreakRef = useRef(0);
   const encourageLastMoveRef = useRef(-99);
   const encourageCheckedMoveRef = useRef(-1);
@@ -1089,17 +1406,19 @@ function App() {
   // R6 — worst eval the human faced this game (most negative from white's
   // side). A tense, come-from-behind win triggers the victory cinematic.
   const worstHumanEvalRef = useRef(0);
-  const [victoryTheme, setVictoryTheme] = useState<VictoryTheme | null>(null);
-  // R17b — every victory entrance goes through the freeze beat: ~0.65s of
-  // dimmed stillness (the held breath from the storyboard), THEN the scene.
-  const launchVictory = useCallback((t: VictoryTheme) => {
-    if (victoryFreezeTimer.current) clearTimeout(victoryFreezeTimer.current);
-    setVictoryFreeze(true);
-    victoryFreezeTimer.current = setTimeout(() => {
-      setVictoryFreeze(false);
-      setVictoryTheme(t);
-    }, 650);
-  }, []);
+  // V1 — the endgame cut currently on screen (win or loss), or null.
+  // `king` is where the losing king stood, in viewport pixels, so the
+  // cinematic can start by lifting THAT piece off THAT square; `prelude`
+  // is the dark lead-in the scene has to play itself when the checkmate
+  // iris did not already black the room out.
+  // The launcher lives further down, next to mateKingPos — it needs the
+  // king's board position and that is declared around line 4400 (TDZ).
+  const [endgameCut, setEndgameCut] = useState<{
+    kind: EndgameKind;
+    theme: VictoryTheme;
+    king: KingOrigin | null;
+    prelude: number;
+  } | null>(null);
   useEffect(() => {
     if (searchEvalFromWhite !== null && searchEvalFromWhite < worstHumanEvalRef.current) {
       worstHumanEvalRef.current = searchEvalFromWhite;
@@ -1108,22 +1427,22 @@ function App() {
   // Console seams — preview the big moments on demand without having to
   // play them out for real. Attached in production too (harmless hidden
   // globals) so they work on the live site's DevTools:
-  //   subutaiVictory()  / subutaiVictory('blue')  — the victory cinematic
   //   subutaiEncourage()                          — a losing-position nudge
   //                                                 (+ pulses the Rotate btn)
   //   subutaiFX.check()                           — the red check vignette
   //   subutaiFX.strobe('queen'|'rook'|'bishop'|'knight') — the capture strobe
   //   subutaiFX.dust()                             — the rotation dust wave
-  //   subutaiFX.mate()                             — the checkmate iris + shatter
+  //   subutaiFX.mate()                             — the checkmate iris
   // The FX ones normally fire only off real game events (a landed check,
   // a non-pawn capture, a committed rotation, an actual mate) — there was
   // no way to QA them without playing a whole line out. This exposes the
   // same setters the real triggers use, so a reviewer can fire each one
-  // in isolation. (subutaiFX.mate is attached by a separate effect further
-  // down, once mateKingPos exists — merges onto this same object.)
+  // in isolation. (subutaiFX.mate and the endgame cinematics — subutai
+  // Victory / subutaiDefeat / subutaiEndgame — are attached by a separate
+  // effect further down, once mateKingPos exists; it merges onto this
+  // same object.)
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const trigger = (t: VictoryTheme = 'red') => launchVictory(t === 'blue' ? 'blue' : 'red');
     const encourage = () => {
       const pool = Math.random() < 0.5 ? ENCOURAGE_ROTATE : ENCOURAGE_GENERIC;
       toast.show(pool[Math.floor(Math.random() * pool.length)], 'info', 5200);
@@ -1145,13 +1464,9 @@ function App() {
       },
     };
     const w = window as unknown as {
-      subutaiVictory?: (t?: VictoryTheme) => void;
-      __triggerVictory?: (t?: VictoryTheme) => void;
       subutaiEncourage?: () => void;
       subutaiFX?: typeof fx;
     };
-    w.subutaiVictory = trigger;
-    w.__triggerVictory = trigger; // legacy alias used in dev tooling
     w.subutaiEncourage = encourage;
     w.subutaiFX = fx;
   }, [toast]);
@@ -1171,6 +1486,8 @@ function App() {
       gameStatus === 'checkmate'
         || gameStatus === 'king_captured_white_wins'
         || gameStatus === 'king_captured_black_wins'
+        || gameStatus === 'timeout_white'
+        || gameStatus === 'timeout_black'
         ? 'checkmate'
         : 'stalemate';
     const saved = buildSavedGameFromLog(log, state, termination, sourceId);
@@ -1200,7 +1517,31 @@ function App() {
     } else {
       localStorageAdapter.saveGame(snapshot);
     }
-  }, [gameStatus, log, isMultiplayer]);
+    // V1 — and a pointer saying "this is the game in progress", with the
+    // settings a Memory entry does not carry. Resuming a hot-seat game as
+    // a bot game would hand black's moves to the engine.
+    writeLiveSession({
+      gameId: liveId,
+      opponentMode: opponentMode === 'local' ? 'local' : 'ai',
+      gameMode,
+      timed: soloTcSec !== null,
+      savedAt: Date.now(),
+      botLevel,
+    });
+  }, [gameStatus, log, isMultiplayer, opponentMode, gameMode, soloTcSec, botLevel]);
+
+  // The pointer only means anything while that game is still going. It
+  // goes when the game ends — and when a FRESH board replaces it (new game,
+  // new position, a replay), or a reload would bring back the game that was
+  // just abandoned. Not on the first render, though: that is the empty board
+  // every page load starts with, and the resume below has not read the
+  // pointer yet.
+  const mountLogIdRef = useRef(log.id);
+  useEffect(() => {
+    if (isMultiplayer) return;
+    const freshBoardReplacedIt = log.moves.length === 0 && log.id !== mountLogIdRef.current;
+    if (gameStatus !== 'active' || freshBoardReplacedIt) clearLiveSession();
+  }, [gameStatus, log.id, log.moves.length, isMultiplayer]);
 
   // Game-completion pipeline: detects terminal gameStatus transitions, computes
   // points, opens the GameSummary modal, and kicks the async Firestore save.
@@ -1228,6 +1569,11 @@ function App() {
       // Black wins => human (white) lost.
       outcome = 'ai-win';
     } else if (gameStatus === 'king_captured_white_wins') {
+      outcome = 'human-win';
+    } else if (gameStatus === 'timeout_white') {
+      // V1 — human (white) flagged.
+      outcome = 'ai-win';
+    } else if (gameStatus === 'timeout_black') {
       outcome = 'human-win';
     } else {
       outcome = 'draw';
@@ -1327,7 +1673,12 @@ function App() {
   }, [sharedGameId]);
 
   async function finishGame(outcome: GameOutcome) {
-    const points = computeGamePoints(log, outcome, HUMAN_COLOR, gameMode);
+    const computed = computeGamePoints(log, outcome, HUMAN_COLOR, gameMode);
+    // V1 — only full-strength games are ranked. Practice levels still get
+    // the full breakdown on screen and are saved (with their level) for the
+    // data pipeline, but never touch personal best / leaderboard stats.
+    const rankedLevel = botLevel === 'strong';
+    const points: GamePoints = rankedLevel ? computed : { ...computed, counted: false };
     const durationMs = Date.now() - gameStartedAtRef.current;
     setGameOutcome(outcome);
     setLastGamePoints(points);
@@ -1359,6 +1710,7 @@ function App() {
         humanColor: HUMAN_COLOR,
         gameMode,
         durationMs,
+        botLevel,
       });
       setLastGameId(gameId);
       setIsNewBest(nb);
@@ -1587,6 +1939,10 @@ function App() {
       watchAutoplayRef.current = null;
     }
     const backup = gameBackupRef.current;
+    // V1 — restoring the paused game re-derives the board, legal moves and
+    // eval in one commit, which can visibly stall on a slow machine. Cover
+    // it so the app never looks frozen with no explanation.
+    beginBusy('Restoring your game');
     setWatchingGame(null);
     if (!backup) return;
 
@@ -1717,6 +2073,27 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watchingGame?.autoplay, watchingGame?.currentMoveIdx]);
 
+  // V1 — Adaptive theme: the room follows the COMMITTED topology (never the
+  // rotate button's hover preview, same rule the dust-wave FX follows), so
+  // topology A is the neon night room and B is daylight. No-op for anyone
+  // who pinned a specific theme. See src/ui/themeStore.ts.
+  //
+  // Deliberately DELAYED past the board's rotation animation (560-650ms).
+  // Swapping `data-theme` restyles every element in the document; doing
+  // that in the same frame as a transform animation on the board and all
+  // 64 tiles turned the rotation into a visible stutter. Letting the board
+  // finish turning before the light changes costs nothing and reads better
+  // anyway — the board turns, then the room follows it.
+  //
+  // The store cross-fades the swap itself (a short dip, see themeStore),
+  // so this only has to clear the rotation, not hide the change: 560ms
+  // here plus the veil's own 170ms lead-in lands the swap right as the
+  // board settles.
+  useEffect(() => {
+    const t = setTimeout(() => themeStore.setTopology(state.topologyState), 560);
+    return () => clearTimeout(t);
+  }, [state.topologyState]);
+
   // Brief glowing outline on the board container whenever topology flips,
   // so rotations don't feel invisible. Fires for both manual rotates and
   // Roulette-driven auto-rotations.
@@ -1743,6 +2120,33 @@ function App() {
       setShowMilestoneModal(true);
     }
   }, [log.moves.length, gameStatus, milestoneShown, watchingGame]);
+
+  // V1 — nearer milestones (data plan §4.2). R15 funnel: 40% of solo games
+  // are over by move 10, 72% by move 20, 90% by move 30; 50 is reached by
+  // 2%. The modal above stays the epic one; these are quiet toasts that
+  // tell the player where they stand, once per tier per game. Solo vs the
+  // bot only: hot-seat and PvP have no "survival" framing.
+  const milestoneTiersRef = useRef<{ logId: string | null; fired: number[] }>({
+    logId: null,
+    fired: [],
+  });
+  useEffect(() => {
+    // opponentMode (not isLocalMode): the latter is declared further down
+    // the component and would be a TDZ read from this effect.
+    if (watchingGame || isMultiplayer || opponentMode === 'local' || isAutoMode) return;
+    if (gameStatus !== 'active') return;
+    const tracker = milestoneTiersRef.current;
+    if (tracker.logId !== log.id) {
+      tracker.logId = log.id;
+      tracker.fired = [];
+    }
+    const fullMoves = Math.floor(log.moves.length / 2);
+    for (const tier of MOVE_MILESTONES) {
+      if (fullMoves < tier.moves || tracker.fired.includes(tier.moves)) continue;
+      tracker.fired.push(tier.moves);
+      toast.show(tier.text, 'success', 3800);
+    }
+  }, [log.moves.length, log.id, gameStatus, watchingGame, isMultiplayer, opponentMode, isAutoMode, toast]);
 
   // Square to pulse-highlight after a blunder/brilliant. Cleared after the
   // animation duration (4 cycles × 600ms = 2.4s, rounded to 2500).
@@ -1990,6 +2394,19 @@ function App() {
     [pushSearchEval, triggerFlash, flagClassifiedSquare],
   );
 
+  /** V1 (DEF-6) — record a finished classification and play its visuals.
+   *  A superseded result (its batch was cancelled when a Game Review
+   *  started) carries placeholder numbers: writing them would snap the
+   *  eval bar to 0.00 and log the move as plain "good", so it is dropped. */
+  const commitAnalysis = useCallback(
+    (moveIdx: number, analysis: MoveAnalysis, moveTo: SquareId | undefined) => {
+      if (analysis.superseded) return;
+      setLog((prev) => updateMoveAnalysisAt(prev, moveIdx, analysis));
+      applyClassifyVisuals(moveIdx, analysis, moveTo);
+    },
+    [applyClassifyVisuals],
+  );
+
   /**
    * Walks an imported log forward, classifying each move asynchronously.
    * Each step is its own setTimeout(0) so the UI stays responsive between
@@ -2028,6 +2445,7 @@ function App() {
             maxDepth: 7,
             allowSelfCheck: loadedLog.gameMode === 'roulette',
           });
+          if (a.superseded) continue; // DEF-6: dropped by a newer batch
           setLog((prev) =>
             prev.id === capturedId ? updateMoveAnalysisAt(prev, i, a) : prev,
           );
@@ -2076,7 +2494,39 @@ function App() {
     setFormationInputValue('');
   }
 
+  /**
+   * V1 — blur means "I'm done", so it must always leave the editor.
+   *
+   * `applyFormationCode` returns early on an invalid code without
+   * clearing the mode, which used to keep the field open forever. That
+   * was survivable while a separate "Set position" button existed; now
+   * that the code chip IS the control and the only place the starting
+   * rank is shown, a stuck editor hides the position behind a half-typed
+   * string. Clicking away on garbage just gives up, like Escape.
+   */
+  function commitFormationOnBlur() {
+    const raw = formationInputValue.trim().toUpperCase();
+    if (raw && !isValidChess960Key(raw)) {
+      cancelFormationInput();
+      return;
+    }
+    applyFormationCode();
+  }
+
   const tileBase = boardSize / 8;
+
+  /** V1 — the rook's half of the last castle, so it glides like the king
+   *  does instead of jumping. Null unless the latest move was a castle
+   *  whose rook actually changed square (in Chess960 it may not). */
+  const castleRookSlide = useMemo(() => {
+    const last = log.moves[log.moves.length - 1]?.move;
+    if (!last || last.kind !== 'castle' || !last.castleRookFrom || !last.castleRookTo) {
+      return null;
+    }
+    if (last.castleRookFrom === last.castleRookTo) return null;
+    if (!lastMove || lastMove.to !== last.to) return null; // stale log vs board
+    return { from: last.castleRookFrom, to: last.castleRookTo };
+  }, [log.moves, lastMove]);
 
   function checkKingCaptured(nextState: BoardState): boolean {
     const whiteKing = findKing(nextState, 'white');
@@ -2237,7 +2687,7 @@ function App() {
     setSearchEvalFromWhite(null);
     setSearchMateInPlies(null);
     worstHumanEvalRef.current = 0; // R6 — reset the tense-win detector
-    setVictoryTheme(null);
+    setEndgameCut(null);
     if (victoryFreezeTimer.current) clearTimeout(victoryFreezeTimer.current);
     setVictoryFreeze(false);
     setSummaryOpen(false);
@@ -2277,8 +2727,21 @@ function App() {
     setClockMs({ white: 0, black: 0 });
   }, [logLocal.id]);
 
+  // V1 — the clocks arm on the FIRST MOVE, always.
+  //
+  // This used to be `soloTcSec === null || moves.length > 0`, so free play
+  // (time control "None") started counting the moment the page loaded or a
+  // new game was created. Sitting on a fresh board reading the position is
+  // not thinking time you spent, and it made the clock look broken the
+  // instant a game began. Picking a control before the first move still
+  // zeroes whatever already accumulated, so both sides start whole.
+  const clockArmed = logLocal.moves.length > 0;
   useEffect(() => {
-    if (gameStatus !== 'active' || watchingGame) return;
+    if (logLocal.moves.length === 0) setClockMs({ white: 0, black: 0 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [soloTcSec]);
+  useEffect(() => {
+    if (gameStatus !== 'active' || watchingGame || !clockArmed) return;
     let last = Date.now();
     const id = setInterval(() => {
       const now = Date.now();
@@ -2288,7 +2751,7 @@ function App() {
       setClockMs((c) => ({ ...c, [side]: c[side] + dt }));
     }, 500);
     return () => clearInterval(id);
-  }, [gameStatus, watchingGame, logLocal.id]);
+  }, [gameStatus, watchingGame, logLocal.id, clockArmed]);
 
   // ── B8: multiplayer time control ──────────────────────────────────
   // Both peers derive identical countdown clocks from the shared move
@@ -2314,13 +2777,18 @@ function App() {
 
   const [mpNow, setMpNow] = useState(() => Date.now());
   useEffect(() => {
-    if (!mpTimeControl || !mpMatchLive) return;
+    // V1 — ticks for ANY live match, not only a timed one. Without a time
+    // control the clocks used to sit at 00:00 for the whole game, which
+    // makes the one piece of information both players actually want —
+    // who is burning the time — unavailable exactly when there is no
+    // limit to enforce it.
+    if (!mpMatchLive) return;
     const id = setInterval(() => setMpNow(Date.now()), 500);
     return () => clearInterval(id);
-  }, [mpTimeControl, mpMatchLive]);
+  }, [mpMatchLive]);
 
   const mpClocks = useMemo(() => {
-    if (!mpTimeControl || !mpSync) return null;
+    if (!isMultiplayer || !mpSync) return null;
     const moves = mpSync.matchState.log.moves;
     // R13 — Fischer increment: every completed move credits its mover.
     const incMs = (mpSync.matchState.timeIncrementSec ?? 0) * 1000;
@@ -2338,6 +2806,11 @@ function App() {
       if (moves.length % 2 === 0) usedWhite += live;
       else usedBlack += live;
     }
+    // No time control: just show what each side has spent. Same numbers,
+    // counted up instead of down, and nothing can flag.
+    if (!mpTimeControl) {
+      return { white: usedWhite, black: usedBlack, countdown: false };
+    }
     // Completed-move counts: entries alternate W,B,W,B… so white made
     // ceil(n/2) of them and black the rest.
     const whiteMoves = Math.ceil(moves.length / 2);
@@ -2346,8 +2819,9 @@ function App() {
     return {
       white: Math.max(0, total + whiteMoves * incMs - usedWhite),
       black: Math.max(0, total + blackMoves * incMs - usedBlack),
+      countdown: true,
     };
-  }, [mpTimeControl, mpSync, mpNow, mpMatchLive]);
+  }, [isMultiplayer, mpTimeControl, mpSync, mpNow, mpMatchLive]);
 
   const flagFiredRef = useRef(false);
   useEffect(() => {
@@ -2355,6 +2829,11 @@ function App() {
   }, [mpSync?.matchState.code]);
   useEffect(() => {
     if (!mpClocks || !mpSync || flagFiredRef.current) return;
+    // Only a COUNTDOWN can run out. Since untimed matches got an elapsed
+    // clock (V1), mpClocks exists in every match — and an elapsed clock
+    // starts at 0, which the lines below read as "your flag fell". Every
+    // untimed match resigned itself the instant it started.
+    if (!mpClocks.countdown) return;
     if (mpSync.matchState.status !== 'active') return;
     const mine = mpSync.myColor === 'white' ? mpClocks.white : mpClocks.black;
     if (mine <= 0) {
@@ -2455,8 +2934,14 @@ function App() {
   }
 
   function applyOpponentChange(next: 'ai' | 'friend' | 'local') {
+    if (next === 'friend') {
+      busy.navigate('Opening the lobby', () => {
+        setOpponentMode(next);
+        setView('friend-lobby');
+      });
+      return;
+    }
     setOpponentMode(next);
-    if (next === 'friend') setView('friend-lobby');
   }
 
   function handleRotate() {
@@ -2588,7 +3073,40 @@ function App() {
   // from this device, so the engine should never schedule an AI turn.
   // Cached here so the AI scheduler, classifier, and downstream UI
   // can short-circuit on a single flag.
-  const isLocalMode = opponentMode === 'local' && !isMultiplayer;
+  // V1 — a replay is nobody's hot-seat game. Without `!watchingGame`, a
+  // replay started while "Local" was selected rendered the mirrored top
+  // controls and flipped the board for "black's turn" in someone else's
+  // game. The opponent choice is kept, so stopping the replay brings the
+  // hot-seat UI straight back.
+  const isLocalMode = opponentMode === 'local' && !isMultiplayer && !watchingGame;
+
+  // V1 — solo time control flag-fall. When a side's remaining time hits
+  // zero the game ends as a loss on time for that side, exactly like a
+  // timed PvP match. Vs the bot the completion effect turns the terminal
+  // status into ai-win / human-win and saves as usual; in local hot-seat
+  // the banner is the ending (same as resign there). The clock only arms
+  // after the first move (see the tick effect), so nobody flags while the
+  // board is still untouched.
+  const soloFlagLogIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (soloTcSec === null || isMultiplayer || isAutoMode || watchingGame) return;
+    if (gameStatus !== 'active' || log.moves.length === 0) return;
+    if (soloFlagLogIdRef.current === log.id) return;
+    const flagged = (['white', 'black'] as const).find(
+      (side) => soloTcSec * 1000 - clockMs[side] <= 0,
+    );
+    if (!flagged) return;
+    soloFlagLogIdRef.current = log.id;
+    if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
+    setSelected(null);
+    setGameStatus(flagged === 'white' ? 'timeout_white' : 'timeout_black');
+    if (isLocalMode) completedLogIdRef.current = log.id;
+    toast.show(
+      `${flagged === 'white' ? 'White' : 'Black'} ran out of time.`,
+      'info',
+      3200,
+    );
+  }, [clockMs, soloTcSec, isMultiplayer, isAutoMode, watchingGame, gameStatus, log.id, log.moves.length, isLocalMode, toast]);
   // Local hot-seat's own "game over" modal dismiss flag (see the render
   // site near the MP completion dialog). Reset per game via the effect
   // below, keyed on log.id like the other one-shot-per-game flags in
@@ -2602,6 +3120,54 @@ function App() {
   // (b) lock the opponent / mode toggles so a misclick can't reset
   // mid-game state.
   const gameInProgress = log.moves.length > 0 && gameStatus === 'active';
+
+  /**
+   * V1 — one guard for everything that can take you out of a game.
+   *
+   * Each destructive control used to decide for itself whether to ask
+   * first: switching opponent asked, "New game" did not, loading a replay
+   * or a Chess960 code or a saved game from Memory did not — each of
+   * those silently threw the game in progress away. And in an online
+   * match nothing asked at all, although walking off to the leaderboard
+   * leaves your clock running and the inactivity watchdog armed.
+   *
+   * `destroys` separates the two cases: actions that REPLACE the board
+   * (always worth a question mid-game) from navigation that merely leaves
+   * the board view (harmless solo, where the game waits for you, but not
+   * online, where it does not).
+   */
+  const [pendingLeave, setPendingLeave] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    run: () => void;
+  } | null>(null);
+  const guardLeave = (what: string, destroys: boolean, run: () => void) => {
+    if (watchingGame) {
+      run();
+      return;
+    }
+    if (isMultiplayer && mpMatchLive) {
+      setPendingLeave({
+        title: 'Leave the live match?',
+        message:
+          'The match keeps running while you are away: your clock keeps ticking, and a long absence is forfeited for inactivity.',
+        confirmLabel: what,
+        run,
+      });
+      return;
+    }
+    if (destroys && gameInProgress) {
+      setPendingLeave({
+        title: 'End the current game?',
+        message: `${what} replaces the game in progress. It will not be saved as finished.`,
+        confirmLabel: what,
+        run,
+      });
+      return;
+    }
+    run();
+  };
   const currentPlayer = isMultiplayer
     ? mpSync!.isMyTurn
       ? 'human'
@@ -2971,6 +3537,7 @@ function App() {
         const chosen = await SubutaiAgent.chooseMove(boardState, moves, {
           lastMoveWasRotation,
           allowSelfCheck: gameMode === 'roulette',
+          strength: botLevelRef.current,
         });
         // R15-bug — clearTimeout can't stop a callback that already fired
         // and is parked on the await above. If a PvP match started while
@@ -3034,14 +3601,13 @@ function App() {
             maxDepth: 7,
             allowSelfCheck: gameMode === 'roulette',
           });
-          setLog((prev) => updateMoveAnalysisAt(prev, moveIdx, aiAnalysis));
-          applyClassifyVisuals(moveIdx, aiAnalysis, move.to);
+          commitAnalysis(moveIdx, aiAnalysis, move.to);
         }
 
         checkGameOver(next, move.kind === 'topologyToggle');
       }, 650);
     },
-    [applyClassifyVisuals],
+    [commitAnalysis],
   );
 
   // Slim AI step for auto mode: no classifier round-trip, tighter delay.
@@ -3281,8 +3847,7 @@ function App() {
         maxDepth: 7,
         allowSelfCheck: false,
       }).then((analysis) => {
-        setLog((prev) => updateMoveAnalysisAt(prev, moveIdx, analysis));
-        applyClassifyVisuals(moveIdx, analysis, move.to);
+        commitAnalysis(moveIdx, analysis, move.to);
       });
       setState(afterMove);
       setLegalMoves(getLegalMoves(afterMove));
@@ -3365,6 +3930,7 @@ function App() {
     if (!last) return;
     const mv = last.move;
     if (mv.kind !== 'capture' || !mv.to) return;
+    registerFx();
     setCaptureFxSquare(mv.to as SquareId);
     setCaptureShake(true);
     const t1 = setTimeout(() => setCaptureFxSquare(null), 620);
@@ -3390,6 +3956,8 @@ function App() {
       clearTimeout(t2);
       if (t3) clearTimeout(t3);
     };
+    // registerFx is stable; the effect keys off the move count as before.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [log.moves.length]);
 
   // R17c — dust shockwave when a topology rotation commits.
@@ -3397,8 +3965,30 @@ function App() {
     const last = log.moves[log.moves.length - 1];
     if (!last || last.move.kind !== 'topologyToggle') return;
     setRotationDust(true);
+    // V1 — a rotation can promote a pawn it swings onto the far row (see
+    // promoteStrandedPawns). The piece changes without anyone moving it,
+    // so say so — otherwise a queen simply appears where a pawn was.
+    // Only when `before` is the board this rotation was made from: loading,
+    // resuming or replaying a game whose log ends in a rotation lands here
+    // with the PREVIOUS game's snapshot, and its pawns are not this game's.
+    const before = prevBoardRef.current;
+    if (before && before.topologyState !== state.topologyState) {
+      const { pieces: rotated, promoted } = promoteStrandedPawns(before.pieces, state.topologyState);
+      if (promoted.length > 0 && samePieces(rotated, state.pieces)) {
+        toast.show(
+          promoted.length === 1
+            ? `The rotation carried the pawn on ${promoted[0]} to the edge — it's a queen now.`
+            : `The rotation carried ${promoted.length} pawns to the edge — they're queens now.`,
+          'info',
+          4200,
+        );
+      }
+    }
     const t = setTimeout(() => setRotationDust(false), 780);
     return () => clearTimeout(t);
+    // `state` is read for the topology the rotation just produced; the
+    // effect keys off the move count exactly as before.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [log.moves.length]);
 
   // R17c — snapshot advance. MUST stay declared after the two effects
@@ -3461,10 +4051,11 @@ function App() {
     const was = prevCheckKingRef.current;
     prevCheckKingRef.current = king;
     if (!king || was) return;
+    registerFx();
     setCheckVignette(true);
     const t = setTimeout(() => setCheckVignette(false), 900);
     return () => clearTimeout(t);
-  }, [checkSquares.king, previewTopology]);
+  }, [checkSquares.king, previewTopology, registerFx]);
 
   // Motion scaffold — soft tactile sound the instant a piece is picked up.
   // Central effect (not scattered at every setSelected call site) so it
@@ -3833,8 +4424,7 @@ function App() {
         allowSelfCheck: gameMode === 'roulette',
       })
         .then((analysis) => {
-          setLog((prev) => updateMoveAnalysisAt(prev, moveIdx, analysis));
-          applyClassifyVisuals(moveIdx, analysis, resolvedMove.to);
+          commitAnalysis(moveIdx, analysis, resolvedMove.to);
         });
     }
 
@@ -3925,12 +4515,9 @@ function App() {
       budgetMs: scaleBudgetMs(1000),
       maxDepth: 7,
       allowSelfCheck: gameMode === 'roulette',
-    }).then(
-      (analysis) => {
-        setLog((prev) => updateMoveAnalysisAt(prev, moveIdx, analysis));
-        applyClassifyVisuals(moveIdx, analysis, move.to);
-      },
-    );
+    }).then((analysis) => {
+      commitAnalysis(moveIdx, analysis, move.to);
+    });
     checkGameOver(next);
   }
 
@@ -3943,6 +4530,10 @@ function App() {
   }, []);
 
   const canRotate = useMemo(() => {
+    // V1 — a replay is a recording, not a game: nothing on the board may be
+    // acted on while watching (the rotate button used to stay live and the
+    // roulette Spin button leaked in from the mode the viewer left).
+    if (watchingGame) return false;
     if (currentPlayer !== 'human') return false;
     if (state.lastMoveWasRotation) return false; // back-to-back guard
 
@@ -3958,7 +4549,7 @@ function App() {
     if (!king) return false;
     const opp = state.sideToMove === 'white' ? 'black' : 'white';
     return !isSquareAttacked(toggled, king, opp as 'white' | 'black', toggled.topologyState);
-  }, [currentPlayer, state, gameMode, allowedPieceTypes, rouletteActionsLeft]);
+  }, [currentPlayer, state, gameMode, allowedPieceTypes, rouletteActionsLeft, watchingGame]);
 
   // R5 — nudge the player when they've been clearly behind for a couple of
   // moves, so a hard position reads as "keep fighting" rather than "resign".
@@ -4085,22 +4676,160 @@ function App() {
   // nobody's actually in check, purely so the subutaiFX.mate() dev seam
   // (below) always has a real square to point at — the real gameplay
   // trigger effect still requires a genuine gameStatus === 'checkmate'.
-  const mateKingPos = useMemo(() => {
-    const kingSq = checkSquares.king ?? findKing(state, state.sideToMove);
-    if (!kingSq) return null;
-    const tile = tilePixelCenter(kingSq as SquareId, displayTopology, layout);
-    const flip = isMultiplayer && mpSync?.myColor === 'black';
-    return {
-      sq: kingSq as string,
-      cx: flip ? boardSize - tile.cx : tile.cx,
-      cy: flip ? boardSize - tile.cy : tile.cy,
-    };
-  }, [checkSquares.king, state, displayTopology, layout, boardSize, isMultiplayer, mpSync]);
+  /** A king's centre in BOARD pixels, for the iris and the shatter. */
+  const boardKingPos = useCallback(
+    (sq: string | null, color: Color) => {
+      if (!sq) return null;
+      const tile = tilePixelCenter(sq as SquareId, displayTopology, layout);
+      const flip = isMultiplayer && mpSync?.myColor === 'black';
+      return {
+        sq,
+        color,
+        cx: flip ? boardSize - tile.cx : tile.cx,
+        cy: flip ? boardSize - tile.cy : tile.cy,
+      };
+    },
+    [displayTopology, layout, boardSize, isMultiplayer, mpSync],
+  );
+
+  const mateKingPos = useMemo(
+    () =>
+      boardKingPos(
+        checkSquares.king ?? findKing(state, state.sideToMove),
+        // Whose king this is — the side to move is the side being mated.
+        state.sideToMove,
+      ),
+    [checkSquares.king, state, boardKingPos],
+  );
+
+  /**
+   * V1 — where a given side's king is on screen, in VIEWPORT pixels.
+   *
+   * mateKingPos above is board-relative, which is all the DOM iris needs
+   * (it is absolutely positioned inside .board). The endgame cinematic
+   * renders to a full-screen canvas, so it needs the same point in the
+   * viewport's frame — hence the board rect. .board carries no border or
+   * padding, so its rect origin and the board's own coordinate origin are
+   * the same point.
+   */
+  /**
+   * V1 — who won a decisive game, or null if it is not decided or drawn.
+   * On a checkmate the mated side is the one to move, so the winner is
+   * the other one.
+   */
+  const decisiveWinner: Color | null = useMemo(() => {
+    if (gameStatus === 'checkmate') return state.sideToMove === 'white' ? 'black' : 'white';
+    if (gameStatus === 'king_captured_white_wins') return 'white';
+    if (gameStatus === 'king_captured_black_wins') return 'black';
+    if (gameStatus === 'timeout_white') return 'black';
+    if (gameStatus === 'timeout_black') return 'white';
+    return null;
+  }, [gameStatus, state.sideToMove]);
+
+  /**
+   * V1 — WHOSE king the endgame cut is about.
+   *
+   * The cut used to lift the losing king in every case, which meant a win
+   * ended with a crown descending onto the bot's king. It belongs to the
+   * player it is played for:
+   *
+   *   solo         your king — you are white, win or lose
+   *   multiplayer  your king only, whichever colour you were given
+   *   hot-seat     the winning king, because neither side is "you" and
+   *                the only thing worth dramatising is who took it
+   *   spectating / bot-vs-bot   nobody: no cut, the old iris + shatter
+   *
+   * Null means "no cinematic in this mode", which is also what keeps
+   * multiplayer and hot-seat from playing one on a draw.
+   */
+  const cutSubjectColor: Color | null = useMemo(() => {
+    if (watchingGame || isAutoMode) return null;
+    if (isMultiplayer) return mpSync?.myColor ?? null;
+    if (isLocalMode) return decisiveWinner;
+    return HUMAN_COLOR;
+  }, [watchingGame, isAutoMode, isMultiplayer, isLocalMode, mpSync?.myColor, decisiveWinner]);
+
+  const kingOriginFor = useCallback(
+    (color: Color): KingOrigin | null => {
+      const sq = findKing(state, color);
+      if (!sq) return null;
+      const rect = document.querySelector('.board')?.getBoundingClientRect();
+      if (!rect) return null;
+      const tile = tilePixelCenter(sq as SquareId, displayTopology, layout);
+      const flip = isMultiplayer && mpSync?.myColor === 'black';
+      return {
+        x: rect.left + (flip ? boardSize - tile.cx : tile.cx),
+        y: rect.top + (flip ? boardSize - tile.cy : tile.cy),
+        size: layout.tileSize,
+        color,
+      };
+    },
+    [state, displayTopology, layout, boardSize, isMultiplayer, mpSync],
+  );
+
+  /**
+   * V1 — start an endgame cut.
+   *
+   * `fromIris` means the checkmate iris has already blacked the room out
+   * and handed over, so the scene skips its own lead-in and lifts the king
+   * immediately. Everything else (a flag fall, a resignation, a captured
+   * king) gets the R17b freeze beat first — a moment of dimmed stillness —
+   * and then a short dark prelude inside the scene.
+   *
+   * Reduced motion opts out entirely: the player goes straight to the
+   * summary, the same way the iris and the shatter already hide themselves.
+   */
+  const launchEndgame = useCallback(
+    (
+      kind: EndgameKind,
+      /** `king` is the SUBJECT of the cut, not the loser: the king the
+       *  scene lifts and the one the iris closed on. See cutSubjectColor. */
+      opts?: { king?: Color; fromIris?: boolean; theme?: VictoryTheme },
+    ) => {
+      if (typeof window === 'undefined') return;
+      if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+      void importEndgameScene(); // no-op if the iris already warmed it
+      const subject: Color = opts?.king ?? cutSubjectColor ?? HUMAN_COLOR;
+      const king = kingOriginFor(subject);
+      // The colour roll is the win's only variable; the loss ignores it.
+      const theme: VictoryTheme = opts?.theme ?? (Math.random() < 0.5 ? 'red' : 'blue');
+      if (victoryFreezeTimer.current) clearTimeout(victoryFreezeTimer.current);
+      if (opts?.fromIris) {
+        setEndgameCut({ kind, theme, king, prelude: 0 });
+        return;
+      }
+      setVictoryFreeze(true);
+      victoryFreezeTimer.current = setTimeout(() => {
+        setVictoryFreeze(false);
+        setEndgameCut({ kind, theme, king, prelude: 300 });
+      }, 650);
+    },
+    [kingOriginFor, cutSubjectColor],
+  );
+
+  /**
+   * V1 — the king the iris actually closes on.
+   *
+   * When a cut follows, it has to be the cut's subject: narrowing the
+   * screen down onto one king and then lifting a different one out of the
+   * dark reads as two clips spliced together, which is exactly what this
+   * whole sequence was built to stop. With no cut (spectating,
+   * bot-vs-bot) it stays on the mated king, because then the shatter is
+   * the ending and the mated king is what the shatter is about.
+   */
+  const irisKingPos = useMemo(() => {
+    if (!cutSubjectColor || !mateKingPos) return mateKingPos;
+    if (cutSubjectColor === mateKingPos.color) return mateKingPos;
+    return boardKingPos(findKing(state, cutSubjectColor), cutSubjectColor) ?? mateKingPos;
+  }, [cutSubjectColor, mateKingPos, state, boardKingPos]);
+
   const MATE_IRIS_MS = 900;
   const MATE_HOLD_MS = 320;
   const MATE_SHATTER_MS = 720;
   const [mateSeq, setMateSeq] = useState<'idle' | 'iris' | 'shatter'>('idle');
   const mateSeqStartedRef = useRef<string | null>(null);
+  // One endgame cut per game, whichever effect gets there first.
+  const endgameFiredForLogRef = useRef<string | null>(null);
   useEffect(() => {
     if (gameStatus !== 'checkmate' || !mateKingPos) {
       setMateSeq('idle');
@@ -4112,6 +4841,25 @@ function App() {
     if (mateSeqStartedRef.current === log.id) return;
     mateSeqStartedRef.current = log.id;
     setMateSeq('iris');
+    // V1 — the iris no longer ends in a shatter when a cut will follow: it
+    // hands its king over to the cinematic, which picks the same piece up
+    // as pixels on the same square and carries it to the middle of the
+    // screen. The shatter remains the ending wherever there is no cut —
+    // spectating and bot-vs-bot, and any draw — so those keep exactly the
+    // ending they had.
+    if (cutSubjectColor && endgameFiredForLogRef.current !== log.id) {
+      endgameFiredForLogRef.current = log.id;
+      // Warm the chunk during the 1.2s the iris takes to close, so the
+      // hand-off is a cut and not a gap.
+      void importEndgameScene();
+      const subject = cutSubjectColor;
+      const won = decisiveWinner === subject;
+      const handOff = setTimeout(() => {
+        setMateSeq('idle');
+        launchEndgame(won ? 'victory' : 'defeat', { king: subject, fromIris: true });
+      }, MATE_IRIS_MS + MATE_HOLD_MS);
+      return () => clearTimeout(handOff);
+    }
     const t1 = setTimeout(() => setMateSeq('shatter'), MATE_IRIS_MS + MATE_HOLD_MS);
     const t2 = setTimeout(
       () => setMateSeq('idle'),
@@ -4121,44 +4869,119 @@ function App() {
       clearTimeout(t1);
       clearTimeout(t2);
     };
-  }, [gameStatus, mateKingPos, log.id]);
+  }, [
+    gameStatus,
+    mateKingPos,
+    log.id,
+    cutSubjectColor,
+    decisiveWinner,
+    launchEndgame,
+  ]);
   const mateSeqActive = mateSeq !== 'idle';
+  // V1 — "a full-screen endgame sequence owns the screen right now": the
+  // iris, or the cinematic it hands over to. Every game-over modal waits
+  // on this, so a summary can never pop up underneath the cut.
+  const endgameSceneActive = mateSeqActive || endgameCut !== null;
 
-  // Dev seam: subutaiFX.mate() — merges onto the window.subutaiFX object
-  // the earlier console-seams effect (check/strobe/dust) already created,
-  // rather than redeclaring it. Needed because playing a whole line out
-  // to a real checkmate just to QA this cinematic is slow; this fires the
-  // exact same iris -> hold -> shatter -> idle sequence pointed at
-  // whichever king mateKingPos resolves to (the side-to-move's king when
-  // nobody's actually in check).
+  // Dev seams for the endings. Playing a real line out to a checkmate just
+  // to look at 7 seconds of animation is hopeless, so every ending can be
+  // fired by hand. These merge onto the window.subutaiFX object the earlier
+  // console-seams effect (check/strobe/dust) already created.
+  //
+  //   subutaiVictory()            the win cut (king lift → crown → VICTORY)
+  //   subutaiVictory('blue')      …in the blue palette instead of a coin flip
+  //   subutaiDefeat()             the loss cut (king lift → topple → DEFEAT)
+  //   subutaiDraw()               the draw cut (two hands meet and shake)
+  //   subutaiEndgame('victory' | 'defeat', { full: true, theme: 'blue' })
+  //                               same, but `full` plays the checkmate iris
+  //                               first and hands over exactly as a real
+  //                               game does — this is the whole thing
+  //   subutaiFX.mate()            just the iris + shatter, no cinematic
+  //
+  // The cut points at whichever king mateKingPos resolves to, so it works
+  // from any position, including one with no checkmate on the board.
   useEffect(() => {
     if (typeof window === 'undefined' || !mateKingPos) return;
-    const w = window as unknown as { subutaiFX?: Record<string, unknown> };
-    if (!w.subutaiFX) return;
-    w.subutaiFX.mate = () => {
-      setMateSeq('iris');
-      setTimeout(() => setMateSeq('shatter'), MATE_IRIS_MS + MATE_HOLD_MS);
-      setTimeout(() => setMateSeq('idle'), MATE_IRIS_MS + MATE_HOLD_MS + MATE_SHATTER_MS);
+    const w = window as unknown as {
+      subutaiFX?: Record<string, unknown>;
+      subutaiVictory?: (t?: VictoryTheme) => void;
+      __triggerVictory?: (t?: VictoryTheme) => void;
+      subutaiDefeat?: () => void;
+      subutaiDraw?: () => void;
+      subutaiEndgame?: (
+        kind?: EndgameKind,
+        opts?: { full?: boolean; theme?: VictoryTheme },
+      ) => void;
     };
-  }, [mateKingPos]);
+    const run = (kind: EndgameKind, full: boolean, theme?: VictoryTheme) => {
+      void importEndgameScene();
+      const subject: Color = cutSubjectColor ?? HUMAN_COLOR;
+      const go = () => launchEndgame(kind, { king: subject, fromIris: true, theme });
+      if (!full) {
+        go();
+        return;
+      }
+      setMateSeq('iris');
+      setTimeout(() => {
+        setMateSeq('idle');
+        go();
+      }, MATE_IRIS_MS + MATE_HOLD_MS);
+    };
+    w.subutaiEndgame = (kind = 'victory', opts) =>
+      run(kind, opts?.full ?? false, opts?.theme);
+    w.subutaiVictory = (t) => run('victory', false, t);
+    w.__triggerVictory = w.subutaiVictory; // legacy alias used in dev tooling
+    w.subutaiDefeat = () => run('defeat', false);
+    w.subutaiDraw = () => run('draw', false);
+    if (w.subutaiFX) {
+      w.subutaiFX.mate = () => {
+        setMateSeq('iris');
+        setTimeout(() => setMateSeq('shatter'), MATE_IRIS_MS + MATE_HOLD_MS);
+        setTimeout(() => setMateSeq('idle'), MATE_IRIS_MS + MATE_HOLD_MS + MATE_SHATTER_MS);
+      };
+    }
+  }, [mateKingPos, launchEndgame, cutSubjectColor]);
 
-  // R6 — fire the pixel victory cinematic on a TENSE win: the human won
-  // after being clearly behind at some point (worst eval ≤ -2 pawns). A
-  // clean, never-in-danger win just gets the usual summary. Solo only.
-  // M.21 — waits for the checkmate death cinematic (mateSeqActive) to
-  // finish first so the two full-screen sequences never overlap; the ref
-  // guard is needed because this effect now legitimately re-runs (deps
-  // include mateSeqActive) without gameOutcome itself changing.
-  const victoryFiredForLogRef = useRef<string | null>(null);
+  // V1 — the endgame cut for games that do NOT end in checkmate: a flag
+  // fall, a resignation, a captured king. Checkmates are handed over by the
+  // iris effect above instead, so they are skipped here.
+  //
+  // R6 used to gate the cinematic on a come-from-behind win (worst eval
+  // ≤ -2 pawns) and play nothing at all on a loss, which meant most games
+  // just blinked into a modal. Both results get their own cut now; a draw
+  // still gets none, because there is nothing to dramatise.
   useEffect(() => {
-    if (gameOutcome !== 'human-win') return;
-    if (isMultiplayer || isLocalMode) return;
+    if (watchingGame || isAutoMode) return; // spectating gets no cut
+    if (gameStatus === 'active') return;
+    if (gameStatus === 'checkmate') return; // the iris hands that one over
     if (mateSeqActive) return;
-    if (worstHumanEvalRef.current > -2.0) return; // was never really in danger
-    if (victoryFiredForLogRef.current === log.id) return;
-    victoryFiredForLogRef.current = log.id;
-    launchVictory(Math.random() < 0.5 ? 'red' : 'blue');
-  }, [gameOutcome, isMultiplayer, isLocalMode, mateSeqActive, log.id, launchVictory]);
+    if (endgameFiredForLogRef.current === log.id) return;
+
+    // A draw belongs to neither player, so it has no subject king and no
+    // winner to ask about — it gets its own storyboard: two hands meeting
+    // in the middle. It plays in every mode a human is actually sitting
+    // in, including hot-seat, where cutSubjectColor is deliberately null.
+    if (gameStatus.startsWith('draw')) {
+      endgameFiredForLogRef.current = log.id;
+      launchEndgame('draw');
+      return;
+    }
+
+    if (!cutSubjectColor || !decisiveWinner) return;
+    endgameFiredForLogRef.current = log.id;
+    launchEndgame(decisiveWinner === cutSubjectColor ? 'victory' : 'defeat', {
+      king: cutSubjectColor,
+    });
+  }, [
+    watchingGame,
+    isAutoMode,
+    cutSubjectColor,
+    decisiveWinner,
+    gameStatus,
+    mateSeqActive,
+    log.id,
+    launchEndgame,
+  ]);
 
   // Highlight the last N piece-plies on the board. Roulette mode plays two
   // sub-moves per AI turn, so we widen the window to 2; classic stays at 1
@@ -4217,14 +5040,18 @@ function App() {
 
     for (const entry of game.moves) {
       const mv = entry.move;
+      // V1 — SAN is computed from the position BEFORE the move, exactly as
+      // a live move records it. Without it a resumed game's move list lost
+      // its piece letters ("Na8→b6" came back as "a8→b6").
+      const san = computeSAN(current, mv);
       if (mv.kind === 'topologyToggle') {
         current = applyRotationMove(current);
-        nextLog = appendMove(nextLog, mv, undefined, entry.topology);
+        nextLog = appendMove(nextLog, mv, san, entry.topology);
         continue;
       }
       if (!mv.from || !mv.to) continue;
       current = applyMove(current, mv);
-      nextLog = appendMove(nextLog, mv, undefined, entry.topology);
+      nextLog = appendMove(nextLog, mv, san, entry.topology);
     }
 
     if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
@@ -4247,6 +5074,43 @@ function App() {
   // Keep the ref pointing at the latest resumeGame closure so the stable
   // onMemoryGameActivate callback always invokes the fresh state-bound copy.
   resumeGameRef.current = resumeGame;
+
+  /**
+   * V1 — a new tab opens on the game you are already playing.
+   *
+   * Online this already worked (R13b re-seats you from subutai_mp_active).
+   * Solo, every tab started a fresh board, although the game in progress
+   * was sitting in Memory, snapshotted on every move. Now the tab picks it
+   * up — only if it was touched in the last day, and only a CLASSIC game
+   * WITHOUT a clock:
+   *   · roulette carries turn state a move list cannot rebuild (the spun
+   *     slots, the actions left), so it waits in Memory instead;
+   *   · a timed game would come back with both clocks at zero — in a
+   *     ranked game against Strong that is "refresh for more time".
+   */
+  const liveResumeTriedRef = useRef(false);
+  useEffect(() => {
+    if (liveResumeTriedRef.current) return;
+    liveResumeTriedRef.current = true;
+    if (isAutoMode || sharedGameId || mpResumeCodeRef.current) return;
+    const session = readLiveSession();
+    if (!session) return;
+    if (session.gameMode !== 'classic' || session.timed) return;
+    if (Date.now() - session.savedAt > 24 * 60 * 60 * 1000) {
+      clearLiveSession();
+      return;
+    }
+    void localStorageAdapter.loadGames().then((games) => {
+      const game = games.find((g) => g.id === session.gameId && g.status === 'incomplete');
+      if (!game || game.moves.length === 0) return;
+      beginBusy('Picking up your game');
+      setOpponentMode(session.opponentMode);
+      if (session.botLevel) setBotLevel(session.botLevel);
+      resumeGameRef.current(game);
+    });
+    // Once, on the first render that has everything it needs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function importReplayFromNotation() {
     try {
@@ -4344,8 +5208,22 @@ function App() {
     }
   }
 
-  // Notation string for copy
-  const notationString = useMemo(() => {
+  /**
+   * The move log, in two versions.
+   *
+   * On screen it carries the coaching marks — ⭐ for the engine's own
+   * choice, ? and ?? for mistakes, and the "← Better: … (−123 cp)" tail.
+   * That is the whole point of the panel and it stays.
+   *
+   * What goes on the clipboard is the bare log. A pasted log is an INPUT:
+   * it gets fed back through the replay importer, mailed to someone,
+   * pasted into a chat. The marks survived none of those trips intact —
+   * a star that has been through a chat client comes back as U+2B50
+   * U+FE0F — and every one of them is noise to whoever reads it. The
+   * parser is now forgiving about them either way, but the honest fix is
+   * not to ship them where they were never wanted.
+   */
+  const buildNotation = useCallback((annotate: boolean) => {
     const lines: string[] = [
       `[Chess960 "${positionLabel}"]`,
       `[Seed "${seed}"]`,
@@ -4377,7 +5255,7 @@ function App() {
         if (entry.move.kind !== 'topologyToggle' && entry.topology === 'B') {
           if (!san.includes('@')) san += '@B';
         }
-        const a = entry.analysis;
+        const a = annotate ? entry.analysis : undefined;
         if (a) {
           const marker = MOVE_CLASS_MARKER[a.classification];
           if (marker) san += marker;
@@ -4407,12 +5285,23 @@ function App() {
     return lines.join('\n');
   }, [log.moves, positionLabel, seed]);
 
+  const notationString = useMemo(() => buildNotation(true), [buildNotation]);
+
   function copyNotation() {
-    navigator.clipboard.writeText(notationString).then(() => {
+    navigator.clipboard.writeText(buildNotation(false)).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });
   }
+
+  // V1 — the live log never carried gameMode (only saved games do), so a
+  // roulette game reviewed straight from the board was analysed under
+  // classic rules (no self-check) and worded as classic. Stamp it here;
+  // memoised so GameReview's [log] effects don't re-run every render.
+  const liveReviewLog = useMemo<GameLog>(
+    () => (log.gameMode ? log : { ...log, gameMode }),
+    [log, gameMode],
+  );
 
   const gameOverMessage = useMemo(() => {
     if (gameStatus === 'checkmate') {
@@ -4436,6 +5325,12 @@ function App() {
     }
     if (gameStatus === 'king_captured_black_wins') {
       return 'King captured! Black wins';
+    }
+    if (gameStatus === 'timeout_white') {
+      return 'White ran out of time. Black wins';
+    }
+    if (gameStatus === 'timeout_black') {
+      return 'Black ran out of time. White wins';
     }
     return null;
   }, [gameStatus, state.sideToMove]);
@@ -4529,24 +5424,32 @@ function App() {
       <div className="app-shell" key={view} ref={shellRef}>
         <Suspense fallback={<div className="view-loading"><span className="spinner" /></div>}>
         <GameReview
-          log={activeReviewLog ?? log}
+          log={activeReviewLog ?? liveReviewLog}
           meta={activeReviewMeta ?? undefined}
           gameId={sharedGameId ?? lastGameId ?? null}
-          onBack={() => {
-            setView('game');
-            // Drop the snapshot so the next plain Review opens the live log.
-            setActiveReviewLog(null);
-            setActiveReviewMeta(null);
-            // Strip ?game= so a refresh won't re-open the shared review.
-            if (
-              typeof window !== 'undefined' &&
-              new URLSearchParams(window.location.search).get('game')
-            ) {
-              const url = new URL(window.location.href);
-              url.searchParams.delete('game');
-              window.history.replaceState(null, '', url.toString());
-            }
-          }}
+          onBack={() =>
+            // V1 — leaving the review rebuilds the whole board view in one
+            // commit: the board, 64 tiles, the panels and whatever
+            // analysis was mid-flight. On a long game that is a few
+            // hundred milliseconds during which the tab stops repainting,
+            // which reads as a hang with no explanation. busy.navigate
+            // paints the spinner FIRST and runs the switch after.
+            busy.navigate('Back to the board', () => {
+              setView('game');
+              // Drop the snapshot so the next plain Review opens the live log.
+              setActiveReviewLog(null);
+              setActiveReviewMeta(null);
+              // Strip ?game= so a refresh won't re-open the shared review.
+              if (
+                typeof window !== 'undefined' &&
+                new URLSearchParams(window.location.search).get('game')
+              ) {
+                const url = new URL(window.location.href);
+                url.searchParams.delete('game');
+                window.history.replaceState(null, '', url.toString());
+              }
+            })
+          }
         />
         </Suspense>
       </div>
@@ -4560,7 +5463,7 @@ function App() {
         <Leaderboard
           currentUid={user?.uid ?? null}
           watchDisabled={isMultiplayer}
-          onBack={() => setView('game')}
+          onBack={() => busy.navigate('Back to the board', () => setView('game'))}
           onWatchGame={(gameId, playerName) => {
             void startWatching(gameId, playerName);
           }}
@@ -4577,10 +5480,12 @@ function App() {
         <FriendLobby
           uid={user?.uid ?? null}
           displayName={displayName}
-          onBack={() => {
-            setView('game');
-            setOpponentMode('ai');
-          }}
+          onBack={() =>
+            busy.navigate('Back to the board', () => {
+              setView('game');
+              setOpponentMode('ai');
+            })
+          }
           onMatchReady={(match) => {
             // Q.B.2: hand the live match over to the regular game view.
             // The board / log / header all reuse the single-player UI,
@@ -4654,22 +5559,99 @@ function App() {
         ))}
       </div>
     )}
-    <div className="app-root" style={{ '--board-size': `${boardSize}px` } as React.CSSProperties}>
+    <div
+      className="app-root"
+      data-mobile-panel={mobilePanel}
+      style={{ '--board-size': `${boardSize}px` } as React.CSSProperties}
+    >
+      {/* Closes whichever drawer is open; inert while both are shut. */}
+      <div
+        className="mobile-scrim"
+        onClick={closeMobilePanel}
+        role="presentation"
+        aria-hidden
+      />
       <header className="app-header">
+        {/* V1 — the left drawer opens from the LEFT edge of the header, the
+            right one from the right: each button sits on the side its
+            panel comes in from. */}
+        <button
+          type="button"
+          className="mobile-panel-btn mobile-panel-btn-menu"
+          data-tour="mobile-menu"
+          onClick={() => setMobilePanel((v) => (v === 'menu' ? 'none' : 'menu'))}
+          aria-expanded={mobilePanel === 'menu'}
+          aria-label="Tools and settings"
+        >
+          <Icon icon={Menu} size="md" aria-hidden />
+        </button>
         <div className="app-brand">
+          <NeonLogo />
           <h1>subutai</h1>
-          {isMultiplayer && mpSync ? (
-            <p className="app-tagline">
-              vs <strong>{mpSync.opponentDisplayName}</strong> · {mpSync.matchState.code}
-            </p>
-          ) : (
-            gameMode === 'classic' &&
-            opponentMode === 'ai' && (
-              <p className="app-tagline">
-                Try to survive 50 moves against the AI
-              </p>
-            )
-          )}
+          {/* Design experiment (neon-stitch): the mock's LIVE strip replaces
+              the plain tagline. Solo shows a short seed-derived game tag. */}
+          <div className="live-strip">
+            {/* V1 — the pill reports the real game state: LIVE while a
+                game is running, READY before the first move, OVER after
+                the result. */}
+            {(() => {
+              const mpLive = isMultiplayer && mpSync
+                ? mpSync.matchState.status === 'active' && !mpSync.matchState.outcome
+                : false;
+              const phase: 'live' | 'ready' | 'over' = isMultiplayer
+                ? (mpLive ? 'live' : 'over')
+                : gameStatus !== 'active'
+                  ? 'over'
+                  : log.moves.length > 0
+                    ? 'live'
+                    : 'ready';
+              return (
+                <span className={`live-pill is-${phase}`}>
+                  <span className="live-dot" aria-hidden />
+                  {phase === 'live' ? 'LIVE' : phase === 'over' ? 'OVER' : 'READY'}
+                </span>
+              );
+            })()}
+            {(() => {
+              // V1 — this line is the first thing to go when the header
+              // runs out of room. It is context, not a control: which
+              // opponent and which game id. Below 600px it moves into the
+              // LIVE pill's own tooltip, where a hover or a long-press
+              // still reaches it, and the header stops being three things
+              // fighting over one row.
+              const label =
+                isMultiplayer && mpSync
+                  ? `vs ${mpSync.opponentDisplayName} · ${mpSync.matchState.code}`
+                  : `vs AI · #${Math.abs(seed).toString(36).toUpperCase().slice(-5) || '0'}`;
+              const hint =
+                !isMultiplayer && gameMode === 'classic' && opponentMode === 'ai'
+                  ? 'Try to survive 50 moves against the AI'
+                  : undefined;
+              return (
+                <span className="live-title" title={hint ?? label} data-label={label}>
+                  {isMultiplayer && mpSync ? (
+                    <>
+                      vs <strong>{mpSync.opponentDisplayName}</strong> · {mpSync.matchState.code}
+                    </>
+                  ) : (
+                    label
+                  )}
+                </span>
+              );
+            })()}
+          </div>
+        </div>
+        <div className="mobile-panel-buttons">
+          <button
+            type="button"
+            className="mobile-panel-btn"
+            data-tour="mobile-setup"
+            onClick={() => setMobilePanel((v) => (v === 'setup' ? 'none' : 'setup'))}
+            aria-expanded={mobilePanel === 'setup'}
+            aria-label="Game setup"
+          >
+            <Icon icon={SlidersHorizontal} size="md" aria-hidden />
+          </button>
         </div>
         <div className="header-controls" data-tour="header">
           <Tooltip text={showMusicDock ? 'Hide music dock' : 'Spotify + beat sync (beta)'} side="bottom">
@@ -4698,16 +5680,7 @@ function App() {
               <span className="beta-corner" aria-hidden>β</span>
             </button>
           </Tooltip>
-          <Tooltip text="Leaderboard" side="bottom">
-            <button
-              type="button"
-              className="header-action-btn"
-              onClick={() => setView('leaderboard')}
-              aria-label="Leaderboard"
-            >
-              <Icon icon={Trophy} size="md" aria-hidden />
-            </button>
-          </Tooltip>
+          <span className="rail-sep" aria-hidden />
           <Tooltip
             text={user && displayName ? 'Send feedback' : 'Sign in to send feedback'}
             side="bottom"
@@ -4733,10 +5706,31 @@ function App() {
               <Icon icon={HelpCircle} size="md" aria-hidden />
             </button>
           </Tooltip>
+          <span className="rail-sep rail-sep-tray" aria-hidden />
           <MusicToggle />
           <AudioToggle />
           <Effects3DToggle />
           <ThemeToggle />
+        </div>
+        {/* V1 — the two things a player reaches for most often stay in the
+            top bar on every viewport: the leaderboard and their own name.
+            Everything else lives in the left rail (desktop) / header row
+            (mobile). */}
+        <div className="topbar-actions">
+          <button
+            type="button"
+            className="topbar-btn"
+            onClick={() =>
+              guardLeave('Open leaderboard', false, () =>
+                busy.navigate('Opening leaderboard', () => setView('leaderboard')),
+              )
+            }
+            aria-label="Leaderboard"
+            title="Leaderboard"
+          >
+            <Icon icon={Trophy} size="md" aria-hidden />
+            <span className="topbar-btn-label">Leaderboard</span>
+          </button>
           {displayName && (
             <UserMenu
               displayName={displayName}
@@ -4838,87 +5832,61 @@ function App() {
         <div className="mp-banner mp-banner-error">{mpSync.error}</div>
       )}
 
-      {/* Sprint 4.1 — local hot-seat turn banner. Hands off cleanly
-          between the two players sharing the device; the colour
-          chip mirrors the active side so the next-to-move player
-          can pick up immediately. */}
-      {isLocalMode && gameStatus === 'active' && (
-        <div className="local-turn-banner">
-          <span className={`local-turn-chip local-turn-chip-${state.sideToMove}`} aria-hidden />
-          <span className="local-turn-color">
-            {state.sideToMove === 'white' ? 'White' : 'Black'}
-          </span>
-          <span className="local-turn-suffix">to move</span>
-        </div>
-      )}
-
+      {/* Sprint 4.1 / V1 — the hot-seat turn banner that used to float
+          above the board now lives INSIDE each player's own button row
+          (see LocalTurnSlot), so "whose move" reads as part of the
+          controls in front of you rather than a notice pinned over both
+          of them. */}
       <div className="app-body">
       <div className="board-area">
-      <div className="game-mode-cards" data-tour="modes">
-        <button
-          type="button"
-          className={`mode-card${gameMode === 'classic' ? ' is-active' : ''}`}
-          disabled={modeToggleLocked}
-          title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Classic chess rules'}
-          onClick={() => {
-            if (gameMode === 'classic') return;
-            setGameMode('classic');
-            setAllowedPieceTypes(null);
-            setIsRouletteSpinning(false);
-            setRouletteActionsLeft(0);
-            setUsedRouletteSlots([]);
-          }}
-        >
-          <span className="mode-card-icon" aria-hidden>
-            <Icon icon={Crosshair} size="xl" strokeWidth={1.75} />
-          </span>
-          <span className="mode-card-content">
-            <span className="mode-card-title">Classic</span>
-            <span className="mode-card-subtitle">
-              Standard chess960 + topology rotation
-            </span>
-          </span>
-        </button>
-        <button
-          type="button"
-          className={`mode-card${gameMode === 'roulette' ? ' is-active' : ''}`}
-          disabled={modeToggleLocked}
-          title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Spin a 4-slot bag · 2 actions/turn (move or rotate)'}
-          onClick={() => {
-            if (gameMode === 'roulette') return;
-            setGameMode('roulette');
-            setAllowedPieceTypes(null);
-            setIsRouletteSpinning(false);
-            setRouletteActionsLeft(0);
-            setUsedRouletteSlots([]);
-          }}
-        >
-          <span className="mode-card-icon" aria-hidden>
-            <Icon icon={Dices} size="xl" strokeWidth={1.75} />
-          </span>
-          <span className="mode-card-content">
-            <span className="mode-card-title">Roulette</span>
-            <span className="mode-card-subtitle">
-              Capture-the-king · spin the wheel
-            </span>
-          </span>
-        </button>
-      </div>
       {/* S2.5 — per-side clocks. Elapsed time normally; in a timed MP
-          match (B8) they switch to countdown, glowing red under 30s. */}
+          match (B8) they switch to countdown, glowing red under 30s.
+          V1 — shaped like the clock that actually sits on a tournament
+          table: one housing, two faces split by a dashed seam, the
+          running side lit. The readout itself stays digital (an unlit
+          88:88 ghost with the live digits burning through it), which is
+          how a DGT reads in the hall — the housing is the analogue part,
+          not the numbers. */}
       {gameStatus === 'active' && !watchingGame && (
-        <div className="game-clocks" aria-label="Game clocks">
+        <div className="tournament-clock" aria-label="Game clocks">
           {(['white', 'black'] as const).map((side) => {
-            const ms = mpClocks ? mpClocks[side] : clockMs[side];
-            const low = mpClocks !== null && ms < 30_000;
+            const soloCountdown = mpClocks === null && soloTcSec !== null;
+            const ms = mpClocks
+              ? mpClocks[side]
+              : soloCountdown
+                ? Math.max(0, soloTcSec * 1000 - clockMs[side])
+                : clockMs[side];
+            // Only a real countdown can be "low". An elapsed clock reads
+            // low for its first 30 seconds, which would paint every game
+            // red at the start.
+            const low = (mpClocks?.countdown || soloCountdown) && ms < 30_000;
+            const face = formatClockFace(ms);
+            const running = state.sideToMove === side;
+            // V1 — the running half is lit in the theme accent when it is
+            // YOUR clock and in the opponent accent when it is not, so the
+            // two are never confusable at a glance. Online it follows the
+            // colour you were actually dealt; in hot-seat nobody is "you",
+            // so the two seats simply get the two colours.
+            const mine = side === (isMultiplayer ? mpSync?.myColor ?? 'white' : 'white');
             return (
-              <span
+              <div
                 key={side}
-                className={`clock-chip clock-chip-${side}${state.sideToMove === side ? ' is-running' : ''}${low ? ' is-low' : ''}`}
+                className={`tc-face tc-face-${side}${running ? ' is-running' : ''}${low ? ' is-low' : ''}${mine ? ' is-mine' : ' is-theirs'}`}
               >
-                <span className="clock-chip-dot" aria-hidden />
-                {side === 'white' ? 'White' : 'Black'} {formatClock(ms)}
-              </span>
+                <span className="tc-readout">
+                  {/* Every segment of the display, unlit — the live digits
+                      sit exactly on top, so the glass reads as a real
+                      seven-segment panel instead of floating text. */}
+                  <span className="tc-ghost" aria-hidden>
+                    {face.replace(/\d/g, '8')}
+                  </span>
+                  <span className="tc-digits">{face}</span>
+                </span>
+                <span className="tc-name">
+                  <span className="tc-lamp" aria-hidden />
+                  {side === 'white' ? 'White' : 'Black'}
+                </span>
+              </div>
             );
           })}
         </div>
@@ -4929,6 +5897,7 @@ function App() {
           board-actions row, so the wide banner is gone. */}
       {gameMode === 'roulette' &&
         gameStatus === 'active' &&
+        !watchingGame &&
         (allowedPieceTypes || isRouletteSpinning) && (
         <div className="roulette-panel">
           <div className="roulette-display">
@@ -4987,6 +5956,7 @@ function App() {
           game (resign / preview rotation / commit rotation). */}
       {isLocalMode && gameStatus === 'active' && (
         <div className="local-actions local-actions-top" aria-hidden={state.sideToMove !== 'black'}>
+          <LocalTurnSlot side="black" toMove={state.sideToMove} />
           <button
             type="button"
             className="action-btn resign-btn"
@@ -5037,7 +6007,7 @@ function App() {
         />
       <div
         className={`board-with-coords${showAfkAlert && currentPlayer === 'human' && gameStatus === 'active' ? ' is-afk-nudge' : ''}${captureShake ? ' is-capture-shake' : ''}`}
-        style={{ width: boardSize }}
+        style={{ width: boardSize, '--fx-intensity': fxIntensity } as React.CSSProperties}
         data-tour="board"
       >
       {/* SP — mic-driven spectrum ring; mounts only while the
@@ -5134,25 +6104,40 @@ function App() {
           // on the origin tile) so App can animate the glyph's rotation in
           // sync with the wrapper's translate. null when not sliding.
           let slideRotFromAngle: number | null = null;
-          if (
-            piece &&
-            gameMode === 'classic' &&
-            lastMove?.to === sq &&
-            lastMove.from &&
-            lastMove.from !== lastMove.to
-          ) {
-            const fromTile = tilePixelCenter(lastMove.from, displayTopology, layout);
+          // V1 — where this tile's piece should glide in from, if anywhere.
+          // Two gaps used to make pieces teleport:
+          //   · the slide was gated on `gameMode === 'classic'`, so EVERY
+          //     roulette move — both of the bot's sub-moves included — just
+          //     appeared on its new square;
+          //   · a castle only animated the king; the rook jumped.
+          const slideFrom: SquareId | null =
+            lastMove?.to === sq && lastMove.from && lastMove.from !== lastMove.to
+              ? lastMove.from
+              : castleRookSlide?.to === sq
+                ? castleRookSlide.from
+                : null;
+          if (piece && slideFrom) {
+            const fromTile = tilePixelCenter(slideFrom, displayTopology, layout);
             const fromCxView = flip ? boardSize - fromTile.cx : fromTile.cx;
             const fromCyView = flip ? boardSize - fromTile.cy : fromTile.cy;
-            slideDx = fromCxView - cxView;
-            slideDy = fromCyView - cyView;
+            const viewDx = fromCxView - cxView;
+            const viewDy = fromCyView - cyView;
+            // V1 — the offset is applied INSIDE the tile, and in topology B
+            // every tile is rotated ±90° and scaled. A board-space offset
+            // used as-is came out rotated by the tile's own angle, so a
+            // piece glided in from the side instead of from the square it
+            // left — which reads as a jump, not a move. Express it in the
+            // tile's own frame instead.
+            const local = toTileFrame(viewDx, viewDy, angle, scale);
+            slideDx = local.x;
+            slideDy = local.y;
             isSliding = true;
             slideRotFromAngle = fromTile.angle;
             // M.20 — scale duration with travel distance: a one-square hop
             // stays snappy, a board-spanning glide gets a touch more time
             // to read as a real "flight" rather than a blur. Narrow band
             // (220-330ms) so it never reads as sluggish.
-            const dist = Math.hypot(slideDx, slideDy);
+            const dist = Math.hypot(viewDx, viewDy);
             slideMs = Math.round(
               Math.min(330, Math.max(220, 220 + (dist / (tileBase * 7)) * 110)),
             );
@@ -5167,12 +6152,27 @@ function App() {
                 isDark ? 'dark' : 'light',
                 isSelected ? 'selected' : '',
                 isEnPassantTarget ? 'target-enpassant' : isTarget ? 'target' : '',
+                /* V1 — a destination that holds an enemy piece is not the
+                   same offer as an empty square, and until now both got
+                   the identical 4px ring. A capture keeps the ring; a
+                   quiet move becomes a dot in the middle, so the piece
+                   underneath a capture target stays fully visible. */
+                isTarget && piece && piece.color !== state.sideToMove
+                  ? 'is-capture-target'
+                  : '',
                 isEnPassantExplosion ? 'enpassant-explosion' : '',
                 captureFxSquare === sq ? 'is-capture-burst' : '',
                 isLastFrom ? 'last-from' : '',
                 isLastTo ? 'last-to' : '',
                 olderHighlight ? 'last-older' : '',
                 isCheckedKing ? (gameStatus === 'checkmate' ? 'mated-king' : 'checked-king') : '',
+                /* V1 — while the iris closes, the mated king rises off
+                   the board, so the endgame cut picks up a piece that is
+                   already in the air instead of one appearing from
+                   nowhere. Uses the existing [data-3d] perspective; with
+                   3D off there is no Z to rise along and the rule does
+                   not apply. */
+                mateSeq === 'iris' && irisKingPos?.sq === sq ? 'is-mate-rise' : '',
                 /* Sprint 4.1 — pulse own pieces whose type matches an
                    unused roulette slot for THIS turn. Only on the
                    active client (currentPlayer === 'human') so the
@@ -5547,17 +6547,27 @@ function App() {
             </svg>
           );
         })()}
-        {checkVignette && <div className="check-vignette" aria-hidden />}
+        {checkVignette && (
+          <div
+            className="check-vignette"
+            style={{ '--fx-intensity': fxIntensity } as React.CSSProperties}
+            aria-hidden
+          />
+        )}
         {captureStrobe && (
-          <div className={`capture-strobe is-${captureStrobe}`} aria-hidden />
+          <div
+            className={`capture-strobe is-${captureStrobe}`}
+            style={{ '--fx-intensity': fxIntensity } as React.CSSProperties}
+            aria-hidden
+          />
         )}
         {rotationDust && <div className="rotation-dust" aria-hidden />}
-        {mateKingPos && mateSeqActive && (
+        {irisKingPos && mateSeqActive && (
           <div
             className="checkmate-iris"
             style={{
-              '--iris-cx': `${mateKingPos.cx}px`,
-              '--iris-cy': `${mateKingPos.cy}px`,
+              '--iris-cx': `${irisKingPos.cx}px`,
+              '--iris-cy': `${irisKingPos.cy}px`,
             } as React.CSSProperties}
             aria-hidden
           />
@@ -5634,52 +6644,12 @@ function App() {
       </div>
       </div>
 
-      {/* Sprint 4.2 — bottom action row for the white-side player in
-          local 2P mode. Mirrors the top row, rendered upright. */}
-      {isLocalMode && gameStatus === 'active' && (
-        <div className="local-actions local-actions-bottom" aria-hidden={state.sideToMove !== 'white'}>
-          <button
-            type="button"
-            className="action-btn resign-btn"
-            onClick={requestResign}
-            disabled={log.moves.length === 0}
-            aria-label="Resign (white)"
-            title="Resign"
-          >
-            <Icon icon={Flag} size="md" aria-hidden />
-          </button>
-          <button
-            type="button"
-            className={`action-btn preview-btn${previewLocked ? ' active' : ''}`}
-            onClick={() => {
-              if (previewLocked) {
-                setPreviewLocked(false);
-                setLockedPreviewTopology(null);
-              } else {
-                setPreviewLocked(true);
-                setLockedPreviewTopology(state.topologyState === 'A' ? 'B' : 'A');
-              }
-            }}
-            aria-label={previewLocked ? 'Unlock rotation preview' : 'Preview rotation'}
-            title={previewLocked ? 'Unlock preview' : 'Preview rotation'}
-          >
-            <Icon icon={Eye} size="md" aria-hidden />
-          </button>
-          <button
-            type="button"
-            className={`rotate-btn-icon${encourageRotate && canRotate ? ' is-hint-pulsing' : ''}`}
-            onClick={handleRotate}
-            disabled={!canRotate}
-            aria-label={`Rotate ${state.topologyState} to ${state.topologyState === 'A' ? 'B' : 'A'}`}
-            title="Rotate board"
-          >
-            <Icon icon={RotateCw} size="md" aria-hidden />
-            <span className="rotate-label-text" aria-hidden>
-              {state.topologyState}{' → '}{state.topologyState === 'A' ? 'B' : 'A'}
-            </span>
-          </button>
-        </div>
-      )}
+      {/* V1 — the white seat uses the standard .board-actions row below,
+          exactly like every other mode. The mirrored row above the board
+          is the only local-mode extra (it serves the player sitting on the
+          far side). The old duplicate bottom row is gone: it repeated
+          resign / preview / rotate one row above the real one and pushed
+          the layout past the board's frame. */}
 
       {pendingPromotion && (
         <div className="promotion-backdrop" onClick={() => setPendingPromotion(null)}>
@@ -5713,6 +6683,9 @@ function App() {
       )}
 
       <div className="board-actions">
+        {isLocalMode && gameStatus === 'active' && (
+          <LocalTurnSlot side="white" toMove={state.sideToMove} />
+        )}
         {/* Sprint 3.2.1 \u2014 six icon buttons consolidated into one
             cohesive bar with a single divider between the meta-controls
             (Reset / Lock / Resign) and the in-game toggles (Support /
@@ -5723,7 +6696,7 @@ function App() {
             <button
               type="button"
               className="action-btn"
-              onClick={startNewGame}
+              onClick={() => guardLeave('Start a new game', true, startNewGame)}
               aria-label="New game"
             >
               <Icon icon={RotateCw} size="md" aria-hidden />
@@ -5801,7 +6774,13 @@ function App() {
                       <Icon icon={AlertTriangle} size="md" aria-hidden />
                     </button>
                   </Tooltip>
-                  {gameMode === 'classic' && (
+                  {/* V1 — no engine hints against another person. The
+                      support and threat maps read the position you can
+                      already see; the hint runs a search and hands you a
+                      move, which in an online game is just an engine at
+                      the board. Hot-seat keeps it: both players share the
+                      screen and can see it being used. */}
+                  {gameMode === 'classic' && !isMultiplayer && (
                     <Tooltip text="Hint: engine suggests a move" side="top">
                       <button
                         type="button"
@@ -5864,6 +6843,7 @@ function App() {
             every subsequent turn without the button mounting at all. */}
         {gameMode === 'roulette' &&
           gameStatus === 'active' &&
+          !watchingGame &&
           allowedPieceTypes === null &&
           !isRouletteSpinning &&
           currentPlayer === 'human' &&
@@ -5988,30 +6968,32 @@ function App() {
         <button
           type="button"
           className="position-replay-btn"
-          onClick={() => {
-            setReplayError(null);
-            setShowReplayDialog(true);
-          }}
-          title="Paste a move log to replay"
+          onClick={() =>
+            guardLeave('Load a replay', true, () => {
+              setReplayError(null);
+              setShowReplayDialog(true);
+            })
+          }
+          title="Paste a move log to replay a game"
         >
-          Replay
+          <Icon icon={Upload} size={12} aria-hidden /> Load replay
         </button>
         )}
-        <span className="position-label">Chess960: {positionLabel}</span>
-        {isMultiplayer || watchingGame ? null : !formationInputMode ? (
-          <button
-            type="button"
-            className="position-edit-btn"
-            onDoubleClick={() => {
-              setFormationInputValue(positionLabel);
-              setFormationInputMode(true);
-            }}
-            title="Double-click to enter formation code"
-          >
-            edit
-          </button>
-        ) : (
-          <span className="position-input-wrap">
+        {/* V1 rev 3 — the code IS the control.
+            It used to be a read-only label with a separate "Set position"
+            button next to it, which put two objects on screen for one
+            idea. The code now sits quiet and flat until you touch it;
+            clicking it grows the chip and turns the code itself into the
+            field you type in. Nothing else on the row changes size, so
+            the growth is the whole affordance. */}
+        {isMultiplayer || watchingGame ? (
+          <span className="position-code is-static" title="This game's Chess960 starting rank">
+            <span className="position-label-key">960</span>
+            <span className="position-code-value">{positionLabel}</span>
+          </span>
+        ) : formationInputMode ? (
+          <span className="position-code is-editing">
+            <span className="position-label-key">960</span>
             <input
               ref={formationInputRef}
               type="text"
@@ -6022,20 +7004,51 @@ function App() {
                 if (e.key === 'Enter') applyFormationCode();
                 if (e.key === 'Escape') cancelFormationInput();
               }}
-              onBlur={applyFormationCode}
-              placeholder="e.g. RQKRNBBN"
+              onBlur={commitFormationOnBlur}
+              placeholder="RQKRNBBN"
               maxLength={8}
+              aria-label="Chess960 starting rank"
             />
             {formationInputValue && !isValidChess960Key(formationInputValue.trim().toUpperCase()) && (
               <span className="position-input-error">Invalid 960 code</span>
             )}
           </span>
+        ) : (
+          <button
+            type="button"
+            className="position-code"
+            onClick={() =>
+              guardLeave('Set a new position', true, () => {
+                setFormationInputValue(positionLabel);
+                setFormationInputMode(true);
+              })
+            }
+            title="Click to start from a specific Chess960 position"
+          >
+            <span className="position-label-key">960</span>
+            <span className="position-code-value">{positionLabel}</span>
+            <Icon icon={Pencil} size={11} className="position-code-pencil" aria-hidden />
+          </button>
         )}
       </div>
       </div>
       <aside className="right-sidebar">
-        <section className="sidebar-panel sidebar-opponent">
-          <h2 className="sidebar-panel-title">Opponent</h2>
+        {/* V1 — while a replay is playing, the whole setup panel is inert.
+            Its controls used to stay live, so picking "Local" mid-replay
+            mounted the hot-seat UI on top of someone else's game and let
+            it rotate. Nothing in here means anything until the replay is
+            stopped, so nothing in here can be pressed. */}
+        <section
+          className={`sidebar-panel sidebar-opponent${watchingGame ? ' is-inert' : ''}`}
+          inert={watchingGame ? true : undefined}
+        >
+          <h2 className="sidebar-panel-title">Game setup</h2>
+          {watchingGame && (
+            <p className="setup-inert-note">
+              Replay in progress. Stop it to change the game setup.
+            </p>
+          )}
+          <h3 className="setup-sub-label">Opponent</h3>
           {/* Sprint 4.3.1 — when a local game is in progress, lock all
               non-local opponent tabs behind a confirm dialog so a stray
               tap can't silently abandon the game. The lock is "soft":
@@ -6057,16 +7070,20 @@ function App() {
                   <Icon icon={Bot} size="md" aria-hidden />
                   <span>vs AI</span>
                 </button>
+                {/* V1 — "vs Friend" undersold this tab: it is the whole
+                    online side (quick match against a stranger, or a
+                    private 6-letter code). "Online" pairs naturally with
+                    "Local" and matches what the lobby actually offers. */}
                 <button
                   type="button"
                   className={`opp-tab${opponentMode === 'friend' ? ' is-active' : ''}${oppLocked ? ' is-locked' : ''}`}
                   onClick={() => requestOpponentChange('friend')}
                   aria-disabled={oppLocked || undefined}
-                  title={oppLocked ? lockedTitle : 'Private match by code'}
+                  title={oppLocked ? lockedTitle : 'Play a real opponent: quick match, or a private code'}
                   disabled={!user || !displayName}
                 >
                   <Icon icon={Users} size="md" aria-hidden />
-                  <span>vs Friend</span>
+                  <span>Online</span>
                 </button>
                 {/* Sprint 4.1 — Local hot-seat. Both colours play from this
                     device; the AI scheduler short-circuits via the
@@ -6083,6 +7100,126 @@ function App() {
               </div>
             );
           })()}
+
+          {/* Design experiment (neon-stitch): mode cards moved here from
+              above the board — the mock's GAME SETUP panel owns opponent,
+              mode and time control together. */}
+          <h3 className="setup-sub-label">Mode</h3>
+          <div className="game-mode-cards" data-tour="modes">
+            <button
+              type="button"
+              className={`mode-card${gameMode === 'classic' ? ' is-active' : ''}`}
+              disabled={modeToggleLocked}
+              title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Classic chess rules'}
+              onClick={() => {
+                if (gameMode === 'classic') return;
+                setGameMode('classic');
+                setAllowedPieceTypes(null);
+                setIsRouletteSpinning(false);
+                setRouletteActionsLeft(0);
+                setUsedRouletteSlots([]);
+              }}
+            >
+              <span className="mode-card-icon" aria-hidden>
+                <Icon icon={Crosshair} size="xl" strokeWidth={1.75} />
+              </span>
+              <span className="mode-card-content">
+                <span className="mode-card-title">Classic</span>
+                <span className="mode-card-subtitle">
+                  Standard chess960 + topology rotation
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              className={`mode-card${gameMode === 'roulette' ? ' is-active' : ''}`}
+              disabled={modeToggleLocked}
+              title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Spin a 4-slot bag · 2 actions/turn (move or rotate)'}
+              onClick={() => {
+                if (gameMode === 'roulette') return;
+                setGameMode('roulette');
+                setAllowedPieceTypes(null);
+                setIsRouletteSpinning(false);
+                setRouletteActionsLeft(0);
+                setUsedRouletteSlots([]);
+              }}
+            >
+              <span className="mode-card-icon" aria-hidden>
+                <Icon icon={Dices} size="xl" strokeWidth={1.75} />
+              </span>
+              <span className="mode-card-content">
+                <span className="mode-card-title">Roulette</span>
+                <span className="mode-card-subtitle">
+                  Capture-the-king · spin the wheel
+                </span>
+              </span>
+            </button>
+          </div>
+
+          {/* Solo time control: flips the S2.5 elapsed chips into remaining
+              countdowns. Display-only — nobody loses on time vs the bot.
+              MP time control comes from the lobby, so the pills lock there. */}
+          {/* V1 — bot strength. Solo vs AI only; locked once a game is on
+              (a mid-game switch would silently change the opponent). */}
+          {opponentMode === 'ai' && !isMultiplayer && (
+            <>
+              <h3 className="setup-sub-label">Bot strength</h3>
+              <div className="tc-pills" role="radiogroup" aria-label="Bot strength">
+                {BOT_STRENGTHS.map((level) => (
+                  <button
+                    key={level}
+                    type="button"
+                    role="radio"
+                    aria-checked={botLevel === level}
+                    className={`tc-pill${botLevel === level ? ' is-active' : ''}${level === 'strong' ? ' is-ranked' : ''}`}
+                    disabled={modeToggleLocked}
+                    title={
+                      modeToggleLocked
+                        ? 'Finish or restart the game to change the bot'
+                        : BOT_STRENGTH_HINT[level]
+                    }
+                    onClick={() => setBotLevel(level)}
+                  >
+                    {BOT_STRENGTH_LABEL[level]}
+                  </button>
+                ))}
+              </div>
+              <p className="setup-hint">{BOT_STRENGTH_SUMMARY[botLevel]}</p>
+            </>
+          )}
+          <h3 className="setup-sub-label">Time control</h3>
+          <div className="tc-pills" role="radiogroup" aria-label="Time control">
+            {([
+              [null, 'None'],
+              [60, '1 min'],
+              [180, '3 min'],
+              [600, '10 min'],
+            ] as const).map(([sec, label]) => (
+              <button
+                key={label}
+                type="button"
+                role="radio"
+                aria-checked={soloTcSec === sec}
+                className={`tc-pill${soloTcSec === sec ? ' is-active' : ''}`}
+                disabled={isMultiplayer || modeToggleLocked}
+                title={
+                  isMultiplayer
+                    ? 'Time control is set in the match lobby'
+                    : modeToggleLocked
+                      ? 'Finish or restart the game to change the clock'
+                      : sec === null
+                        ? 'Free play: clocks just count time spent'
+                        : `Each side gets ${label}. Run out and you lose on time`
+                }
+                onClick={() => setSoloTcSec(sec)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {soloTcSec !== null && !isMultiplayer && (
+            <p className="setup-hint">Clocks start on the first move. Out of time = loss.</p>
+          )}
         </section>
 
         <section className="sidebar-panel sidebar-moves">
@@ -6150,7 +7287,7 @@ function App() {
           <button
             type="button"
             className="panel-action-btn"
-            onClick={() => setView('review')}
+            onClick={() => busy.navigate('Opening review', () => setView('review'))}
             disabled={log.moves.length === 0 || isMultiplayer}
             title={isMultiplayer ? 'Review opens from the end-of-match screen' : undefined}
           >
@@ -6190,31 +7327,76 @@ function App() {
         </div>
       )}
 
+      {/* V1 — the status bar used to say "Ready" / "In play" and a raw move,
+          which told the player nothing they could act on. It now answers the
+          one question a status bar should: whose move is it, and how far
+          along are we. */}
       <footer className="app-status-bar">
-        {/* Sprint 2.7 — dropped the persistent "Your turn / Waiting"
-            indicator. The AFK alert covers the attention case; whose
-            turn it is can be read from the board + sidebar opponent
-            panel. Status bar now just shows last move + game state. */}
-        <span className="status-game-state">
-          {gameStatus !== 'active'
-            ? gameOverMessage ?? 'Game over'
-            : log.moves.length > 0
-              ? 'In play'
-              : 'Ready'}
-        </span>
-        <span className="status-last-move">
-          {log.moves.length > 0
-            ? `Last: ${log.moves[log.moves.length - 1]?.san ??
-                `${log.moves[log.moves.length - 1]?.move.from ?? ''}→${log.moves[log.moves.length - 1]?.move.to ?? ''}`}`
-            : '—'}
-        </span>
+        {(() => {
+          const lastEntry = log.moves[log.moves.length - 1];
+          const lastText = lastEntry
+            ? lastEntry.san ?? `${lastEntry.move.from ?? ''}→${lastEntry.move.to ?? ''}`
+            : null;
+          const fullMoves = Math.ceil(log.moves.length / 2);
+          let tone: 'over' | 'mine' | 'theirs' | 'idle' = 'idle';
+          let text: string;
+          if (gameStatus !== 'active') {
+            tone = 'over';
+            text = gameOverMessage ?? 'Game over';
+          } else if (watchingGame) {
+            text = `Watching ${watchingGame.playerName}'s game`;
+          } else if (isMultiplayer && mpSync) {
+            tone = mpSync.isMyTurn ? 'mine' : 'theirs';
+            text = mpSync.isMyTurn
+              ? 'Your move'
+              : `${mpSync.opponentDisplayName} is thinking`;
+          } else if (isLocalMode) {
+            tone = 'mine';
+            text = `${state.sideToMove === 'white' ? 'White' : 'Black'} to move`;
+          } else if (currentPlayer === 'human') {
+            tone = 'mine';
+            text = log.moves.length === 0 ? 'Your move: make the first one' : 'Your move';
+          } else {
+            tone = 'theirs';
+            text = 'Bot is thinking';
+          }
+          return (
+            <>
+              <span className={`status-chip status-chip-${tone}`}>
+                <span className="status-dot" aria-hidden />
+                {text}
+              </span>
+              <span className="status-meta">
+                <span className="status-meta-item">
+                  Move <strong>{fullMoves}</strong>
+                </span>
+                {lastText && (
+                  <span className="status-meta-item">
+                    Last <strong className="status-mono">{lastText}</strong>
+                  </span>
+                )}
+              </span>
+            </>
+          );
+        })()}
       </footer>
 
       {!isMultiplayer && (
-        <MemoryPanel onGameActivate={onMemoryGameActivate} />
+        <MemoryPanel
+          onGameActivate={(g) =>
+            guardLeave('Open this saved game', true, () => onMemoryGameActivate(g))
+          }
+        />
       )}
 
-      {!authLoading && user && !displayName && (
+      {/* The name prompt waits its turn behind BOTH the welcome screen and
+          the tour. It used to wait only for the welcome screen, so taking
+          the "start the tour" button dropped a modal straight on top of
+          the first tour step — the field sat over the tooltip and neither
+          could be read. The tour teaches; the name is what you pick once
+          you have decided to stay, so it comes after. Skipping the tour
+          still brings it up immediately. */}
+      {!authLoading && user && !displayName && !showWelcome && !showTutorial && (
         <NamePicker
           mode="initial"
           uid={user.uid}
@@ -6249,6 +7431,22 @@ function App() {
         />
       )}
 
+      {pendingLeave && (
+        <ConfirmDialog
+          title={pendingLeave.title}
+          message={pendingLeave.message}
+          confirmLabel={pendingLeave.confirmLabel}
+          cancelLabel="Keep playing"
+          danger
+          onConfirm={() => {
+            const go = pendingLeave.run;
+            setPendingLeave(null);
+            go();
+          }}
+          onCancel={() => setPendingLeave(null)}
+        />
+      )}
+
       {pendingOpponentChange && (
         <ConfirmDialog
           title="Abandon current game?"
@@ -6266,7 +7464,7 @@ function App() {
         />
       )}
 
-      {isMultiplayer && mpSync && mpEndOutcome && !mateSeqActive && (() => {
+      {isMultiplayer && mpSync && mpEndOutcome && !endgameSceneActive && (() => {
         const myView = translateOutcomeForPlayer(
           mpEndOutcome,
           {
@@ -6294,32 +7492,42 @@ function App() {
                 ? 'Match drawn.'
                 : `${mpEndOutcome === 'white-win' ? 'White' : 'Black'} wins by checkmate.`;
         function dismiss() {
-          setMpEndOutcome(null);
-          setActiveMatch(null);
-          setOpponentMode('ai');
-          setView('game');
+          busy.navigate('Back to the board', () => {
+            setMpEndOutcome(null);
+            setActiveMatch(null);
+            setOpponentMode('ai');
+            setView('game');
+          });
         }
         function backToLobby() {
-          setMpEndOutcome(null);
-          setActiveMatch(null);
-          mpSavedGameIdRef.current = null;
-          mpWroteOutcomeRef.current = null;
-          setView('friend-lobby');
+          busy.navigate('Opening the lobby', () => {
+            setMpEndOutcome(null);
+            setActiveMatch(null);
+            mpSavedGameIdRef.current = null;
+            mpWroteOutcomeRef.current = null;
+            setView('friend-lobby');
+          });
         }
         function reviewMatch() {
           if (!mpSync) return;
           // Snapshot the match log so leaving the live match doesn't pull
           // the data out from under the review screen. classifyAsync will
           // populate per-move analysis on the fly inside GameReview.
-          setActiveReviewLog(deriveMpLog(mpSync.matchState));
-          setActiveReviewMeta({
+          // Snapshot NOW, before the deferred switch: the live match is
+          // torn down inside it.
+          const snapshot = deriveMpLog(mpSync.matchState);
+          const meta = {
             playerName: displayName ?? 'You',
             opponentName: mpSync.opponentDisplayName,
             outcome: myView,
+          };
+          busy.navigate('Opening review', () => {
+            setActiveReviewLog(snapshot);
+            setActiveReviewMeta(meta);
+            setMpEndOutcome(null);
+            setActiveMatch(null);
+            setView('review');
           });
-          setMpEndOutcome(null);
-          setActiveMatch(null);
-          setView('review');
         }
         return (
           <div className="mp-completion-backdrop" onClick={dismiss}>
@@ -6368,7 +7576,7 @@ function App() {
           prompt, unlike every other mode. Reuses the MP completion dialog's
           styling (mp-completion-*) - same shape, no scoring, just the
           outcome + a clear way to start again. */}
-      {isLocalMode && gameStatus !== 'active' && !localGameOverDismissed && !mateSeqActive && log.moves.length > 0 && (
+      {isLocalMode && gameStatus !== 'active' && !localGameOverDismissed && !endgameSceneActive && log.moves.length > 0 && (
         <div
           className="mp-completion-backdrop"
           onClick={() => setLocalGameOverDismissed(true)}
@@ -6399,7 +7607,7 @@ function App() {
         </div>
       )}
 
-      {summaryOpen && lastGamePoints && gameOutcome && !mateSeqActive && (
+      {summaryOpen && lastGamePoints && gameOutcome && !endgameSceneActive && (
         <GameSummary
           points={lastGamePoints}
           outcome={gameOutcome}
@@ -6414,6 +7622,11 @@ function App() {
           playerName={displayName}
           durationMs={lastGameDurationMs ?? undefined}
           gameMode={gameMode}
+          uncountedReason={
+            botLevel !== 'strong'
+              ? `Played vs the ${BOT_STRENGTH_LABEL[botLevel]} bot. Only Strong-bot games are ranked.`
+              : undefined
+          }
           onClose={() => setSummaryOpen(false)}
           onPlayAgain={() => {
             setSummaryOpen(false);
@@ -6520,6 +7733,16 @@ function App() {
 
       {/* S2.2 — first-launch tour. Only meaningful over the live game
           screen; suppressed in replays, multiplayer, and sub-views. */}
+      {/* V1 — first visit: one screen, two doors, then (optionally) the
+          tour. Never for a shared-game link or the kiosk/auto modes. */}
+      {showWelcome && view === 'game' && !watchingGame && !sharedGameId && (
+        <WelcomeScreen
+          onStart={() => dismissWelcome(true)}
+          onSkip={() => dismissWelcome(false)}
+        />
+      )}
+
+
       {showTutorial && view === 'game' && !isMultiplayer && !watchingGame && (
         <TutorialOverlay onClose={closeTutorial} />
       )}
@@ -6541,10 +7764,17 @@ function App() {
 
       {/* R17b — the held-breath beat: a dim freeze before the cinematic. */}
       {victoryFreeze && <div className="victory-freeze" aria-hidden />}
-      {/* R6 — pixel victory cinematic on a come-from-behind win. */}
-      {victoryTheme && (
+      {/* V1 — the endgame cut: the losing king lifts off its square as
+          pixels and the win or the loss plays out around it. */}
+      {endgameCut && (
         <Suspense fallback={null}>
-          <VictoryScene theme={victoryTheme} onDone={() => setVictoryTheme(null)} />
+          <EndgameScene
+            kind={endgameCut.kind}
+            theme={endgameCut.theme}
+            king={endgameCut.king}
+            prelude={endgameCut.prelude}
+            onDone={() => setEndgameCut(null)}
+          />
         </Suspense>
       )}
 

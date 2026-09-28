@@ -53,12 +53,17 @@ export function parsePrivmsg(line: string): TwitchChatMessage | null {
   const m = rest.match(/^:(\w+)!\S+ PRIVMSG #\S+ :(.*)$/);
   if (!m) return null;
   const nick = m[1].toLowerCase();
+  // Tags are attacker-influenced strings that end up in the DOM (display
+  // name as text, color as an inline style). Clamp them to the shapes
+  // Twitch actually emits: a #rrggbb color and a short display name.
+  const color = /^#[0-9a-fA-F]{6}$/.test(tags['color'] ?? '') ? tags['color'] : '';
+  const displayName = (tags['display-name'] || nick).slice(0, 40);
   return {
     id: tags['id'] ?? `${nick}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     nick,
-    displayName: tags['display-name'] || nick,
-    color: tags['color'] || '',
-    text: m[2],
+    displayName,
+    color,
+    text: m[2].slice(0, 500),
     ts: Date.now(),
   };
 }

@@ -335,10 +335,11 @@ export function iterativeDeepen(
   timeBudgetMs: number,
   lastMoveWasRotation: boolean = false,
   allowSelfCheck: boolean = false,
+  maxDepth: number = 6,
 ): Move | null {
   return searchPosition(state, {
     budgetMs: timeBudgetMs,
-    maxDepth: 6,
+    maxDepth,
     lastMoveWasRotation,
     allowSelfCheck,
   }).bestMove;
