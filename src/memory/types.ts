@@ -6,7 +6,7 @@ export interface SavedGame {
   readonly config960: string;
   readonly status: 'incomplete' | 'complete';
   readonly result?: 'win' | 'loss' | 'draw';
-  readonly termination?: 'checkmate' | 'stalemate';
+  readonly termination?: 'checkmate' | 'stalemate' | 'resignation';
   readonly moveCount: number;
   readonly moves: readonly { move: Move; topology?: TopologyState }[];
   readonly movesInA: number;

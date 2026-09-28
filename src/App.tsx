@@ -170,7 +170,11 @@ type GameStatus =
   | 'king_captured_black_wins'
   // V1 — solo time control: the side that runs out of time loses.
   | 'timeout_white'
-  | 'timeout_black';
+  | 'timeout_black'
+  // QA-11 — the named side resigned. Its own status, so the banner, the
+  // winner and the endgame cut no longer read a resignation as a mate.
+  | 'resigned_white'
+  | 'resigned_black';
 
 type GameMode = 'classic' | 'roulette';
 
@@ -748,7 +752,9 @@ function App() {
     null,
   );
   const [gameOutcome, setGameOutcome] = useState<GameOutcome | null>(null);
-  const [confirmingResign, setConfirmingResign] = useState(false);
+  // QA-11 — WHO is resigning while the confirmation is up. In hot-seat
+  // either seat has a Resign button, so it is not always the side to move.
+  const [confirmingResign, setConfirmingResign] = useState<Color | null>(null);
   // Sprint 4.3.1 — pending opponent switch during an active local game.
   // When non-null the ConfirmDialog mounts; on confirm we discard the
   // local game state and start fresh in the requested mode.
@@ -1482,15 +1488,23 @@ function App() {
     if (savedForLogIdRef.current === log.id) return;
 
     const sourceId = liveSavedGameIdRef.current;
-    const termination: 'checkmate' | 'stalemate' =
-      gameStatus === 'checkmate'
+    const resigned = gameStatus === 'resigned_white' || gameStatus === 'resigned_black';
+    const termination: 'checkmate' | 'stalemate' | 'resignation' = resigned
+      ? 'resignation'
+      : gameStatus === 'checkmate'
         || gameStatus === 'king_captured_white_wins'
         || gameStatus === 'king_captured_black_wins'
         || gameStatus === 'timeout_white'
         || gameStatus === 'timeout_black'
         ? 'checkmate'
         : 'stalemate';
-    const saved = buildSavedGameFromLog(log, state, termination, sourceId);
+    const saved = buildSavedGameFromLog(
+      log,
+      state,
+      termination,
+      sourceId,
+      resigned ? (gameStatus === 'resigned_white' ? 'black' : 'white') : undefined,
+    );
     if (localStorageAdapter.saveOrUpdateGame) {
       localStorageAdapter.saveOrUpdateGame(saved);
     } else {
@@ -1966,20 +1980,26 @@ function App() {
     gameBackupRef.current = null;
   }
 
-  function requestResign() {
+  /** QA-11 — `side` is the seat whose Resign was pressed (hot-seat has
+   *  one per player). Solo it is always the human; online the match knows. */
+  function requestResign(side?: Color) {
     if (watchingGame) return;
     if (isMultiplayer) {
       if (!mpSync || mpSync.matchState.status !== 'active') return;
-      setConfirmingResign(true);
+      setConfirmingResign(mpSync.myColor);
       return;
     }
     if (gameStatus !== 'active') return;
     if (log.moves.length === 0) return;
-    setConfirmingResign(true);
+    // Solo, the bot's move is in flight: resigning now would race it (the
+    // move still landed afterwards). The button is disabled meanwhile.
+    if (botThinking) return;
+    setConfirmingResign(isLocalMode ? side ?? state.sideToMove : HUMAN_COLOR);
   }
 
   function confirmResign() {
-    setConfirmingResign(false);
+    const side = confirmingResign;
+    setConfirmingResign(null);
     // PvP resign: route through the match doc so the opponent sees the
     // status flip; their listener will mirror the outcome. Local engine
     // state stays untouched (gameStatus etc.).
@@ -1988,20 +2008,16 @@ function App() {
       void mpSync.resign();
       return;
     }
-    if (gameStatus !== 'active') return;
+    if (!side || gameStatus !== 'active' || botThinking) return;
+    if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
+    // Stamped before the status flips, so the completion effect skips it.
+    completedLogIdRef.current = log.id;
+    setGameStatus(side === 'white' ? 'resigned_white' : 'resigned_black');
     // R13/BUG-5 — hot-seat resign: either seat may press it, so a solo
     // "human-resign" record would blame the wrong player half the time.
     // Just end the game; the banner is the ending, nothing is saved.
-    if (isLocalMode) {
-      setGameOutcome('human-resign'); // blocks the completion effect
-      setGameStatus('checkmate');
-      completedLogIdRef.current = log.id;
-      return;
-    }
-    // Pre-set the outcome so the gameStatus-watching effect skips this one.
+    if (isLocalMode) return;
     setGameOutcome('human-resign');
-    setGameStatus('checkmate');
-    completedLogIdRef.current = log.id;
     void finishGame('human-resign');
   }
 
@@ -2531,15 +2547,22 @@ function App() {
     return { from: last.castleRookFrom, to: last.castleRookTo };
   }, [log.moves, lastMove]);
 
+  /** An ending found on the board never overwrites one already set: a
+   *  bot move can still be settling (its classification is awaited) when
+   *  the player resigns (QA-11). */
+  function endGameWith(status: Exclude<GameStatus, 'active'>) {
+    setGameStatus((prev) => (prev === 'active' ? status : prev));
+  }
+
   function checkKingCaptured(nextState: BoardState): boolean {
     const whiteKing = findKing(nextState, 'white');
     const blackKing = findKing(nextState, 'black');
     if (!whiteKing) {
-      setGameStatus('king_captured_black_wins');
+      endGameWith('king_captured_black_wins');
       return true;
     }
     if (!blackKing) {
-      setGameStatus('king_captured_white_wins');
+      endGameWith('king_captured_white_wins');
       return true;
     }
     return false;
@@ -2651,14 +2674,14 @@ function App() {
     // Classic mode: standard chess termination — checkmate, stalemate,
     // draw by repetition / 50-move / insufficient material.
     if (isCheckmate(nextState, lastMoveWasRotation)) {
-      setGameStatus('checkmate');
+      endGameWith('checkmate');
       return;
     }
     const draw = checkDrawConditions(nextState, lastMoveWasRotation);
-    if (draw === 'stalemate') setGameStatus('draw_stalemate');
-    else if (draw === 'insufficient_material') setGameStatus('draw_material');
-    else if (draw === 'threefold_repetition') setGameStatus('draw_repetition');
-    else if (draw === 'fifty_move_rule') setGameStatus('draw_50move');
+    if (draw === 'stalemate') endGameWith('draw_stalemate');
+    else if (draw === 'insufficient_material') endGameWith('draw_material');
+    else if (draw === 'threefold_repetition') endGameWith('draw_repetition');
+    else if (draw === 'fifty_move_rule') endGameWith('draw_50move');
   }
 
   function startNewGame() {
@@ -3192,6 +3215,9 @@ function App() {
       : state.sideToMove === 'white'
         ? 'human'
         : 'ai';
+  /** QA-11 — solo only: the bot's move is in flight. */
+  const botThinking =
+    !isMultiplayer && !isLocalMode && gameStatus === 'active' && currentPlayer === 'ai';
 
   // Sprint 2.5 — local AFK nag. Pointer / keyboard activity refreshes
   // the timestamp and clears any existing alert; if we're idle for 20s
@@ -4738,6 +4764,8 @@ function App() {
     if (gameStatus === 'king_captured_black_wins') return 'black';
     if (gameStatus === 'timeout_white') return 'black';
     if (gameStatus === 'timeout_black') return 'white';
+    if (gameStatus === 'resigned_white') return 'black';
+    if (gameStatus === 'resigned_black') return 'white';
     return null;
   }, [gameStatus, state.sideToMove]);
 
@@ -5348,6 +5376,12 @@ function App() {
     }
     if (gameStatus === 'timeout_black') {
       return 'Black ran out of time. White wins';
+    }
+    if (gameStatus === 'resigned_white') {
+      return 'White resigned. Black wins';
+    }
+    if (gameStatus === 'resigned_black') {
+      return 'Black resigned. White wins';
     }
     return null;
   }, [gameStatus, state.sideToMove]);
@@ -5977,7 +6011,7 @@ function App() {
           <button
             type="button"
             className="action-btn resign-btn"
-            onClick={requestResign}
+            onClick={() => requestResign('black')}
             disabled={log.moves.length === 0}
             aria-label="Resign (black)"
             title="Resign"
@@ -6736,8 +6770,8 @@ function App() {
             <button
               type="button"
               className="action-btn resign-btn"
-              onClick={requestResign}
-              disabled={!!watchingGame || gameStatus !== 'active' || log.moves.length === 0}
+              onClick={() => requestResign('white')}
+              disabled={!!watchingGame || gameStatus !== 'active' || log.moves.length === 0 || botThinking}
               aria-label="Resign"
             >
               <Icon icon={Flag} size="md" aria-hidden />
@@ -7444,7 +7478,7 @@ function App() {
           cancelLabel="Cancel"
           danger
           onConfirm={confirmResign}
-          onCancel={() => setConfirmingResign(false)}
+          onCancel={() => setConfirmingResign(null)}
         />
       )}
 
@@ -7670,7 +7704,7 @@ function App() {
             // The modal already explained the consequence — go straight to
             // the resign-confirmation dialog so the player can change their
             // mind without an extra click.
-            setConfirmingResign(true);
+            requestResign();
           }}
         />
       )}
@@ -7805,6 +7839,8 @@ function App() {
               }
               if (gameStatus === 'king_captured_white_wins') return 'white';
               if (gameStatus === 'king_captured_black_wins') return 'black';
+              if (gameStatus === 'resigned_white') return 'black';
+              if (gameStatus === 'resigned_black') return 'white';
               if (gameStatus.startsWith('draw')) return 'draw';
               return null;
             })()}
