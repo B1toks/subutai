@@ -2,6 +2,8 @@ import { isValidChess960Key } from '../engine';
 import type { GameStorage, SavedGame } from './types';
 
 const STORAGE_KEY = 'subutai-games';
+/** V1 — App's pointer to the Memory entry of the solo game in progress. */
+export const LIVE_SESSION_KEY = 'subutai_live_session';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -55,11 +57,13 @@ function loadRawGames(): SavedGame[] {
   }
 }
 
-/** QA-07 — the error screen's "Reset local data": Memory's games only.
+/** QA-07 — the error screen's "Reset local data": Memory's games, and the
+ *  pointer to the one in progress (it would point at nothing afterwards).
  *  Settings, the player's name and anything online are left alone. */
 export function clearMemoryStorage(): void {
   try {
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(LIVE_SESSION_KEY);
   } catch {
     /* private mode */
   }

@@ -77,8 +77,10 @@ check(
 const storage = await import('../src/memory/storage');
 store.set('subutai_theme', 'neon');
 store.set('subutai-games', JSON.stringify([good]));
+store.set('subutai_live_session', JSON.stringify({ gameId: 'good', savedAt: 1 }));
 (storage as { clearMemoryStorage?: () => void }).clearMemoryStorage?.();
 check('reset clears Memory', store.has('subutai-games'), false);
+check('reset clears the in-progress pointer', store.has('subutai_live_session'), false);
 check('reset leaves other keys', store.get('subutai_theme'), 'neon');
 
 console.log(failures ? `\n${failures} FAILED` : '\nALL PASS');

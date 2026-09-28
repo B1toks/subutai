@@ -100,7 +100,7 @@ import {
   updateMoveAnalysisAt,
 } from './recording/log';
 import { buildSavedGameFromLog, buildSavedGameSnapshot } from './memory/build';
-import { localStorageAdapter } from './memory/storage';
+import { LIVE_SESSION_KEY, localStorageAdapter } from './memory/storage';
 import { MemoryPanel } from './memory/MemoryPanel';
 import type { SavedGame } from './memory/types';
 import { NotationParseError } from './memory/notation';
@@ -365,8 +365,8 @@ function LocalTurnSlot({ side, toMove }: { side: 'white' | 'black'; toMove: 'whi
   );
 }
 
-/** V1 — pointer to the solo game in progress, for a new tab to resume. */
-const LIVE_SESSION_KEY = 'subutai_live_session';
+/** V1 — pointer to the solo game in progress, for a new tab to resume.
+ *  The key lives next to Memory's, whose entry it points at. */
 interface LiveSession {
   gameId: string;
   opponentMode: 'ai' | 'local';
