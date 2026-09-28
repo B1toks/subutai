@@ -14,7 +14,7 @@ import {
   findKing,
   findCheckingPieces,
 } from './engine/moves';
-import { applyRotationMove, applyPassMove, toggleTopology, computeBoardLayout, tilePixelCenter } from './engine/auxetic';
+import { applyRotationMove, applyPassMove, toggleTopology, computeBoardLayout, tilePixelCenter, promoteStrandedPawns, toTileFrame } from './engine/auxetic';
 import {
   SubutaiAgent,
   BOT_STRENGTHS,
@@ -107,6 +107,7 @@ import { NotationParseError, parseMemoryNotation } from './memory/notation';
 import { moveVoting, type VoteMode, type VoteRound, type GuessWinner } from './twitch/moveVoting';
 import { dockLayout, type DockState } from './ui/dockLayout';
 import { themeStore } from './ui/themeStore';
+import { busy } from './ui/busy';
 import { micEq } from './audio/micEqualizer';
 import { PerimeterEqualizer } from './components/PerimeterEqualizer';
 import { BackgroundWaveGrid } from './components/BackgroundWaveGrid';
@@ -322,6 +323,69 @@ function bumpEvalForMove(
 const BEAT_SLIDE_MS = 260;
 
 // S2.5 — mm:ss elapsed-time display for the per-side clocks.
+/**
+ * V1 — the hot-seat turn indicator, as part of a player's own row.
+ *
+ * Each player gets one, in the row of buttons in front of them (black's
+ * row is drawn upside down, so black reads theirs upright). It lights and
+ * says "Your move" for the side that is to play; the other one dims and
+ * names whose turn it is instead.
+ */
+function LocalTurnSlot({ side, toMove }: { side: 'white' | 'black'; toMove: 'white' | 'black' }) {
+  const mine = side === toMove;
+  return (
+    <span
+      className={`local-turn-slot is-${side}${mine ? ' is-to-move' : ''}`}
+      role="status"
+      aria-live={mine ? 'polite' : undefined}
+    >
+      <span className="local-turn-lamp" aria-hidden />
+      {mine ? 'Your move' : `${toMove === 'white' ? 'White' : 'Black'} to move`}
+    </span>
+  );
+}
+
+/** V1 — pointer to the solo game in progress, for a new tab to resume. */
+const LIVE_SESSION_KEY = 'subutai_live_session';
+interface LiveSession {
+  gameId: string;
+  opponentMode: 'ai' | 'local';
+  gameMode: string;
+  timed: boolean;
+  savedAt: number;
+}
+function writeLiveSession(s: LiveSession): void {
+  try {
+    localStorage.setItem(LIVE_SESSION_KEY, JSON.stringify(s));
+  } catch {
+    /* private mode — the tab just starts fresh */
+  }
+}
+function readLiveSession(): LiveSession | null {
+  try {
+    const raw = localStorage.getItem(LIVE_SESSION_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Partial<LiveSession>;
+    if (typeof v.gameId !== 'string' || typeof v.savedAt !== 'number') return null;
+    return {
+      gameId: v.gameId,
+      opponentMode: v.opponentMode === 'local' ? 'local' : 'ai',
+      gameMode: typeof v.gameMode === 'string' ? v.gameMode : 'classic',
+      timed: v.timed === true,
+      savedAt: v.savedAt,
+    };
+  } catch {
+    return null;
+  }
+}
+function clearLiveSession(): void {
+  try {
+    localStorage.removeItem(LIVE_SESSION_KEY);
+  } catch {
+    /* private mode */
+  }
+}
+
 /**
  * How big the board should be right now.
  *
@@ -884,24 +948,9 @@ function App() {
    * spinner first and clears it after the browser has had two frames plus a
    * short beat, which is long enough for the commit to land and short enough
    * that a fast machine sees a deliberate blink, not a stutter. */
-  const [busyLabel, setBusyLabel] = useState<string | null>(null);
-  const busyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const beginBusy = useCallback((label: string) => {
-    if (busyTimerRef.current) clearTimeout(busyTimerRef.current);
-    setBusyLabel(label);
-    // A plain timer, deliberately NOT requestAnimationFrame: rAF is paused
-    // in a hidden or throttled tab, and an overlay that waits for a frame
-    // that never comes would leave the app covered by a spinner forever —
-    // the exact "frozen site" this is meant to explain away. Timers keep
-    // firing (clamped, not stopped), so the overlay always clears itself.
-    busyTimerRef.current = setTimeout(() => {
-      setBusyLabel(null);
-      busyTimerRef.current = null;
-    }, 420);
-  }, []);
-  useEffect(() => () => {
-    if (busyTimerRef.current) clearTimeout(busyTimerRef.current);
-  }, []);
+  // V1 — the overlay itself lives in src/ui/busy.ts and is mounted next to
+  // <App/>, so it exists on every screen, not only the board.
+  const beginBusy = useCallback((label: string) => busy.begin(label), []);
 
   const [showMaterialPopup, setShowMaterialPopup] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -1117,33 +1166,31 @@ function App() {
   const [rotationDust, setRotationDust] = useState(false);
   // R17b — red vignette pulse when a REAL check lands (preview-induced
   // "checks" from the rotation eye are ignored).
-  const [checkVignette, setCheckVignette] = useState<'full' | 'damped' | null>(null);
+  const [checkVignette, setCheckVignette] = useState(false);
   /**
    * V1 — the loudness governor.
    *
-   * Captures, checks and the screen shake each look good once. Played
-   * back to back — an exchange, a check, a recapture — they stack into a
-   * board that is genuinely hard to read, which is the opposite of what
-   * an effect meant to draw the eye should do.
+   * Every heavy move still gets its full vocabulary — the shake, the
+   * strobe on a big capture, the red vignette on a check — because that
+   * is how the board says "that one hurt". What changes is the volume
+   * when they arrive back to back: an exchange, a check, a recapture used
+   * to stack three full-strength effects into a board nobody could read.
    *
-   * So every heavy effect registers itself here first. The first one in a
-   * window plays in full; anything landing on top of it is damped — no
-   * screen shake, no strobe, a weaker vignette — and once three or more
-   * pile up, the sequence is reported as a streak instead, which is the
-   * information the flashing was carrying anyway.
+   * So each effect registers here first and gets a level: the first in a
+   * window plays at 100%, the next at 60%, and anything after that at
+   * 40%. Quieter, never silent — the player still feels each one. The
+   * window resets once the board has been calm for FX_WINDOW_MS.
    */
   const fxRecentRef = useRef<number[]>([]);
-  const [fxStreak, setFxStreak] = useState(0);
-  const fxStreakTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const registerFx = useCallback((): 'full' | 'damped' => {
+  const [fxIntensity, setFxIntensity] = useState(1);
+  const registerFx = useCallback((): number => {
     const now = Date.now();
     const recent = fxRecentRef.current.filter((t) => now - t < FX_WINDOW_MS);
     recent.push(now);
     fxRecentRef.current = recent;
-    setFxStreak(recent.length >= 3 ? recent.length : 0);
-    if (fxStreakTimer.current) clearTimeout(fxStreakTimer.current);
-    fxStreakTimer.current = setTimeout(() => setFxStreak(0), FX_WINDOW_MS);
-    return recent.length >= 2 ? 'damped' : 'full';
+    const level = recent.length <= 1 ? 1 : recent.length === 2 ? 0.6 : 0.4;
+    setFxIntensity(level);
+    return level;
   }, []);
   // R17b — the storyboard's "зрив темпу": a dim freeze-frame beat before
   // the victory cinematic slams in.
@@ -1386,8 +1433,8 @@ function App() {
     };
     const fx = {
       check: () => {
-        setCheckVignette('full');
-        window.setTimeout(() => setCheckVignette(null), 900);
+        setCheckVignette(true);
+        window.setTimeout(() => setCheckVignette(false), 900);
       },
       strobe: (piece: 'queen' | 'rook' | 'bishop' | 'knight' = 'queen') => {
         setCaptureStrobe(piece);
@@ -1452,7 +1499,30 @@ function App() {
     } else {
       localStorageAdapter.saveGame(snapshot);
     }
-  }, [gameStatus, log, isMultiplayer]);
+    // V1 — and a pointer saying "this is the game in progress", with the
+    // settings a Memory entry does not carry. Resuming a hot-seat game as
+    // a bot game would hand black's moves to the engine.
+    writeLiveSession({
+      gameId: liveId,
+      opponentMode: opponentMode === 'local' ? 'local' : 'ai',
+      gameMode,
+      timed: soloTcSec !== null,
+      savedAt: Date.now(),
+    });
+  }, [gameStatus, log, isMultiplayer, opponentMode, gameMode, soloTcSec]);
+
+  // The pointer only means anything while that game is still going. It
+  // goes when the game ends — and when a FRESH board replaces it (new game,
+  // new position, a replay), or a reload would bring back the game that was
+  // just abandoned. Not on the first render, though: that is the empty board
+  // every page load starts with, and the resume below has not read the
+  // pointer yet.
+  const mountLogIdRef = useRef(log.id);
+  useEffect(() => {
+    if (isMultiplayer) return;
+    const freshBoardReplacedIt = log.moves.length === 0 && log.id !== mountLogIdRef.current;
+    if (gameStatus !== 'active' || freshBoardReplacedIt) clearLiveSession();
+  }, [gameStatus, log.id, log.moves.length, isMultiplayer]);
 
   // Game-completion pipeline: detects terminal gameStatus transitions, computes
   // points, opens the GameSummary modal, and kicks the async Firestore save.
@@ -2426,6 +2496,19 @@ function App() {
 
   const tileBase = boardSize / 8;
 
+  /** V1 — the rook's half of the last castle, so it glides like the king
+   *  does instead of jumping. Null unless the latest move was a castle
+   *  whose rook actually changed square (in Chess960 it may not). */
+  const castleRookSlide = useMemo(() => {
+    const last = log.moves[log.moves.length - 1]?.move;
+    if (!last || last.kind !== 'castle' || !last.castleRookFrom || !last.castleRookTo) {
+      return null;
+    }
+    if (last.castleRookFrom === last.castleRookTo) return null;
+    if (!lastMove || lastMove.to !== last.to) return null; // stale log vs board
+    return { from: last.castleRookFrom, to: last.castleRookTo };
+  }, [log.moves, lastMove]);
+
   function checkKingCaptured(nextState: BoardState): boolean {
     const whiteKing = findKing(nextState, 'white');
     const blackKing = findKing(nextState, 'black');
@@ -2727,6 +2810,11 @@ function App() {
   }, [mpSync?.matchState.code]);
   useEffect(() => {
     if (!mpClocks || !mpSync || flagFiredRef.current) return;
+    // Only a COUNTDOWN can run out. Since untimed matches got an elapsed
+    // clock (V1), mpClocks exists in every match — and an elapsed clock
+    // starts at 0, which the lines below read as "your flag fell". Every
+    // untimed match resigned itself the instant it started.
+    if (!mpClocks.countdown) return;
     if (mpSync.matchState.status !== 'active') return;
     const mine = mpSync.myColor === 'white' ? mpClocks.white : mpClocks.black;
     if (mine <= 0) {
@@ -2827,8 +2915,14 @@ function App() {
   }
 
   function applyOpponentChange(next: 'ai' | 'friend' | 'local') {
+    if (next === 'friend') {
+      busy.navigate('Opening the lobby', () => {
+        setOpponentMode(next);
+        setView('friend-lobby');
+      });
+      return;
+    }
     setOpponentMode(next);
-    if (next === 'friend') setView('friend-lobby');
   }
 
   function handleRotate() {
@@ -2960,7 +3054,12 @@ function App() {
   // from this device, so the engine should never schedule an AI turn.
   // Cached here so the AI scheduler, classifier, and downstream UI
   // can short-circuit on a single flag.
-  const isLocalMode = opponentMode === 'local' && !isMultiplayer;
+  // V1 — a replay is nobody's hot-seat game. Without `!watchingGame`, a
+  // replay started while "Local" was selected rendered the mirrored top
+  // controls and flipped the board for "black's turn" in someone else's
+  // game. The opponent choice is kept, so stopping the replay brings the
+  // hot-seat UI straight back.
+  const isLocalMode = opponentMode === 'local' && !isMultiplayer && !watchingGame;
 
   // V1 — solo time control flag-fall. When a side's remaining time hits
   // zero the game ends as a loss on time for that side, exactly like a
@@ -3002,6 +3101,54 @@ function App() {
   // (b) lock the opponent / mode toggles so a misclick can't reset
   // mid-game state.
   const gameInProgress = log.moves.length > 0 && gameStatus === 'active';
+
+  /**
+   * V1 — one guard for everything that can take you out of a game.
+   *
+   * Each destructive control used to decide for itself whether to ask
+   * first: switching opponent asked, "New game" did not, loading a replay
+   * or a Chess960 code or a saved game from Memory did not — each of
+   * those silently threw the game in progress away. And in an online
+   * match nothing asked at all, although walking off to the leaderboard
+   * leaves your clock running and the inactivity watchdog armed.
+   *
+   * `destroys` separates the two cases: actions that REPLACE the board
+   * (always worth a question mid-game) from navigation that merely leaves
+   * the board view (harmless solo, where the game waits for you, but not
+   * online, where it does not).
+   */
+  const [pendingLeave, setPendingLeave] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    run: () => void;
+  } | null>(null);
+  const guardLeave = (what: string, destroys: boolean, run: () => void) => {
+    if (watchingGame) {
+      run();
+      return;
+    }
+    if (isMultiplayer && mpMatchLive) {
+      setPendingLeave({
+        title: 'Leave the live match?',
+        message:
+          'The match keeps running while you are away: your clock keeps ticking, and a long absence is forfeited for inactivity.',
+        confirmLabel: what,
+        run,
+      });
+      return;
+    }
+    if (destroys && gameInProgress) {
+      setPendingLeave({
+        title: 'End the current game?',
+        message: `${what} replaces the game in progress. It will not be saved as finished.`,
+        confirmLabel: what,
+        run,
+      });
+      return;
+    }
+    run();
+  };
   const currentPlayer = isMultiplayer
     ? mpSync!.isMyTurn
       ? 'human'
@@ -3764,12 +3911,9 @@ function App() {
     if (!last) return;
     const mv = last.move;
     if (mv.kind !== 'capture' || !mv.to) return;
-    const loudness = registerFx();
-    // The spark on the captured square always plays: it is local, it says
-    // WHERE, and it never moves the board. Only the whole-screen parts
-    // stand down.
+    registerFx();
     setCaptureFxSquare(mv.to as SquareId);
-    if (loudness === 'full') setCaptureShake(true);
+    setCaptureShake(true);
     const t1 = setTimeout(() => setCaptureFxSquare(null), 620);
     const t2 = setTimeout(() => setCaptureShake(false), 300);
     // R17c/M.22 — strobe frames on any non-pawn capture. Pawns keep just
@@ -3779,7 +3923,6 @@ function App() {
     const victim = prevBoardRef.current?.pieces[mv.to as SquareId];
     let t3: ReturnType<typeof setTimeout> | null = null;
     if (
-      loudness === 'full' &&
       victim &&
       (victim.type === 'queen' ||
         victim.type === 'rook' ||
@@ -3803,8 +3946,27 @@ function App() {
     const last = log.moves[log.moves.length - 1];
     if (!last || last.move.kind !== 'topologyToggle') return;
     setRotationDust(true);
+    // V1 — a rotation can promote a pawn it swings onto the far row (see
+    // promoteStrandedPawns). The piece changes without anyone moving it,
+    // so say so — otherwise a queen simply appears where a pawn was.
+    const before = prevBoardRef.current;
+    if (before) {
+      const { promoted } = promoteStrandedPawns(before.pieces, state.topologyState);
+      if (promoted.length > 0) {
+        toast.show(
+          promoted.length === 1
+            ? `The rotation carried the pawn on ${promoted[0]} to the edge — it's a queen now.`
+            : `The rotation carried ${promoted.length} pawns to the edge — they're queens now.`,
+          'info',
+          4200,
+        );
+      }
+    }
     const t = setTimeout(() => setRotationDust(false), 780);
     return () => clearTimeout(t);
+    // `state` is read for the topology the rotation just produced; the
+    // effect keys off the move count exactly as before.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [log.moves.length]);
 
   // R17c — snapshot advance. MUST stay declared after the two effects
@@ -3867,8 +4029,9 @@ function App() {
     const was = prevCheckKingRef.current;
     prevCheckKingRef.current = king;
     if (!king || was) return;
-    setCheckVignette(registerFx());
-    const t = setTimeout(() => setCheckVignette(null), 900);
+    registerFx();
+    setCheckVignette(true);
+    const t = setTimeout(() => setCheckVignette(false), 900);
     return () => clearTimeout(t);
   }, [checkSquares.king, previewTopology, registerFx]);
 
@@ -4855,14 +5018,18 @@ function App() {
 
     for (const entry of game.moves) {
       const mv = entry.move;
+      // V1 — SAN is computed from the position BEFORE the move, exactly as
+      // a live move records it. Without it a resumed game's move list lost
+      // its piece letters ("Na8→b6" came back as "a8→b6").
+      const san = computeSAN(current, mv);
       if (mv.kind === 'topologyToggle') {
         current = applyRotationMove(current);
-        nextLog = appendMove(nextLog, mv, undefined, entry.topology);
+        nextLog = appendMove(nextLog, mv, san, entry.topology);
         continue;
       }
       if (!mv.from || !mv.to) continue;
       current = applyMove(current, mv);
-      nextLog = appendMove(nextLog, mv, undefined, entry.topology);
+      nextLog = appendMove(nextLog, mv, san, entry.topology);
     }
 
     if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
@@ -4885,6 +5052,42 @@ function App() {
   // Keep the ref pointing at the latest resumeGame closure so the stable
   // onMemoryGameActivate callback always invokes the fresh state-bound copy.
   resumeGameRef.current = resumeGame;
+
+  /**
+   * V1 — a new tab opens on the game you are already playing.
+   *
+   * Online this already worked (R13b re-seats you from subutai_mp_active).
+   * Solo, every tab started a fresh board, although the game in progress
+   * was sitting in Memory, snapshotted on every move. Now the tab picks it
+   * up — only if it was touched in the last day, and only a CLASSIC game
+   * WITHOUT a clock:
+   *   · roulette carries turn state a move list cannot rebuild (the spun
+   *     slots, the actions left), so it waits in Memory instead;
+   *   · a timed game would come back with both clocks at zero — in a
+   *     ranked game against Strong that is "refresh for more time".
+   */
+  const liveResumeTriedRef = useRef(false);
+  useEffect(() => {
+    if (liveResumeTriedRef.current) return;
+    liveResumeTriedRef.current = true;
+    if (isAutoMode || sharedGameId || mpResumeCodeRef.current) return;
+    const session = readLiveSession();
+    if (!session) return;
+    if (session.gameMode !== 'classic' || session.timed) return;
+    if (Date.now() - session.savedAt > 24 * 60 * 60 * 1000) {
+      clearLiveSession();
+      return;
+    }
+    void localStorageAdapter.loadGames().then((games) => {
+      const game = games.find((g) => g.id === session.gameId && g.status === 'incomplete');
+      if (!game || game.moves.length === 0) return;
+      beginBusy('Picking up your game');
+      setOpponentMode(session.opponentMode);
+      resumeGameRef.current(game);
+    });
+    // Once, on the first render that has everything it needs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function importReplayFromNotation() {
     try {
@@ -5201,28 +5404,29 @@ function App() {
           log={activeReviewLog ?? liveReviewLog}
           meta={activeReviewMeta ?? undefined}
           gameId={sharedGameId ?? lastGameId ?? null}
-          onBack={() => {
+          onBack={() =>
             // V1 — leaving the review rebuilds the whole board view in one
             // commit: the board, 64 tiles, the panels and whatever
             // analysis was mid-flight. On a long game that is a few
-            // hundred milliseconds during which the tab simply stops
-            // repainting, which reads as a hang with no explanation.
-            // Paint the spinner first, same as restoring a saved game.
-            beginBusy('Leaving review');
-            setView('game');
-            // Drop the snapshot so the next plain Review opens the live log.
-            setActiveReviewLog(null);
-            setActiveReviewMeta(null);
-            // Strip ?game= so a refresh won't re-open the shared review.
-            if (
-              typeof window !== 'undefined' &&
-              new URLSearchParams(window.location.search).get('game')
-            ) {
-              const url = new URL(window.location.href);
-              url.searchParams.delete('game');
-              window.history.replaceState(null, '', url.toString());
-            }
-          }}
+            // hundred milliseconds during which the tab stops repainting,
+            // which reads as a hang with no explanation. busy.navigate
+            // paints the spinner FIRST and runs the switch after.
+            busy.navigate('Back to the board', () => {
+              setView('game');
+              // Drop the snapshot so the next plain Review opens the live log.
+              setActiveReviewLog(null);
+              setActiveReviewMeta(null);
+              // Strip ?game= so a refresh won't re-open the shared review.
+              if (
+                typeof window !== 'undefined' &&
+                new URLSearchParams(window.location.search).get('game')
+              ) {
+                const url = new URL(window.location.href);
+                url.searchParams.delete('game');
+                window.history.replaceState(null, '', url.toString());
+              }
+            })
+          }
         />
         </Suspense>
       </div>
@@ -5236,7 +5440,7 @@ function App() {
         <Leaderboard
           currentUid={user?.uid ?? null}
           watchDisabled={isMultiplayer}
-          onBack={() => setView('game')}
+          onBack={() => busy.navigate('Back to the board', () => setView('game'))}
           onWatchGame={(gameId, playerName) => {
             void startWatching(gameId, playerName);
           }}
@@ -5253,10 +5457,12 @@ function App() {
         <FriendLobby
           uid={user?.uid ?? null}
           displayName={displayName}
-          onBack={() => {
-            setView('game');
-            setOpponentMode('ai');
-          }}
+          onBack={() =>
+            busy.navigate('Back to the board', () => {
+              setView('game');
+              setOpponentMode('ai');
+            })
+          }
           onMatchReady={(match) => {
             // Q.B.2: hand the live match over to the regular game view.
             // The board / log / header all reuse the single-player UI,
@@ -5343,6 +5549,19 @@ function App() {
         aria-hidden
       />
       <header className="app-header">
+        {/* V1 — the left drawer opens from the LEFT edge of the header, the
+            right one from the right: each button sits on the side its
+            panel comes in from. */}
+        <button
+          type="button"
+          className="mobile-panel-btn mobile-panel-btn-menu"
+          data-tour="mobile-menu"
+          onClick={() => setMobilePanel((v) => (v === 'menu' ? 'none' : 'menu'))}
+          aria-expanded={mobilePanel === 'menu'}
+          aria-label="Tools and settings"
+        >
+          <Icon icon={Menu} size="md" aria-hidden />
+        </button>
         <div className="app-brand">
           <NeonLogo />
           <h1>subutai</h1>
@@ -5403,15 +5622,7 @@ function App() {
           <button
             type="button"
             className="mobile-panel-btn"
-            onClick={() => setMobilePanel((v) => (v === 'menu' ? 'none' : 'menu'))}
-            aria-expanded={mobilePanel === 'menu'}
-            aria-label="Tools and settings"
-          >
-            <Icon icon={Menu} size="md" aria-hidden />
-          </button>
-          <button
-            type="button"
-            className="mobile-panel-btn"
+            data-tour="mobile-setup"
             onClick={() => setMobilePanel((v) => (v === 'setup' ? 'none' : 'setup'))}
             aria-expanded={mobilePanel === 'setup'}
             aria-label="Game setup"
@@ -5486,7 +5697,11 @@ function App() {
           <button
             type="button"
             className="topbar-btn"
-            onClick={() => setView('leaderboard')}
+            onClick={() =>
+              guardLeave('Open leaderboard', false, () =>
+                busy.navigate('Opening leaderboard', () => setView('leaderboard')),
+              )
+            }
             aria-label="Leaderboard"
             title="Leaderboard"
           >
@@ -5594,20 +5809,11 @@ function App() {
         <div className="mp-banner mp-banner-error">{mpSync.error}</div>
       )}
 
-      {/* Sprint 4.1 — local hot-seat turn banner. Hands off cleanly
-          between the two players sharing the device; the colour
-          chip mirrors the active side so the next-to-move player
-          can pick up immediately. */}
-      {isLocalMode && gameStatus === 'active' && (
-        <div className="local-turn-banner">
-          <span className={`local-turn-chip local-turn-chip-${state.sideToMove}`} aria-hidden />
-          <span className="local-turn-color">
-            {state.sideToMove === 'white' ? 'White' : 'Black'}
-          </span>
-          <span className="local-turn-suffix">to move</span>
-        </div>
-      )}
-
+      {/* Sprint 4.1 / V1 — the hot-seat turn banner that used to float
+          above the board now lives INSIDE each player's own button row
+          (see LocalTurnSlot), so "whose move" reads as part of the
+          controls in front of you rather than a notice pinned over both
+          of them. */}
       <div className="app-body">
       <div className="board-area">
       {/* S2.5 — per-side clocks. Elapsed time normally; in a timed MP
@@ -5727,6 +5933,7 @@ function App() {
           game (resign / preview rotation / commit rotation). */}
       {isLocalMode && gameStatus === 'active' && (
         <div className="local-actions local-actions-top" aria-hidden={state.sideToMove !== 'black'}>
+          <LocalTurnSlot side="black" toMove={state.sideToMove} />
           <button
             type="button"
             className="action-btn resign-btn"
@@ -5777,7 +5984,7 @@ function App() {
         />
       <div
         className={`board-with-coords${showAfkAlert && currentPlayer === 'human' && gameStatus === 'active' ? ' is-afk-nudge' : ''}${captureShake ? ' is-capture-shake' : ''}`}
-        style={{ width: boardSize }}
+        style={{ width: boardSize, '--fx-intensity': fxIntensity } as React.CSSProperties}
         data-tour="board"
       >
       {/* SP — mic-driven spectrum ring; mounts only while the
@@ -5874,25 +6081,40 @@ function App() {
           // on the origin tile) so App can animate the glyph's rotation in
           // sync with the wrapper's translate. null when not sliding.
           let slideRotFromAngle: number | null = null;
-          if (
-            piece &&
-            gameMode === 'classic' &&
-            lastMove?.to === sq &&
-            lastMove.from &&
-            lastMove.from !== lastMove.to
-          ) {
-            const fromTile = tilePixelCenter(lastMove.from, displayTopology, layout);
+          // V1 — where this tile's piece should glide in from, if anywhere.
+          // Two gaps used to make pieces teleport:
+          //   · the slide was gated on `gameMode === 'classic'`, so EVERY
+          //     roulette move — both of the bot's sub-moves included — just
+          //     appeared on its new square;
+          //   · a castle only animated the king; the rook jumped.
+          const slideFrom: SquareId | null =
+            lastMove?.to === sq && lastMove.from && lastMove.from !== lastMove.to
+              ? lastMove.from
+              : castleRookSlide?.to === sq
+                ? castleRookSlide.from
+                : null;
+          if (piece && slideFrom) {
+            const fromTile = tilePixelCenter(slideFrom, displayTopology, layout);
             const fromCxView = flip ? boardSize - fromTile.cx : fromTile.cx;
             const fromCyView = flip ? boardSize - fromTile.cy : fromTile.cy;
-            slideDx = fromCxView - cxView;
-            slideDy = fromCyView - cyView;
+            const viewDx = fromCxView - cxView;
+            const viewDy = fromCyView - cyView;
+            // V1 — the offset is applied INSIDE the tile, and in topology B
+            // every tile is rotated ±90° and scaled. A board-space offset
+            // used as-is came out rotated by the tile's own angle, so a
+            // piece glided in from the side instead of from the square it
+            // left — which reads as a jump, not a move. Express it in the
+            // tile's own frame instead.
+            const local = toTileFrame(viewDx, viewDy, angle, scale);
+            slideDx = local.x;
+            slideDy = local.y;
             isSliding = true;
             slideRotFromAngle = fromTile.angle;
             // M.20 — scale duration with travel distance: a one-square hop
             // stays snappy, a board-spanning glide gets a touch more time
             // to read as a real "flight" rather than a blur. Narrow band
             // (220-330ms) so it never reads as sluggish.
-            const dist = Math.hypot(slideDx, slideDy);
+            const dist = Math.hypot(viewDx, viewDy);
             slideMs = Math.round(
               Math.min(330, Math.max(220, 220 + (dist / (tileBase * 7)) * 110)),
             );
@@ -6304,21 +6526,17 @@ function App() {
         })()}
         {checkVignette && (
           <div
-            className={`check-vignette${checkVignette === 'damped' ? ' is-damped' : ''}`}
+            className="check-vignette"
+            style={{ '--fx-intensity': fxIntensity } as React.CSSProperties}
             aria-hidden
           />
         )}
-        {/* V1 — what the flashing was saying, said once. Appears only
-            when three or more heavy moves land inside the window, and it
-            is the only thing on screen at that point that moves. */}
-        {fxStreak >= 3 && (
-          <div className="fx-streak" aria-live="polite">
-            <span className="fx-streak-count">×{fxStreak}</span>
-            <span className="fx-streak-label">exchange</span>
-          </div>
-        )}
         {captureStrobe && (
-          <div className={`capture-strobe is-${captureStrobe}`} aria-hidden />
+          <div
+            className={`capture-strobe is-${captureStrobe}`}
+            style={{ '--fx-intensity': fxIntensity } as React.CSSProperties}
+            aria-hidden
+          />
         )}
         {rotationDust && <div className="rotation-dust" aria-hidden />}
         {irisKingPos && mateSeqActive && (
@@ -6442,6 +6660,9 @@ function App() {
       )}
 
       <div className="board-actions">
+        {isLocalMode && gameStatus === 'active' && (
+          <LocalTurnSlot side="white" toMove={state.sideToMove} />
+        )}
         {/* Sprint 3.2.1 \u2014 six icon buttons consolidated into one
             cohesive bar with a single divider between the meta-controls
             (Reset / Lock / Resign) and the in-game toggles (Support /
@@ -6452,7 +6673,7 @@ function App() {
             <button
               type="button"
               className="action-btn"
-              onClick={startNewGame}
+              onClick={() => guardLeave('Start a new game', true, startNewGame)}
               aria-label="New game"
             >
               <Icon icon={RotateCw} size="md" aria-hidden />
@@ -6724,10 +6945,12 @@ function App() {
         <button
           type="button"
           className="position-replay-btn"
-          onClick={() => {
-            setReplayError(null);
-            setShowReplayDialog(true);
-          }}
+          onClick={() =>
+            guardLeave('Load a replay', true, () => {
+              setReplayError(null);
+              setShowReplayDialog(true);
+            })
+          }
           title="Paste a move log to replay a game"
         >
           <Icon icon={Upload} size={12} aria-hidden /> Load replay
@@ -6771,10 +6994,12 @@ function App() {
           <button
             type="button"
             className="position-code"
-            onClick={() => {
-              setFormationInputValue(positionLabel);
-              setFormationInputMode(true);
-            }}
+            onClick={() =>
+              guardLeave('Set a new position', true, () => {
+                setFormationInputValue(positionLabel);
+                setFormationInputMode(true);
+              })
+            }
             title="Click to start from a specific Chess960 position"
           >
             <span className="position-label-key">960</span>
@@ -6785,8 +7010,21 @@ function App() {
       </div>
       </div>
       <aside className="right-sidebar">
-        <section className="sidebar-panel sidebar-opponent">
+        {/* V1 — while a replay is playing, the whole setup panel is inert.
+            Its controls used to stay live, so picking "Local" mid-replay
+            mounted the hot-seat UI on top of someone else's game and let
+            it rotate. Nothing in here means anything until the replay is
+            stopped, so nothing in here can be pressed. */}
+        <section
+          className={`sidebar-panel sidebar-opponent${watchingGame ? ' is-inert' : ''}`}
+          inert={watchingGame ? true : undefined}
+        >
           <h2 className="sidebar-panel-title">Game setup</h2>
+          {watchingGame && (
+            <p className="setup-inert-note">
+              Replay in progress. Stop it to change the game setup.
+            </p>
+          )}
           <h3 className="setup-sub-label">Opponent</h3>
           {/* Sprint 4.3.1 — when a local game is in progress, lock all
               non-local opponent tabs behind a confirm dialog so a stray
@@ -7026,7 +7264,7 @@ function App() {
           <button
             type="button"
             className="panel-action-btn"
-            onClick={() => setView('review')}
+            onClick={() => busy.navigate('Opening review', () => setView('review'))}
             disabled={log.moves.length === 0 || isMultiplayer}
             title={isMultiplayer ? 'Review opens from the end-of-match screen' : undefined}
           >
@@ -7121,7 +7359,11 @@ function App() {
       </footer>
 
       {!isMultiplayer && (
-        <MemoryPanel onGameActivate={onMemoryGameActivate} />
+        <MemoryPanel
+          onGameActivate={(g) =>
+            guardLeave('Open this saved game', true, () => onMemoryGameActivate(g))
+          }
+        />
       )}
 
       {/* The name prompt waits its turn behind BOTH the welcome screen and
@@ -7163,6 +7405,22 @@ function App() {
           danger
           onConfirm={confirmResign}
           onCancel={() => setConfirmingResign(false)}
+        />
+      )}
+
+      {pendingLeave && (
+        <ConfirmDialog
+          title={pendingLeave.title}
+          message={pendingLeave.message}
+          confirmLabel={pendingLeave.confirmLabel}
+          cancelLabel="Keep playing"
+          danger
+          onConfirm={() => {
+            const go = pendingLeave.run;
+            setPendingLeave(null);
+            go();
+          }}
+          onCancel={() => setPendingLeave(null)}
         />
       )}
 
@@ -7211,32 +7469,42 @@ function App() {
                 ? 'Match drawn.'
                 : `${mpEndOutcome === 'white-win' ? 'White' : 'Black'} wins by checkmate.`;
         function dismiss() {
-          setMpEndOutcome(null);
-          setActiveMatch(null);
-          setOpponentMode('ai');
-          setView('game');
+          busy.navigate('Back to the board', () => {
+            setMpEndOutcome(null);
+            setActiveMatch(null);
+            setOpponentMode('ai');
+            setView('game');
+          });
         }
         function backToLobby() {
-          setMpEndOutcome(null);
-          setActiveMatch(null);
-          mpSavedGameIdRef.current = null;
-          mpWroteOutcomeRef.current = null;
-          setView('friend-lobby');
+          busy.navigate('Opening the lobby', () => {
+            setMpEndOutcome(null);
+            setActiveMatch(null);
+            mpSavedGameIdRef.current = null;
+            mpWroteOutcomeRef.current = null;
+            setView('friend-lobby');
+          });
         }
         function reviewMatch() {
           if (!mpSync) return;
           // Snapshot the match log so leaving the live match doesn't pull
           // the data out from under the review screen. classifyAsync will
           // populate per-move analysis on the fly inside GameReview.
-          setActiveReviewLog(deriveMpLog(mpSync.matchState));
-          setActiveReviewMeta({
+          // Snapshot NOW, before the deferred switch: the live match is
+          // torn down inside it.
+          const snapshot = deriveMpLog(mpSync.matchState);
+          const meta = {
             playerName: displayName ?? 'You',
             opponentName: mpSync.opponentDisplayName,
             outcome: myView,
+          };
+          busy.navigate('Opening review', () => {
+            setActiveReviewLog(snapshot);
+            setActiveReviewMeta(meta);
+            setMpEndOutcome(null);
+            setActiveMatch(null);
+            setView('review');
           });
-          setMpEndOutcome(null);
-          setActiveMatch(null);
-          setView('review');
         }
         return (
           <div className="mp-completion-backdrop" onClick={dismiss}>
@@ -7451,14 +7719,6 @@ function App() {
         />
       )}
 
-      {busyLabel && (
-        <div className="busy-overlay" role="status" aria-live="polite">
-          <div className="busy-card">
-            <span className="spinner" aria-hidden />
-            <span className="busy-label">{busyLabel}…</span>
-          </div>
-        </div>
-      )}
 
       {showTutorial && view === 'game' && !isMultiplayer && !watchingGame && (
         <TutorialOverlay onClose={closeTutorial} />

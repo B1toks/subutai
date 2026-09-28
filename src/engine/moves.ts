@@ -489,24 +489,31 @@ export function generateLegalMoves(
 }
 
 /**
- * A pawn promotes on the far rank. Only there.
+ * A pawn promotes on the row it can SEE is the far one: the edge of the
+ * board as the current topology draws it.
  *
- * This used to be topological — "no square in front of me, so the journey
- * is over" — which is a tempting reading of a board that folds, and it is
- * wrong. In topology B the squares a7, d7, e7 and h7 have no forward
- * neighbour (and a2/d2/e2/h2 for black), so a pawn that captured onto one
- * of them promoted on the SEVENTH rank. It did not deserve to: rotating
- * back to A gives that square its forward neighbour again, so a dead end
- * in B is a temporary fold, not the end of the board.
+ * "No square in front of me" is exactly that. Measured against the real
+ * display layout, the squares with no forward neighbour are precisely the
+ * visual top row in each topology — rank 8 in A, and in B the tiles the
+ * 2×2 rotation carries up there: a7, a8, d7, d8, e7, e8, h7 and h8. (For
+ * black: the visual bottom row, a1/a2/d1/d2/e1/e2/h1/h2 in B.)
  *
- * Topology A has no dead ends below rank 8 at all, so nothing can be
- * stranded either: a pawn with nowhere to go in B can capture, or wait
- * one rotation. The far rank is the far rank, whichever topology is
- * showing — which is also the only rule a player can read off the board.
+ * This rule went through two wrong turns before landing back here, and
+ * both are worth remembering:
+ *   · "rank 8 OR no square in front" promoted a pawn on b8 in B, which B
+ *     draws on the SEVENTH row — a promotion the player saw happen a row
+ *     short of the edge.
+ *   · "rank 8 only" left a pawn on e7 in B, which B draws on the TOP row,
+ *     sitting at the edge as a pawn.
+ * The label on a square is not where the player sees it. The layout is.
+ *
+ * The one case a move-time rule cannot cover — a ROTATION that swings a
+ * pawn onto the far row without it moving — is handled where rotations
+ * are applied (applyRotationMove promotes it on the spot).
  */
-function isPromotionRank(square: SquareId, color: Color, _topology: TopologyState): boolean {
-  const rank = Number(square[1]);
-  return color === 'white' ? rank === 8 : rank === 1;
+function isPromotionRank(square: SquareId, color: Color, topology: TopologyState): boolean {
+  const direction = color === 'white' ? 1 : -1;
+  return stepInDirection(square, 0, direction, topology) === null;
 }
 
 const PROMOTION_PIECES: readonly ('queen' | 'rook' | 'bishop' | 'knight')[] =

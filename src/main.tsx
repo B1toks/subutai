@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { ToastProvider } from './components/Toast'
+import { BusyOverlay } from './components/BusyOverlay'
 
 // Sprint 4.4 — kiosk view is code-split: regular players never pay for it.
 const ShowcaseView = lazy(() =>
@@ -59,6 +60,8 @@ root.render(
     ) : (
       <ToastProvider>
         <App />
+        {/* V1 — outside App's view tree, so it exists on every screen. */}
+        <BusyOverlay />
       </ToastProvider>
     )}
   </StrictMode>,

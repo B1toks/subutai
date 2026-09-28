@@ -11,6 +11,7 @@ import {
   applyRotationMove,
   computeBoardLayout,
   tilePixelCenter,
+  toTileFrame,
 } from '../engine/auxetic';
 import { allSquares } from '../engine/board';
 import type { BoardState, Color, SquareId } from '../engine/types';
@@ -109,6 +110,32 @@ interface TurningPoint {
 const CPL_CAP = 1200;
 const MATE_SCALE_CPL = 50_000;
 
+/**
+ * V1 — losses in words a player already has.
+ *
+ * "412 cp" means nothing to someone who has never read an engine's
+ * output, and a rating is the wrong analogy (it grades the player, and
+ * people take it personally). Every chess player does, however, know what
+ * a pawn, a knight, a rook and a queen are worth — so that is the scale:
+ * the number becomes pawns, and a big loss gets the piece it amounts to.
+ * 100 centipawns is one pawn by definition, so nothing is approximated
+ * beyond rounding.
+ */
+function pawns(cp: number): string {
+  const v = cp / 100;
+  return v >= 10 ? v.toFixed(0) : v.toFixed(1);
+}
+
+function lossInPieces(cp: number): string {
+  if (cp < 50) return 'a sliver';
+  if (cp < 150) return 'about a pawn';
+  if (cp < 250) return 'about two pawns';
+  if (cp < 400) return 'a knight or a bishop';
+  if (cp < 650) return 'about a rook';
+  if (cp < 1100) return 'about a queen';
+  return 'more than a queen';
+}
+
 /** V1 (data plan §5.1/5.2) — the human move that cost the most. R15 data:
  *  25% of first blunders come straight after the player's OWN rotation,
  *  so that case gets called out explicitly. */
@@ -161,7 +188,69 @@ export interface KeyMoment {
   line: string;
   better: string | null;
   note: string | null;
+  /** A short remark in Subutai's own voice. */
+  comment: string;
 }
+
+/**
+ * V1 — what Subutai says about a moment.
+ *
+ * The facts in a key-moment card are right but they read like a report.
+ * A line in a voice turns it into a conversation about the game: praise
+ * when it was earned, a nudge when it was not, and never a lecture. Each
+ * context has several so a long game does not repeat itself.
+ *
+ * Picked by move index, not at random, so the same review always says the
+ * same thing — a comment that changes on every re-render reads as noise.
+ */
+type CommentContext =
+  | 'brilliant'
+  | 'best'
+  | 'mistake'
+  | 'blunder'
+  | 'mate'
+  | 'turning'
+  | 'rotation';
+
+const SUBUTAI_SAYS: Record<CommentContext, readonly string[]> = {
+  brilliant: [
+    'Now that is chess. The engine had to look twice.',
+    'Bold, and right. Keep playing like this.',
+    'A sacrifice that actually holds up. Beautiful.',
+  ],
+  best: [
+    'Exactly what the engine would have played. Well done.',
+    'Clean and precise — the top move.',
+    'You found it. Trust that instinct.',
+  ],
+  mistake: [
+    'Close, but there was something better here.',
+    'A small leak. Check every capture before you commit.',
+  ],
+  blunder: [
+    'Ouch. On moves like this, look at what they can take first.',
+    'This is where it slipped. One more second of checking would have saved it.',
+  ],
+  mate: [
+    'Oh no — this one walked straight into mate.',
+    'The king was left in the open. Always ask: what are they threatening?',
+  ],
+  turning: [
+    'This is the move the whole game turned on.',
+    'If you replay one moment, make it this one.',
+  ],
+  rotation: [
+    'Twisting the board changes every line — re-check your pieces right after.',
+  ],
+};
+
+function subutaiSays(context: CommentContext, idx: number): string {
+  const bank = SUBUTAI_SAYS[context];
+  return bank[idx % bank.length];
+}
+
+/** What Subutai says when there was nothing to flag at all. */
+const SUBUTAI_CLEAN_GAME = 'Not a single real slip. That is a game to be proud of.';
 
 const MAX_MOMENTS = 5;
 
@@ -192,6 +281,7 @@ function keyMoments(
         line: `Move ${moveNo}: ${san} — a sacrifice the engine agrees with.`,
         better: null,
         note: null,
+        comment: subutaiSays('brilliant', i),
       });
     } else if (a.classification === 'best' && a.cpl < 5) {
       good.push({
@@ -202,6 +292,7 @@ function keyMoments(
         line: `Move ${moveNo}: ${san} — the engine's own first choice.`,
         better: null,
         note: null,
+        comment: subutaiSays('best', i),
       });
     } else if (a.cpl >= 100) {
       const decisive = a.cpl >= MATE_SCALE_CPL;
@@ -212,9 +303,10 @@ function keyMoments(
         san,
         line: decisive
           ? `Move ${moveNo}: ${san} ${roulette ? 'left the king to be captured' : 'allowed a forced mate'}.`
-          : `Move ${moveNo}: ${san} cost ${Math.round(a.cpl)} cp.`,
+          : `Move ${moveNo}: ${san} gave away ${lossInPieces(a.cpl)} (−${pawns(a.cpl)} pawns).`,
         better: a.bestMoveSan ?? a.bestPvSan?.[0] ?? null,
         note: null,
+        comment: subutaiSays(decisive ? 'mate' : a.cpl >= 300 ? 'blunder' : 'mistake', i),
       });
     }
   }
@@ -235,11 +327,15 @@ function keyMoments(
       san: turning.san,
       line: turning.decisive
         ? `Move ${Math.floor(turning.idx / 2) + 1}: ${turning.san} ${roulette ? 'left the king to be captured' : 'allowed a forced mate'}.`
-        : `Move ${Math.floor(turning.idx / 2) + 1}: ${turning.san} cost ${turning.cpl} cp — the most of any move.`,
+        : `Move ${Math.floor(turning.idx / 2) + 1}: ${turning.san} gave away ${lossInPieces(turning.cpl)} (−${pawns(turning.cpl)} pawns) — the most of any move.`,
       better: turning.better,
       note: turning.afterOwnRotation
         ? 'Right after your own rotation. 1 in 4 first blunders happen exactly here: re-check every piece after you twist the board.'
         : null,
+      comment: subutaiSays(
+        turning.afterOwnRotation ? 'rotation' : turning.decisive ? 'mate' : 'turning',
+        turning.idx,
+      ),
     });
   }
 
@@ -339,11 +435,16 @@ function ReviewBoard({
   lastFrom,
   lastTo,
   boardSize,
+  slide,
 }: {
   state: BoardState;
   lastFrom: SquareId | null;
   lastTo: SquareId | null;
   boardSize: number;
+  /** V1 — the one piece to glide this step: it sits on `at` and arrives
+   *  from `from`. `key` changes every step so the animation restarts even
+   *  when the same square slides twice in a row. */
+  slide: { at: SquareId; from: SquareId; key: number } | null;
 }) {
   const layout = useMemo(
     () => computeBoardLayout(state.topologyState, boardSize),
@@ -396,14 +497,36 @@ function ReviewBoard({
               pointerEvents: 'none',
             }}
           >
-            {piece && (
-              <span
-                className={`piece piece-${piece.color}`}
-                style={angle ? { transform: `rotate(${-angle}deg)` } : undefined}
-              >
-                {PIECE_GLYPH[piece.type] ?? ''}
-              </span>
-            )}
+            {piece && (() => {
+              const glyph = (
+                <span
+                  className={`piece piece-${piece.color}`}
+                  style={angle ? { transform: `rotate(${-angle}deg)` } : undefined}
+                >
+                  {PIECE_GLYPH[piece.type] ?? ''}
+                </span>
+              );
+              if (!slide || slide.at !== sq) return glyph;
+              // The same glide the live board uses, expressed in this
+              // tile's own (rotated, scaled) frame.
+              const from = tilePixelCenter(slide.from, state.topologyState, layout);
+              const local = toTileFrame(from.cx - cx, from.cy - cy, angle, scale);
+              return (
+                <span
+                  key={slide.key}
+                  className="piece-slide-wrap is-sliding-in"
+                  style={
+                    {
+                      '--slide-dx': `${local.x}px`,
+                      '--slide-dy': `${local.y}px`,
+                      '--slide-ms': '240ms',
+                    } as React.CSSProperties
+                  }
+                >
+                  {glyph}
+                </span>
+              );
+            })()}
           </div>
         );
       })}
@@ -506,6 +629,42 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
       to: (entry.move.to as SquareId | undefined) ?? null,
     };
   }, [log, reviewIdx]);
+
+  /**
+   * V1 — which piece to glide on this step, and which way.
+   *
+   * Stepping one move FORWARD plays that move: the piece arrives on its
+   * destination from where it stood. Stepping one move BACK un-plays it:
+   * the piece arrives back on its origin from where it had gone. Any
+   * bigger jump (a key-moment click, Home/End) cuts, because a glide from
+   * three moves ago would describe nothing that happened.
+   */
+  const [slideSpec, setSlideSpec] = useState<{
+    at: SquareId;
+    from: SquareId;
+    key: number;
+  } | null>(null);
+  const [lastSeenIdx, setLastSeenIdx] = useState(reviewIdx);
+  if (lastSeenIdx !== reviewIdx) {
+    // Derived during render (the React-sanctioned "adjust state when a
+    // value changes" pattern), so the slide is part of the same render
+    // that shows the new position — never a frame late.
+    const prev = lastSeenIdx;
+    setLastSeenIdx(reviewIdx);
+    let next: { at: SquareId; from: SquareId; key: number } | null = null;
+    if (reviewIdx === prev + 1) {
+      const m = log.moves[reviewIdx - 1]?.move;
+      if (m && m.kind !== 'topologyToggle' && m.from && m.to) {
+        next = { at: m.to as SquareId, from: m.from as SquareId, key: reviewIdx };
+      }
+    } else if (reviewIdx === prev - 1) {
+      const m = log.moves[prev - 1]?.move;
+      if (m && m.kind !== 'topologyToggle' && m.from && m.to) {
+        next = { at: m.from as SquareId, from: m.to as SquareId, key: -prev };
+      }
+    }
+    setSlideSpec(next);
+  }
 
   // Reset to end whenever a different log loads (e.g. switching shared games).
   useEffect(() => {
@@ -619,6 +778,7 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
             lastFrom={lastMoveForIdx.from}
             lastTo={lastMoveForIdx.to}
             boardSize={boardSize}
+            slide={slideSpec}
           />
           <div className="game-review-controls">
             <button
@@ -727,6 +887,12 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
                       ) : null}
                     </span>
                     {m.note && <span className="review-turning-note">{m.note}</span>}
+                    <span className="review-comment">
+                      <span className="review-comment-who" aria-hidden>
+                        S
+                      </span>
+                      {m.comment}
+                    </span>
                   </button>
                 );
               })()}
@@ -744,7 +910,13 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
             <div className="review-turning review-turning-clean">
               <span className="review-turning-kicker">Nothing to flag</span>
               <span className="review-turning-line">
-                No move lost 100 cp or more. Clean game.
+                No move gave away as much as a pawn. Clean game.
+              </span>
+              <span className="review-comment">
+                <span className="review-comment-who" aria-hidden>
+                  S
+                </span>
+                {SUBUTAI_CLEAN_GAME}
               </span>
             </div>
           )}
@@ -779,8 +951,8 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
                 tone="blunder"
               />
               <Stat
-                label="Avg. CPL"
-                value={result.stats.averageCpl}
+                label="Avg. loss / move"
+                value={`${pawns(result.stats.averageCpl)}`}
                 tone="neutral"
               />
               {qualityBonus > 0 && (
@@ -794,10 +966,19 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
             </div>
           )}
 
-          {/* V1 — your average loss per phase. Bars scale to 300 cp. */}
+          {/* V1 — the one sentence that makes every number here readable. */}
+          {result && (
+            <p className="review-legend">
+              Losses are counted in <strong>pawns</strong>: a knight or bishop is
+              worth about 3, a rook 5, a queen 9. <strong>Best</strong> means you
+              found the engine's own first choice.
+            </p>
+          )}
+
+          {/* V1 — your average loss per phase. Bars scale to 3 pawns. */}
           {result && phases.some((p) => p.avgCpl !== null) && (
             <div className="review-phases" aria-label="Accuracy by phase">
-              <div className="review-phases-title">Your average loss by phase</div>
+              <div className="review-phases-title">Your average loss per move, by phase</div>
               {phases.map((p) => (
                 <div key={p.label} className="review-phase-row">
                   <span className="review-phase-label">{p.label}</span>
@@ -816,7 +997,7 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
                     />
                   </span>
                   <span className="review-phase-value">
-                    {p.avgCpl === null ? 'no moves' : `${p.avgCpl} cp`}
+                    {p.avgCpl === null ? 'no moves' : `${pawns(p.avgCpl)} pawns`}
                   </span>
                 </div>
               ))}
@@ -864,7 +1045,7 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
                         ? log.gameMode === 'roulette'
                           ? '(hangs the king)'
                           : '(allows mate)'
-                        : `(−${Math.round(a.cpl)} cp)`}
+                        : `(−${pawns(a.cpl)} pawns · ${lossInPieces(a.cpl)})`}
                     </span>
                   )}
                   {betterText && (
