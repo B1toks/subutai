@@ -290,6 +290,19 @@ function backRankString(boardState: BoardState): string {
     .join('');
 }
 
+/** Same piece of the same colour on every occupied square. */
+function samePieces(a: BoardState['pieces'], b: BoardState['pieces']): boolean {
+  const occupied = (p: BoardState['pieces']) =>
+    Object.keys(p).filter((sq) => p[sq as SquareId]);
+  const squares = occupied(a);
+  if (squares.length !== occupied(b).length) return false;
+  return squares.every((sq) => {
+    const x = a[sq as SquareId];
+    const y = b[sq as SquareId];
+    return !!x && !!y && x.type === y.type && x.color === y.color;
+  });
+}
+
 // B3 — eval-bar stability. Dropping the search eval to null between
 // moves made the bar flicker: search → static fallback → worker. Now
 // the previous search eval is *bumped* by the move's material delta
@@ -3949,10 +3962,13 @@ function App() {
     // V1 — a rotation can promote a pawn it swings onto the far row (see
     // promoteStrandedPawns). The piece changes without anyone moving it,
     // so say so — otherwise a queen simply appears where a pawn was.
+    // Only when `before` is the board this rotation was made from: loading,
+    // resuming or replaying a game whose log ends in a rotation lands here
+    // with the PREVIOUS game's snapshot, and its pawns are not this game's.
     const before = prevBoardRef.current;
-    if (before) {
-      const { promoted } = promoteStrandedPawns(before.pieces, state.topologyState);
-      if (promoted.length > 0) {
+    if (before && before.topologyState !== state.topologyState) {
+      const { pieces: rotated, promoted } = promoteStrandedPawns(before.pieces, state.topologyState);
+      if (promoted.length > 0 && samePieces(rotated, state.pieces)) {
         toast.show(
           promoted.length === 1
             ? `The rotation carried the pawn on ${promoted[0]} to the edge — it's a queen now.`
