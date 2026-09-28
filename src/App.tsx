@@ -4928,8 +4928,11 @@ function App() {
   const mateSeqActive = mateSeq !== 'idle';
   // V1 — "a full-screen endgame sequence owns the screen right now": the
   // iris, or the cinematic it hands over to. Every game-over modal waits
-  // on this, so a summary can never pop up underneath the cut.
-  const endgameSceneActive = mateSeqActive || endgameCut !== null;
+  // on this, so a summary can never pop up underneath the cut. That
+  // includes the freeze beat before a cut with no iris (flag fall,
+  // resignation, captured king): without it the summary flashed up for
+  // those 650 ms and was then covered by the cut.
+  const endgameSceneActive = mateSeqActive || endgameCut !== null || victoryFreeze;
 
   // Dev seams for the endings. Playing a real line out to a checkmate just
   // to look at 7 seconds of animation is hopeless, so every ending can be
