@@ -1557,9 +1557,11 @@ function App() {
     if (isLocalMode) return;
     if (gameStatus === 'active') return;
     if (log.moves.length === 0) return;
+    // One completion per game, keyed by the log id alone. Resign stamps the
+    // id itself before flipping the status, so it is skipped here too. This
+    // used to also bail on any gameOutcome, which leaked the previous
+    // game's ending into the next one (QA-01).
     if (completedLogIdRef.current === log.id) return;
-    // Resign sets gameOutcome before flipping status — don't overwrite it.
-    if (gameOutcome) return;
     completedLogIdRef.current = log.id;
 
     let outcome: GameOutcome;
@@ -2484,6 +2486,7 @@ function App() {
     setFormationInputValue('');
     setSearchEvalFromWhite(null);
     setSearchMateInPlies(null);
+    resetGameEndState();
 
     // New play session => new live snapshot id.
     liveSavedGameIdRef.current = `live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -2686,6 +2689,23 @@ function App() {
     setRouletteSpinCount(0);
     setSearchEvalFromWhite(null);
     setSearchMateInPlies(null);
+    resetGameEndState();
+    autoSavedLogIdRef.current = null;
+    autoLastMoveAtRef.current = Date.now();
+
+    // New play session => new live snapshot id.
+    liveSavedGameIdRef.current = `live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  /**
+   * QA-01 — everything the previous game's ending left behind.
+   *
+   * Every way into a new board (New game, a 960 code, Load replay, a Memory
+   * resume) calls this. Only New game used to, so after a closed summary a
+   * game started any other way inherited the old gameOutcome and finished
+   * with no summary and no save.
+   */
+  function resetGameEndState() {
     worstHumanEvalRef.current = 0; // R6 — reset the tense-win detector
     setEndgameCut(null);
     if (victoryFreezeTimer.current) clearTimeout(victoryFreezeTimer.current);
@@ -2702,12 +2722,7 @@ function App() {
     setMilestoneShown(false);
     setShowMilestoneModal(false);
     completedLogIdRef.current = null;
-    autoSavedLogIdRef.current = null;
-    autoLastMoveAtRef.current = Date.now();
     gameStartedAtRef.current = Date.now();
-
-    // New play session => new live snapshot id.
-    liveSavedGameIdRef.current = `live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   }
 
   // S2.4 — any change to the position invalidates a shown hint.
@@ -5069,6 +5084,7 @@ function App() {
     liveSavedGameIdRef.current = game.id;
     setSearchEvalFromWhite(null);
     setSearchMateInPlies(null);
+    resetGameEndState();
     classifyImportedLog(nextLog);
   }
   // Keep the ref pointing at the latest resumeGame closure so the stable
@@ -5194,6 +5210,7 @@ function App() {
       savedForLogIdRef.current = null;
       setSearchEvalFromWhite(null);
       setSearchMateInPlies(null);
+      resetGameEndState();
       classifyImportedLog(replayLog);
 
       setReplayError(null);
