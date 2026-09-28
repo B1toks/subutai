@@ -65,7 +65,10 @@ service cloud.firestore {
                     && validName(request.resource.data.displayName)
                     && str(request.resource.data.displayNameLower, 20)
                     && !('bestGamePoints' in request.resource.data)
-                    && !('rouletteBestPoints' in request.resource.data);
+                    && !('rouletteBestPoints' in request.resource.data)
+                    // A new profile has beaten nobody yet; the counter only
+                    // grows through the +1-per-write update rule below.
+                    && !('strongWins' in request.resource.data);
       allow update: if isOwner(uid)
                     && request.resource.data.uid == uid
                     && validName(request.resource.data.displayName)
