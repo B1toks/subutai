@@ -168,16 +168,32 @@ class ThemeStore {
     const el = document.documentElement;
     const current = el.getAttribute('data-theme');
 
+    // A swap still waiting for the veil's peak is stale either way: the
+    // theme it would paint is no longer the choice. Cancel it BEFORE the
+    // same-theme early return, or picking Wood and then Neon again inside
+    // the dip would still paint Wood a moment later.
+    const swapPending = this.swapTimers.length > 0;
+    this.swapTimers.forEach(clearTimeout);
+    this.swapTimers = [];
+
     // Same theme, or the very first paint before React mounts: nothing to
     // cross-fade, just write it.
     if (current === resolved || !current) {
       el.setAttribute('data-theme', resolved);
+      if (swapPending) {
+        // Let a veil that is already dipping fade out on its own timer.
+        el.removeAttribute('data-theme-swap');
+        const veil = this.veil;
+        this.swapTimers.push(
+          setTimeout(() => {
+            veil?.classList.remove('is-running');
+            this.swapTimers = [];
+          }, VEIL_MS + 60),
+        );
+      }
       this.notify(resolved);
       return;
     }
-
-    this.swapTimers.forEach(clearTimeout);
-    this.swapTimers = [];
 
     const veil = this.ensureVeil();
     if (veil) {
@@ -200,7 +216,10 @@ class ThemeStore {
       setTimeout(() => el.removeAttribute('data-theme-swap'), VEIL_PEAK_MS + 80),
     );
     this.swapTimers.push(
-      setTimeout(() => veil?.classList.remove('is-running'), VEIL_MS + 60),
+      setTimeout(() => {
+        veil?.classList.remove('is-running');
+        this.swapTimers = [];
+      }, VEIL_MS + 60),
     );
   }
 }
