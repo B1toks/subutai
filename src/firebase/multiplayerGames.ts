@@ -1,4 +1,4 @@
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { FirebaseError } from 'firebase/app';
 import { db } from './client';
 import type { MatchDoc, MatchOutcome, MatchParticipant } from './matches';
@@ -31,9 +31,10 @@ export async function saveMultiplayerGameToGames(
 
   const moveCount = Math.floor(match.log.moves.length / 2);
   const myOutcome = translateOutcomeForPlayer(match.outcome, me, match.host.uid);
+  const ref = doc(db, 'games', `mp-${match.code}-${myUid}`);
 
   try {
-    await setDoc(doc(db, 'games', `mp-${match.code}-${myUid}`), {
+    await setDoc(ref, {
       playerId: me.uid,
       playerName: me.displayName,
       opponentId: opponent.uid,
@@ -57,8 +58,13 @@ export async function saveMultiplayerGameToGames(
     });
   } catch (err) {
     // Doc already exists (this device or another one raced us) → the denied
-    // UPDATE is the idempotency signal, not a failure.
-    if (err instanceof FirebaseError && err.code === 'permission-denied') return;
+    // UPDATE is the idempotency signal, not a failure. QA-22: but only when
+    // the doc really is there; any other refusal (a roulette log over the
+    // rule's 700 entries, say) is a real failure and is rethrown.
+    if (err instanceof FirebaseError && err.code === 'permission-denied') {
+      const existing = await getDoc(ref).catch(() => null);
+      if (existing?.exists() && existing.data().playerId === myUid) return;
+    }
     throw err;
   }
 }

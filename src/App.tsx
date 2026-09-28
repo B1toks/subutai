@@ -1643,6 +1643,8 @@ function App() {
       mpSavedGameIdRef.current = match.code;
       void saveMultiplayerGameToGames(match, user.uid).catch((err) => {
         console.error('[mp] save to /games failed', err);
+        // QA-22 (last point) — a real refusal no longer disappears silently.
+        toast.show('This match could not be saved to your games.', 'error', 5000);
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1735,7 +1737,14 @@ function App() {
       if (nb) setPersonalBest(points.total);
     } catch (err) {
       console.error('[finishGame] save failed', err);
-      setSaveError('Could not save this game. Check your connection.');
+      // QA-03 — a refusal by the rules is not a connection problem, and
+      // telling the player to check their connection sent them the wrong way.
+      const denied = (err as { code?: unknown } | null)?.code === 'permission-denied';
+      setSaveError(
+        denied
+          ? 'This game wasn’t counted: the server refused to save it.'
+          : 'Could not save this game. Check your connection.',
+      );
     } finally {
       setSavingGame(false);
     }
