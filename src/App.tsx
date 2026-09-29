@@ -776,8 +776,15 @@ function App() {
   // QA-02 — the log id of a game that came from Load replay (or a Memory
   // entry marked imported). Such a game is never ranked.
   const importedLogIdRef = useRef<string | null>(null);
+  // N-1 — the game on the board was picked up from Memory (or the live
+  // session pointer), not played start to finish here. Same shape as the
+  // imported mark above: keyed by log id, so any new game clears it. It is
+  // separate because the Memory entry's `imported` flag must keep meaning
+  // "pasted from a log" — the summary says which of the two it was.
+  const resumedLogIdRef = useRef<string | null>(null);
   // Whether the game the summary is about was imported (for its wording).
   const [lastGameImported, setLastGameImported] = useState(false);
+  const [lastGameResumed, setLastGameResumed] = useState(false);
   const [view, setView] = useState<
     'game' | 'review' | 'leaderboard' | 'friend-lobby'
   >('game');
@@ -1706,7 +1713,13 @@ function App() {
     // (gated on counted in saveCompletedGame) from growing.
     const imported = importedLogIdRef.current === log.id;
     setLastGameImported(imported);
-    const points: GamePoints = rankedLevel && !imported ? computed : { ...computed, counted: false };
+    // N-1 — nor is a game restored from Memory. A Memory entry does not say
+    // who the moves were played against: a position played out for both
+    // sides in Local can be resumed against the bot and won in a move.
+    const resumed = resumedLogIdRef.current === log.id;
+    setLastGameResumed(resumed);
+    const points: GamePoints =
+      rankedLevel && !imported && !resumed ? computed : { ...computed, counted: false };
     const durationMs = Date.now() - gameStartedAtRef.current;
     setGameOutcome(outcome);
     setLastGamePoints(points);
@@ -2781,6 +2794,7 @@ function App() {
     setMilestoneShown(false);
     setShowMilestoneModal(false);
     setLastGameImported(false);
+    setLastGameResumed(false);
     completedLogIdRef.current = null;
     gameStartedAtRef.current = Date.now();
   }
@@ -5158,6 +5172,7 @@ function App() {
     setSearchMateInPlies(null);
     resetGameEndState();
     importedLogIdRef.current = game.imported ? nextLog.id : null;
+    resumedLogIdRef.current = nextLog.id;
     classifyImportedLog(nextLog);
   }
   // Keep the ref pointing at the latest resumeGame closure so the stable
@@ -7693,9 +7708,11 @@ function App() {
           uncountedReason={
             lastGameImported
               ? 'Loaded from a replay log. Imported games are never ranked.'
-              : botLevel !== 'strong'
-                ? `Played vs the ${BOT_STRENGTH_LABEL[botLevel]} bot. Only Strong-bot games are ranked.`
-                : undefined
+              : lastGameResumed
+                ? 'Picked up from Memory. Only games played from the first move against the Strong bot are ranked.'
+                : botLevel !== 'strong'
+                  ? `Played vs the ${BOT_STRENGTH_LABEL[botLevel]} bot. Only Strong-bot games are ranked.`
+                  : undefined
           }
           uncountedTitle={lastGameImported ? 'Imported game' : undefined}
           onClose={() => setSummaryOpen(false)}
