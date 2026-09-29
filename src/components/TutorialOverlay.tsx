@@ -207,17 +207,24 @@ export function TutorialOverlay({ onClose }: TutorialOverlayProps) {
 
   const cardRef = useRef<HTMLDivElement>(null);
   const [cardH, setCardH] = useState(220);
-  // Re-read the card's height whenever its text changes (step) or the
-  // screen does; it re-renders once with the true height, before paint.
+  // The card's real height, kept current: a step with more text, a wrap
+  // change on resize, a font or UI-scale change all resize it.
   useLayoutEffect(() => {
-    function read() {
-      const h = cardRef.current?.offsetHeight;
+    const card = cardRef.current;
+    if (!card) return;
+    const read = () => {
+      const h = card.offsetHeight;
       if (h) setCardH(h);
-    }
+    };
     read();
-    window.addEventListener('resize', read);
-    return () => window.removeEventListener('resize', read);
-  }, [stepIdx]);
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', read);
+      return () => window.removeEventListener('resize', read);
+    }
+    const ro = new ResizeObserver(read);
+    ro.observe(card);
+    return () => ro.disconnect();
+  }, []);
 
   // Measure the target; re-measure on resize/scroll so the spotlight
   // tracks the element across layout changes.
