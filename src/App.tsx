@@ -7751,7 +7751,7 @@ function App() {
             lastGameImported
               ? 'Loaded from a replay log. Imported games are never ranked.'
               : lastGameResumed
-                ? 'Picked up from Memory. Only games played from the first move against the Strong bot are ranked.'
+                ? 'Resumed from a saved position. Only games played from the first move against the Strong bot are ranked.'
                 : botLevel !== 'strong'
                   ? `Played vs the ${BOT_STRENGTH_LABEL[botLevel]} bot. Only Strong-bot games are ranked.`
                   : undefined
