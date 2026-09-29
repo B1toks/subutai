@@ -5053,7 +5053,11 @@ function App() {
     return { from, to };
   }, [log.moves, gameMode]);
 
-  const positionLabel = backRankString(initialState);
+  // QA-09 — online, the position and seed are the MATCH's (log is derived
+  // from the match doc); initialState / seed still hold the last solo game,
+  // which is what the chip and the copied header used to show.
+  const positionLabel = backRankString(isMultiplayer ? log.initialState : initialState);
+  const notationSeed = isMultiplayer ? log.randomSeed : seed;
 
   // R15: abandonment ping — one doc per solo run, on the human's first move.
   // finishGame only fires on completed games, so without this "quit vs lost"
@@ -5237,7 +5241,7 @@ function App() {
   const buildNotation = useCallback((annotate: boolean) => {
     const lines: string[] = [
       `[Chess960 "${positionLabel}"]`,
-      `[Seed "${seed}"]`,
+      `[Seed "${notationSeed}"]`,
       '',
     ];
     const entries = log.moves;
@@ -5294,7 +5298,7 @@ function App() {
       lines.push(line);
     }
     return lines.join('\n');
-  }, [log.moves, positionLabel, seed]);
+  }, [log.moves, positionLabel, notationSeed]);
 
   const notationString = useMemo(() => buildNotation(true), [buildNotation]);
 
