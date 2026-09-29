@@ -5061,7 +5061,29 @@ function App() {
   // still gets none, because there is nothing to dramatise.
   useLayoutEffect(() => {
     if (watchingGame || isAutoMode) return; // spectating gets no cut
-    if (gameStatus === 'active') return;
+    if (gameStatus === 'active') {
+      // N-5 — online, a resignation, a flag fall and an inactivity forfeit
+      // end the MATCH, not the local board: gameStatus stays 'active' (see
+      // confirmResign) and the effect used to stop right here, so the
+      // match ended with no scene at all. The match doc is what says it is
+      // over; the cut is about my own king, as everywhere online.
+      if (
+        isMultiplayer &&
+        mpSync &&
+        cutSubjectColor &&
+        (mpEndOutcome === 'host-resign' || mpEndOutcome === 'guest-resign') &&
+        endgameFiredForLogRef.current !== log.id
+      ) {
+        const view = translateOutcomeForPlayer(
+          mpEndOutcome,
+          { uid: mpSync.myUid, displayName: '', color: mpSync.myColor },
+          mpSync.matchState.host.uid,
+        );
+        endgameFiredForLogRef.current = log.id;
+        launchEndgame(view === 'human-win' ? 'victory' : 'defeat', { king: cutSubjectColor });
+      }
+      return;
+    }
     if (gameStatus === 'checkmate') return; // the iris hands that one over
     if (mateSeqActive) return;
     if (endgameFiredForLogRef.current === log.id) return;
@@ -5084,6 +5106,9 @@ function App() {
   }, [
     watchingGame,
     isAutoMode,
+    isMultiplayer,
+    mpSync,
+    mpEndOutcome,
     cutSubjectColor,
     decisiveWinner,
     gameStatus,
