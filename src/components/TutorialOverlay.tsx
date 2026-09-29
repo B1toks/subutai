@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   RotateCw,
   Eye,
@@ -205,6 +205,20 @@ export function TutorialOverlay({ onClose }: TutorialOverlayProps) {
 
   const step = steps[stepIdx];
 
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [cardH, setCardH] = useState(220);
+  // Re-read the card's height whenever its text changes (step) or the
+  // screen does; it re-renders once with the true height, before paint.
+  useLayoutEffect(() => {
+    function read() {
+      const h = cardRef.current?.offsetHeight;
+      if (h) setCardH(h);
+    }
+    read();
+    window.addEventListener('resize', read);
+    return () => window.removeEventListener('resize', read);
+  }, [stepIdx]);
+
   // Measure the target; re-measure on resize/scroll so the spotlight
   // tracks the element across layout changes.
   useLayoutEffect(() => {
@@ -253,11 +267,20 @@ export function TutorialOverlay({ onClose }: TutorialOverlayProps) {
   const isLast = stepIdx === steps.length - 1;
 
   // Place the card below the spotlight when there's room, otherwise above;
-  // centered when there's no target.
+  // centered when there's no target. QA-21: the room needed is the card's
+  // measured height, not a guess (it is 225px tall on a 375px phone, where
+  // the text wraps more), and the final top is clamped so the card and its
+  // Next button never leave the screen, whichever side it landed on.
   const cardStyle: React.CSSProperties = rect
-    ? rect.top + rect.height + 220 < window.innerHeight
-      ? { top: rect.top + rect.height + 16, left: clampLeft(rect.left, rect.width) }
-      : { top: Math.max(16, rect.top - 236), left: clampLeft(rect.left, rect.width) }
+    ? (() => {
+        const below = rect.top + rect.height + 16;
+        const above = rect.top - cardH - 16;
+        const top = below + cardH + 12 <= window.innerHeight ? below : above >= 12 ? above : below;
+        return {
+          top: Math.max(12, Math.min(top, window.innerHeight - cardH - 12)),
+          left: clampLeft(rect.left, rect.width),
+        };
+      })()
     : { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
 
   return (
@@ -270,7 +293,7 @@ export function TutorialOverlay({ onClose }: TutorialOverlayProps) {
       ) : (
         <div className="tour-backdrop" />
       )}
-      <div className="tour-card" style={cardStyle}>
+      <div className="tour-card" style={cardStyle} ref={cardRef}>
         <div className="tour-card-header">
           <span className="tour-card-icon" aria-hidden>
             <Icon icon={step.icon} size="lg" strokeWidth={1.75} />
