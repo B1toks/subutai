@@ -2753,12 +2753,6 @@ function App() {
     setGameStatus('active');
     setPreviewTopology(null);
     setLastMove(null);
-    setAllowedPieceTypes(null);
-    setIsRouletteSpinning(false);
-    setRouletteActionsLeft(0);
-    setUsedRouletteSlots([]);
-    setFirstRouletteSpinDone(false);
-    setRouletteSpinCount(0);
     setSearchEvalFromWhite(null);
     setSearchMateInPlies(null);
     resetGameEndState();
@@ -2770,14 +2764,25 @@ function App() {
   }
 
   /**
-   * QA-01 — everything the previous game's ending left behind.
+   * QA-01 — everything the previous game left behind.
    *
    * Every way into a new board (New game, a 960 code, Load replay, a Memory
    * resume) calls this. Only New game used to, so after a closed summary a
    * game started any other way inherited the old gameOutcome and finished
    * with no summary and no save.
+   *
+   * N-3 — that includes Roulette's turn state (the spun pieces, the
+   * actions left, whether the first spin was done). A 960 code or a Load
+   * replay used to keep the last game's spin on a fresh board, with no
+   * Spin button and nothing the spun pieces could move.
    */
   function resetGameEndState() {
+    setAllowedPieceTypes(null);
+    setIsRouletteSpinning(false);
+    setRouletteActionsLeft(0);
+    setUsedRouletteSlots([]);
+    setFirstRouletteSpinDone(false);
+    setRouletteSpinCount(0);
     worstHumanEvalRef.current = 0; // R6 — reset the tense-win detector
     setEndgameCut(null);
     if (victoryFreezeTimer.current) clearTimeout(victoryFreezeTimer.current);
