@@ -10766,6 +10766,44 @@ html[data-theme-swap] *::after {
   .live-title { display: none; }
 }
 
+/* QA-15 — on a 375px phone the header row is a menu button, the mark,
+   the wordmark, the LIVE pill, the setup button, the leaderboard button
+   and the player's name chip; the row is only 359px wide, so the brand
+   shrank under the chip and the wordmark was painted over. The mark
+   stays, the word and the pill's text drop out of sight (still there
+   for screen readers), and a long name is cut with an ellipsis instead
+   of pushing the rest. */
+@media (max-width: 430px) {
+  .app-header h1 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  /* The pill keeps its dot (the colour still says live / ready / over);
+     the word is still in the DOM for screen readers. */
+  .live-pill {
+    font-size: 0;
+    gap: 0;
+    padding-inline: 8px;
+  }
+  .user-menu-name {
+    max-width: 6ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* Under ~380px even the dot has no room; the status bar under the board
+   still says whether the game is live. */
+@media (max-width: 380px) {
+  .live-strip { display: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .header-controls,
   .right-sidebar,

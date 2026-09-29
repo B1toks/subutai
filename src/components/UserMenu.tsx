@@ -55,7 +55,7 @@ export function UserMenu({ displayName, onChangeName }: UserMenuProps) {
         <span className="user-menu-item-icon">
           <Icon icon={User} size="md" aria-hidden />
         </span>
-        <span>{displayName}</span>
+        <span className="user-menu-name">{displayName}</span>
         <span className="user-menu-trigger-caret">
           <Icon icon={ChevronDown} size="sm" aria-hidden />
         </span>

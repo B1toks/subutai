@@ -437,7 +437,12 @@ function computeBoardSize(uiScale: number, dockLeft: number, dockRight: number):
   // stay in sync or the board overflows its column.
   const w = window.innerWidth;
   const sidebar = w >= 2100 ? 460 : w >= 1700 ? 400 : 320;
-  const chrome = w > 880 ? sidebar + 72 : 32;
+  // QA-15 — below the grid collapse the board still shares the row with
+  // things that are not the sidebar: from 721px the fixed icon rail pads
+  // .app-root by 84px on the left (the board used to run 13px off the
+  // right edge at 768px), and until the eval bar hides at 640px it sits
+  // 20px left of the board and needs that much room.
+  const chrome = w > 880 ? sidebar + 72 : w > 720 ? 140 : w > 640 ? 48 : 32;
   const capPx = w >= 2100 ? 1000 : w >= 1700 ? 900 : 820;
   const cap = Math.min(capPx, Math.round(vh * 0.7));
   // R9 — floored at 240px: a hidden/headless tab can report innerWidth 0
