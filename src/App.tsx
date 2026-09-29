@@ -91,7 +91,7 @@ import {
 import { logGameStart } from './firebase/gameStarts';
 import { startPresenceHeartbeat, stopPresenceHeartbeat } from './firebase/presence';
 import { computeGamePoints, type GameOutcome, type GamePoints } from './analysis/points';
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
 import {
   appendMove,
@@ -4929,7 +4929,14 @@ function App() {
   const mateSeqStartedRef = useRef<string | null>(null);
   // One endgame cut per game, whichever effect gets there first.
   const endgameFiredForLogRef = useRef<string | null>(null);
-  useEffect(() => {
+  // N-2 — this effect and the no-iris one below are layout effects on
+  // purpose. The render that first carries the finished gameStatus also
+  // carries the summary (and Local's "Game over" card); a passive effect
+  // only starts the sequence after the browser has painted that render, so
+  // the summary showed for a frame or several on a heavy page and was then
+  // covered by the cut. A layout effect starts it, and re-renders with
+  // endgameSceneActive true, before anything is painted.
+  useLayoutEffect(() => {
     if (gameStatus !== 'checkmate' || !mateKingPos) {
       setMateSeq('idle');
       mateSeqStartedRef.current = null;
@@ -5052,7 +5059,7 @@ function App() {
   // ≤ -2 pawns) and play nothing at all on a loss, which meant most games
   // just blinked into a modal. Both results get their own cut now; a draw
   // still gets none, because there is nothing to dramatise.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (watchingGame || isAutoMode) return; // spectating gets no cut
     if (gameStatus === 'active') return;
     if (gameStatus === 'checkmate') return; // the iris hands that one over
