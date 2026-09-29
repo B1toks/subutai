@@ -2086,6 +2086,12 @@ function App() {
   useEffect(() => {
     logLengthRef.current = log.moves.length;
   }, [log.moves.length]);
+  // F7 — the id of the game on the board, so the background classification
+  // of a loaded log can tell it has been replaced and stop.
+  const logIdRef = useRef<string>('');
+  useEffect(() => {
+    logIdRef.current = log.id;
+  }, [log.id]);
 
   // Watching-mode autoplay: when enabled, advances one move every
   // WATCH_AUTOPLAY_MS until we hit the end of the replay.
@@ -2454,6 +2460,9 @@ function App() {
   const classifyImportedLog = useCallback(
     (loadedLog: GameLog) => {
       const capturedId = loadedLog.id;
+      // The caller has just put this log on the board; the ref would only
+      // catch up after the next render, and the loop below checks it first.
+      logIdRef.current = capturedId;
       // Pre-compute all positions synchronously — cheap (no search) — so the
       // classifier can grab `stateBefore` for each move by index later.
       const states: BoardState[] = [loadedLog.initialState];
@@ -2478,12 +2487,25 @@ function App() {
           if (entry.move.kind === 'topologyToggle' || !entry.move.from || !entry.move.to) {
             continue;
           }
-          const a = await classifyAsync(states[i], entry.move, states[i + 1], {
-            budgetMs: scaleBudgetMs(1000),
-            maxDepth: 7,
-            allowSelfCheck: loadedLog.gameMode === 'roulette',
-          });
-          if (a.superseded) continue; // DEF-6: dropped by a newer batch
+          // F7 — a request dropped by a newer batch (Game Review starting
+          // on the same worker cancels whatever is queued or running) is
+          // asked again, not skipped: the move it was for would otherwise
+          // never get a classification. The game on the board being
+          // replaced ends the loop; a few tries bound a busy worker.
+          let a: MoveAnalysis | null = null;
+          for (let attempt = 0; attempt < 5; attempt++) {
+            if (logIdRef.current !== capturedId) return;
+            const r = await classifyAsync(states[i], entry.move, states[i + 1], {
+              budgetMs: scaleBudgetMs(1000),
+              maxDepth: 7,
+              allowSelfCheck: loadedLog.gameMode === 'roulette',
+            });
+            if (!r.superseded) {
+              a = r;
+              break;
+            }
+          }
+          if (!a) continue; // DEF-6: dropped by a newer batch, five times
           setLog((prev) =>
             prev.id === capturedId ? updateMoveAnalysisAt(prev, i, a) : prev,
           );
