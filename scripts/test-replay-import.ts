@@ -8,6 +8,11 @@
 import fs from 'node:fs';
 import { replayFromNotation } from '../src/memory/replayImport';
 import { NotationParseError } from '../src/memory/notation';
+import { buildSavedGameSnapshot } from '../src/memory/build';
+import { createStartingPosition } from '../src/engine';
+import { applyMove, generateLegalMoves } from '../src/engine/moves';
+import { appendMove, computeSAN, createGameLog } from '../src/recording/log';
+import type { BoardState } from '../src/engine';
 
 let failures = 0;
 function check(name: string, ok: boolean, detail: string) {
@@ -84,6 +89,53 @@ try {
   check('a log ending in mate is accepted', r.log.moves.length === 23, `${r.log.moves.length} plies`);
 } catch (e) {
   check('a log ending in mate is accepted', false, String(e));
+}
+
+// R-1 — Roulette: a turn is two actions by one side and the log does not say
+// who acted. Logs where a castle is the SECOND action (the token names no
+// piece) must load, and Black must still not be able to open.
+{
+  let castleSecond = 0;
+  let refused = 0;
+  for (let seed = 1; seed <= 400 && castleSecond < 5; seed++) {
+    let st: BoardState = createStartingPosition(seed);
+    let log = createGameLog(`rc-${seed}`, st, seed);
+    let sawCastleSecond = false;
+    let n = seed * 7919;
+    const rnd = () => (n = (n * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    for (let turn = 0; turn < 40 && !sawCastleSecond; turn++) {
+      const side = st.sideToMove;
+      for (let action = 0; action < 2; action++) {
+        const legal = generateLegalMoves(st, { allowSelfCheck: true });
+        if (!legal.length) break;
+        const castles = legal.filter((m) => m.kind === 'castle');
+        const plain = legal.filter((m) => m.kind !== 'castle');
+        // Prefer a castle as the second action when there is one.
+        const m = action === 1 && castles.length ? castles[0] : (plain[Math.floor(rnd() * plain.length)] ?? legal[0]);
+        if (action === 1 && m.kind === 'castle') sawCastleSecond = true;
+        log = appendMove(log, m, computeSAN(st, m), st.topologyState);
+        const after = applyMove(st, m);
+        st = action === 0 ? { ...after, sideToMove: side } : after;
+        if (sawCastleSecond) break;
+      }
+      if (!sawCastleSecond && st.sideToMove === side) st = { ...st, sideToMove: side === 'white' ? 'black' : 'white' };
+    }
+    if (!sawCastleSecond) continue;
+    castleSecond++;
+    try {
+      replayFromNotation(buildSavedGameSnapshot(log, `rc-${seed}`).notation, { roulette: true });
+    } catch (e) {
+      refused++;
+      console.log(`  refused (seed ${seed}): ${e instanceof Error ? e.message : e}`);
+    }
+  }
+  check('roulette: a castle as the second action loads', castleSecond > 0 && refused === 0, `${castleSecond} log(s) with one, ${refused} refused`);
+  try {
+    replayFromNotation(`${H}1. e7→e5`, { roulette: true });
+    check('roulette: Black cannot open', false, 'accepted');
+  } catch (e) {
+    check('roulette: Black cannot open', e instanceof NotationParseError && e.message.startsWith('Move 1 '), e instanceof Error ? e.message : String(e));
+  }
 }
 
 console.log(failures ? `\n${failures} FAILED` : '\nALL PASS');

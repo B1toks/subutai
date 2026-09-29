@@ -85,9 +85,11 @@ export function replayFromNotation(
     // R-1 — a Roulette turn is up to two actions by the SAME side, and the
     // log does not say who acted (QA-08), so plain alternation refuses the
     // second action of every turn. The piece being moved says whose action
-    // it is; the live game clamps sideToMove to that side the same way
-    // between the two actions (commitMove). Rotations keep the alternation.
-    if (roulette && mv.kind !== 'topologyToggle' && mv.from) {
+    // it is; the live game's own clamp puts sideToMove back to the mover
+    // between the two actions in the same way. The first entry is not
+    // corrected: White opens, whatever the piece. Rotations keep the
+    // alternation.
+    if (roulette && log.moves.length > 0 && mv.kind !== 'topologyToggle' && mv.from) {
       const mover = current.pieces[mv.from]?.color;
       if (mover && mover !== current.sideToMove) current = { ...current, sideToMove: mover };
     }
@@ -110,7 +112,18 @@ export function replayFromNotation(
       let found: Move | undefined;
       if (mv.kind === 'castle') {
         const targetFile = token.castleSide === 'queen' ? 'c' : 'g';
-        found = legal.find((m) => m.kind === 'castle' && m.to !== undefined && m.to[0] === targetFile);
+        const castleTo = (ms: Move[]) =>
+          ms.find((m) => m.kind === 'castle' && m.to !== undefined && m.to[0] === targetFile);
+        found = castleTo(legal);
+        // R-1 — a castle token names no piece, so in Roulette, as the second
+        // action of a turn, it belongs to whichever side can castle there.
+        if (!found && roulette && log.moves.length > 0) {
+          const other: Color = current.sideToMove === 'white' ? 'black' : 'white';
+          const flipped = { ...current, sideToMove: other };
+          const flippedLegal = generateLegalMoves(flipped, { allowSelfCheck: true });
+          found = castleTo(flippedLegal);
+          if (found) current = flipped;
+        }
       } else {
         const piece = mv.from ? current.pieces[mv.from] : undefined;
         if (piece && piece.color !== current.sideToMove) {
