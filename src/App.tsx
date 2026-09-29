@@ -74,6 +74,7 @@ import {
 } from 'lucide-react';
 import type { GameReviewMeta } from './components/GameReview';
 import { useMultiplayerSync } from './components/MultiplayerGameView';
+import { mpResignCause } from './firebase/matchEnd';
 import { rejoinMatch, type MatchDoc, type MatchOutcome } from './firebase/matches';
 import {
   saveMultiplayerGameToGames,
@@ -801,6 +802,9 @@ function App() {
   );
   const mpSavedGameIdRef = useRef<string | null>(null);
   const mpWroteOutcomeRef = useRef<string | null>(null);
+  // QA-04 — the match code this player resigned themselves (the Resign
+  // button, not a flag fall), so their own end text can say so.
+  const mpSelfResignedRef = useRef<string | null>(null);
   // T2: review can be entered for the LIVE game (default — reads the `log`
   // alias) OR with a snapshot loaded via the MP completion modal or the
   // ?game=<id> URL. activeReviewLog overrides when set; meta gives the
@@ -2015,6 +2019,7 @@ function App() {
     // state stays untouched (gameStatus etc.).
     if (isMultiplayer) {
       if (!mpSync) return;
+      mpSelfResignedRef.current = mpSync.matchState.code;
       void mpSync.resign();
       return;
     }
@@ -7496,22 +7501,37 @@ function App() {
           mpSync.matchState.host.uid,
         );
         const opp = mpSync.opponentDisplayName;
+        // QA-04 — a flag fall or an inactivity forfeit is not a resignation.
+        const resignCause =
+          myView === 'human-resign' && mpSelfResignedRef.current === mpSync.matchState.code
+            ? 'resign'
+            : mpResignCause({ ...mpSync.matchState, outcome: mpEndOutcome });
         const headline =
           myView === 'human-win'
             ? `You won vs ${opp}!`
             : myView === 'human-resign'
-              ? `You resigned vs ${opp}.`
+              ? resignCause === 'timeout'
+                ? `You ran out of time vs ${opp}.`
+                : resignCause === 'resign'
+                  ? `You resigned vs ${opp}.`
+                  : `You lost vs ${opp}.`
               : myView === 'ai-win'
                 ? `You lost vs ${opp}.`
                 : `Draw vs ${opp}.`;
-        const subline =
+        const loserName =
           mpEndOutcome === 'host-resign'
-            ? `${mpSync.matchState.host.displayName} resigned.`
-            : mpEndOutcome === 'guest-resign'
-              ? `${mpSync.matchState.guest?.displayName ?? 'Guest'} resigned.`
-              : mpEndOutcome === 'draw'
-                ? 'Match drawn.'
-                : `${mpEndOutcome === 'white-win' ? 'White' : 'Black'} wins by checkmate.`;
+            ? mpSync.matchState.host.displayName
+            : mpSync.matchState.guest?.displayName ?? 'Guest';
+        const subline =
+          mpEndOutcome === 'host-resign' || mpEndOutcome === 'guest-resign'
+            ? resignCause === 'timeout'
+              ? `${loserName} ran out of time.`
+              : resignCause === 'resign'
+                ? `${loserName} resigned.`
+                : `${loserName} resigned or left the game.`
+            : mpEndOutcome === 'draw'
+              ? 'Match drawn.'
+              : `${mpEndOutcome === 'white-win' ? 'White' : 'Black'} wins by checkmate.`;
         function dismiss() {
           busy.navigate('Back to the board', () => {
             setMpEndOutcome(null);

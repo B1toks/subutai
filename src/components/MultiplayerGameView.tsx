@@ -19,6 +19,7 @@ import {
 import { applyMove, isInCheck } from '../engine/moves';
 import { applyRotationMove } from '../engine/auxetic';
 import { computeSAN } from '../recording/log';
+import { inactivityForfeitApplies } from '../firebase/matchEnd';
 
 const ROULETTE_PIECE_BAG: PieceType[] = [
   'pawn',
@@ -175,7 +176,7 @@ export function useMultiplayerSync(
   useEffect(() => {
     if (!matchState || !myUid) return;
     if (matchState.status !== 'active' || matchState.outcome) return;
-    if (matchState.currentTurn !== myUid) {
+    if (matchState.currentTurn !== myUid || !inactivityForfeitApplies(matchState)) {
       setSelfAfkWarning(false);
       return;
     }
@@ -196,6 +197,7 @@ export function useMultiplayerSync(
     if (!matchState || !myUid) return;
     if (matchState.status !== 'active' || matchState.outcome) return;
     if (matchState.currentTurn === myUid) return;
+    if (!inactivityForfeitApplies(matchState)) return;
     const interval = setInterval(() => {
       const last = matchState.lastActivity?.toMillis?.();
       if (typeof last !== 'number') return;
@@ -209,6 +211,7 @@ export function useMultiplayerSync(
         if (!snap.exists()) return;
         const data = snap.data() as MatchDoc;
         if (data.outcome) return;
+        if (!inactivityForfeitApplies(data)) return; // a move started the clock
         const txLast = data.lastActivity?.toMillis?.();
         if (
           typeof txLast === 'number' &&
