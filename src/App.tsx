@@ -2037,8 +2037,13 @@ function App() {
     // state stays untouched (gameStatus etc.).
     if (isMultiplayer) {
       if (!mpSync) return;
-      mpSelfResignedRef.current = mpSync.matchState.code;
-      void mpSync.resign();
+      // Remembered only if this resignation is what ended the match: a
+      // failed write, or a flag fall that landed first, is not one.
+      const code = mpSync.matchState.code;
+      mpSelfResignedRef.current = code;
+      void mpSync.resign().then((wrote) => {
+        if (!wrote && mpSelfResignedRef.current === code) mpSelfResignedRef.current = null;
+      });
       return;
     }
     if (!side || gameStatus !== 'active' || botThinking) return;

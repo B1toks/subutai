@@ -40,8 +40,12 @@ export function mpResignCause(match: MatchDoc): 'timeout' | 'resign' | 'unknown'
     const mover = i % 2 === 0 ? 'white' : 'black';
     if (mover === loser) used += Math.max(0, (moves[i].timestamp ?? 0) - (moves[i - 1].timestamp ?? 0));
   }
+  // Only the side to move has a running clock, so only it can flag; a
+  // player resigning on the opponent's turn resigned, however little time
+  // they had.
   const toMove = moves.length % 2 === 0 ? 'white' : 'black';
-  if (toMove === loser) used += Math.max(0, endMs - (moves[moves.length - 1].timestamp ?? endMs));
+  if (toMove !== loser) return 'resign';
+  used += Math.max(0, endMs - (moves[moves.length - 1].timestamp ?? endMs));
   const loserMoves = loser === 'white' ? Math.ceil(moves.length / 2) : Math.floor(moves.length / 2);
   const left = match.timeControlSec * 1000 + loserMoves * (match.timeIncrementSec ?? 0) * 1000 - used;
   // The flag is claimed by a client the moment its clock reads 0 (polled

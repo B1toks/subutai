@@ -93,7 +93,9 @@ export interface MultiplayerSyncHandle {
   /** Q.D.3: rotate as a roulette action. Topology toggle costs an
    *  action but doesn't consume a slot. */
   sendRotate: () => Promise<void>;
-  resign: () => Promise<void>;
+  /** Resolves true when THIS resignation is the outcome that was written
+   *  (false: it failed, or another outcome landed first). */
+  resign: () => Promise<boolean>;
   /** Race-safe terminal-outcome write (mate/draw detected locally). */
   writeOutcomeIfFirst: (outcome: MatchOutcome) => Promise<void>;
   // Q.D.3: full solo-roulette parity. The bag, action count and used
@@ -467,8 +469,9 @@ export function useMultiplayerSync(
     }
   }
 
-  async function resign(): Promise<void> {
-    if (liveMatch.status !== 'active') return;
+  async function resign(): Promise<boolean> {
+    if (liveMatch.status !== 'active') return false;
+    let wrote = false;
     setBusy(true);
     setError(null);
     try {
@@ -478,6 +481,7 @@ export function useMultiplayerSync(
       // clobber the outcome that landed first. Losing the race is fine:
       // the game is over either way.
       await runTransaction(db, async (tx) => {
+        wrote = false; // a transaction body can run more than once
         const ref = doc(db, 'matches', liveMatch.code);
         const snap = await tx.get(ref);
         if (!snap.exists()) return;
@@ -487,13 +491,16 @@ export function useMultiplayerSync(
           outcome,
           lastActivity: serverTimestamp(),
         });
+        wrote = true;
       });
     } catch (err) {
       console.error('[mp] resign failed', err);
       setError('Could not resign. Try again.');
+      return false;
     } finally {
       setBusy(false);
     }
+    return wrote;
   }
 
   async function writeOutcomeIfFirst(outcome: MatchOutcome): Promise<void> {

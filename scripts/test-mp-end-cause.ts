@@ -59,6 +59,10 @@ check('3+2: white resigns early', mpResignCause(match({ outcome: 'host-resign', 
 const four = [0, 5 * S, 6 * S, 7 * S]; // white to move again
 check('3+2: black resigns on white\'s turn (black idle for minutes)', mpResignCause(match({ stamps: four, end: 7 * S + 900 * S })), 'resign');
 
+// Out of time but not the side to move: no clock is running for them, so it
+// is a resignation, not a flag.
+check('3+2: black resigns on white turn with no time left', mpResignCause(match({ stamps: [0, 5 * S, 6 * S, 190 * S], end: 190 * S + 500 })), 'resign');
+
 // A write still in flight has no server stamp; it is happening right now.
 const now = Date.now();
 check('pending write, plenty left', mpResignCause(match({ stamps: [now - 20 * S, now - 15 * S, now - 14 * S], end: null })), 'resign');
