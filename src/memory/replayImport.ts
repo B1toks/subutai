@@ -82,6 +82,15 @@ export function replayFromNotation(
     }
 
     const mv = token.move;
+    // R-1 — a Roulette turn is up to two actions by the SAME side, and the
+    // log does not say who acted (QA-08), so plain alternation refuses the
+    // second action of every turn. The piece being moved says whose action
+    // it is; the live game clamps sideToMove to that side the same way
+    // between the two actions (commitMove). Rotations keep the alternation.
+    if (roulette && mv.kind !== 'topologyToggle' && mv.from) {
+      const mover = current.pieces[mv.from]?.color;
+      if (mover && mover !== current.sideToMove) current = { ...current, sideToMove: mover };
+    }
     let played: Move;
     if (mv.kind === 'topologyToggle') {
       if (token.rotationFrom && token.rotationFrom !== current.topologyState) {
