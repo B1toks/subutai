@@ -378,6 +378,10 @@ interface LiveSession {
    *  mid-game; without this a resume would silently take whatever level
    *  another tab has written since. Absent in pre-fix pointers. */
   botLevel?: BotStrength;
+  /** N-1 — the game on the board is not one that may be ranked (it was
+   *  resumed from Memory, or imported). A reload keeps it that way. Absent
+   *  in older pointers, which are then treated as unranked too. */
+  unranked?: boolean;
 }
 function writeLiveSession(s: LiveSession): void {
   try {
@@ -399,6 +403,7 @@ function readLiveSession(): LiveSession | null {
       timed: v.timed === true,
       savedAt: v.savedAt,
       botLevel: isBotStrength(v.botLevel) ? v.botLevel : undefined,
+      unranked: v.unranked === true || v.unranked === undefined,
     };
   } catch {
     return null;
@@ -776,8 +781,9 @@ function App() {
   // QA-02 — the log id of a game that came from Load replay (or a Memory
   // entry marked imported). Such a game is never ranked.
   const importedLogIdRef = useRef<string | null>(null);
-  // N-1 — the game on the board was picked up from Memory (or the live
-  // session pointer), not played start to finish here. Same shape as the
+  // N-1 — the game on the board was picked up from Memory (or from a live
+  // session that was already unranked), not played start to finish here as
+  // a bot game. A reload of an ordinary solo bot game is not marked. Same shape as the
   // imported mark above: keyed by log id, so any new game clears it. It is
   // separate because the Memory entry's `imported` flag must keep meaning
   // "pasted from a log" — the summary says which of the two it was.
@@ -1553,6 +1559,7 @@ function App() {
       timed: soloTcSec !== null,
       savedAt: Date.now(),
       botLevel,
+      unranked: resumedLogIdRef.current === log.id || importedLogIdRef.current === log.id,
     });
   }, [gameStatus, log, isMultiplayer, opponentMode, gameMode, soloTcSec, botLevel]);
 
@@ -5171,12 +5178,19 @@ function App() {
   // closes over a ref that always points at the latest `resumeGame`, so the
   // prop reference itself never changes and React.memo on MemoryPanel can
   // skip the 300-card subtree on every App re-render.
-  const resumeGameRef = useRef<(game: SavedGame) => void>(() => {});
+  const resumeGameRef = useRef<(game: SavedGame, opts?: { keepRank?: boolean }) => void>(() => {});
   const onMemoryGameActivate = useCallback((g: SavedGame) => {
     if (g.status === 'incomplete') resumeGameRef.current(g);
   }, []);
 
-  function resumeGame(game: SavedGame) {
+  /**
+   * `keepRank` is for the one resume that is the same game carried across a
+   * reload or into a new tab: a solo game against the bot, at the level it
+   * was started at, that was not itself resumed or imported (the live
+   * session pointer records all three). Everything else — the Memory panel
+   * above all — is never ranked (N-1).
+   */
+  function resumeGame(game: SavedGame, opts?: { keepRank?: boolean }) {
     const initial = createPositionFromBackRankKey(game.config960);
     let current: BoardState = initial;
     let nextLog: GameLog = createGameLog(`resume-${Date.now()}`, initial, Date.now());
@@ -5214,7 +5228,7 @@ function App() {
     setSearchMateInPlies(null);
     resetGameEndState();
     importedLogIdRef.current = game.imported ? nextLog.id : null;
-    resumedLogIdRef.current = nextLog.id;
+    resumedLogIdRef.current = opts?.keepRank ? null : nextLog.id;
     classifyImportedLog(nextLog);
   }
   // Keep the ref pointing at the latest resumeGame closure so the stable
@@ -5252,7 +5266,9 @@ function App() {
       beginBusy('Picking up your game');
       setOpponentMode(session.opponentMode);
       if (session.botLevel) setBotLevel(session.botLevel);
-      resumeGameRef.current(game);
+      resumeGameRef.current(game, {
+        keepRank: session.opponentMode === 'ai' && !!session.botLevel && !session.unranked,
+      });
     });
     // Once, on the first render that has everything it needs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
