@@ -356,15 +356,14 @@ export function FriendLobby({
                 className="friend-lobby-code-input"
                 placeholder="Code"
                 value={joinCodeInput}
+                // No maxLength: it would cut "PXR QRC" to "PXR QR" before the
+                // spaces are stripped. Normalise here and cap the clean code.
                 onChange={(e) =>
-                  setJoinCodeInput(
-                    e.target.value.toUpperCase().slice(0, 6),
-                  )
+                  setJoinCodeInput(normalizeMatchCode(e.target.value).slice(0, 6))
                 }
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') void handleJoin();
                 }}
-                maxLength={6}
                 spellCheck={false}
                 autoCapitalize="characters"
                 aria-label="Match code"
