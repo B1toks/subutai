@@ -543,8 +543,8 @@ export function GameReview({ log: liveLog, onBack, meta, gameId }: Props) {
   // review used to start over, and jump back to the last move, each time.
   // Its own analysis does not read those results, so only a different game
   // (id) or a longer / shorter one (a replay seek) counts as a new log.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const log = useMemo(() => liveLog, [liveLog.id, liveLog.moves.length]);
+  const [log, setPinnedLog] = useState(liveLog);
+  if (log.id !== liveLog.id || log.moves.length !== liveLog.moves.length) setPinnedLog(liveLog);
   const [shareCopied, setShareCopied] = useState(false);
   function handleShare() {
     if (!gameId) return;

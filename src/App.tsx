@@ -2178,10 +2178,8 @@ function App() {
     logIdRef.current = log.id;
   }, [log.id]);
   // F7 — only the newest background classification run may go on (a Game
-  // Review closing starts a catch-up run; the one it replaces stops), and the
-  // log id of the last game handed to it (the one a catch-up applies to).
+  // Review closing starts a catch-up run; the one it replaces stops).
   const classifyRunRef = useRef(0);
-  const classifiedImportIdRef = useRef<string | null>(null);
 
   // Watching-mode autoplay: when enabled, advances one move every
   // WATCH_AUTOPLAY_MS until we hit the end of the replay.
@@ -2553,7 +2551,6 @@ function App() {
       // The caller has just put this log on the board; the ref would only
       // catch up after the next render, and the loop below checks it first.
       logIdRef.current = capturedId;
-      classifiedImportIdRef.current = capturedId;
       const run = ++classifyRunRef.current;
       // Pre-compute all positions synchronously — cheap (no search) — so the
       // classifier can grab `stateBefore` for each move by index later.
@@ -2573,6 +2570,12 @@ function App() {
       // Only the last move's analysis feeds the bar — otherwise it would
       // pinball through 30 mid-game scores while the loading completes.
       let lastAnalysis: MoveAnalysis | null = null;
+      // A catch-up run may classify only some moves; the bar still belongs to
+      // the position after the last one.
+      let lastRealIndex = -1;
+      loadedLog.moves.forEach((entry, i) => {
+        if (entry.move.kind !== 'topologyToggle' && entry.move.from && entry.move.to) lastRealIndex = i;
+      });
       (async () => {
         for (let i = 0; i < loadedLog.moves.length; i++) {
           const entry = loadedLog.moves[i];
@@ -2605,7 +2608,7 @@ function App() {
           setLog((prev) =>
             prev.id === capturedId ? updateMoveAnalysisAt(prev, i, a) : prev,
           );
-          lastAnalysis = a;
+          if (i === lastRealIndex) lastAnalysis = a;
         }
         if (lastAnalysis && classifyRunRef.current === run) pushSearchEval(lastAnalysis);
       })();
@@ -5633,13 +5636,14 @@ function App() {
             // paints the spinner FIRST and runs the switch after.
             busy.navigate('Back to the board', () => {
               setView('game');
-              // F7 — a loaded game whose moves are not all classified yet
+              // F7 — moves of the game on the board that are not classified yet
               // (the review took the classifier for a while, or dropped some
-              // of its requests when it started) is finished off now, with
-              // no action from the player.
+              // of its requests when it started or closed) are classified
+              // now, with no action from the player.
               if (
                 !activeReviewLog &&
-                classifiedImportIdRef.current === log.id &&
+                !isMultiplayer &&
+                !watchingGame &&
                 unclassifiedMoveIndexes(log).length > 0
               ) {
                 classifyImportedLog(log);
