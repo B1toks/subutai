@@ -22,6 +22,7 @@ QA_SRC=C:/projects/other/src npx tsx qa/engine/fuzz-invariants.ts
 | `replay-roundtrip.ts` | Нотація «Copy to clipboard» → «Load replay» дає ту саму позицію; експортер застосунку пише той самий формат, що й незалежний writer (`play.ts`). `QA_WRITE_REPLAYS=1` перегенеровує `fixtures/replays.json`. |
 | `bot-rotation-guard.ts` | Пошук бота (з TT на всю партію, як у застосунку) ніколи не пропонує другу ротацію поспіль, не повертає null і нелегальний хід. |
 | `roulette-log.ts` | Логи Roulette (дві дії за хід): чи правильно реплей логу визначає, хто ходив, і чи `computeGamePoints` зараховує людині саме її взяття. |
+| `roulette-import-probe.ts` | Логи Roulette такими, якими їх пише жива гра (ротація як дія, рокіровка другою дією, ходи з однією дією): експортер → «Load replay» → та сама позиція. `PROBE_GAMES` (за замовчуванням 400). |
 | `find-endings.ts` | Генерує `fixtures/endings.json` — легальні партії за хід до мату в A і в B (для ручних перевірок фінальних сцен). |
 
 Самоперевірка оракула: п'ять навмисно зламаних копій рушія (промоушен за міткою
