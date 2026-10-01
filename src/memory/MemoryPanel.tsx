@@ -89,6 +89,7 @@ function MemoryPanelImpl({
           <input
             type="text"
             className="memory-filter-input"
+            aria-label="Filter saved games by starting position"
             placeholder="Position: BBN or R****BBN"
             value={filterPattern}
             onChange={(e) => setFilterPattern(e.target.value)}
