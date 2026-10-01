@@ -74,6 +74,7 @@ import {
 } from 'lucide-react';
 import type { GameReviewMeta } from './components/GameReview';
 import { useMultiplayerSync } from './components/MultiplayerGameView';
+import { mpResignCause } from './firebase/matchEnd';
 import { rejoinMatch, type MatchDoc, type MatchOutcome } from './firebase/matches';
 import {
   saveMultiplayerGameToGames,
@@ -90,7 +91,7 @@ import {
 import { logGameStart } from './firebase/gameStarts';
 import { startPresenceHeartbeat, stopPresenceHeartbeat } from './firebase/presence';
 import { computeGamePoints, type GameOutcome, type GamePoints } from './analysis/points';
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
 import {
   appendMove,
@@ -100,10 +101,13 @@ import {
   updateMoveAnalysisAt,
 } from './recording/log';
 import { buildSavedGameFromLog, buildSavedGameSnapshot } from './memory/build';
-import { localStorageAdapter } from './memory/storage';
+import { LIVE_SESSION_KEY, localStorageAdapter } from './memory/storage';
 import { MemoryPanel } from './memory/MemoryPanel';
 import type { SavedGame } from './memory/types';
-import { NotationParseError, parseMemoryNotation } from './memory/notation';
+import { NotationParseError } from './memory/notation';
+// rotateIsLegal (R10) decides whether chat rounds accept "rotate"; it lives
+// with the replay importer, which checks rotations the same way (QA-02).
+import { replayFromNotation, rotateIsLegal } from './memory/replayImport';
 import { moveVoting, type VoteMode, type VoteRound, type GuessWinner } from './twitch/moveVoting';
 import { dockLayout, type DockState } from './ui/dockLayout';
 import { themeStore } from './ui/themeStore';
@@ -170,7 +174,11 @@ type GameStatus =
   | 'king_captured_black_wins'
   // V1 — solo time control: the side that runs out of time loses.
   | 'timeout_white'
-  | 'timeout_black';
+  | 'timeout_black'
+  // QA-11 — the named side resigned. Its own status, so the banner, the
+  // winner and the endgame cut no longer read a resignation as a mate.
+  | 'resigned_white'
+  | 'resigned_black';
 
 type GameMode = 'classic' | 'roulette';
 
@@ -358,8 +366,8 @@ function LocalTurnSlot({ side, toMove }: { side: 'white' | 'black'; toMove: 'whi
   );
 }
 
-/** V1 — pointer to the solo game in progress, for a new tab to resume. */
-const LIVE_SESSION_KEY = 'subutai_live_session';
+/** V1 — pointer to the solo game in progress, for a new tab to resume.
+ *  The key lives next to Memory's, whose entry it points at. */
 interface LiveSession {
   gameId: string;
   opponentMode: 'ai' | 'local';
@@ -370,6 +378,10 @@ interface LiveSession {
    *  mid-game; without this a resume would silently take whatever level
    *  another tab has written since. Absent in pre-fix pointers. */
   botLevel?: BotStrength;
+  /** N-1 — the game on the board is not one that may be ranked (it was
+   *  resumed from Memory, or imported). A reload keeps it that way. Absent
+   *  in older pointers, which are then treated as unranked too. */
+  unranked?: boolean;
 }
 function writeLiveSession(s: LiveSession): void {
   try {
@@ -391,6 +403,7 @@ function readLiveSession(): LiveSession | null {
       timed: v.timed === true,
       savedAt: v.savedAt,
       botLevel: isBotStrength(v.botLevel) ? v.botLevel : undefined,
+      unranked: v.unranked === true || v.unranked === undefined,
     };
   } catch {
     return null;
@@ -429,7 +442,12 @@ function computeBoardSize(uiScale: number, dockLeft: number, dockRight: number):
   // stay in sync or the board overflows its column.
   const w = window.innerWidth;
   const sidebar = w >= 2100 ? 460 : w >= 1700 ? 400 : 320;
-  const chrome = w > 880 ? sidebar + 72 : 32;
+  // QA-15 — below the grid collapse the board still shares the row with
+  // things that are not the sidebar: from 721px the fixed icon rail pads
+  // .app-root by 84px on the left (the board used to run 13px off the
+  // right edge at 768px), and until the eval bar hides at 640px it sits
+  // 20px left of the board and needs that much room.
+  const chrome = w > 880 ? sidebar + 72 : w > 720 ? 140 : w > 640 ? 48 : 32;
   const capPx = w >= 2100 ? 1000 : w >= 1700 ? 900 : 820;
   const cap = Math.min(capPx, Math.round(vh * 0.7));
   // R9 — floored at 240px: a hidden/headless tab can report innerWidth 0
@@ -576,19 +594,6 @@ function evalToColors(evalCp: number, topology: TopologyState): { c1: string; c2
 }
 
 const HUMAN_COLOR: Color = 'white';
-
-/** R10 — is a board rotation currently a legal turn (classic rules)?
- *  Mirrors handleRotate's own guard: no back-to-back rotations, and the
- *  toggled board must not leave the mover's king attacked. Used to
- *  decide whether chat rounds accept the "rotate" command. */
-function rotateIsLegal(bs: BoardState): boolean {
-  if (bs.lastMoveWasRotation) return false;
-  const toggled = toggleTopology(bs);
-  const king = findKing(toggled, bs.sideToMove);
-  if (!king) return false;
-  const opp = bs.sideToMove === 'white' ? 'black' : 'white';
-  return !isSquareAttacked(toggled, king, opp as Color, toggled.topologyState);
-}
 
 /* R5 — encouragement in a losing position. When the human (white) has
  * been meaningfully behind for a couple of moves, drop a supportive nudge
@@ -748,7 +753,9 @@ function App() {
     null,
   );
   const [gameOutcome, setGameOutcome] = useState<GameOutcome | null>(null);
-  const [confirmingResign, setConfirmingResign] = useState(false);
+  // QA-11 — WHO is resigning while the confirmation is up. In hot-seat
+  // either seat has a Resign button, so it is not always the side to move.
+  const [confirmingResign, setConfirmingResign] = useState<Color | null>(null);
   // Sprint 4.3.1 — pending opponent switch during an active local game.
   // When non-null the ConfirmDialog mounts; on confirm we discard the
   // local game state and start fresh in the requested mode.
@@ -771,6 +778,19 @@ function App() {
   const [showAfkAlert, setShowAfkAlert] = useState(false);
   const lastActivityRef = useRef<number>(Date.now());
   const completedLogIdRef = useRef<string | null>(null);
+  // QA-02 — the log id of a game that came from Load replay (or a Memory
+  // entry marked imported). Such a game is never ranked.
+  const importedLogIdRef = useRef<string | null>(null);
+  // N-1 — the game on the board was picked up from Memory (or from a live
+  // session that was already unranked), not played start to finish here as
+  // a bot game. A reload of an ordinary solo bot game is not marked. Same shape as the
+  // imported mark above: keyed by log id, so any new game clears it. It is
+  // separate because the Memory entry's `imported` flag must keep meaning
+  // "pasted from a log" — the summary says which of the two it was.
+  const resumedLogIdRef = useRef<string | null>(null);
+  // Whether the game the summary is about was imported (for its wording).
+  const [lastGameImported, setLastGameImported] = useState(false);
+  const [lastGameResumed, setLastGameResumed] = useState(false);
   const [view, setView] = useState<
     'game' | 'review' | 'leaderboard' | 'friend-lobby'
   >('game');
@@ -800,6 +820,9 @@ function App() {
   );
   const mpSavedGameIdRef = useRef<string | null>(null);
   const mpWroteOutcomeRef = useRef<string | null>(null);
+  // QA-04 — the match code this player resigned themselves (the Resign
+  // button, not a flag fall), so their own end text can say so.
+  const mpSelfResignedRef = useRef<string | null>(null);
   // T2: review can be entered for the LIVE game (default — reads the `log`
   // alias) OR with a snapshot loaded via the MP completion modal or the
   // ?game=<id> URL. activeReviewLog overrides when set; meta gives the
@@ -1482,15 +1505,24 @@ function App() {
     if (savedForLogIdRef.current === log.id) return;
 
     const sourceId = liveSavedGameIdRef.current;
-    const termination: 'checkmate' | 'stalemate' =
-      gameStatus === 'checkmate'
+    const resigned = gameStatus === 'resigned_white' || gameStatus === 'resigned_black';
+    const termination: 'checkmate' | 'stalemate' | 'resignation' = resigned
+      ? 'resignation'
+      : gameStatus === 'checkmate'
         || gameStatus === 'king_captured_white_wins'
         || gameStatus === 'king_captured_black_wins'
         || gameStatus === 'timeout_white'
         || gameStatus === 'timeout_black'
         ? 'checkmate'
         : 'stalemate';
-    const saved = buildSavedGameFromLog(log, state, termination, sourceId);
+    const saved = buildSavedGameFromLog(
+      log,
+      state,
+      termination,
+      sourceId,
+      resigned ? (gameStatus === 'resigned_white' ? 'black' : 'white') : undefined,
+      importedLogIdRef.current === log.id,
+    );
     if (localStorageAdapter.saveOrUpdateGame) {
       localStorageAdapter.saveOrUpdateGame(saved);
     } else {
@@ -1511,7 +1543,7 @@ function App() {
     if (log.moves.length === 0) return;
     const liveId = liveSavedGameIdRef.current;
     if (!liveId) return;
-    const snapshot = buildSavedGameSnapshot(log, liveId);
+    const snapshot = buildSavedGameSnapshot(log, liveId, importedLogIdRef.current === log.id);
     if (localStorageAdapter.saveOrUpdateGame) {
       localStorageAdapter.saveOrUpdateGame(snapshot);
     } else {
@@ -1527,6 +1559,7 @@ function App() {
       timed: soloTcSec !== null,
       savedAt: Date.now(),
       botLevel,
+      unranked: resumedLogIdRef.current === log.id || importedLogIdRef.current === log.id,
     });
   }, [gameStatus, log, isMultiplayer, opponentMode, gameMode, soloTcSec, botLevel]);
 
@@ -1557,9 +1590,11 @@ function App() {
     if (isLocalMode) return;
     if (gameStatus === 'active') return;
     if (log.moves.length === 0) return;
+    // One completion per game, keyed by the log id alone. Resign stamps the
+    // id itself before flipping the status, so it is skipped here too. This
+    // used to also bail on any gameOutcome, which leaked the previous
+    // game's ending into the next one (QA-01).
     if (completedLogIdRef.current === log.id) return;
-    // Resign sets gameOutcome before flipping status — don't overwrite it.
-    if (gameOutcome) return;
     completedLogIdRef.current = log.id;
 
     let outcome: GameOutcome;
@@ -1631,6 +1666,8 @@ function App() {
       mpSavedGameIdRef.current = match.code;
       void saveMultiplayerGameToGames(match, user.uid).catch((err) => {
         console.error('[mp] save to /games failed', err);
+        // QA-22 (last point) — a real refusal no longer disappears silently.
+        toast.show('This match could not be saved to your games.', 'error', 5000);
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1678,7 +1715,18 @@ function App() {
     // the full breakdown on screen and are saved (with their level) for the
     // data pipeline, but never touch personal best / leaderboard stats.
     const rankedLevel = botLevel === 'strong';
-    const points: GamePoints = rankedLevel ? computed : { ...computed, counted: false };
+    // QA-02 — nor is a game loaded from a pasted log, at any level: its
+    // moves were never played here. counted: false also keeps strongWins
+    // (gated on counted in saveCompletedGame) from growing.
+    const imported = importedLogIdRef.current === log.id;
+    setLastGameImported(imported);
+    // N-1 — nor is a game restored from Memory. A Memory entry does not say
+    // who the moves were played against: a position played out for both
+    // sides in Local can be resumed against the bot and won in a move.
+    const resumed = resumedLogIdRef.current === log.id;
+    setLastGameResumed(resumed);
+    const points: GamePoints =
+      rankedLevel && !imported && !resumed ? computed : { ...computed, counted: false };
     const durationMs = Date.now() - gameStartedAtRef.current;
     setGameOutcome(outcome);
     setLastGamePoints(points);
@@ -1718,7 +1766,14 @@ function App() {
       if (nb) setPersonalBest(points.total);
     } catch (err) {
       console.error('[finishGame] save failed', err);
-      setSaveError('Could not save this game. Check your connection.');
+      // QA-03 — a refusal by the rules is not a connection problem, and
+      // telling the player to check their connection sent them the wrong way.
+      const denied = (err as { code?: unknown } | null)?.code === 'permission-denied';
+      setSaveError(
+        denied
+          ? 'This game wasn’t counted: the server refused to save it.'
+          : 'Could not save this game. Check your connection.',
+      );
     } finally {
       setSavingGame(false);
     }
@@ -1964,42 +2019,50 @@ function App() {
     gameBackupRef.current = null;
   }
 
-  function requestResign() {
+  /** QA-11 — `side` is the seat whose Resign was pressed (hot-seat has
+   *  one per player). Solo it is always the human; online the match knows. */
+  function requestResign(side?: Color) {
     if (watchingGame) return;
     if (isMultiplayer) {
       if (!mpSync || mpSync.matchState.status !== 'active') return;
-      setConfirmingResign(true);
+      setConfirmingResign(mpSync.myColor);
       return;
     }
     if (gameStatus !== 'active') return;
     if (log.moves.length === 0) return;
-    setConfirmingResign(true);
+    // Solo, the bot's move is in flight: resigning now would race it (the
+    // move still landed afterwards). The button is disabled meanwhile.
+    if (botThinking) return;
+    setConfirmingResign(isLocalMode ? side ?? state.sideToMove : HUMAN_COLOR);
   }
 
   function confirmResign() {
-    setConfirmingResign(false);
+    const side = confirmingResign;
+    setConfirmingResign(null);
     // PvP resign: route through the match doc so the opponent sees the
     // status flip; their listener will mirror the outcome. Local engine
     // state stays untouched (gameStatus etc.).
     if (isMultiplayer) {
       if (!mpSync) return;
-      void mpSync.resign();
+      // Remembered only if this resignation is what ended the match: a
+      // failed write, or a flag fall that landed first, is not one.
+      const code = mpSync.matchState.code;
+      mpSelfResignedRef.current = code;
+      void mpSync.resign().then((wrote) => {
+        if (!wrote && mpSelfResignedRef.current === code) mpSelfResignedRef.current = null;
+      });
       return;
     }
-    if (gameStatus !== 'active') return;
+    if (!side || gameStatus !== 'active' || botThinking) return;
+    if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
+    // Stamped before the status flips, so the completion effect skips it.
+    completedLogIdRef.current = log.id;
+    setGameStatus(side === 'white' ? 'resigned_white' : 'resigned_black');
     // R13/BUG-5 — hot-seat resign: either seat may press it, so a solo
     // "human-resign" record would blame the wrong player half the time.
     // Just end the game; the banner is the ending, nothing is saved.
-    if (isLocalMode) {
-      setGameOutcome('human-resign'); // blocks the completion effect
-      setGameStatus('checkmate');
-      completedLogIdRef.current = log.id;
-      return;
-    }
-    // Pre-set the outcome so the gameStatus-watching effect skips this one.
+    if (isLocalMode) return;
     setGameOutcome('human-resign');
-    setGameStatus('checkmate');
-    completedLogIdRef.current = log.id;
     void finishGame('human-resign');
   }
 
@@ -2048,6 +2111,12 @@ function App() {
   useEffect(() => {
     logLengthRef.current = log.moves.length;
   }, [log.moves.length]);
+  // F7 — the id of the game on the board, so the background classification
+  // of a loaded log can tell it has been replaced and stop.
+  const logIdRef = useRef<string>('');
+  useEffect(() => {
+    logIdRef.current = log.id;
+  }, [log.id]);
 
   // Watching-mode autoplay: when enabled, advances one move every
   // WATCH_AUTOPLAY_MS until we hit the end of the replay.
@@ -2416,6 +2485,9 @@ function App() {
   const classifyImportedLog = useCallback(
     (loadedLog: GameLog) => {
       const capturedId = loadedLog.id;
+      // The caller has just put this log on the board; the ref would only
+      // catch up after the next render, and the loop below checks it first.
+      logIdRef.current = capturedId;
       // Pre-compute all positions synchronously — cheap (no search) — so the
       // classifier can grab `stateBefore` for each move by index later.
       const states: BoardState[] = [loadedLog.initialState];
@@ -2440,12 +2512,25 @@ function App() {
           if (entry.move.kind === 'topologyToggle' || !entry.move.from || !entry.move.to) {
             continue;
           }
-          const a = await classifyAsync(states[i], entry.move, states[i + 1], {
-            budgetMs: scaleBudgetMs(1000),
-            maxDepth: 7,
-            allowSelfCheck: loadedLog.gameMode === 'roulette',
-          });
-          if (a.superseded) continue; // DEF-6: dropped by a newer batch
+          // F7 — a request dropped by a newer batch (Game Review starting
+          // on the same worker cancels whatever is queued or running) is
+          // asked again, not skipped: the move it was for would otherwise
+          // never get a classification. The game on the board being
+          // replaced ends the loop; a few tries bound a busy worker.
+          let a: MoveAnalysis | null = null;
+          for (let attempt = 0; attempt < 5; attempt++) {
+            if (logIdRef.current !== capturedId) return;
+            const r = await classifyAsync(states[i], entry.move, states[i + 1], {
+              budgetMs: scaleBudgetMs(1000),
+              maxDepth: 7,
+              allowSelfCheck: loadedLog.gameMode === 'roulette',
+            });
+            if (!r.superseded) {
+              a = r;
+              break;
+            }
+          }
+          if (!a) continue; // DEF-6: dropped by a newer batch, five times
           setLog((prev) =>
             prev.id === capturedId ? updateMoveAnalysisAt(prev, i, a) : prev,
           );
@@ -2484,6 +2569,7 @@ function App() {
     setFormationInputValue('');
     setSearchEvalFromWhite(null);
     setSearchMateInPlies(null);
+    resetGameEndState();
 
     // New play session => new live snapshot id.
     liveSavedGameIdRef.current = `live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -2528,18 +2614,11 @@ function App() {
     return { from: last.castleRookFrom, to: last.castleRookTo };
   }, [log.moves, lastMove]);
 
-  function checkKingCaptured(nextState: BoardState): boolean {
-    const whiteKing = findKing(nextState, 'white');
-    const blackKing = findKing(nextState, 'black');
-    if (!whiteKing) {
-      setGameStatus('king_captured_black_wins');
-      return true;
-    }
-    if (!blackKing) {
-      setGameStatus('king_captured_white_wins');
-      return true;
-    }
-    return false;
+  /** An ending found on the board never overwrites one already set: a
+   *  bot move can still be settling (its classification is awaited) when
+   *  the player resigns (QA-11). */
+  function endGameWith(status: Exclude<GameStatus, 'active'>) {
+    setGameStatus((prev) => (prev === 'active' ? status : prev));
   }
 
   // Moves playable given a spin + already-used slots. Q.D.5: delegates to
@@ -2637,25 +2716,33 @@ function App() {
     }, 2300);
   }
 
-  function checkGameOver(nextState: BoardState, lastMoveWasRotation: boolean = false) {
+  /** The ending this board is in under the current mode's rules, if any. */
+  function boardEnding(
+    nextState: BoardState,
+    lastMoveWasRotation: boolean = false,
+  ): Exclude<GameStatus, 'active'> | null {
     // Q.D.8: roulette is capture-the-king — the ONLY terminal is a missing
     // king. No checkmate, no stalemate, no draws (the variant deliberately
     // skips them so play continues until a king is actually taken).
     if (gameMode === 'roulette') {
-      checkKingCaptured(nextState);
-      return;
+      if (!findKing(nextState, 'white')) return 'king_captured_black_wins';
+      if (!findKing(nextState, 'black')) return 'king_captured_white_wins';
+      return null;
     }
     // Classic mode: standard chess termination — checkmate, stalemate,
     // draw by repetition / 50-move / insufficient material.
-    if (isCheckmate(nextState, lastMoveWasRotation)) {
-      setGameStatus('checkmate');
-      return;
-    }
+    if (isCheckmate(nextState, lastMoveWasRotation)) return 'checkmate';
     const draw = checkDrawConditions(nextState, lastMoveWasRotation);
-    if (draw === 'stalemate') setGameStatus('draw_stalemate');
-    else if (draw === 'insufficient_material') setGameStatus('draw_material');
-    else if (draw === 'threefold_repetition') setGameStatus('draw_repetition');
-    else if (draw === 'fifty_move_rule') setGameStatus('draw_50move');
+    if (draw === 'stalemate') return 'draw_stalemate';
+    if (draw === 'insufficient_material') return 'draw_material';
+    if (draw === 'threefold_repetition') return 'draw_repetition';
+    if (draw === 'fifty_move_rule') return 'draw_50move';
+    return null;
+  }
+
+  function checkGameOver(nextState: BoardState, lastMoveWasRotation: boolean = false) {
+    const ending = boardEnding(nextState, lastMoveWasRotation);
+    if (ending) endGameWith(ending);
   }
 
   function startNewGame() {
@@ -2678,14 +2765,36 @@ function App() {
     setGameStatus('active');
     setPreviewTopology(null);
     setLastMove(null);
+    setSearchEvalFromWhite(null);
+    setSearchMateInPlies(null);
+    resetGameEndState();
+    autoSavedLogIdRef.current = null;
+    autoLastMoveAtRef.current = Date.now();
+
+    // New play session => new live snapshot id.
+    liveSavedGameIdRef.current = `live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  /**
+   * QA-01 — everything the previous game left behind.
+   *
+   * Every way into a new board (New game, a 960 code, Load replay, a Memory
+   * resume) calls this. Only New game used to, so after a closed summary a
+   * game started any other way inherited the old gameOutcome and finished
+   * with no summary and no save.
+   *
+   * N-3 — that includes Roulette's turn state (the spun pieces, the
+   * actions left, whether the first spin was done). A 960 code or a Load
+   * replay used to keep the last game's spin on a fresh board, with no
+   * Spin button and nothing the spun pieces could move.
+   */
+  function resetGameEndState() {
     setAllowedPieceTypes(null);
     setIsRouletteSpinning(false);
     setRouletteActionsLeft(0);
     setUsedRouletteSlots([]);
     setFirstRouletteSpinDone(false);
     setRouletteSpinCount(0);
-    setSearchEvalFromWhite(null);
-    setSearchMateInPlies(null);
     worstHumanEvalRef.current = 0; // R6 — reset the tense-win detector
     setEndgameCut(null);
     if (victoryFreezeTimer.current) clearTimeout(victoryFreezeTimer.current);
@@ -2701,13 +2810,10 @@ function App() {
     setLastGameId(null);
     setMilestoneShown(false);
     setShowMilestoneModal(false);
+    setLastGameImported(false);
+    setLastGameResumed(false);
     completedLogIdRef.current = null;
-    autoSavedLogIdRef.current = null;
-    autoLastMoveAtRef.current = Date.now();
     gameStartedAtRef.current = Date.now();
-
-    // New play session => new live snapshot id.
-    liveSavedGameIdRef.current = `live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   }
 
   // S2.4 — any change to the position invalidates a shown hint.
@@ -3177,6 +3283,9 @@ function App() {
       : state.sideToMove === 'white'
         ? 'human'
         : 'ai';
+  /** QA-11 — solo only: the bot's move is in flight. */
+  const botThinking =
+    !isMultiplayer && !isLocalMode && gameStatus === 'active' && currentPlayer === 'ai';
 
   // Sprint 2.5 — local AFK nag. Pointer / keyboard activity refreshes
   // the timestamp and clears any existing alert; if we're idle for 20s
@@ -4723,6 +4832,8 @@ function App() {
     if (gameStatus === 'king_captured_black_wins') return 'black';
     if (gameStatus === 'timeout_white') return 'black';
     if (gameStatus === 'timeout_black') return 'white';
+    if (gameStatus === 'resigned_white') return 'black';
+    if (gameStatus === 'resigned_black') return 'white';
     return null;
   }, [gameStatus, state.sideToMove]);
 
@@ -4830,7 +4941,14 @@ function App() {
   const mateSeqStartedRef = useRef<string | null>(null);
   // One endgame cut per game, whichever effect gets there first.
   const endgameFiredForLogRef = useRef<string | null>(null);
-  useEffect(() => {
+  // N-2 — this effect and the no-iris one below are layout effects on
+  // purpose. The render that first carries the finished gameStatus also
+  // carries the summary (and Local's "Game over" card); a passive effect
+  // only starts the sequence after the browser has painted that render, so
+  // the summary showed for a frame or several on a heavy page and was then
+  // covered by the cut. A layout effect starts it, and re-renders with
+  // endgameSceneActive true, before anything is painted.
+  useLayoutEffect(() => {
     if (gameStatus !== 'checkmate' || !mateKingPos) {
       setMateSeq('idle');
       mateSeqStartedRef.current = null;
@@ -4880,8 +4998,11 @@ function App() {
   const mateSeqActive = mateSeq !== 'idle';
   // V1 — "a full-screen endgame sequence owns the screen right now": the
   // iris, or the cinematic it hands over to. Every game-over modal waits
-  // on this, so a summary can never pop up underneath the cut.
-  const endgameSceneActive = mateSeqActive || endgameCut !== null;
+  // on this, so a summary can never pop up underneath the cut. That
+  // includes the freeze beat before a cut with no iris (flag fall,
+  // resignation, captured king): without it the summary flashed up for
+  // those 650 ms and was then covered by the cut.
+  const endgameSceneActive = mateSeqActive || endgameCut !== null || victoryFreeze;
 
   // Dev seams for the endings. Playing a real line out to a checkmate just
   // to look at 7 seconds of animation is hopeless, so every ending can be
@@ -4950,9 +5071,31 @@ function App() {
   // ≤ -2 pawns) and play nothing at all on a loss, which meant most games
   // just blinked into a modal. Both results get their own cut now; a draw
   // still gets none, because there is nothing to dramatise.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (watchingGame || isAutoMode) return; // spectating gets no cut
-    if (gameStatus === 'active') return;
+    if (gameStatus === 'active') {
+      // N-5 — online, a resignation, a flag fall and an inactivity forfeit
+      // end the MATCH, not the local board: gameStatus stays 'active' (see
+      // confirmResign) and the effect used to stop right here, so the
+      // match ended with no scene at all. The match doc is what says it is
+      // over; the cut is about my own king, as everywhere online.
+      if (
+        isMultiplayer &&
+        mpSync &&
+        cutSubjectColor &&
+        (mpEndOutcome === 'host-resign' || mpEndOutcome === 'guest-resign') &&
+        endgameFiredForLogRef.current !== log.id
+      ) {
+        const view = translateOutcomeForPlayer(
+          mpEndOutcome,
+          { uid: mpSync.myUid, displayName: '', color: mpSync.myColor },
+          mpSync.matchState.host.uid,
+        );
+        endgameFiredForLogRef.current = log.id;
+        launchEndgame(view === 'human-win' ? 'victory' : 'defeat', { king: cutSubjectColor });
+      }
+      return;
+    }
     if (gameStatus === 'checkmate') return; // the iris hands that one over
     if (mateSeqActive) return;
     if (endgameFiredForLogRef.current === log.id) return;
@@ -4975,6 +5118,9 @@ function App() {
   }, [
     watchingGame,
     isAutoMode,
+    isMultiplayer,
+    mpSync,
+    mpEndOutcome,
     cutSubjectColor,
     decisiveWinner,
     gameStatus,
@@ -5002,7 +5148,11 @@ function App() {
     return { from, to };
   }, [log.moves, gameMode]);
 
-  const positionLabel = backRankString(initialState);
+  // QA-09 — online, the position and seed are the MATCH's (log is derived
+  // from the match doc); initialState / seed still hold the last solo game,
+  // which is what the chip and the copied header used to show.
+  const positionLabel = backRankString(isMultiplayer ? log.initialState : initialState);
+  const notationSeed = isMultiplayer ? log.randomSeed : seed;
 
   // R15: abandonment ping — one doc per solo run, on the human's first move.
   // finishGame only fires on completed games, so without this "quit vs lost"
@@ -5028,12 +5178,19 @@ function App() {
   // closes over a ref that always points at the latest `resumeGame`, so the
   // prop reference itself never changes and React.memo on MemoryPanel can
   // skip the 300-card subtree on every App re-render.
-  const resumeGameRef = useRef<(game: SavedGame) => void>(() => {});
+  const resumeGameRef = useRef<(game: SavedGame, opts?: { keepRank?: boolean }) => void>(() => {});
   const onMemoryGameActivate = useCallback((g: SavedGame) => {
     if (g.status === 'incomplete') resumeGameRef.current(g);
   }, []);
 
-  function resumeGame(game: SavedGame) {
+  /**
+   * `keepRank` is for the one resume that is the same game carried across a
+   * reload or into a new tab: a solo game against the bot, at the level it
+   * was started at, that was not itself resumed or imported (the live
+   * session pointer records all three). Everything else — the Memory panel
+   * above all — is never ranked (N-1).
+   */
+  function resumeGame(game: SavedGame, opts?: { keepRank?: boolean }) {
     const initial = createPositionFromBackRankKey(game.config960);
     let current: BoardState = initial;
     let nextLog: GameLog = createGameLog(`resume-${Date.now()}`, initial, Date.now());
@@ -5069,6 +5226,9 @@ function App() {
     liveSavedGameIdRef.current = game.id;
     setSearchEvalFromWhite(null);
     setSearchMateInPlies(null);
+    resetGameEndState();
+    importedLogIdRef.current = game.imported ? nextLog.id : null;
+    resumedLogIdRef.current = opts?.keepRank ? null : nextLog.id;
     classifyImportedLog(nextLog);
   }
   // Keep the ref pointing at the latest resumeGame closure so the stable
@@ -5106,7 +5266,9 @@ function App() {
       beginBusy('Picking up your game');
       setOpponentMode(session.opponentMode);
       if (session.botLevel) setBotLevel(session.botLevel);
-      resumeGameRef.current(game);
+      resumeGameRef.current(game, {
+        keepRank: session.opponentMode === 'ai' && !!session.botLevel && !session.unranked,
+      });
     });
     // Once, on the first render that has everything it needs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -5114,65 +5276,14 @@ function App() {
 
   function importReplayFromNotation() {
     try {
-      const parsed = parseMemoryNotation(replayText);
-      const initial = createPositionFromBackRankKey(parsed.config960);
-      let current: BoardState = initial;
-      let replayLog: GameLog = createGameLog(`replay-${Date.now()}`, initial, Date.now());
-
-      for (const token of parsed.moves) {
-        const mv = token.move;
-
-        // Auto-switch topology if @B/@A suffix requires it.
-        // T1.2: use the pure `toggleTopology` (doesn't flip sideToMove or
-        // record a move). Previously this called applyRotationMove which
-        // burned a turn — and then castles by the (now wrong) side failed
-        // with "No legal castle". The @B suffix is informational; if the
-        // game really included a rotation, the log carries it as its own
-        // entry and the toggleTopology no-ops when topology already matches.
-        if (token.requiredTopology && current.topologyState !== token.requiredTopology) {
-          current = toggleTopology(current);
-        }
-
-        if (mv.kind === 'topologyToggle') {
-          const topoBefore = current.topologyState;
-          const san = computeSAN(current, mv);
-          current = applyRotationMove(current);
-          replayLog = appendMove(replayLog, mv, san, topoBefore);
-        } else if (mv.kind === 'castle') {
-          // Resolve castle from legal moves
-          const legal = getLegalMoves(current);
-          const targetFile = token.castleSide === 'queen' ? 'c' : 'g';
-          const castleMove = legal.find(
-            (m) => m.kind === 'castle' && m.to && m.to[0] === targetFile,
-          );
-          if (!castleMove) {
-            throw new NotationParseError('No legal castle move available at this position.');
-          }
-          const topoBefore = current.topologyState;
-          const san = computeSAN(current, castleMove);
-          current = applyMove(current, castleMove);
-          replayLog = appendMove(replayLog, castleMove, san, topoBefore);
-        } else if (mv.from && mv.to) {
-          if (!current.pieces[mv.from]) {
-            throw new NotationParseError(`Illegal move: no piece on ${mv.from}.`);
-          }
-          // Match against legal moves to get correct kind (capture vs normal)
-          const legal = getLegalMoves(current);
-          const matched = legal.find(
-            (m) =>
-              m.from === mv.from &&
-              m.to === mv.to &&
-              (!mv.promotion || m.promotion === mv.promotion),
-          ) ?? mv;
-          const topoBefore = current.topologyState;
-          const san = computeSAN(current, matched);
-          current = applyMove(current, matched);
-          replayLog = appendMove(replayLog, matched, san, topoBefore);
-        }
-      }
+      // QA-02 — strict: every entry has to be a move the live game would
+      // have allowed at that point, or the whole log is refused with the
+      // move it failed on. See replayFromNotation.
+      const replay = replayFromNotation(replayText, { roulette: gameMode === 'roulette' });
+      const { initial, final: current, log: replayLog } = replay;
 
       const id = `replay-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const snapshot = buildSavedGameSnapshot(replayLog, id);
+      const snapshot = buildSavedGameSnapshot(replayLog, id, true);
       if (localStorageAdapter.saveOrUpdateGame) {
         localStorageAdapter.saveOrUpdateGame(snapshot);
       } else {
@@ -5182,7 +5293,7 @@ function App() {
       // Load into the board as an unfinished game so it can be continued.
       liveSavedGameIdRef.current = id;
       setFormationLocked(true);
-      setLockedFormationKey(parsed.config960);
+      setLockedFormationKey(replay.config960);
       setInitialState(initial);
       setState(current);
       setSelected(null);
@@ -5194,6 +5305,15 @@ function App() {
       savedForLogIdRef.current = null;
       setSearchEvalFromWhite(null);
       setSearchMateInPlies(null);
+      resetGameEndState();
+      // QA-02 — an imported game is never ranked, whatever the bot level.
+      // The mark lives here and in the Memory entry (never in /games), so a
+      // resume from Memory keeps it.
+      importedLogIdRef.current = replayLog.id;
+      // A log that already ends the game loads as over. That ending is not
+      // one the player just reached, so it gets no summary and no save.
+      if (boardEnding(current, replay.lastWasRotation)) completedLogIdRef.current = replayLog.id;
+      checkGameOver(current, replay.lastWasRotation);
       classifyImportedLog(replayLog);
 
       setReplayError(null);
@@ -5226,7 +5346,7 @@ function App() {
   const buildNotation = useCallback((annotate: boolean) => {
     const lines: string[] = [
       `[Chess960 "${positionLabel}"]`,
-      `[Seed "${seed}"]`,
+      `[Seed "${notationSeed}"]`,
       '',
     ];
     const entries = log.moves;
@@ -5283,7 +5403,7 @@ function App() {
       lines.push(line);
     }
     return lines.join('\n');
-  }, [log.moves, positionLabel, seed]);
+  }, [log.moves, positionLabel, notationSeed]);
 
   const notationString = useMemo(() => buildNotation(true), [buildNotation]);
 
@@ -5331,6 +5451,12 @@ function App() {
     }
     if (gameStatus === 'timeout_black') {
       return 'Black ran out of time. White wins';
+    }
+    if (gameStatus === 'resigned_white') {
+      return 'White resigned. Black wins';
+    }
+    if (gameStatus === 'resigned_black') {
+      return 'Black resigned. White wins';
     }
     return null;
   }, [gameStatus, state.sideToMove]);
@@ -5960,7 +6086,7 @@ function App() {
           <button
             type="button"
             className="action-btn resign-btn"
-            onClick={requestResign}
+            onClick={() => requestResign('black')}
             disabled={log.moves.length === 0}
             aria-label="Resign (black)"
             title="Resign"
@@ -6719,8 +6845,8 @@ function App() {
             <button
               type="button"
               className="action-btn resign-btn"
-              onClick={requestResign}
-              disabled={!!watchingGame || gameStatus !== 'active' || log.moves.length === 0}
+              onClick={() => requestResign('white')}
+              disabled={!!watchingGame || gameStatus !== 'active' || log.moves.length === 0 || botThinking}
               aria-label="Resign"
             >
               <Icon icon={Flag} size="md" aria-hidden />
@@ -7427,7 +7553,7 @@ function App() {
           cancelLabel="Cancel"
           danger
           onConfirm={confirmResign}
-          onCancel={() => setConfirmingResign(false)}
+          onCancel={() => setConfirmingResign(null)}
         />
       )}
 
@@ -7475,22 +7601,37 @@ function App() {
           mpSync.matchState.host.uid,
         );
         const opp = mpSync.opponentDisplayName;
+        // QA-04 — a flag fall or an inactivity forfeit is not a resignation.
+        const resignCause =
+          myView === 'human-resign' && mpSelfResignedRef.current === mpSync.matchState.code
+            ? 'resign'
+            : mpResignCause({ ...mpSync.matchState, outcome: mpEndOutcome });
         const headline =
           myView === 'human-win'
             ? `You won vs ${opp}!`
             : myView === 'human-resign'
-              ? `You resigned vs ${opp}.`
+              ? resignCause === 'timeout'
+                ? `You ran out of time vs ${opp}.`
+                : resignCause === 'resign'
+                  ? `You resigned vs ${opp}.`
+                  : `You lost vs ${opp}.`
               : myView === 'ai-win'
                 ? `You lost vs ${opp}.`
                 : `Draw vs ${opp}.`;
-        const subline =
+        const loserName =
           mpEndOutcome === 'host-resign'
-            ? `${mpSync.matchState.host.displayName} resigned.`
-            : mpEndOutcome === 'guest-resign'
-              ? `${mpSync.matchState.guest?.displayName ?? 'Guest'} resigned.`
-              : mpEndOutcome === 'draw'
-                ? 'Match drawn.'
-                : `${mpEndOutcome === 'white-win' ? 'White' : 'Black'} wins by checkmate.`;
+            ? mpSync.matchState.host.displayName
+            : mpSync.matchState.guest?.displayName ?? 'Guest';
+        const subline =
+          mpEndOutcome === 'host-resign' || mpEndOutcome === 'guest-resign'
+            ? resignCause === 'timeout'
+              ? `${loserName} ran out of time.`
+              : resignCause === 'resign'
+                ? `${loserName} resigned.`
+                : `${loserName} resigned or left the game.`
+            : mpEndOutcome === 'draw'
+              ? 'Match drawn.'
+              : `${mpEndOutcome === 'white-win' ? 'White' : 'Black'} wins by checkmate.`;
         function dismiss() {
           busy.navigate('Back to the board', () => {
             setMpEndOutcome(null);
@@ -7623,10 +7764,15 @@ function App() {
           durationMs={lastGameDurationMs ?? undefined}
           gameMode={gameMode}
           uncountedReason={
-            botLevel !== 'strong'
-              ? `Played vs the ${BOT_STRENGTH_LABEL[botLevel]} bot. Only Strong-bot games are ranked.`
-              : undefined
+            lastGameImported
+              ? 'Loaded from a replay log. Imported games are never ranked.'
+              : lastGameResumed
+                ? 'Resumed from a saved position. Only games played from the first move against the Strong bot are ranked.'
+                : botLevel !== 'strong'
+                  ? `Played vs the ${BOT_STRENGTH_LABEL[botLevel]} bot. Only Strong-bot games are ranked.`
+                  : undefined
           }
+          uncountedTitle={lastGameImported ? 'Imported game' : undefined}
           onClose={() => setSummaryOpen(false)}
           onPlayAgain={() => {
             setSummaryOpen(false);
@@ -7653,7 +7799,7 @@ function App() {
             // The modal already explained the consequence — go straight to
             // the resign-confirmation dialog so the player can change their
             // mind without an extra click.
-            setConfirmingResign(true);
+            requestResign();
           }}
         />
       )}
@@ -7788,6 +7934,8 @@ function App() {
               }
               if (gameStatus === 'king_captured_white_wins') return 'white';
               if (gameStatus === 'king_captured_black_wins') return 'black';
+              if (gameStatus === 'resigned_white') return 'black';
+              if (gameStatus === 'resigned_black') return 'white';
               if (gameStatus.startsWith('draw')) return 'draw';
               return null;
             })()}

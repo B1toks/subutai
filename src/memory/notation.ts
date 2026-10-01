@@ -6,6 +6,14 @@ export interface ParsedToken {
   move: Move;
   requiredTopology?: TopologyState;
   castleSide?: 'king' | 'queen';
+  /** The piece letter the token named (none = no letter given). */
+  piece?: PieceType;
+  /** Which topology a rotation token says it rotates FROM ("A→B" = A). */
+  rotationFrom?: TopologyState;
+  /** QA-02 — the log's move number and the token as written, so an
+   *  import error can say which move it is about. */
+  moveNumber: number;
+  text: string;
 }
 
 function parseChess960Header(lines: string[]): string {
@@ -51,13 +59,23 @@ function stripMarkers(token: string): string {
     .trim();
 }
 
-function parseMoveToken(tokenRaw: string): ParsedToken {
+const LETTER_PIECE: Record<string, PieceType> = {
+  N: 'knight', B: 'bishop', R: 'rook', Q: 'queen', K: 'king',
+};
+
+function parseMoveToken(tokenRaw: string, moveNumber: number): ParsedToken {
   const token = stripMarkers(tokenRaw.trim());
-  if (!token) throw new NotationParseError('Empty move token.');
+  if (!token) throw new NotationParseError(`Move ${moveNumber}: empty move token.`);
 
   // Topology toggle: "A→B" or "B→A"
-  if (/^[AB]\s*[→\->]\s*[AB]$/.test(token)) {
-    return { move: { kind: 'topologyToggle' } };
+  const rotation = token.match(/^([AB])\s*[→\->]\s*[AB]$/);
+  if (rotation) {
+    return {
+      move: { kind: 'topologyToggle' },
+      rotationFrom: rotation[1] as TopologyState,
+      moveNumber,
+      text: token,
+    };
   }
 
   // Castling: O-O-O or O-O (also accept 0-0-0 / 0-0 numeric form), with
@@ -70,6 +88,8 @@ function parseMoveToken(tokenRaw: string): ParsedToken {
       move: { kind: 'castle' },
       castleSide: side,
       requiredTopology: castleMatch[2] as TopologyState | undefined,
+      moveNumber,
+      text: token,
     };
   }
 
@@ -79,7 +99,7 @@ function parseMoveToken(tokenRaw: string): ParsedToken {
     /^([NBRQK])?([a-h][1-8])\s*[→-]\s*([a-h][1-8])(?:=([QRBN]))?(?:@([AB]))?$/,
   );
   if (moveMatch) {
-    const [, , from, to, promo, topo] = moveMatch;
+    const [, letter, from, to, promo, topo] = moveMatch;
     const promotion = promo ? PROMO_MAP[promo] : undefined;
     const kind: MoveKind = promotion ? 'promotion' : 'normal';
     return {
@@ -90,10 +110,13 @@ function parseMoveToken(tokenRaw: string): ParsedToken {
         ...(promotion ? { promotion } : {}),
       },
       requiredTopology: topo as TopologyState | undefined,
+      piece: letter ? LETTER_PIECE[letter] : undefined,
+      moveNumber,
+      text: token,
     };
   }
 
-  throw new NotationParseError(`Unrecognized move token: "${tokenRaw}"`);
+  throw new NotationParseError(`Move ${moveNumber}: unrecognized move token "${tokenRaw.trim()}".`);
 }
 
 export function parseMemoryNotation(notation: string): { config960: string; moves: ParsedToken[] } {
@@ -109,10 +132,11 @@ export function parseMemoryNotation(notation: string): { config960: string; move
   for (const line of lines) {
     const mm = line.match(/^(\d+)\.\s+(.+)$/);
     if (!mm) continue;
+    const moveNumber = Number(mm[1]);
     const rest = mm[2];
     const parts = rest.split(/\s{2,}/).map((p) => p.trim()).filter(Boolean);
-    if (parts.length >= 1) moves.push(parseMoveToken(parts[0]));
-    if (parts.length >= 2) moves.push(parseMoveToken(parts[1]));
+    if (parts.length >= 1) moves.push(parseMoveToken(parts[0], moveNumber));
+    if (parts.length >= 2) moves.push(parseMoveToken(parts[1], moveNumber));
   }
 
   if (moves.length === 0) {

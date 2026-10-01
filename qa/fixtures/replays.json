@@ -1,0 +1,249 @@
+[
+ {
+  "name": "seed2",
+  "notation": "[Chess960 \"BRKRNNQB\"]\n[Seed \"2\"]\n\n1. h2→h3  c7→c6\n2. A→B  Nf8→h5@B\n3. g2→g3@B  b7→b6@B\n4. Bh1→g2@B  Qg8→f8@B\n5. Qg1→b8@B  a7→b8@B\n6. c2→d3@B  f7→f6@B\n7. h3→h5@B  b8→b5@B\n8. Bg2→g4@B  B→A\n9. a2→a4  Kc8→c7\n10. a4→a5  A→B\n11. Kc1→b4@B  Qf8→f7@B\n12. Nf1→h4@B  Qf7→h5@B\n13. Ba1→e3@B  g7→h6@B\n14. d3→d6@B  b6→a5@B\n15. b2→a3@B  f6→d6@B\n16. d2→c3@B  Rd8→c4@B\n17. Kb4→b2@B  Rc4→b3@B\n18. Kb2→a1@B  e7→f6@B\n19. B→A  Rb3→b4\n20. Be3→c5  Qh5→g5\n21. f2→f4  d6→d5\n22. Bc5→f2  h6→h5\n23. Rd1→d2  d5→d4\n24. f4→g5  A→B\n25. Ka1→b2@B  a5→a4@B\n26. a3→a6@B  h7→g7@B\n27. Kb2→a1@B  d4→c4@B\n28. a6→b6@B  c6→d6@B\n29. Ne1→c2@B  b5→a5@B\n30. Bg4→e6@B  c4→b1@B\n31. Be6→g8@B  Kc7→d8@B\n32. g5→g7@B  d7→c6@B\n33. Nc2→f4@B  B→A",
+  "features": [
+   "rotation-promotion"
+  ],
+  "plies": 66,
+  "final": {
+   "topology": "A",
+   "side": "white",
+   "pieces": {
+    "a8": "black bishop",
+    "b1": "black queen",
+    "e2": "white pawn",
+    "e8": "black knight",
+    "h8": "black bishop",
+    "g3": "white pawn",
+    "h4": "white knight",
+    "c3": "white pawn",
+    "f6": "black pawn",
+    "b4": "black rook",
+    "f2": "white bishop",
+    "h5": "black pawn",
+    "d2": "white rook",
+    "a4": "black pawn",
+    "g7": "white pawn",
+    "a1": "white king",
+    "b6": "white pawn",
+    "d6": "black pawn",
+    "a5": "black pawn",
+    "g8": "white bishop",
+    "d8": "black king",
+    "c6": "black pawn",
+    "f4": "white knight"
+   }
+  }
+ },
+ {
+  "name": "seed37",
+  "notation": "[Chess960 \"NRKRBBNQ\"]\n[Seed \"37\"]\n\n1. b2→b3  d7→d5\n2. A→B  Bf8→b2@B\n3. Ng1→e4@B  g7→g6@B\n4. Qh1→g8@B  Kc8→c5@B\n5. Qg8→e8@B  c7→d6@B\n6. Bf1→g4@B  Na8→c7@B\n7. Qe8→e5@B  Rd8→a8@B\n8. Qe5→h5@B  d5→d4@B\n9. f2→e3@B  g6→h6@B\n10. Ne4→c3@B  Qh8→f8@B\n11. Qh5→e4@B  h7→g6@B\n12. g2→g3@B  Nc7→d5@B\n13. Be1→g1@B  Qf8→g8@B\n14. Na1→c4@B  Rb8→b4@B\n15. Qe4→f4@B  Nd5→c7@B\n16. Nc3→d5@B  Qg8→f5@B\n17. b3→a3@B  h6→h3@B\n18. Rd1→a1@B  Ra8→a4@B\n19. c2→c3@B  Ra4→a8@B\n20. Bg4→f1@B  d6→e3@B\n21. O-O-O@B  Rb4→b5@B\n22. Nc4→f2@B  B→A",
+  "features": [
+   "castle-B"
+  ],
+  "plies": 44,
+  "final": {
+   "topology": "A",
+   "side": "white",
+   "pieces": {
+    "a2": "white pawn",
+    "a7": "black pawn",
+    "b7": "black pawn",
+    "d2": "white pawn",
+    "e2": "white pawn",
+    "e7": "black pawn",
+    "f7": "black pawn",
+    "h2": "white pawn",
+    "b2": "black bishop",
+    "c5": "black king",
+    "d4": "black pawn",
+    "e3": "black pawn",
+    "g6": "black pawn",
+    "g3": "white pawn",
+    "g1": "white bishop",
+    "f4": "white queen",
+    "c7": "black knight",
+    "d5": "white knight",
+    "f5": "black queen",
+    "a3": "white pawn",
+    "h3": "black pawn",
+    "a1": "white rook",
+    "c3": "white pawn",
+    "a8": "black rook",
+    "f1": "white bishop",
+    "c1": "white king",
+    "d1": "white rook",
+    "b5": "black rook",
+    "f2": "white knight"
+   }
+  }
+ },
+ {
+  "name": "seed49",
+  "notation": "[Chess960 \"RQBBNNKR\"]\n[Seed \"49\"]\n\n1. d2→d4  d7→d6\n2. e2→e3  g7→g6\n3. h2→h4  h7→h6\n4. A→B  Nf8→e6@B\n5. h4→h5@B  h6→h3@B\n6. f2→f3@B  O-O@B\n7. B→A  h3→h2\n8. Kg1→h2  Ne8→f6\n9. A→B  Qb8→b5@B\n10. g2→h3@B  Kg8→g5@B\n11. Bc1→c3@B  Bc8→d7@B\n12. B→A  c7→c6\n13. Kh2→g1  Nf6→d5\n14. e3→e4  a7→a5\n15. Qb1→c1  Kg5→h4\n16. A→B  Kh4→h6@B\n17. f3→e3@B  Ne6→h4@B\n18. Qc1→a3@B  Nd5→f6@B\n19. Nf1→h4@B  d6→e3@B\n20. h5→g5@B  a5→d4@B\n21. b2→b3@B  Ra8→b8@B\n22. g5→f8@B  Qb5→d5@B\n23. Qa3→d4@B  e3→f3@B\n24. f8→e7=Q@B  Kh6→h4@B\n25. Bc3→g7@B  B→A\n26. Kg1→f2  g6→g5\n27. a2→a3  b7→b5\n28. Ne1→d3  c6→c5\n29. a3→a4  g5→g4\n30. e4→e5  c5→d4\n31. a4→a5  Qd5→e4\n32. A→B  Nf6→d3@B\n33. Kf2→d2@B  f7→f6@B\n34. c2→c3@B  f3→f2@B\n35. B→A  f2→f1=Q\n36. b3→b4  Rb8→b6\n37. Qe7→f7  Qf1→f5\n38. Rh1→g1  f6→e5\n39. Qf7→d5  Qe4→h1\n40. h3→g4  d4→c3\n41. Kd2→c3  Qf5→e4\n42. A→B  b5→d5@B\n43. Bg7→h8@B  Rb6→c6@B\n44. Rg1→c2@B  d5→d4@B\n45. Kc3→d4@B  B→A",
+  "features": [
+   "castle-B",
+   "promotion-B"
+  ],
+  "plies": 90,
+  "final": {
+   "topology": "A",
+   "side": "white",
+   "pieces": {
+    "a1": "white rook",
+    "d1": "white bishop",
+    "d8": "black bishop",
+    "d7": "black bishop",
+    "h4": "black king",
+    "d3": "black knight",
+    "g4": "white pawn",
+    "e5": "black pawn",
+    "a5": "white pawn",
+    "b4": "white pawn",
+    "h1": "black queen",
+    "e4": "black queen",
+    "h8": "white bishop",
+    "c6": "black rook",
+    "c2": "white rook",
+    "d4": "white king"
+   }
+  }
+ },
+ {
+  "name": "seed90",
+  "notation": "[Chess960 \"NRQNKRBB\"]\n[Seed \"90\"]\n\n1. e2→e3  a7→a6\n2. b2→b3  h7→h5\n3. d2→d4  a6→a5\n4. f2→f4  d7→d5\n5. Ke1→e2  f7→f6\n6. f4→f5  g7→g6\n7. A→B  c7→c6@B\n8. c2→c3@B  b7→a6@B\n9. a2→b2@B  Rb8→b5@B\n10. B→A  Qc8→b7\n11. A→B  Qb7→b8@B\n12. B→A  Qb8→g3\n13. c3→c4  Qg3→g4\n14. Ke2→e1  Na8→b6\n15. b3→b4  Qg4→g5\n16. f5→g6  Rb5→b4\n17. h2→h4  d5→c4\n18. Ke1→e2  c4→c3\n19. b2→c3  e7→e5\n20. Bg1→f2  e5→d4\n21. A→B  d4→c3@B\n22. g2→h3@B  a6→a3@B\n23. g6→g7@B  Rf8→e5@B\n24. g7→h8=N@B  c3→f2@B\n25. e3→e5@B  a3→b3@B\n26. e5→f5@B  h5→h3@B\n27. Qc1→e3@B  Bg8→f5@B\n28. h4→h5@B  Qg5→g7@B\n29. h5→g5@B  c6→d6@B\n30. Rb1→c1@B  Nd8→c6@B\n31. Qe3→d4@B  Nb6→d5@B\n32. g5→g7@B  d6→d3@B\n33. g7→h7=B@B  h3→g3@B\n34. Rc1→b2@B  Nd5→b6@B\n35. Qd4→c1@B  d3→c3@B\n36. Rf1→e1@B  B→A\n37. Na1→c2  Rb4→h4\n38. Qc1→g5  Rh4→h6\n39. Re1→g1  Bf5→g4\n40. Ke2→e3  f2→f1=R\n41. Qg5→h4  g3→g2\n42. Bh7→g8  Nb6→a4\n43. Rb2→b3  g2→h1=B\n44. Bg8→d5  Bh1→d5\n45. Nc2→e1  A→B",
+  "features": [
+   "promotion-B-under"
+  ],
+  "plies": 90,
+  "final": {
+   "topology": "B",
+   "side": "white",
+   "pieces": {
+    "d1": "white knight",
+    "e8": "black king",
+    "h8": "white knight",
+    "a5": "black pawn",
+    "f6": "black pawn",
+    "b3": "white rook",
+    "c6": "black knight",
+    "c3": "black pawn",
+    "h6": "black rook",
+    "g1": "white rook",
+    "g4": "black bishop",
+    "e3": "white king",
+    "f1": "black rook",
+    "h4": "white queen",
+    "a4": "black knight",
+    "d5": "black bishop",
+    "e1": "white knight"
+   }
+  }
+ },
+ {
+  "name": "seed213",
+  "notation": "[Chess960 \"NRQBNKBR\"]\n[Seed \"213\"]\n\n1. d2→d4  h7→h5\n2. g2→g3  Na8→b6\n3. f2→f3  Bg8→h7\n4. Kf1→g2  a7→a6\n5. Qc1→h6  O-O\n6. h2→h3  h5→h4\n7. Rh1→h2  A→B\n8. Kg2→h1@B  h4→g4@B\n9. c2→d3@B  g7→g6@B\n10. e2→f2@B  Kg8→f5@B\n11. B→A  Ne8→d6\n12. A→B  a6→a3@B\n13. B→A  g6→g5\n14. b2→b4  Nb6→a4\n15. A→B  g5→h6@B\n16. a2→b3@B  Bh7→g8@B\n17. Bg1→d6@B  B→A\n18. Kh1→g1  e7→e6\n19. Rb1→b2  g4→f3\n20. b3→a4  c7→c5\n21. d4→d5  h6→h5\n22. a4→a5  A→B\n23. h3→h6@B  e6→e3@B\n24. b4→a4@B  Qc8→e4@B\n25. Bd6→f8@B  B→A\n26. d3→d4  a3→b2\n27. Ne1→d3  b2→a1=R\n28. f2→e3  c5→c4\n29. a5→a6  Qe4→e6\n30. a6→a7  Bd8→h4\n31. a7→b8=Q  Bh4→g3\n32. Nd3→f2  A→B\n33. Kg1→h1@B  Bg3→c7@B\n34. B→A  b7→b5\n35. A→B  f7→f6@B\n36. B→A  c4→c3\n37. Bf8→a3  b5→b4\n38. A→B  Qe6→e3@B\n39. h6→g6@B  Qe3→h3@B\n40. Nf2→e4@B  Bg8→g6@B\n41. B→A  b4→a3\n42. Qb8→f8  Bc7→d6\n43. A→B  Kf5→e6@B\n44. a4→a5@B  Ra1→d1@B",
+  "features": [
+   "castle-A"
+  ],
+  "plies": 88,
+  "final": {
+   "topology": "B",
+   "side": "white",
+   "pieces": {
+    "d1": "black rook",
+    "d7": "black pawn",
+    "f3": "black pawn",
+    "h2": "white rook",
+    "d5": "white pawn",
+    "h5": "black pawn",
+    "d4": "white pawn",
+    "h1": "white king",
+    "f6": "black pawn",
+    "c3": "black pawn",
+    "a3": "black pawn",
+    "g6": "black bishop",
+    "h3": "black queen",
+    "e4": "white knight",
+    "f8": "white queen",
+    "d6": "black bishop",
+    "e6": "black king",
+    "a5": "white pawn"
+   }
+  }
+ },
+ {
+  "name": "seed220",
+  "notation": "[Chess960 \"RKBNQRNB\"]\n[Seed \"220\"]\n\n1. b2→b3  h7→h6\n2. a2→a4  d7→d6\n3. Ra1→a2  e7→e6\n4. f2→f4  A→B\n5. Ng1→h3@B  Rf8→f5@B\n6. B→A  b7→b6\n7. A→B  e6→e3@B\n8. e2→f3@B  Qe8→f8@B\n9. f4→e4@B  Nd8→b5@B\n10. Nh3→f4@B  B→A\n11. Ra2→b2  f7→f6\n12. Nd1→e3  g7→g5\n13. a4→a5  h6→h5\n14. h2→h4  Bc8→a6\n15. e4→e5  O-O-O\n16. a5→b6  A→B\n17. Nf4→e6@B  Ba6→a4@B\n18. b6→b7@B  g5→e5@B\n19. Rf1→e4@B  d6→e3@B\n20. Kb1→a1@B  Ba4→c2@B\n21. b3→a3@B  e5→h4@B\n22. Rb2→b3@B  c7→c6@B\n23. Rb3→c4@B  Nb5→d4@B\n24. Ne6→g5@B  Qf8→g5@B\n25. Re4→f4@B  Rf5→e4@B\n26. g2→h3@B  h4→g3@B\n27. a3→a6@B  Re4→f5@B\n28. B→A  Kc8→d7\n29. b7→b8=B  c6→c5\n30. Qe1→g1  e3→d2\n31. Bc1→b2  A→B",
+  "features": [
+   "castle-A",
+   "ep-B",
+   "rotation-promotion"
+  ],
+  "plies": 62,
+  "final": {
+   "topology": "B",
+   "side": "white",
+   "pieces": {
+    "a7": "black pawn",
+    "c2": "black bishop",
+    "d2": "black queen",
+    "g8": "black knight",
+    "h1": "white bishop",
+    "h8": "black bishop",
+    "f3": "white pawn",
+    "f6": "black pawn",
+    "h5": "black pawn",
+    "d8": "black rook",
+    "a1": "white king",
+    "c4": "white rook",
+    "d4": "black knight",
+    "g5": "black queen",
+    "f4": "white rook",
+    "g3": "black pawn",
+    "a6": "white pawn",
+    "f5": "black rook",
+    "d7": "black king",
+    "b8": "white bishop",
+    "c5": "black pawn",
+    "g1": "white queen",
+    "b2": "white bishop"
+   }
+  }
+ },
+ {
+  "name": "seed227",
+  "notation": "[Chess960 \"BNNRQBKR\"]\n[Seed \"227\"]\n\n1. c2→c3  g7→g5\n2. e2→e3  e7→e6\n3. A→B  f7→f6@B\n4. B→A  Bf8→b4\n5. b2→b3  O-O\n6. A→B  h7→g6@B\n7. B→A  f6→f5\n8. f2→f4  Kg8→h7\n9. A→B  b7→b6@B\n10. Nc1→d3@B  c7→c6@B\n11. B→A  a7→a6\n12. e3→e4  a6→a5\n13. A→B  e6→d3@B\n14. Nb1→d4@B  Rf8→g8@B\n15. a2→b2@B  d7→c7@B\n16. B→A  Nb8→d7\n17. g2→g4  f5→g4\n18. A→B  Rg8→g7@B\n19. b2→b4@B  Qe8→e4@B\n20. Ba1→c1@B  Rg7→f8@B\n21. Rd1→a2@B  Qe4→h4@B\n22. d2→c2@B  Qh4→e4@B\n23. B→A  Rf8→h8\n24. c2→d3  b6→b5\n25. Ra2→f2  Qe4→d4\n26. Bc1→b2  a5→b4\n27. f4→f5  b4→c3\n28. h2→h4  g4→h3\n29. f5→g6  Kh7→g6\n30. Qe1→e6  Kg6→g7\n31. Qe6→e1  b5→b4\n32. Bf1→h3  Rd8→e8\n33. Bb2→a1  g5→g4\n34. Qe1→e2  Qd4→c5\n35. O-O  Qc5→f8\n36. Rf1→c1  Nd7→e5\n37. A→B  c3→c2@B\n38. d3→d6@B  c2→e2=N@B\n39. Kg1→h1@B  g4→g1@B\n40. b3→a3@B  Nc8→a5@B\n41. Rf2→e6@B  b4→b1@B\n42. Bh3→f1@B  Qf8→f6@B\n43. Bf1→f3@B  Ne2→c3@B\n44. d6→f6@B  Ne5→h3@B\n45. a3→a6@B  Nh3→f4@B",
+  "features": [
+   "castle-A",
+   "ep-A",
+   "promotion-B-under"
+  ],
+  "plies": 90,
+  "final": {
+   "topology": "B",
+   "side": "white",
+   "pieces": {
+    "a8": "black bishop",
+    "c6": "black pawn",
+    "c7": "black pawn",
+    "h8": "black rook",
+    "g7": "black king",
+    "e8": "black rook",
+    "a1": "white bishop",
+    "c1": "white rook",
+    "h1": "white king",
+    "g1": "black pawn",
+    "a5": "black knight",
+    "e6": "white rook",
+    "b1": "black pawn",
+    "f6": "white pawn",
+    "f3": "white bishop",
+    "c3": "black knight",
+    "a6": "white pawn",
+    "f4": "black knight"
+   }
+  }
+ }
+]

@@ -20,7 +20,7 @@ A **Chess 960 variant** with dynamically rotating 2×2 board segments and custom
 - **Time control** — None / 1 / 3 / 10 min per side against the bot. Clocks start on the first move; running out of time loses the game.
 - **Modes** — Classic (checkmate wins, rotation costs a tempo) and Roulette (spin a bag of piece types, two actions per turn, capture the king).
 - **Opponents** — the engine, a friend by 6-letter code (or Quick match), or hot-seat on one device.
-- **Themes** — Neon (default), Wood, Wood Light, Cyberpunk, Fantasy. The theme button sits in the settings tray at the bottom of the left rail.
+- **Themes** — Adaptive (default: Neon while the board is in topology A, Wood Light in B), Neon, Wood, Wood Light, Fantasy. The theme button sits in the settings tray at the bottom of the left rail.
 
 ## Streaming & interactive layer
 
@@ -39,13 +39,24 @@ Open the Twitch panel, connect a channel, and pick a mode. Candidate moves are d
 
 The music dock loads a Spotify/track URL, a local file, or captures tab/mic audio, detects BPM (histogram → essentia.js → TempoCNN neural net), and locks a beat grid. Turn on **Beat Mode** to snap moves to the beat. First-time controls explain themselves with a one-line coach-mark. Dock the Twitch and music panels into the layout and the board slides over to make room.
 
-### Victory cinematic
+### Endgame scenes
 
-Win a game after being clearly behind and a ~9-second pixel cutscene fires — cold build-up, a bass-drop strobe pulsing *on the beat* of whatever's playing, then a freeze on **VICTORY**. To play it on demand, open the browser DevTools console and run:
+Every finished game ends with a short full-screen scene, then the summary. The scene is always about *your* king:
+
+- **Victory** — your king is lifted off its square, crowned, and the screen freezes on **VICTORY**.
+- **Defeat** — your king is lifted and topples; **DEFEAT**.
+- **Draw** — two hands meet in the middle.
+
+A checkmate closes an iris on the king first and hands over to the scene; a flag fall, a resignation or a captured king start with a beat of dimmed stillness. It plays the same way against the bot and in an online match (there it also covers a resignation, a flag fall and an inactivity forfeit), and it is skipped when spectating and with *reduce motion* on. In hot-seat there is no "you", so the scene follows the winner's king. The result is decided by the game, not by how it was going: a win from a lost position and a win from the first move get the same scene.
+
+To play one on demand, open the browser DevTools console and run:
 
 ```js
 subutaiVictory()        // red theme
 subutaiVictory('blue')  // electric-blue theme
+subutaiDefeat()
+subutaiDraw()
+subutaiEndgame('victory', { full: true }) // with the checkmate iris in front
 ```
 
 ## Tech
@@ -68,7 +79,7 @@ npm run dev
 
 Display names, saved games, the leaderboard, and the feedback collector use Firebase (Anonymous Auth + Firestore) on the free Spark plan. The chess engine, classifier, and eval bar work fully offline without it. See [FIREBASE_SETUP.md](./FIREBASE_SETUP.md) for the setup walkthrough.
 
-`firestore.rules` validates every write (field shapes, size caps, leaderboard numbers must be backed by a saved game, match logs are append-only and turn-owned). Deploy them with `npx firebase-tools deploy --only firestore:rules` after any change.
+`firestore.rules` validates every write (field shapes, size caps, leaderboard numbers must be backed by a saved game, match logs are append-only and turn-owned). Deploy them with `npx firebase-tools deploy --only firestore:rules` after any change. Publishing the site (`npm run deploy`) does not publish the rules; a release that changes `firestore.rules` needs that command as a separate step.
 
 ## Security notes
 

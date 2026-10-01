@@ -19,6 +19,7 @@ import {
 import { applyMove, isInCheck } from '../engine/moves';
 import { applyRotationMove } from '../engine/auxetic';
 import { computeSAN } from '../recording/log';
+import { inactivityForfeitApplies } from '../firebase/matchEnd';
 
 const ROULETTE_PIECE_BAG: PieceType[] = [
   'pawn',
@@ -92,7 +93,9 @@ export interface MultiplayerSyncHandle {
   /** Q.D.3: rotate as a roulette action. Topology toggle costs an
    *  action but doesn't consume a slot. */
   sendRotate: () => Promise<void>;
-  resign: () => Promise<void>;
+  /** Resolves true when THIS resignation is the outcome that was written
+   *  (false: it failed, or another outcome landed first). */
+  resign: () => Promise<boolean>;
   /** Race-safe terminal-outcome write (mate/draw detected locally). */
   writeOutcomeIfFirst: (outcome: MatchOutcome) => Promise<void>;
   // Q.D.3: full solo-roulette parity. The bag, action count and used
@@ -175,7 +178,7 @@ export function useMultiplayerSync(
   useEffect(() => {
     if (!matchState || !myUid) return;
     if (matchState.status !== 'active' || matchState.outcome) return;
-    if (matchState.currentTurn !== myUid) {
+    if (matchState.currentTurn !== myUid || !inactivityForfeitApplies(matchState)) {
       setSelfAfkWarning(false);
       return;
     }
@@ -196,6 +199,7 @@ export function useMultiplayerSync(
     if (!matchState || !myUid) return;
     if (matchState.status !== 'active' || matchState.outcome) return;
     if (matchState.currentTurn === myUid) return;
+    if (!inactivityForfeitApplies(matchState)) return;
     const interval = setInterval(() => {
       const last = matchState.lastActivity?.toMillis?.();
       if (typeof last !== 'number') return;
@@ -209,6 +213,7 @@ export function useMultiplayerSync(
         if (!snap.exists()) return;
         const data = snap.data() as MatchDoc;
         if (data.outcome) return;
+        if (!inactivityForfeitApplies(data)) return; // a move started the clock
         const txLast = data.lastActivity?.toMillis?.();
         if (
           typeof txLast === 'number' &&
@@ -464,8 +469,9 @@ export function useMultiplayerSync(
     }
   }
 
-  async function resign(): Promise<void> {
-    if (liveMatch.status !== 'active') return;
+  async function resign(): Promise<boolean> {
+    if (liveMatch.status !== 'active') return false;
+    let wrote = false;
     setBusy(true);
     setError(null);
     try {
@@ -475,6 +481,7 @@ export function useMultiplayerSync(
       // clobber the outcome that landed first. Losing the race is fine:
       // the game is over either way.
       await runTransaction(db, async (tx) => {
+        wrote = false; // a transaction body can run more than once
         const ref = doc(db, 'matches', liveMatch.code);
         const snap = await tx.get(ref);
         if (!snap.exists()) return;
@@ -484,13 +491,16 @@ export function useMultiplayerSync(
           outcome,
           lastActivity: serverTimestamp(),
         });
+        wrote = true;
       });
     } catch (err) {
       console.error('[mp] resign failed', err);
       setError('Could not resign. Try again.');
+      return false;
     } finally {
       setBusy(false);
     }
+    return wrote;
   }
 
   async function writeOutcomeIfFirst(outcome: MatchOutcome): Promise<void> {

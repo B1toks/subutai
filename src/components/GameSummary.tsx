@@ -25,6 +25,8 @@ interface GameSummaryProps {
   /** V1 — why an otherwise-complete game isn't ranked (practice bot level).
    *  Defaults to the too-short explanation when absent. */
   uncountedReason?: string;
+  /** Heading over uncountedReason; "Practice game" when absent. */
+  uncountedTitle?: string;
   onClose: () => void;
   onPlayAgain: () => void;
 }
@@ -76,6 +78,7 @@ export function GameSummary({
   durationMs,
   gameMode = 'classic',
   uncountedReason,
+  uncountedTitle,
   onClose,
   onPlayAgain,
 }: GameSummaryProps) {
@@ -163,7 +166,9 @@ export function GameSummary({
           </>
         ) : (
           <div className="summary-uncounted">
-            <strong>{uncountedReason ? 'Practice game' : 'This game wasn’t counted'}</strong>
+            <strong>
+              {uncountedReason ? uncountedTitle ?? 'Practice game' : 'This game wasn’t counted'}
+            </strong>
             <p>{uncountedReason ?? 'Games under 10 moves don’t earn points.'}</p>
           </div>
         )}

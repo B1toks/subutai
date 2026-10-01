@@ -206,6 +206,13 @@ function computeRoulettePoints(
 ): GamePoints {
   const moveCount = countAllMoves(log);
 
+  // QA-03 — same floor as classic, and the one the /games rule enforces
+  // (plausiblePoints: counted == false || moveCount >= 10). A counted
+  // roulette game shorter than that was refused on save.
+  if (moveCount < MIN_COUNTED_MOVES) {
+    return zeroResult(moveCount);
+  }
+
   // Loss / resign — still counted so /users.rouletteGamesPlayed ticks up,
   // but contributes nothing to bestPoints.
   if (outcome === 'human-resign' || outcome === 'ai-win') {

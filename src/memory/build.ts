@@ -119,15 +119,20 @@ function buildBaseFromLog(
 export function buildSavedGameFromLog(
   log: GameLog,
   finalState: BoardState,
-  termination: 'checkmate' | 'stalemate',
+  termination: 'checkmate' | 'stalemate' | 'resignation',
   sourceGameId?: string,
+  /** QA-11 — a resignation is not decided by who is to move. */
+  winnerOverride?: 'white' | 'black',
+  /** QA-02 — came from Load replay; never ranked, even after a resume. */
+  imported?: boolean,
 ): SavedGame {
   const base = buildBaseFromLog(log);
 
   const humanIsWhite = true;
-  const winner = termination === 'checkmate'
-    ? (finalState.sideToMove === 'white' ? 'black' : 'white')
-    : null;
+  const winner = winnerOverride
+    ?? (termination === 'checkmate'
+      ? (finalState.sideToMove === 'white' ? 'black' : 'white')
+      : null);
   const result: 'win' | 'loss' | 'draw' =
     termination === 'stalemate' ? 'draw'
     : winner === 'white' ? (humanIsWhite ? 'win' : 'loss')
@@ -150,12 +155,14 @@ export function buildSavedGameFromLog(
     notation: base.notation,
     config960: base.config960,
     sourceGameId,
+    ...(imported ? { imported: true } : {}),
   };
 }
 
 export function buildSavedGameSnapshot(
   log: GameLog,
   id: string,
+  imported?: boolean,
 ): SavedGame {
   const base = buildBaseFromLog(log);
   return {
@@ -169,6 +176,7 @@ export function buildSavedGameSnapshot(
     scoreHistory: base.scoreHistory,
     notation: base.notation,
     config960: base.config960,
+    ...(imported ? { imported: true } : {}),
   };
 }
 
