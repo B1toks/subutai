@@ -1768,7 +1768,7 @@ function App() {
       // the sign-in resolves. Signed out for good / no name yet: show the
       // summary locally and skip Firestore, as before.
       if (authLoading) {
-        pendingSaveRef.current = job;
+        pendingSaveRef.current.push(job);
         setSavingGame(true);
       }
       return;
@@ -1781,7 +1781,7 @@ function App() {
    *  touched while that game is still the last one finished. */
   async function saveFinishedGame(job: FinishedGameSave, uid: string, name: string) {
     const stillShown = () => completedLogIdRef.current === job.log.id;
-    setSavingGame(true);
+    if (stillShown()) setSavingGame(true);
     try {
       // Snapshot the pre-write best so the modal can show "old" alongside new.
       const oldBest = await getPersonalBest(uid, job.gameMode);
@@ -1823,18 +1823,19 @@ function App() {
     }
   }
 
-  // N-6 — a finished game waiting for the sign-in (see finishGame).
-  const pendingSaveRef = useRef<FinishedGameSave | null>(null);
+  // N-6 — finished games waiting for the sign-in (see finishGame). A list:
+  // a second game can end before the sign-in answers.
+  const pendingSaveRef = useRef<FinishedGameSave[]>([]);
   useEffect(() => {
-    const job = pendingSaveRef.current;
-    if (!job || authLoading) return;
-    pendingSaveRef.current = null;
+    const jobs = pendingSaveRef.current;
+    if (jobs.length === 0 || authLoading) return;
+    pendingSaveRef.current = [];
     if (!user || !displayName) {
       // Signed out after all: nothing to save to.
-      if (completedLogIdRef.current === job.log.id) setSavingGame(false);
+      if (jobs.some((j) => completedLogIdRef.current === j.log.id)) setSavingGame(false);
       return;
     }
-    void saveFinishedGame(job, user.uid, displayName);
+    for (const job of jobs) void saveFinishedGame(job, user.uid, displayName);
     // saveFinishedGame closes over nothing but stable setters and refs.
   }, [authLoading, user, displayName]);
 
