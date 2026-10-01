@@ -98,6 +98,7 @@ import {
   attachSearchScoreToLastMove,
   computeSAN,
   createGameLog,
+  unclassifiedMoveIndexes,
   updateMoveAnalysisAt,
 } from './recording/log';
 import { buildSavedGameFromLog, buildSavedGameSnapshot } from './memory/build';
@@ -2175,6 +2176,11 @@ function App() {
   useEffect(() => {
     logIdRef.current = log.id;
   }, [log.id]);
+  // F7 — only the newest background classification run may go on (a Game
+  // Review closing starts a catch-up run; the one it replaces stops), and the
+  // log id of the last game handed to it (the one a catch-up applies to).
+  const classifyRunRef = useRef(0);
+  const classifiedImportIdRef = useRef<string | null>(null);
 
   // Watching-mode autoplay: when enabled, advances one move every
   // WATCH_AUTOPLAY_MS until we hit the end of the replay.
@@ -2546,6 +2552,8 @@ function App() {
       // The caller has just put this log on the board; the ref would only
       // catch up after the next render, and the loop below checks it first.
       logIdRef.current = capturedId;
+      classifiedImportIdRef.current = capturedId;
+      const run = ++classifyRunRef.current;
       // Pre-compute all positions synchronously — cheap (no search) — so the
       // classifier can grab `stateBefore` for each move by index later.
       const states: BoardState[] = [loadedLog.initialState];
@@ -2570,6 +2578,8 @@ function App() {
           if (entry.move.kind === 'topologyToggle' || !entry.move.from || !entry.move.to) {
             continue;
           }
+          // Already classified (a catch-up run after a Game Review).
+          if (entry.analysis && !entry.analysis.superseded) continue;
           // F7 — a request dropped by a newer batch (Game Review starting
           // on the same worker cancels whatever is queued or running) is
           // asked again, not skipped: the move it was for would otherwise
@@ -2577,7 +2587,7 @@ function App() {
           // replaced ends the loop; a few tries bound a busy worker.
           let a: MoveAnalysis | null = null;
           for (let attempt = 0; attempt < 5; attempt++) {
-            if (logIdRef.current !== capturedId) return;
+            if (logIdRef.current !== capturedId || classifyRunRef.current !== run) return;
             const r = await classifyAsync(states[i], entry.move, states[i + 1], {
               budgetMs: scaleBudgetMs(1000),
               maxDepth: 7,
@@ -2588,13 +2598,15 @@ function App() {
               break;
             }
           }
-          if (!a) continue; // DEF-6: dropped by a newer batch, five times
+          // DEF-6: dropped by a newer batch, five times. The catch-up run
+          // when a Game Review closes picks it up again.
+          if (!a) continue;
           setLog((prev) =>
             prev.id === capturedId ? updateMoveAnalysisAt(prev, i, a) : prev,
           );
           lastAnalysis = a;
         }
-        if (lastAnalysis) pushSearchEval(lastAnalysis);
+        if (lastAnalysis && classifyRunRef.current === run) pushSearchEval(lastAnalysis);
       })();
     },
     [pushSearchEval],
@@ -5620,6 +5632,17 @@ function App() {
             // paints the spinner FIRST and runs the switch after.
             busy.navigate('Back to the board', () => {
               setView('game');
+              // F7 — a loaded game whose moves are not all classified yet
+              // (the review took the classifier for a while, or dropped some
+              // of its requests when it started) is finished off now, with
+              // no action from the player.
+              if (
+                !activeReviewLog &&
+                classifiedImportIdRef.current === log.id &&
+                unclassifiedMoveIndexes(log).length > 0
+              ) {
+                classifyImportedLog(log);
+              }
               // Drop the snapshot so the next plain Review opens the live log.
               setActiveReviewLog(null);
               setActiveReviewMeta(null);

@@ -4,6 +4,7 @@ import { Icon } from './Icon';
 import { useToast } from './Toast';
 import type { GameLog } from '../recording/log';
 import { analyzeGame, type GameReviewResult } from '../analysis/analyzeGame';
+import { cancelPendingClassifications } from '../analysis/classifyClient';
 import type { MoveClass, MoveAnalysis } from '../analysis/classify';
 import { QUALITY_BONUS, type GameOutcome } from '../analysis/points';
 import { applyMove } from '../engine/moves';
@@ -534,8 +535,16 @@ function ReviewBoard({
   );
 }
 
-export function GameReview({ log, onBack, meta, gameId }: Props) {
+export function GameReview({ log: liveLog, onBack, meta, gameId }: Props) {
   const toast = useToast();
+  // F7 — the log the review works on is the game as it was when the review
+  // opened. The live log gets a new object every time a background
+  // classification of an imported game lands (a few seconds apart), and the
+  // review used to start over, and jump back to the last move, each time.
+  // Its own analysis does not read those results, so only a different game
+  // (id) or a longer / shorter one (a replay seek) counts as a new log.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const log = useMemo(() => liveLog, [liveLog.id, liveLog.moves.length]);
   const [shareCopied, setShareCopied] = useState(false);
   function handleShare() {
     if (!gameId) return;
@@ -676,17 +685,23 @@ export function GameReview({ log, onBack, meta, gameId }: Props) {
     setLoading(true);
     setResult(null);
     setProgress({ done: 0, total: log.moves.length });
+    let finished = false;
     analyzeGame(log, {
       onProgress: (done, total) => {
         if (!cancelled) setProgress({ done, total });
       },
     }).then((out) => {
+      finished = true;
       if (cancelled) return;
       setResult(out);
       setLoading(false);
     });
     return () => {
       cancelled = true;
+      // F7 — leaving a review that is still running used to leave its whole
+      // queue on the classifier worker, and the background classification of
+      // the game on the board waited behind it for minutes.
+      if (!finished) cancelPendingClassifications();
     };
   }, [log]);
 
