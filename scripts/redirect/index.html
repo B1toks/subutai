@@ -1,0 +1,44 @@
+<!doctype html>
+<!--
+  Subutai moved from https://b1toks.github.io/subutai/ to https://subutai.honchar.dev/.
+  This page replaces the whole gh-pages branch once the new domain is live,
+  not before (npx gh-pages -d scripts/redirect). It is not part of the app
+  build. The script runs first and keeps ?game=… share links and any #hash;
+  the meta refresh is the fallback without JavaScript (Chrome never fires it
+  once the script has started the navigation); the link is for everyone else.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Subutai has moved</title>
+    <link rel="canonical" href="https://subutai.honchar.dev/" />
+    <script>
+      location.replace('https://subutai.honchar.dev/' + location.search + location.hash);
+    </script>
+    <meta http-equiv="refresh" content="0; url=https://subutai.honchar.dev/" />
+    <meta name="theme-color" content="#131022" />
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: grid;
+        place-items: center;
+        padding: 0 16px;
+        background: #131022;
+        color: #e9edff;
+        font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        text-align: center;
+      }
+      a {
+        color: #4ee1ff;
+      }
+    </style>
+  </head>
+  <body>
+    <p>Subutai has moved to <a href="https://subutai.honchar.dev/">subutai.honchar.dev</a>.</p>
+  </body>
+</html>
