@@ -1548,8 +1548,9 @@
 }
 
 /* Sprint 3.5.1 — 3D pack moved behind [data-3d="on"] so users can
-   opt out via the Effects3DToggle in the header. Default is on
-   (the toggle initialises the html attribute on first render).
+   opt in via the Effects3DToggle in the header. Default is off
+   until the player turns it on (the toggle initialises the html
+   attribute on first render; only a press is stored).
    Perspective lives on the board-with-coords wrapper; the 6° tilt
    + preserve-3d on .board lets descendants register translateZ for
    the hover lift. */
