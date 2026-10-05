@@ -9,6 +9,7 @@
     "build:gh": "vite build",
     "deploy": "npm run build && gh-pages -d dist",
     "lint": "eslint .",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-subutai \"node --import ./tests/rules/register.mjs --test --test-isolation=none tests/rules/rules.test.mjs\"",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -21,6 +22,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -28,6 +30,7 @@
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "firebase-tools": "^15.32.1",
     "gh-pages": "^6.2.0",
     "globals": "^17.4.0",
     "typescript": "~5.9.3",
