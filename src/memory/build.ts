@@ -119,7 +119,7 @@ function buildBaseFromLog(
 export function buildSavedGameFromLog(
   log: GameLog,
   finalState: BoardState,
-  termination: 'checkmate' | 'stalemate' | 'resignation',
+  termination: 'checkmate' | 'stalemate' | 'resignation' | 'agreement',
   sourceGameId?: string,
   /** QA-11 — a resignation is not decided by who is to move. */
   winnerOverride?: 'white' | 'black',
@@ -134,7 +134,7 @@ export function buildSavedGameFromLog(
       ? (finalState.sideToMove === 'white' ? 'black' : 'white')
       : null);
   const result: 'win' | 'loss' | 'draw' =
-    termination === 'stalemate' ? 'draw'
+    termination === 'stalemate' || termination === 'agreement' ? 'draw'
     : winner === 'white' ? (humanIsWhite ? 'win' : 'loss')
     : (humanIsWhite ? 'loss' : 'win');
 

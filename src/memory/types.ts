@@ -6,7 +6,9 @@ export interface SavedGame {
   readonly config960: string;
   readonly status: 'incomplete' | 'complete';
   readonly result?: 'win' | 'loss' | 'draw';
-  readonly termination?: 'checkmate' | 'stalemate' | 'resignation';
+  /** 'stalemate' covers every draw the board decides; 'agreement' is a
+   *  hot-seat draw the players agreed. */
+  readonly termination?: 'checkmate' | 'stalemate' | 'resignation' | 'agreement';
   readonly moveCount: number;
   readonly moves: readonly { move: Move; topology?: TopologyState }[];
   readonly movesInA: number;
