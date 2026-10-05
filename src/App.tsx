@@ -1773,7 +1773,7 @@ function App() {
       }
       return;
     }
-    await saveFinishedGame(job, user.uid, displayName);
+    await queueSave(job, user.uid, displayName);
   }
 
   /** The Firestore half of finishGame (also run later, see N-6). The UI
@@ -1823,6 +1823,16 @@ function App() {
     }
   }
 
+  // QA-06 — one save at a time: the rules count a Strong win only for a
+  // game saved after the profile's previous save, so two saves racing
+  // could refuse the later one's stats. saveFinishedGame never rejects.
+  const saveChainRef = useRef<Promise<void>>(Promise.resolve());
+  function queueSave(job: FinishedGameSave, uid: string, name: string): Promise<void> {
+    const next = saveChainRef.current.then(() => saveFinishedGame(job, uid, name));
+    saveChainRef.current = next;
+    return next;
+  }
+
   // N-6 — finished games waiting for the sign-in (see finishGame). A list:
   // a second game can end before the sign-in answers.
   const pendingSaveRef = useRef<FinishedGameSave[]>([]);
@@ -1835,14 +1845,9 @@ function App() {
       if (jobs.some((j) => completedLogIdRef.current === j.log.id)) setSavingGame(false);
       return;
     }
-    // One after another: the rules count a Strong win only for a game
-    // saved after the profile's previous save (QA-06), so two of these
-    // racing could refuse the second one's stats.
-    const uid = user.uid;
-    void (async () => {
-      for (const job of jobs) await saveFinishedGame(job, uid, displayName);
-    })();
-    // saveFinishedGame closes over nothing but stable setters and refs.
+    for (const job of jobs) void queueSave(job, user.uid, displayName);
+    // queueSave / saveFinishedGame close over nothing but stable setters and refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user, displayName]);
 
   // Auto-mode completion: when a self-play game ends, save to

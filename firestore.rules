@@ -131,7 +131,8 @@ service cloud.firestore {
       let g = gameDoc(d.lastGameId);
       return d.lastGameAt == request.time
         && g.playerId == uid
-        && g.get('botLevel', '') == 'strong'
+        // No level means full strength, as saveCompletedGame counts it.
+        && g.get('botLevel', 'strong') == 'strong'
         && g.outcome == 'human-win'
         && g.points.counted == true
         && g.createdAt > request.time - duration.value(10, 'm')
@@ -197,8 +198,12 @@ service cloud.firestore {
                     && resource.data.uid == request.auth.uid
                     && request.resource.data.uid == request.auth.uid
                     && request.resource.data.keys().hasOnly(['uid', 'createdAt']);
+      // Not the name the profile still shows: freed, it could be taken by
+      // someone else while this profile keeps showing it.
       allow delete: if signedIn()
-                    && resource.data.uid == request.auth.uid;
+                    && resource.data.uid == request.auth.uid
+                    && (!existsAfter(/databases/$(database)/documents/users/$(request.auth.uid))
+                        || getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.displayNameLower != name);
     }
 
     match /games/{gameId} {
@@ -311,28 +316,31 @@ service cloud.firestore {
       return outcome == 'host-resign' ? m.host.uid : m.guest.uid;
     }
 
+    function whiteOf(m) {
+      return m.host.color == 'white' ? m.host.uid : m.guest.uid;
+    }
+
     // QA-05 — whose turn it is changes only when the guest takes the seat
-    // (White starts) or with an appended move. In classic that move hands
-    // the turn to the opponent; in roulette the mover keeps it while
-    // actions are left.
+    // (to White) or with an appended move. In classic that move hands the
+    // turn to the opponent; in roulette the mover may keep it (how many
+    // actions a roulette turn has is not checked here).
     function matchTurnOk() {
       let before = resource.data;
       let after = request.resource.data;
-      let grew = after.log.moves.size() > before.log.moves.size();
       let classic = before.get('gameMode', 'classic') != 'roulette';
-      return grew
-        ? (after.currentTurn == opponentOf(before, request.auth.uid)
-           || (!classic && after.currentTurn == before.currentTurn))
-        : (after.currentTurn == before.currentTurn
-           || (before.guest == null && after.guest != null
-               && after.currentTurn == (after.host.color == 'white' ? after.host.uid : after.guest.uid)));
+      return (before.guest == null && after.guest != null)
+        ? after.currentTurn == whiteOf(after)
+        : after.log.moves.size() > before.log.moves.size()
+          ? (after.currentTurn == opponentOf(before, request.auth.uid)
+             || (!classic && after.currentTurn == before.currentTurn))
+          : after.currentTurn == before.currentTurn;
     }
 
     // QA-05 — who may end the match. 'X-resign' is written by X, or by X's
-    // opponent once X has been idle for 90 s by server time (the inactivity
-    // forfeit, and the claim of a flag fall whose own client is gone; the
-    // rules cannot see the clock). Mate and draw come from a seated player,
-    // after at least one move.
+    // opponent once X, on turn, has been idle for 90 s by server time (the
+    // inactivity forfeit, and the claim of a flag fall whose own client is
+    // gone; the rules cannot see the clock). Mate and draw come from a
+    // seated player, after at least one move.
     function matchOutcomeOk() {
       let before = resource.data;
       let o = request.resource.data.outcome;
@@ -341,6 +349,7 @@ service cloud.firestore {
         || (o in ['host-resign', 'guest-resign']
             && (request.auth.uid == loserOf(before, o)
                 || (seated(before, request.auth.uid)
+                    && before.currentTurn == loserOf(before, o)
                     && request.time > before.lastActivity + duration.value(90, 's'))))
         || (o in ['white-win', 'black-win', 'draw']
             && seated(before, request.auth.uid)
@@ -406,6 +415,11 @@ service cloud.firestore {
         && request.resource.data.get('gameMode', 'classic') == resource.data.get('gameMode', 'classic')
         && request.resource.data.lastActivity == request.time
         && request.resource.data.status in ['waiting', 'active', 'completed']
+        // The status follows the match, so it cannot end one without an
+        // outcome or bring one back: waiting until the guest sits,
+        // completed exactly when there is an outcome.
+        && (request.resource.data.status == 'waiting') == (request.resource.data.guest == null)
+        && (request.resource.data.status == 'completed') == (request.resource.data.outcome != null)
         && (resource.data.guest == null
             || request.resource.data.guest == resource.data.guest)
         && (request.resource.data.guest == null

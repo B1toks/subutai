@@ -17,6 +17,7 @@ import {
   Timestamp,
   addDoc,
   collection,
+  deleteDoc,
   deleteField,
   doc,
   getDoc,
@@ -249,6 +250,11 @@ describe('names: /users and /displayNames (QA-06)', () => {
     await denied(b.commit());
   });
 
+  it('denied: releasing the name the profile still shows', async () => {
+    await newPlayer('alice', 'Alice');
+    await denied(deleteDoc(doc(as('alice'), 'displayNames', 'alice')));
+  });
+
   it('denied: a reservation with fields of its own', async () => {
     await newPlayer('alice', 'Alice');
     await denied(
@@ -308,6 +314,21 @@ describe('stats: /users after a saved game (QA-06)', () => {
     const r = await saveGame('alice', { outcome: 'human-win', botLevel: 'casual', counted: false });
     assert.equal((await read(`games/${r.gameId}`)).botLevel, 'casual');
     assert.equal((await read('users/alice')).gamesPlayed, undefined);
+  });
+
+  it('allowed: a win saved without a bot level counts as Strong, as the client counts it', async () => {
+    actAs('alice');
+    await saveCompletedGame({
+      uid: 'alice',
+      displayName: 'Alice',
+      log: gameLog(24),
+      outcome: 'human-win',
+      points: points(),
+      chess960Id: 'RNBQKBNR',
+      seed: 1,
+      humanColor: 'white',
+    });
+    assert.equal((await read('users/alice')).strongWins, 1);
   });
 
   it('allowed: strongWins +1 against a fresh Strong win (5 minutes old)', async () => {
@@ -629,6 +650,30 @@ describe('online: /matches (QA-04, QA-05)', () => {
     );
   });
 
+  it('denied: the player on turn calling the waiting opponent idle', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code); // Black on turn, thinking 100 s
+    await idle(code);
+    await denied(
+      updateDoc(doc(as(black), 'matches', code), {
+        status: 'completed',
+        outcome: loserOutcome(white),
+        endReason: 'inactive',
+        lastActivity: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('denied: a match ended with no outcome, or brought back', async () => {
+    const { code, white } = await startMatch();
+    await playMove(code);
+    const fs = as(white);
+    await denied(updateDoc(doc(fs, 'matches', code), { status: 'completed', lastActivity: serverTimestamp() }));
+    await denied(updateDoc(doc(fs, 'matches', code), { status: 'waiting', lastActivity: serverTimestamp() }));
+    await (await hookAs(white, code)).resign();
+    await denied(updateDoc(doc(fs, 'matches', code), { status: 'active', lastActivity: serverTimestamp() }));
+  });
+
   it('denied: back-dating lastActivity to cut the 90 s short', async () => {
     const { code, white } = await startMatch();
     await denied(updateDoc(doc(as(white), 'matches', code), { lastActivity: ago(10 * MIN) }));
@@ -701,7 +746,7 @@ describe('online: /matches (QA-04, QA-05)', () => {
     );
   });
 
-  it('denied: a join that hands the first move to Black, or writes an outcome', async () => {
+  it('denied: a join that hands the first move to Black, leaves it to nobody, or writes an outcome', async () => {
     actAs(HOST.uid);
     const code = await createMatch(HOST);
     const m = await match(code);
@@ -710,6 +755,7 @@ describe('online: /matches (QA-04, QA-05)', () => {
     const white = black === GUEST.uid ? HOST.uid : GUEST.uid;
     const join = { guest: { ...GUEST, color: guestColor }, status: 'active', lastActivity: serverTimestamp() };
     await denied(updateDoc(doc(as(GUEST.uid), 'matches', code), { ...join, currentTurn: black }));
+    await denied(updateDoc(doc(as(GUEST.uid), 'matches', code), join));
     await denied(
       updateDoc(doc(as(GUEST.uid), 'matches', code), { ...join, currentTurn: white, outcome: 'draw' }),
     );
