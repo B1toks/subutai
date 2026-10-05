@@ -954,6 +954,262 @@ describe('online: /matches (QA-04, QA-05)', () => {
   });
 });
 
+// ── draw offers ────────────────────────────────────────────────────────
+
+const offerAs = async (uid, code) => (await hookAs(uid, code)).offerDraw();
+const answerAs = async (uid, code, accept) => (await hookAs(uid, code)).answerDraw(accept);
+const stamp = async (code) => (await match(code)).lastActivity.toMillis();
+
+/** A move appended the way v1.0.2 does it: the drawOffer field untouched. */
+async function oldClientMove(code) {
+  const m = await match(code);
+  const h = await hookAs(m.currentTurn, code);
+  const move = generateLegalMoves(h.boardState).find((x) => x.kind !== 'topologyToggle');
+  await updateDoc(doc(as(m.currentTurn), 'matches', code), {
+    'log.moves': [...m.log.moves, { move, san: 'x', topology: 'A', timestamp: Date.now() }],
+    currentTurn: m.currentTurn === m.host.uid ? m.guest.uid : m.host.uid,
+    lastActivity: serverTimestamp(),
+  });
+}
+
+const accept = { status: 'completed', outcome: 'draw', endReason: 'agreement' };
+/** An offer as a hand-crafted client would write it, server time and all. */
+const offerWrite = (drawOffer) => ({ drawOffer, lastActivity: serverTimestamp() });
+
+describe('online: draw offers', () => {
+  it('allowed: an offer and a decline (the app’s own), each stamped with server time', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code); // Black on turn: White offers on the opponent's turn
+    const t0 = await stamp(code);
+    await offerAs(white, code);
+    let m = await match(code);
+    assert.deepEqual(m.drawOffer, { by: white, atPly: 1 });
+    const t1 = m.lastActivity.toMillis();
+    assert.ok(t1 > t0);
+    await answerAs(black, code, false);
+    m = await match(code);
+    assert.equal(m.drawOffer, undefined);
+    assert.equal(m.status, 'active');
+    assert.equal(m.outcome, null);
+    assert.ok(m.lastActivity.toMillis() > t1);
+  });
+
+  it('allowed: an accept ends the match, a draw by agreement, and both players save it to /games', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code);
+    await offerAs(black, code); // Black offers on its own turn
+    await answerAs(white, code, true);
+    const m = await match(code);
+    assert.equal(m.status, 'completed');
+    assert.equal(m.outcome, 'draw');
+    assert.equal(m.endReason, 'agreement');
+    assert.equal(m.drawOffer, undefined);
+    for (const uid of [HOST.uid, GUEST.uid]) {
+      actAs(uid);
+      await saveMultiplayerGameToGames(m, uid);
+      assert.equal((await read(`games/mp-${code}-${uid}`)).outcome, 'draw');
+    }
+  });
+
+  it('allowed: any move retires the offer, and the app’s move clears the field', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code);
+    await offerAs(white, code);
+    assert.deepEqual((await match(code)).drawOffer, { by: white, atPly: 1 });
+    await playMove(code); // Black moves instead of answering
+    assert.equal((await match(code)).drawOffer, undefined);
+    await denied(updateDoc(doc(as(black), 'matches', code), { ...accept, lastActivity: serverTimestamp() }));
+  });
+
+  it('allowed: the offering player’s own move retires its offer too', async () => {
+    const { code, white } = await startMatch();
+    await playMove(code);
+    await playMove(code); // White on turn
+    await offerAs(white, code);
+    assert.deepEqual((await match(code)).drawOffer, { by: white, atPly: 2 });
+    await playMove(code); // White moves without waiting for an answer
+    assert.equal((await match(code)).drawOffer, undefined);
+  });
+
+  it('allowed: an offer that a move left behind is replaced by a new one', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code);
+    await offerAs(white, code);
+    await oldClientMove(code); // retired, the field still there
+    assert.deepEqual((await match(code)).drawOffer, { by: white, atPly: 1 });
+    await offerAs(black, code);
+    assert.deepEqual((await match(code)).drawOffer, { by: black, atPly: 2 });
+  });
+
+  it('allowed: the forfeit counts 90 s from an offer made on turn, then comes as before', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code); // Black on turn
+    await idle(code);
+    await offerAs(black, code); // Black offers on turn and waits for the answer
+    assert.deepEqual((await match(code)).drawOffer, { by: black, atPly: 1 });
+    actAs(white);
+    await writeInactivityForfeit(code, white); // the app's own check: not 90 s yet
+    assert.equal((await match(code)).outcome, null);
+    await denied(
+      updateDoc(doc(as(white), 'matches', code), {
+        status: 'completed',
+        outcome: loserOutcome(black),
+        endReason: 'inactive',
+        lastActivity: serverTimestamp(),
+      }),
+    );
+    await idle(code); // 90 s pass, the offer unanswered, no move
+    actAs(white);
+    await writeInactivityForfeit(code, white);
+    const m = await match(code);
+    assert.equal(m.outcome, loserOutcome(black));
+    assert.equal(m.endReason, 'inactive');
+  });
+
+  it('allowed: the flag claim and resign with an offer on the table', async () => {
+    const flag = await startMatch('classic', 60);
+    await playMove(flag.code); // Black on the clock
+    await offerAs(flag.black, flag.code);
+    assert.deepEqual((await match(flag.code)).drawOffer, { by: flag.black, atPly: 1 });
+    await idle(flag.code);
+    const ok = await (await hookAs(flag.white, flag.code)).writeOutcomeIfFirst(loserOutcome(flag.black), 'flag');
+    assert.equal(ok, true);
+    assert.equal((await match(flag.code)).endReason, 'flag');
+
+    const res = await startMatch();
+    await playMove(res.code);
+    await offerAs(res.white, res.code);
+    assert.deepEqual((await match(res.code)).drawOffer, { by: res.white, atPly: 1 });
+    assert.equal(await (await hookAs(res.white, res.code)).resign(), true);
+    assert.equal((await match(res.code)).endReason, 'resign');
+  });
+
+  it('allowed: roulette — an offer between actions, retired by the next one', async () => {
+    const { code, white, black } = await startMatch('roulette');
+    await (await hookAs(white, code)).spinRoulette();
+    await (await hookAs(white, code)).sendRotate(); // first of White's two actions
+    await offerAs(black, code);
+    assert.deepEqual((await match(code)).drawOffer, { by: black, atPly: 1 });
+    await (await hookAs(white, code)).sendRotate(); // second action
+    const m = await match(code);
+    assert.equal(m.drawOffer, undefined);
+    assert.equal(m.currentTurn, black);
+  });
+
+  it("denied: an offer in the other player's name, or by someone not in the match", async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code);
+    await denied(updateDoc(doc(as(white), 'matches', code), offerWrite({ by: black, atPly: 1 })));
+    await denied(updateDoc(doc(as('mallory'), 'matches', code), offerWrite({ by: 'mallory', atPly: 1 })));
+  });
+
+  it('denied: an offer at another ply than the log, or before the first move', async () => {
+    const { code, white } = await startMatch();
+    await denied(updateDoc(doc(as(white), 'matches', code), offerWrite({ by: white, atPly: 0 })));
+    await playMove(code);
+    for (const atPly of [0, 2, '1', 1.5]) {
+      await denied(updateDoc(doc(as(white), 'matches', code), offerWrite({ by: white, atPly })));
+    }
+  });
+
+  it('denied: an offer on a match that is waiting or over', async () => {
+    actAs(HOST.uid);
+    const waiting = await createMatch(HOST);
+    await denied(updateDoc(doc(as(HOST.uid), 'matches', waiting), offerWrite({ by: HOST.uid, atPly: 0 })));
+    const { code, white } = await startMatch();
+    await playMove(code);
+    await (await hookAs(white, code)).resign();
+    await denied(updateDoc(doc(as(white), 'matches', code), offerWrite({ by: white, atPly: 1 })));
+  });
+
+  it('denied: a new match that comes with a draw offer', async () => {
+    await denied(
+      setDoc(doc(as(HOST.uid), 'matches', 'ZZZZZZ'), {
+        code: 'ZZZZZZ',
+        chess960Id: 'RNBQKBNR',
+        seed: 1,
+        host: { ...HOST, color: 'white' },
+        guest: null,
+        status: 'waiting',
+        currentTurn: '',
+        log: { initialTopology: 'A', moves: [] },
+        outcome: null,
+        drawOffer: { by: HOST.uid, atPly: 0 },
+        createdAt: serverTimestamp(),
+        lastActivity: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('denied: a second offer while one stands', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code);
+    await offerAs(white, code);
+    await denied(updateDoc(doc(as(black), 'matches', code), offerWrite({ by: black, atPly: 1 })));
+  });
+
+  it('denied: an offer that does anything else (another field, a move, fields of its own)', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code);
+    await denied(
+      updateDoc(doc(as(white), 'matches', code), { ...offerWrite({ by: white, atPly: 1 }), rouletteActionsLeft: 2 }),
+    );
+    await denied(updateDoc(doc(as(white), 'matches', code), offerWrite({ by: white, atPly: 1, note: 'x' })));
+    const m = await match(code);
+    await denied(
+      updateDoc(doc(as(black), 'matches', code), {
+        'log.moves': [...m.log.moves, { move: { kind: 'topologyToggle' }, san: 'R', topology: 'A', timestamp: 1 }],
+        currentTurn: white,
+        drawOffer: { by: black, atPly: 2 },
+        lastActivity: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('denied: the offering player withdrawing or accepting its own offer', async () => {
+    const { code, white } = await startMatch();
+    await playMove(code);
+    await offerAs(white, code);
+    await denied(updateDoc(doc(as(white), 'matches', code), { drawOffer: deleteField(), lastActivity: serverTimestamp() }));
+    await denied(updateDoc(doc(as(white), 'matches', code), { ...accept, lastActivity: serverTimestamp() }));
+  });
+
+  it('denied: agreement with no offer, a retired offer, a resign outcome, or a move', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code);
+    await denied(updateDoc(doc(as(black), 'matches', code), { ...accept, lastActivity: serverTimestamp() }));
+    await offerAs(white, code);
+    await denied(
+      updateDoc(doc(as(black), 'matches', code), {
+        status: 'completed',
+        outcome: loserOutcome(black),
+        endReason: 'agreement',
+        lastActivity: serverTimestamp(),
+      }),
+    );
+    const m = await match(code);
+    await denied(
+      updateDoc(doc(as(black), 'matches', code), {
+        ...accept,
+        'log.moves': [...m.log.moves, { move: { kind: 'topologyToggle' }, san: 'R', topology: 'A', timestamp: 1 }],
+        currentTurn: white,
+        lastActivity: serverTimestamp(),
+      }),
+    );
+    await oldClientMove(code); // Black moves: White's offer is retired, the field left behind
+    await denied(updateDoc(doc(as(black), 'matches', code), { ...accept, lastActivity: serverTimestamp() }));
+  });
+
+  it('denied: an offer or a decline without the server time', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code);
+    await denied(updateDoc(doc(as(white), 'matches', code), { drawOffer: { by: white, atPly: 1 } }));
+    await offerAs(white, code);
+    assert.deepEqual((await match(code)).drawOffer, { by: white, atPly: 1 });
+    await denied(updateDoc(doc(as(black), 'matches', code), { drawOffer: deleteField() }));
+  });
+});
+
 describe('Quick match (two players at once)', () => {
   function player(uid, displayName) {
     const w = new Worker(new URL('./actor.mjs', import.meta.url), { workerData: { uid, displayName } });
@@ -1052,6 +1308,39 @@ describe('old client (v1.0.2)', () => {
     });
   });
 
+  it('still works: a move with a draw offer on the table, and the move retires it', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code);
+    await offerAs(white, code); // a new client offers to a v1.0.2 one
+    await oldClientMove(code);
+    const m = await match(code);
+    assert.equal(m.log.moves.length, 2);
+    assert.deepEqual(m.drawOffer, { by: white, atPly: 1 }); // left behind, no longer standing
+    await denied(updateDoc(doc(as(black), 'matches', code), { ...accept, lastActivity: serverTimestamp() }));
+  });
+
+  it('still works: resign, the forfeit and a board draw with a draw offer on the table', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code);
+    await offerAs(white, code);
+    assert.deepEqual((await match(code)).drawOffer, { by: white, atPly: 1 });
+    await idle(code);
+    await updateDoc(doc(as(white), 'matches', code), {
+      status: 'completed',
+      outcome: loserOutcome(black),
+      lastActivity: serverTimestamp(),
+    });
+    const second = await startMatch();
+    await playMove(second.code);
+    await offerAs(second.black, second.code);
+    assert.deepEqual((await match(second.code)).drawOffer, { by: second.black, atPly: 1 });
+    await updateDoc(doc(as(second.white), 'matches', second.code), {
+      status: 'completed',
+      outcome: 'draw',
+      lastActivity: serverTimestamp(),
+    });
+  });
+
   it("BREAKS: the opponent's flag claim before 90 s (it does not retry)", async () => {
     const { code, white, black } = await startMatch('classic', 60);
     await playMove(code);
@@ -1123,6 +1412,23 @@ describe('known limits (allowed, by design or by what rules can see)', () => {
       endReason: 'inactive',
       lastActivity: serverTimestamp(),
     });
+  });
+
+  it('a hand-crafted client can offer a draw again right after a decline (the "move first" lock is the app’s)', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code);
+    await offerAs(white, code);
+    assert.deepEqual((await match(code)).drawOffer, { by: white, atPly: 1 });
+    await answerAs(black, code, false);
+    assert.equal((await match(code)).drawOffer, undefined);
+    await updateDoc(doc(as(white), 'matches', code), offerWrite({ by: white, atPly: 1 }));
+  });
+
+  it('a seated player may stamp lastActivity with a write that changes nothing else (the forfeit catches a client that is gone, not a hand-crafted one)', async () => {
+    const { code, black } = await startMatch();
+    await playMove(code); // Black on turn
+    await idle(code);
+    await updateDoc(doc(as(black), 'matches', code), { lastActivity: serverTimestamp() });
   });
 
   it('a name NFKC changes (fullwidth letters) cannot be claimed', async () => {

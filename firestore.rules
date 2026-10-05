@@ -486,7 +486,7 @@ service cloud.firestore {
           'code', 'chess960Id', 'seed', 'host', 'guest', 'status', 'currentTurn', 'log',
           'outcome', 'endReason', 'createdAt', 'lastActivity', 'turnStartedAt', 'gameMode',
           'timeControlSec', 'timeIncrementSec', 'rouletteSlots', 'rouletteActionsLeft',
-          'usedRouletteSlots', 'rouletteSpinsByPlayer', 'rouletteSpinCount'
+          'usedRouletteSlots', 'rouletteSpinsByPlayer', 'rouletteSpinCount', 'drawOffer'
         ])
         && d.log is map
         && d.log.keys().hasOnly(['initialTopology', 'moves'])
@@ -560,6 +560,8 @@ service cloud.firestore {
     // QA-04 — why a match ended in 'X-resign', for the end text. Optional
     // (older clients do not write it), set only with that outcome, then
     // frozen: 'resign' by X, 'inactive' by the opponent, 'flag' by either.
+    // 'agreement' goes with a 'draw' only: the other player accepting the
+    // standing draw offer, in a write that is not a move.
     function matchEndReasonOk() {
       let before = resource.data;
       let after = request.resource.data;
@@ -569,7 +571,51 @@ service cloud.firestore {
             && after.outcome in ['host-resign', 'guest-resign']
             && (r == 'flag'
                 || (r == 'resign' && request.auth.uid == loserOf(before, after.outcome))
-                || (r == 'inactive' && request.auth.uid != loserOf(before, after.outcome))));
+                || (r == 'inactive' && request.auth.uid != loserOf(before, after.outcome))))
+        || (before.outcome == null
+            && after.outcome == 'draw'
+            && r == 'agreement'
+            && standingDrawOffer(before)
+            && request.auth.uid != before.drawOffer.by
+            && after.log.moves.size() == before.log.moves.size());
+    }
+
+    // Draw by agreement. drawOffer is { by, atPly } and stands only while
+    // atPly is the length of the log, so ANY move retires it, a move by a
+    // client that never touches the field (v1.0.2) included. A seated
+    // player offers in their own name, on an active match after the first
+    // move, at the current ply, while no offer stands, in a write that
+    // changes nothing else but the server time. Without a move, only the
+    // other player may clear a standing offer (the decline); a move may
+    // clear it, and a retired one anybody may. Accepting: matchEndReasonOk.
+    // Like every write here, an offer and a decline stamp lastActivity:
+    // the player offering is there, and one waiting on turn for the
+    // answer gets 90 s from the offer, not from their opponent's move.
+    function standingDrawOffer(m) {
+      return m.get('drawOffer', null) != null
+        && m.drawOffer.atPly == m.log.moves.size();
+    }
+    function drawOfferWrite() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['drawOffer', 'lastActivity']);
+    }
+    function matchDrawOfferOk() {
+      let before = resource.data;
+      let after = request.resource.data;
+      let b = before.get('drawOffer', null);
+      let a = after.get('drawOffer', null);
+      let moved = after.log.moves.size() > before.log.moves.size();
+      return a == b
+        || (a == null
+            && (moved || !standingDrawOffer(before) || request.auth.uid != b.by))
+        || (a != null
+            && drawOfferWrite()
+            && before.status == 'active'
+            && a.keys().hasOnly(['by', 'atPly'])
+            && a.by == request.auth.uid
+            && a.atPly is int
+            && a.atPly == before.log.moves.size()
+            && a.atPly > 0
+            && !standingDrawOffer(before));
     }
 
     match /matches/{code} {
@@ -587,6 +633,7 @@ service cloud.firestore {
                     && request.resource.data.outcome == null
                     && !('endReason' in request.resource.data)
                     && !('turnStartedAt' in request.resource.data)
+                    && !('drawOffer' in request.resource.data)
                     && matchKeysOk(request.resource.data)
                     && request.resource.data.log.initialTopology in ['A', 'B']
                     // R-8 — no bag, no actions until a spin.
@@ -622,10 +669,12 @@ service cloud.firestore {
       //     player on turn (rouletteOk, R-8);
       //   - who may write which outcome and endReason (matchOutcomeOk,
       //     matchEndReasonOk); the mode is frozen, so a classic match
-      //     cannot turn roulette to keep the turn.
+      //     cannot turn roulette to keep the turn;
+      //   - who may offer, decline and accept a draw (matchDrawOfferOk).
       // Legit paths: guest join (no log change), move / rotate append on
       // own turn (+1), spin (no log change), resign / flag / mate outcome
-      // writes (no log change) from either seat.
+      // writes (no log change) from either seat, draw offer / decline /
+      // accept (no log change).
       allow update: if signedIn()
         && matchKeysOk(request.resource.data)
         && request.resource.data.log.initialTopology == resource.data.log.initialTopology
@@ -669,6 +718,7 @@ service cloud.firestore {
         && rouletteOk()
         && matchOutcomeOk()
         && matchEndReasonOk()
+        && matchDrawOfferOk()
         && (
           resource.data.host.uid == request.auth.uid
           || (resource.data.guest != null && resource.data.guest.uid == request.auth.uid)

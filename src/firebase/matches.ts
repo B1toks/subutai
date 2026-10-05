@@ -11,6 +11,7 @@ import {
 import { db } from './client';
 import { createStartingPosition, type Move, type SquareId } from '../engine';
 import type { PieceType, TopologyState } from '../engine/types';
+import type { DrawOffer } from '../utils/drawOffer';
 
 // R13 cleanup: 'abandoned' removed — nothing ever wrote it (verified against
 // prod: statuses in the wild are waiting/active/completed only).
@@ -25,8 +26,9 @@ export type MatchOutcome =
 export type MatchGameMode = 'classic' | 'roulette';
 
 /** QA-04 — why a match ended in 'host-resign' / 'guest-resign': the
- *  Resign button, the inactivity forfeit, or a flag fall. */
-export type MatchEndReason = 'resign' | 'inactive' | 'flag';
+ *  Resign button, the inactivity forfeit, or a flag fall. 'agreement' is
+ *  a 'draw': the other player accepted a draw offer. */
+export type MatchEndReason = 'resign' | 'inactive' | 'flag' | 'agreement';
 
 export interface MatchParticipant {
   uid: string;
@@ -51,9 +53,14 @@ export interface MatchDoc {
   currentTurn: string;
   log: { initialTopology: TopologyState; moves: SavedMove[] };
   outcome: MatchOutcome | null;
-  /** QA-04 — set with a resign outcome; absent on matches ended by older
-   *  clients and on every other outcome. */
+  /** QA-04 — set with a resign outcome, or 'agreement' with a draw;
+   *  absent on matches ended by older clients and on every other outcome. */
   endReason?: MatchEndReason;
+  /** The last draw offer, { by: uid, atPly: log length }. It stands only
+   *  while the log is that long (src/utils/drawOffer.ts), so a move
+   *  retires it even when the mover's client leaves the field alone.
+   *  Absent on matches nobody offered a draw in, and on older docs. */
+  drawOffer?: DrawOffer | null;
   createdAt: Timestamp;
   lastActivity: Timestamp;
   /** R-7 — server time the turn on the clock started: the join, then each

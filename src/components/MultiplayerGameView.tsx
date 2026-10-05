@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  deleteField,
   doc,
   runTransaction,
   serverTimestamp,
@@ -21,6 +22,12 @@ import { applyMove, isInCheck } from '../engine/moves';
 import { applyRotationMove } from '../engine/auxetic';
 import { computeSAN } from '../recording/log';
 import { inactivityForfeitApplies, turnStartedMs } from '../firebase/matchEnd';
+import {
+  canAnswerDraw,
+  canOfferDraw,
+  drawOfferBlock,
+  type DrawTable,
+} from '../utils/drawOffer';
 
 const ROULETTE_PIECE_BAG: PieceType[] = [
   'pawn',
@@ -134,6 +141,18 @@ export interface MultiplayerSyncHandle {
    *  the rules refuse a claim for the opponent before 90 s of their
    *  inactivity, so that one is retried. */
   writeOutcomeIfFirst: (outcome: MatchOutcome, endReason?: MatchEndReason) => Promise<boolean>;
+  /** Draw offers (src/utils/drawOffer.ts): the match's offer, and me in
+   *  `waiting` while I have offered and not moved since. That lock lives
+   *  in this tab only; the rules hold the rest (one offer at a time,
+   *  retired by any move). */
+  drawTable: DrawTable<string>;
+  /** A draw offer or answer is being written. */
+  drawBusy: boolean;
+  /** Offer a draw at the current ply. */
+  offerDraw: () => Promise<void>;
+  /** Accept (the match ends as a draw by agreement) or decline the
+   *  opponent's standing offer. */
+  answerDraw: (accept: boolean) => Promise<void>;
   // Q.D.3: full solo-roulette parity. The bag, action count and used
   // slot indices live on the match doc so both peers can render the
   // SAME chip strip + Spin button + slot-consumption UI as solo.
@@ -192,12 +211,18 @@ export function useMultiplayerSync(
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selfAfkWarning, setSelfAfkWarning] = useState(false);
+  // Draw offers write on their own flag: sharing `busy` would drop a move
+  // clicked while an offer is on its way.
+  const [drawBusy, setDrawBusy] = useState(false);
+  // The match I have offered a draw in and not moved since (one at most).
+  const [drawLockCode, setDrawLockCode] = useState<string | null>(null);
 
   // Reset internal state when the parent swaps matches (or clears).
   useEffect(() => {
     setMatchState(activeMatch);
     setError(null);
     setSelfAfkWarning(false);
+    setDrawLockCode(null);
   }, [activeMatch?.code]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const code = activeMatch?.code ?? null;
@@ -386,8 +411,11 @@ export function useMultiplayerSync(
           // Classic MP: every move ends the turn.
           patch.currentTurn = opponentUid;
         }
+        // Any move retires a draw offer; the field goes with it.
+        if (data.drawOffer) patch.drawOffer = deleteField();
         tx.update(ref, patch);
       });
+      setDrawLockCode(null); // I have moved: I may offer again
     } catch (err) {
       console.error('[mp] move failed', err);
       const msg = err instanceof Error ? err.message : 'MOVE_FAILED';
@@ -450,8 +478,10 @@ export function useMultiplayerSync(
         } else {
           patch.rouletteActionsLeft = newActions;
         }
+        if (data.drawOffer) patch.drawOffer = deleteField();
         tx.update(ref, patch);
       });
+      setDrawLockCode(null);
     } catch (err) {
       console.error('[mp] rotate failed', err);
       setError('Rotate failed. Try again.');
@@ -563,6 +593,98 @@ export function useMultiplayerSync(
     }
   }
 
+  const drawTable: DrawTable<string> = {
+    offer: liveMatch.drawOffer ?? null,
+    waiting: drawLockCode === liveMatch.code ? [liveMyUid] : [],
+  };
+
+  // An offer and a decline stamp lastActivity like every write: a player
+  // who offers on their own turn and waits for the answer has 90 s from
+  // the offer before the inactivity forfeit, not from the last move.
+  async function offerDraw(): Promise<void> {
+    if (liveMatch.status !== 'active' || liveMatch.outcome) return;
+    if (!canOfferDraw(drawTable, liveMyUid, liveMatch.log.moves.length)) return;
+    if (drawBusy) return;
+    setDrawBusy(true);
+    setError(null);
+    try {
+      await runTransaction(db, async (tx) => {
+        const ref = doc(db, 'matches', liveMatch.code);
+        const snap = await tx.get(ref);
+        if (!snap.exists()) throw new Error('MATCH_GONE');
+        const data = snap.data() as MatchDoc;
+        if (data.status !== 'active' || data.outcome) throw new Error('MATCH_NOT_ACTIVE');
+        const plies = data.log.moves.length;
+        // One at a time: the opponent's offer, landed meanwhile, wins.
+        const block = drawOfferBlock({ offer: data.drawOffer ?? null, waiting: [] }, liveMyUid, plies);
+        if (block) throw new Error(block === 'answer' ? 'DRAW_OFFER_STANDS' : 'DRAW_OFFER_BLOCKED');
+        tx.update(ref, {
+          drawOffer: { by: liveMyUid, atPly: plies },
+          lastActivity: serverTimestamp(),
+        });
+      });
+      setDrawLockCode(liveMatch.code);
+    } catch (err) {
+      console.error('[mp] draw offer failed', err);
+      const msg = err instanceof Error ? err.message : '';
+      setError(
+        msg === 'MATCH_NOT_ACTIVE'
+          ? 'Match is no longer active.'
+          : msg === 'DRAW_OFFER_STANDS'
+            ? `${opponentDisplayName} has just offered a draw.`
+            : 'Could not offer a draw. Try again.',
+      );
+    } finally {
+      setDrawBusy(false);
+    }
+  }
+
+  async function answerDraw(accept: boolean): Promise<void> {
+    if (!canAnswerDraw(liveMatch.drawOffer, liveMyUid, liveMatch.log.moves.length)) return;
+    if (drawBusy) return;
+    setDrawBusy(true);
+    setError(null);
+    try {
+      await runTransaction(db, async (tx) => {
+        const ref = doc(db, 'matches', liveMatch.code);
+        const snap = await tx.get(ref);
+        if (!snap.exists()) throw new Error('MATCH_GONE');
+        const data = snap.data() as MatchDoc;
+        if (data.status !== 'active' || data.outcome) throw new Error('MATCH_NOT_ACTIVE');
+        // A move that landed first retired the offer: nothing to answer.
+        if (!canAnswerDraw(data.drawOffer, liveMyUid, data.log.moves.length)) {
+          throw new Error('DRAW_OFFER_GONE');
+        }
+        tx.update(
+          ref,
+          accept
+            ? {
+                status: 'completed',
+                outcome: 'draw',
+                endReason: 'agreement',
+                drawOffer: deleteField(),
+                lastActivity: serverTimestamp(),
+              }
+            : { drawOffer: deleteField(), lastActivity: serverTimestamp() },
+        );
+      });
+    } catch (err) {
+      console.error('[mp] draw answer failed', err);
+      const msg = err instanceof Error ? err.message : '';
+      setError(
+        msg === 'MATCH_NOT_ACTIVE'
+          ? 'Match is no longer active.'
+          : msg === 'DRAW_OFFER_GONE'
+            ? 'The draw offer is gone: a move came first.'
+            : accept
+              ? 'Could not accept the draw. Try again.'
+              : 'Could not decline the draw. Try again.',
+      );
+    } finally {
+      setDrawBusy(false);
+    }
+  }
+
   return {
     matchState: liveMatch,
     boardState: liveBoard,
@@ -585,5 +707,9 @@ export function useMultiplayerSync(
     sendMove,
     resign,
     writeOutcomeIfFirst,
+    drawTable,
+    drawBusy,
+    offerDraw,
+    answerDraw,
   };
 }
