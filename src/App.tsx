@@ -57,6 +57,7 @@ import {
   Eye,
   Flag,
   GraduationCap,
+  Handshake,
   HelpCircle,
   Lightbulb,
   Lock,
@@ -124,6 +125,18 @@ import { liveBpm } from './music/liveBpm';
 import { BeatCombo } from './components/BeatCombo';
 import { MusicScorePanel } from './components/MusicScorePanel';
 import { scaleBudgetMs } from './utils/deviceTier';
+import {
+  NO_DRAW_OFFERS,
+  canAnswerDraw,
+  canOfferDraw,
+  declineDraw,
+  drawOfferBlock,
+  drawTableAfterMove,
+  offerDraw,
+  standingDrawOffer,
+  type DrawOfferBlock,
+  type DrawTable,
+} from './utils/drawOffer';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -179,7 +192,10 @@ type GameStatus =
   // QA-11 — the named side resigned. Its own status, so the banner, the
   // winner and the endgame cut no longer read a resignation as a mate.
   | 'resigned_white'
-  | 'resigned_black';
+  | 'resigned_black'
+  // Hot-seat: one side offered a draw and the other accepted. A 'draw_'
+  // status like the rest, so it gets the handshake cut and a draw result.
+  | 'draw_agreement';
 
 type GameMode = 'classic' | 'roulette';
 
@@ -364,6 +380,57 @@ function LocalTurnSlot({ side, toMove }: { side: 'white' | 'black'; toMove: 'whi
       <span className="local-turn-lamp" aria-hidden />
       {mine ? 'Your move' : `${toMove === 'white' ? 'White' : 'Black'} to move`}
     </span>
+  );
+}
+
+/** What a seat's Offer draw button says. `opponent` names the other seat. */
+function drawOfferTitle(block: DrawOfferBlock | null, opponent: string): string {
+  switch (block) {
+    case null:
+      return 'Offer a draw';
+    case 'no-moves':
+      return 'Offer a draw (after the first move)';
+    case 'offered':
+      return `Draw offered. ${opponent} to answer`;
+    case 'answer':
+      return `${opponent} offers a draw`;
+    case 'move-first':
+      return 'Offer a draw again after your next move';
+  }
+}
+
+/** A draw offer as the player it is made to sees it: in place of that
+ *  player's own row, so the board does not move when it appears. */
+function DrawOfferPrompt({
+  text,
+  onAnswer,
+  disabled = false,
+}: {
+  text: string;
+  onAnswer: (accept: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="draw-offer-prompt" role="group" aria-label="Draw offer">
+      <Icon icon={Handshake} size="md" aria-hidden />
+      <span className="draw-offer-text" role="status">{text}</span>
+      <button
+        type="button"
+        className="mp-btn mp-btn-primary"
+        onClick={() => onAnswer(true)}
+        disabled={disabled}
+      >
+        Accept
+      </button>
+      <button
+        type="button"
+        className="mp-btn mp-btn-secondary"
+        onClick={() => onAnswer(false)}
+        disabled={disabled}
+      >
+        Decline
+      </button>
+    </div>
   );
 }
 
@@ -769,6 +836,13 @@ function App() {
   // QA-11 — WHO is resigning while the confirmation is up. In hot-seat
   // either seat has a Resign button, so it is not always the side to move.
   const [confirmingResign, setConfirmingResign] = useState<Color | null>(null);
+  // Hot-seat draw offers (src/utils/drawOffer.ts), keyed by the game they
+  // belong to, so a new game starts with none and nothing has to reset it.
+  // Never saved: hot-seat stores nothing beyond the Memory entry.
+  const [localDraw, setLocalDraw] = useState<{ logId: string; table: DrawTable<Color> }>({
+    logId: '',
+    table: NO_DRAW_OFFERS,
+  });
   // Sprint 4.3.1 — pending opponent switch during an active local game.
   // When non-null the ConfirmDialog mounts; on confirm we discard the
   // local game state and start fresh in the requested mode.
@@ -1519,15 +1593,17 @@ function App() {
 
     const sourceId = liveSavedGameIdRef.current;
     const resigned = gameStatus === 'resigned_white' || gameStatus === 'resigned_black';
-    const termination: 'checkmate' | 'stalemate' | 'resignation' = resigned
+    const termination: 'checkmate' | 'stalemate' | 'resignation' | 'agreement' = resigned
       ? 'resignation'
-      : gameStatus === 'checkmate'
-        || gameStatus === 'king_captured_white_wins'
-        || gameStatus === 'king_captured_black_wins'
-        || gameStatus === 'timeout_white'
-        || gameStatus === 'timeout_black'
-        ? 'checkmate'
-        : 'stalemate';
+      : gameStatus === 'draw_agreement'
+        ? 'agreement'
+        : gameStatus === 'checkmate'
+          || gameStatus === 'king_captured_white_wins'
+          || gameStatus === 'king_captured_black_wins'
+          || gameStatus === 'timeout_white'
+          || gameStatus === 'timeout_black'
+          ? 'checkmate'
+          : 'stalemate';
     const saved = buildSavedGameFromLog(
       log,
       state,
@@ -2124,6 +2200,45 @@ function App() {
     if (isLocalMode) return;
     setGameOutcome('human-resign');
     void finishGame('human-resign');
+  }
+
+  /** Hot-seat: the draw offers of the game on the board. */
+  function localDrawTable(): DrawTable<Color> {
+    return localDraw.logId === log.id ? localDraw.table : NO_DRAW_OFFERS;
+  }
+
+  /** Hot-seat: `side` offers a draw; the other seat sees it on its side. */
+  function offerLocalDraw(side: Color) {
+    if (!isLocalMode || gameStatus !== 'active') return;
+    const table = localDrawTable();
+    if (!canOfferDraw(table, side, log.moves.length)) return;
+    setLocalDraw({ logId: log.id, table: offerDraw(table, side, log.moves.length) });
+  }
+
+  /** Hot-seat: `side` answers the offer standing against it. */
+  function answerLocalDraw(side: Color, accept: boolean) {
+    if (!isLocalMode || gameStatus !== 'active') return;
+    const table = localDrawTable();
+    if (!canAnswerDraw(table.offer, side, log.moves.length)) return;
+    // A move already on its way to the beat (music sync) lands first, and
+    // a move retires the offer: there is nothing left to answer.
+    if (beatSnapPendingRef.current) return;
+    if (!accept) {
+      setLocalDraw({ logId: log.id, table: declineDraw(table, side, log.moves.length) });
+      toast.show(`${side === 'white' ? 'White' : 'Black'} declined the draw.`, 'info', 2400);
+      return;
+    }
+    // Stamped before the status flips, like a resignation (nothing saves).
+    completedLogIdRef.current = log.id;
+    setSelected(null);
+    setGameStatus('draw_agreement');
+  }
+
+  /** Any move retires a standing offer; the mover may offer again. */
+  function noteDrawMove(mover: Color) {
+    setLocalDraw((prev) =>
+      prev.logId === log.id ? { ...prev, table: drawTableAfterMove(prev.table, mover) } : prev,
+    );
   }
 
   // M.23 — evalToColors reads document.documentElement's data-theme
@@ -3182,6 +3297,7 @@ function App() {
       const toggleMove: Move = { kind: 'topologyToggle' };
       const toggleSan = computeSAN(state, toggleMove);
       setLog((prev) => appendMove(prev, toggleMove, toggleSan, state.topologyState));
+      noteDrawMove(state.sideToMove);
       setLastMove(null);
       // R10 — the streamer rotated: settle the chat's guess round.
       announceGuessWinners(moveVoting.resolveGuessRotate());
@@ -3198,6 +3314,7 @@ function App() {
     const toggleMove: Move = { kind: 'topologyToggle' };
     const toggleSan = computeSAN(state, toggleMove);
     setLog((prev) => appendMove(prev, toggleMove, toggleSan, state.topologyState));
+    noteDrawMove(state.sideToMove);
     setLastMove(null);
     setSelected(null);
     setPreviewTopology(null);
@@ -3259,6 +3376,18 @@ function App() {
   // game. The opponent choice is kept, so stopping the replay brings the
   // hot-seat UI straight back.
   const isLocalMode = opponentMode === 'local' && !isMultiplayer && !watchingGame;
+
+  // Hot-seat draw offers: what each seat's button says, and whose row the
+  // answer prompt replaces while an offer stands. Only while the game
+  // runs: an accepted offer is still "standing" on the final ply.
+  const localDrawOpen = isLocalMode && gameStatus === 'active';
+  const localStandingDraw = localDrawOpen
+    ? standingDrawOffer(localDrawTable().offer, log.moves.length)
+    : null;
+  const localWhiteAnswers = localStandingDraw?.by === 'black';
+  const localBlackAnswers = localStandingDraw?.by === 'white';
+  const localWhiteBlock = localDrawOpen ? drawOfferBlock(localDrawTable(), 'white', log.moves.length) : null;
+  const localBlackBlock = localDrawOpen ? drawOfferBlock(localDrawTable(), 'black', log.moves.length) : null;
 
   // V1 — solo time control flag-fall. When a side's remaining time hits
   // zero the game ends as a loss on time for that side, exactly like a
@@ -4580,6 +4709,7 @@ function App() {
     const moverType = state.pieces[resolvedMove.from!]!.type;
     const afterMove = applyMove(state, resolvedMove);
     setLog((prev) => appendMove(prev, resolvedMove, san, state.topologyState));
+    noteDrawMove(state.sideToMove);
     setLastMove({ from: resolvedMove.from, to: resolvedMove.to });
     // SP-2 — score the move against the beat grid (no-op when music
     // sync is off). Display-only combo; leaderboard points untouched.
@@ -4688,6 +4818,7 @@ function App() {
     setSelected(null);
     setPendingPromotion(null);
     setLog((prev) => appendMove(prev, move, san, state.topologyState));
+    noteDrawMove(state.sideToMove);
     setLastMove({ from: move.from, to: move.to });
     beatBridge.reportMove(); // SP-2 — promotion path counts too
     // B3 — material-delta bump instead of static-fallback flicker.
@@ -5514,6 +5645,9 @@ function App() {
     if (gameStatus === 'draw_50move') {
       return 'Draw: 50-move rule';
     }
+    if (gameStatus === 'draw_agreement') {
+      return 'Draw by agreement';
+    }
     if (gameStatus === 'king_captured_white_wins') {
       return 'King captured! White wins';
     }
@@ -6165,9 +6299,23 @@ function App() {
           mirrors the bottom one but is visually flipped 180° so the
           opposite-sitting player sees it upright. Buttons mirror the
           subset of the main action row that matters during a hot-seat
-          game (resign / preview rotation / commit rotation). */}
+          game (resign / draw offer / preview rotation / commit rotation).
+          A draw offer made to black takes the row's place until black
+          answers it or a move retires it. */}
+      {localBlackAnswers && (
+        <div className="local-actions local-actions-top">
+          <DrawOfferPrompt
+            text="White offers a draw"
+            onAnswer={(accept) => answerLocalDraw('black', accept)}
+          />
+        </div>
+      )}
       {isLocalMode && gameStatus === 'active' && (
-        <div className="local-actions local-actions-top" aria-hidden={state.sideToMove !== 'black'}>
+        <div
+          className="local-actions local-actions-top"
+          aria-hidden={state.sideToMove !== 'black'}
+          hidden={localBlackAnswers}
+        >
           <LocalTurnSlot side="black" toMove={state.sideToMove} />
           <button
             type="button"
@@ -6178,6 +6326,16 @@ function App() {
             title="Resign"
           >
             <Icon icon={Flag} size="md" aria-hidden />
+          </button>
+          <button
+            type="button"
+            className={`action-btn draw-offer-btn${localBlackBlock === 'offered' ? ' is-pending' : ''}`}
+            onClick={() => offerLocalDraw('black')}
+            disabled={localBlackBlock !== null}
+            aria-label="Offer a draw (black)"
+            title={drawOfferTitle(localBlackBlock, 'White')}
+          >
+            <Icon icon={Handshake} size="md" aria-hidden />
           </button>
           <button
             type="button"
@@ -6894,7 +7052,17 @@ function App() {
         <div className="game-over-banner">{gameOverMessage}</div>
       )}
 
-      <div className="board-actions">
+      {/* A draw offer made to white takes the white row's place, as the
+          top row does for black. The row stays mounted, only hidden. */}
+      {localWhiteAnswers && (
+        <div className="board-actions is-answering">
+          <DrawOfferPrompt
+            text="Black offers a draw"
+            onAnswer={(accept) => answerLocalDraw('white', accept)}
+          />
+        </div>
+      )}
+      <div className="board-actions" hidden={localWhiteAnswers}>
         {isLocalMode && gameStatus === 'active' && (
           <LocalTurnSlot side="white" toMove={state.sideToMove} />
         )}
@@ -6938,6 +7106,19 @@ function App() {
               <Icon icon={Flag} size="md" aria-hidden />
             </button>
           </Tooltip>
+          {isLocalMode && (
+            <Tooltip text={drawOfferTitle(localWhiteBlock, 'Black')} side="top">
+              <button
+                type="button"
+                className={`action-btn draw-offer-btn${localWhiteBlock === 'offered' ? ' is-pending' : ''}`}
+                onClick={() => offerLocalDraw('white')}
+                disabled={gameStatus !== 'active' || localWhiteBlock !== null}
+                aria-label="Offer a draw"
+              >
+                <Icon icon={Handshake} size="md" aria-hidden />
+              </button>
+            </Tooltip>
+          )}
           {/* Sprint 4.2 — hide threat/support insight tools in local
               2P mode for a cleaner hot-seat UX (one device, two humans
               sharing the screen; coaching arrows are distracting). */}
