@@ -3,10 +3,12 @@ import react from '@vitejs/plugin-react';
 
 /* V1 launch hardening — Content-Security-Policy.
  *
- * The app is a static SPA on GitHub Pages, which cannot send HTTP headers,
- * so the policy ships as a <meta http-equiv> tag injected at BUILD time
- * only. Dev stays policy-free: Vite's HMR client, inline error overlay and
- * ws://localhost transport would all trip it.
+ * The app is a static SPA. GitHub Pages cannot send HTTP headers, so the
+ * policy ships as a <meta http-equiv> tag injected at BUILD time only, and
+ * the Vercel build (subutai.honchar.dev) keeps that same tag. A meta policy
+ * cannot carry frame-ancestors, so vercel.json sends that one directive as
+ * a header. Dev stays policy-free: Vite's HMR client, inline error overlay
+ * and ws://localhost transport would all trip it.
  *
  * Every origin below maps to a real integration:
  *   script   Spotify IFrame API (+ its CDN), Deezer JSONP BPM lookup,
