@@ -2212,6 +2212,12 @@ function App() {
     if (!isLocalMode || gameStatus !== 'active') return;
     const table = localDrawTable();
     if (!canOfferDraw(table, side, log.moves.length)) return;
+    // The move landing on the beat would retire the offer at once and
+    // leave `side` waiting for its own next move.
+    if (beatSnapPendingRef.current) {
+      toast.show('A move is landing on the beat. Offer the draw once it has.', 'info', 2400);
+      return;
+    }
     setLocalDraw({ logId: log.id, table: offerDraw(table, side, log.moves.length) });
   }
 
@@ -2222,7 +2228,10 @@ function App() {
     if (!canAnswerDraw(table.offer, side, log.moves.length)) return;
     // A move already on its way to the beat (music sync) lands first, and
     // a move retires the offer: there is nothing left to answer.
-    if (beatSnapPendingRef.current) return;
+    if (beatSnapPendingRef.current) {
+      toast.show('A move is landing on the beat. It takes the offer off the table.', 'info', 2400);
+      return;
+    }
     if (!accept) {
       setLocalDraw({ logId: log.id, table: declineDraw(table, side, log.moves.length) });
       toast.show(`${side === 'white' ? 'White' : 'Black'} declined the draw.`, 'info', 2400);
@@ -6300,23 +6309,23 @@ function App() {
           opposite-sitting player sees it upright. Buttons mirror the
           subset of the main action row that matters during a hot-seat
           game (resign / draw offer / preview rotation / commit rotation).
-          A draw offer made to black takes the row's place until black
-          answers it or a move retires it. */}
-      {localBlackAnswers && (
-        <div className="local-actions local-actions-top">
-          <DrawOfferPrompt
-            text="White offers a draw"
-            onAnswer={(accept) => answerLocalDraw('black', accept)}
-          />
-        </div>
-      )}
+          A draw offer made to black takes the place of black's turn chip
+          and Offer button until black answers it or a move retires it;
+          the rest of the row stays, so black can still resign, or rotate
+          if it is black's turn. */}
       {isLocalMode && gameStatus === 'active' && (
         <div
           className="local-actions local-actions-top"
-          aria-hidden={state.sideToMove !== 'black'}
-          hidden={localBlackAnswers}
+          aria-hidden={state.sideToMove !== 'black' && !localBlackAnswers}
         >
-          <LocalTurnSlot side="black" toMove={state.sideToMove} />
+          {localBlackAnswers ? (
+            <DrawOfferPrompt
+              text="White offers a draw"
+              onAnswer={(accept) => answerLocalDraw('black', accept)}
+            />
+          ) : (
+            <LocalTurnSlot side="black" toMove={state.sideToMove} />
+          )}
           <button
             type="button"
             className="action-btn resign-btn"
@@ -6327,16 +6336,18 @@ function App() {
           >
             <Icon icon={Flag} size="md" aria-hidden />
           </button>
-          <button
-            type="button"
-            className={`action-btn draw-offer-btn${localBlackBlock === 'offered' ? ' is-pending' : ''}`}
-            onClick={() => offerLocalDraw('black')}
-            disabled={localBlackBlock !== null}
-            aria-label="Offer a draw (black)"
-            title={drawOfferTitle(localBlackBlock, 'White')}
-          >
-            <Icon icon={Handshake} size="md" aria-hidden />
-          </button>
+          {!localBlackAnswers && (
+            <button
+              type="button"
+              className={`action-btn draw-offer-btn${localBlackBlock === 'offered' ? ' is-pending' : ''}`}
+              onClick={() => offerLocalDraw('black')}
+              disabled={localBlackBlock !== null}
+              aria-label="Offer a draw (black)"
+              title={drawOfferTitle(localBlackBlock, 'White')}
+            >
+              <Icon icon={Handshake} size="md" aria-hidden />
+            </button>
+          )}
           <button
             type="button"
             className={`action-btn preview-btn${previewLocked ? ' active' : ''}`}
@@ -6356,9 +6367,12 @@ function App() {
           </button>
           <button
             type="button"
-            className={`rotate-btn-icon${encourageRotate && canRotate ? ' is-hint-pulsing' : ''}`}
+            className={`rotate-btn-icon${encourageRotate && canRotate && state.sideToMove === 'black' ? ' is-hint-pulsing' : ''}`}
             onClick={handleRotate}
-            disabled={!canRotate}
+            // Black's own move only: handleRotate rotates for the side to
+            // move, and this row is lit on white's turn too while black
+            // has a draw offer to answer.
+            disabled={!canRotate || state.sideToMove !== 'black'}
             aria-label={`Rotate ${state.topologyState} to ${state.topologyState === 'A' ? 'B' : 'A'}`}
             title="Rotate board"
           >
@@ -7052,19 +7066,17 @@ function App() {
         <div className="game-over-banner">{gameOverMessage}</div>
       )}
 
-      {/* A draw offer made to white takes the white row's place, as the
-          top row does for black. The row stays mounted, only hidden. */}
-      {localWhiteAnswers && (
-        <div className="board-actions is-answering">
+      <div className="board-actions">
+        {/* A draw offer made to white takes the place of white's turn
+            chip (and Offer button), as in black's row above. */}
+        {localWhiteAnswers ? (
           <DrawOfferPrompt
             text="Black offers a draw"
             onAnswer={(accept) => answerLocalDraw('white', accept)}
           />
-        </div>
-      )}
-      <div className="board-actions" hidden={localWhiteAnswers}>
-        {isLocalMode && gameStatus === 'active' && (
-          <LocalTurnSlot side="white" toMove={state.sideToMove} />
+        ) : (
+          isLocalMode &&
+          gameStatus === 'active' && <LocalTurnSlot side="white" toMove={state.sideToMove} />
         )}
         {/* Sprint 3.2.1 \u2014 six icon buttons consolidated into one
             cohesive bar with a single divider between the meta-controls
@@ -7106,7 +7118,7 @@ function App() {
               <Icon icon={Flag} size="md" aria-hidden />
             </button>
           </Tooltip>
-          {isLocalMode && (
+          {isLocalMode && !localWhiteAnswers && (
             <Tooltip text={drawOfferTitle(localWhiteBlock, 'Black')} side="top">
               <button
                 type="button"
@@ -7270,7 +7282,9 @@ function App() {
             <span className="rotate-label-text" aria-hidden>
               {state.topologyState}{' → '}{state.topologyState === 'A' ? 'B' : 'A'}
             </span>
-            {showRotateHint && canRotate && (
+            {/* Not over a draw offer: on a phone the row wraps and the
+                bubble would sit on the Accept / Decline card. */}
+            {showRotateHint && canRotate && !localWhiteAnswers && (
               <span className="rotate-hint-tooltip" role="status">
                 <span>Try rotating the board! +15 pts, +25 more if it sets up a capture</span>
                 {/* span-as-button: a real <button> here would nest inside
