@@ -1762,6 +1762,32 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMultiplayer, mpSync?.matchState.status, mpSync?.matchState.outcome]);
 
+  // Online: tell me when my draw offer is declined. A decline clears the
+  // field with the log as it was; a move retires the offer too, but then
+  // the log has grown, and an accept ends the match.
+  const mpMyDrawOfferRef = useRef<{ code: string; atPly: number } | null>(null);
+  useEffect(() => {
+    if (!isMultiplayer || !mpSync) return;
+    const m = mpSync.matchState;
+    const standing = standingDrawOffer(m.drawOffer, m.log.moves.length);
+    if (standing?.by === mpSync.myUid) {
+      mpMyDrawOfferRef.current = { code: m.code, atPly: standing.atPly };
+      return;
+    }
+    const mine = mpMyDrawOfferRef.current;
+    mpMyDrawOfferRef.current = null;
+    if (
+      mine &&
+      mine.code === m.code &&
+      m.status === 'active' &&
+      !m.outcome &&
+      !m.drawOffer &&
+      m.log.moves.length === mine.atPly
+    ) {
+      toast.show(`${mpSync.opponentDisplayName} declined the draw.`, 'info', 2400);
+    }
+  }, [isMultiplayer, mpSync, toast]);
+
   // T2: load a shared game on mount when ?game=<id> is in the URL. Bypasses
   // every game/match flow — drops directly into the Review screen with
   // metadata derived from the doc. Shared games are read-only; the back
@@ -3422,6 +3448,42 @@ function App() {
   const localBlackAnswers = localStandingDraw?.by === 'white';
   const localWhiteBlock = localDrawOpen ? drawOfferBlock(localDrawTable(), 'white', log.moves.length) : null;
   const localBlackBlock = localDrawOpen ? drawOfferBlock(localDrawTable(), 'black', log.moves.length) : null;
+
+  // The draw offer of the bottom row: white's seat in hot-seat, my own
+  // seat online (the match doc holds the offer, the hook my lock).
+  const mpDrawOpen =
+    isMultiplayer && !!mpSync && mpSync.matchState.status === 'active' && !mpSync.matchState.outcome;
+  const mpPlies = mpSync?.matchState.log.moves.length ?? 0;
+  const mpStandingDraw = mpDrawOpen ? standingDrawOffer(mpSync!.drawTable.offer, mpPlies) : null;
+  const rowDraw: {
+    open: boolean;
+    block: DrawOfferBlock | null;
+    answers: boolean;
+    opponent: string;
+    busy: boolean;
+    offer: () => void;
+    answer: (accept: boolean) => void;
+  } | null = isLocalMode
+    ? {
+        open: localDrawOpen,
+        block: localWhiteBlock,
+        answers: localWhiteAnswers,
+        opponent: 'Black',
+        busy: false,
+        offer: () => offerLocalDraw('white'),
+        answer: (accept) => answerLocalDraw('white', accept),
+      }
+    : isMultiplayer && mpSync
+      ? {
+          open: mpDrawOpen,
+          block: mpDrawOpen ? drawOfferBlock(mpSync.drawTable, mpSync.myUid, mpPlies) : null,
+          answers: !!mpStandingDraw && mpStandingDraw.by !== mpSync.myUid,
+          opponent: mpSync.opponentDisplayName,
+          busy: mpSync.drawBusy,
+          offer: () => void mpSync.offerDraw(),
+          answer: (accept) => void mpSync.answerDraw(accept),
+        }
+      : null;
 
   // V1 — solo time control flag-fall. When a side's remaining time hits
   // zero the game ends as a loss on time for that side, exactly like a
@@ -5333,6 +5395,18 @@ function App() {
         endgameFiredForLogRef.current = log.id;
         launchEndgame(view === 'human-win' ? 'victory' : 'defeat', { king: cutSubjectColor });
       }
+      // A draw by agreement ends the match with the board still open,
+      // like a resignation; it gets the handshake, as a drawn board does.
+      if (
+        isMultiplayer &&
+        mpSync &&
+        mpEndOutcome === 'draw' &&
+        mpSync.matchState.endReason === 'agreement' &&
+        endgameFiredForLogRef.current !== log.id
+      ) {
+        endgameFiredForLogRef.current = log.id;
+        launchEndgame('draw');
+      }
       return;
     }
     if (gameStatus === 'checkmate') return; // the iris hands that one over
@@ -7092,12 +7166,14 @@ function App() {
       )}
 
       <div className="board-actions">
-        {/* A draw offer made to white takes the place of white's turn
-            chip (and Offer button), as in black's row above. */}
-        {localWhiteAnswers ? (
+        {/* A draw offer made to this row's player (white in hot-seat, me
+            online) takes the place of the turn chip (and the Offer
+            button), as in black's hot-seat row above. */}
+        {rowDraw?.answers ? (
           <DrawOfferPrompt
-            text="Black offers a draw"
-            onAnswer={(accept) => answerLocalDraw('white', accept)}
+            text={`${rowDraw.opponent} offers a draw`}
+            onAnswer={rowDraw.answer}
+            disabled={rowDraw.busy}
           />
         ) : (
           isLocalMode &&
@@ -7143,13 +7219,13 @@ function App() {
               <Icon icon={Flag} size="md" aria-hidden />
             </button>
           </Tooltip>
-          {isLocalMode && !localWhiteAnswers && (
-            <Tooltip text={drawOfferTitle(localWhiteBlock, 'Black')} side="top">
+          {rowDraw && !rowDraw.answers && (
+            <Tooltip text={drawOfferTitle(rowDraw.block, rowDraw.opponent)} side="top">
               <button
                 type="button"
-                className={`action-btn draw-offer-btn${localWhiteBlock === 'offered' ? ' is-pending' : ''}`}
-                onClick={() => offerLocalDraw('white')}
-                disabled={gameStatus !== 'active' || localWhiteBlock !== null}
+                className={`action-btn draw-offer-btn${rowDraw.block === 'offered' ? ' is-pending' : ''}`}
+                onClick={rowDraw.offer}
+                disabled={!rowDraw.open || rowDraw.block !== null || rowDraw.busy}
                 aria-label="Offer a draw"
               >
                 <Icon icon={Handshake} size="md" aria-hidden />
@@ -7309,7 +7385,7 @@ function App() {
             </span>
             {/* Not over a draw offer: on a phone the row wraps and the
                 bubble would sit on the Accept / Decline card. */}
-            {showRotateHint && canRotate && !localWhiteAnswers && (
+            {showRotateHint && canRotate && !rowDraw?.answers && (
               <span className="rotate-hint-tooltip" role="status">
                 <span>Try rotating the board! +15 pts, +25 more if it sets up a capture</span>
                 {/* span-as-button: a real <button> here would nest inside
@@ -7947,7 +8023,9 @@ function App() {
                   ? `${loserName} left the game.`
                   : `${loserName} resigned or left the game.`
             : mpEndOutcome === 'draw'
-              ? 'Match drawn.'
+              ? endReason === 'agreement'
+                ? 'Draw by agreement.'
+                : 'Match drawn.'
               : `${mpEndOutcome === 'white-win' ? 'White' : 'Black'} wins by checkmate.`;
         function dismiss() {
           busy.navigate('Back to the board', () => {
