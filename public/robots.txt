@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://b1toks.github.io/subutai/
+Sitemap: https://subutai.honchar.dev/
