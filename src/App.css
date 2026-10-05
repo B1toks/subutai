@@ -6680,20 +6680,29 @@ body.checkmate-flash::after {
   opacity: 1;
 }
 
-/* A row a draw-offer prompt has replaced. Both rows set their own
-   display, which outranks the [hidden] attribute's UA rule. */
-.local-actions[hidden],
-.board-actions[hidden] {
-  display: none;
+/* A draw-offer prompt is wider than the turn chip it stands in for: on a
+   narrow screen black's row wraps rather than run off the board. */
+.local-actions {
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
 }
-.board-actions.is-answering {
-  justify-content: center;
+/* On a phone black's row (chip, resign, offer, preview, rotate) is wider
+   than the board with the rotate button's "A → B" label, and would wrap
+   on every turn. The icon alone keeps it on one line; the label stays in
+   white's row and the board shows the topology anyway. */
+@media (max-width: 420px) {
+  .local-actions .rotate-btn-icon {
+    width: 44px;
+  }
+  .local-actions .rotate-label-text {
+    display: none;
+  }
 }
 
-/* Draw offer, as the player it is made to sees it: one card the height
-   of the row it replaces (44px, the rotate button sets it), in the
-   theme's accent like the "Your move" chip, so it reads as the question
-   on the table. */
+/* Draw offer, as the player it is made to sees it: in that player's own
+   row, in place of the turn chip, the row's height (44px, the rotate
+   button sets it) so the board does not move on a wide screen. In the
+   theme's accent like the "Your move" chip: the question on the table. */
 .draw-offer-prompt {
   display: inline-flex;
   align-items: center;
