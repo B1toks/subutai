@@ -64,7 +64,17 @@ function cspPlugin(): Plugin {
   };
 }
 
+/* Public base path. Unset, it is /subutai/ — GitHub Pages and the QA specs
+ * rely on that. The subutai.honchar.dev build sets VITE_BASE=/ to serve the
+ * app from the domain root. Vite keeps a base without its trailing slash
+ * as-is, so the service worker would register at "/subutaisw.js": a bad
+ * value fails the build instead of shipping a site that half works. */
+const base = process.env.VITE_BASE || '/subutai/';
+if (!/^\/(.*\/)?$/.test(base)) {
+  throw new Error(`VITE_BASE must start and end with "/", got "${base}"`);
+}
+
 export default defineConfig({
   plugins: [react(), cspPlugin()],
-  base: '/subutai/',
+  base,
 });
