@@ -27,6 +27,9 @@ export interface UserProfile {
   bestGameSnapshot?: BestGameSnapshot;
   longestSurvivalMoves?: number;
   lastGameAt?: Timestamp;
+  /** QA-06 — the /games doc of the last counted save; the rules check a
+   *  strongWins +1 against it. Absent on older profiles. */
+  lastGameId?: string;
   /** V1 — wins against the full-strength bot, the only level that is
    *  ranked. Practice levels never touch this, so the leaderboard badge
    *  it drives means exactly one thing: they beat the real engine.

@@ -73,7 +73,7 @@ import {
   UsersRound,
 } from 'lucide-react';
 import type { GameReviewMeta } from './components/GameReview';
-import { useMultiplayerSync } from './components/MultiplayerGameView';
+import { OPPONENT_OFFLINE_FORFEIT_MS, useMultiplayerSync } from './components/MultiplayerGameView';
 import { mpResignCause } from './firebase/matchEnd';
 import { rejoinMatch, type MatchDoc, type MatchOutcome } from './firebase/matches';
 import {
@@ -1835,7 +1835,13 @@ function App() {
       if (jobs.some((j) => completedLogIdRef.current === j.log.id)) setSavingGame(false);
       return;
     }
-    for (const job of jobs) void saveFinishedGame(job, user.uid, displayName);
+    // One after another: the rules count a Strong win only for a game
+    // saved after the profile's previous save (QA-06), so two of these
+    // racing could refuse the second one's stats.
+    const uid = user.uid;
+    void (async () => {
+      for (const job of jobs) await saveFinishedGame(job, uid, displayName);
+    })();
     // saveFinishedGame closes over nothing but stable setters and refs.
   }, [authLoading, user, displayName]);
 
@@ -3004,6 +3010,7 @@ function App() {
   }, [isMultiplayer, mpTimeControl, mpSync, mpNow, mpMatchLive]);
 
   const flagFiredRef = useRef(false);
+  const flagRetryAtRef = useRef(0);
   useEffect(() => {
     flagFiredRef.current = false;
   }, [mpSync?.matchState.code]);
@@ -3018,19 +3025,31 @@ function App() {
     const mine = mpSync.myColor === 'white' ? mpClocks.white : mpClocks.black;
     if (mine <= 0) {
       flagFiredRef.current = true;
-      void mpSync.resign();
+      void mpSync.resign('flag');
       return;
     }
     // R13/BUG-3 — the flagging client may be gone (tab closed): if the
     // OPPONENT's clock hits zero, the waiting peer claims the flag win
-    // itself instead of waiting ~90s for the AFK watchdog. Same
-    // transaction-guarded write local mate detection uses, so a
-    // simultaneous self-forfeit can't double-settle the match.
+    // itself. Same transaction-guarded write local mate detection uses,
+    // so a simultaneous self-forfeit can't double-settle the match.
+    // QA-05 — the rules cannot see the clock, so they take this claim
+    // only once the opponent has been idle 90 s by server time; until
+    // then only their own client can end it. Wait for that, and retry
+    // when the server still says no (clock skew).
     const theirs = mpSync.myColor === 'white' ? mpClocks.black : mpClocks.white;
     if (theirs <= 0) {
+      const last = mpSync.matchState.lastActivity?.toMillis?.();
+      if (typeof last === 'number' && Date.now() - last < OPPONENT_OFFLINE_FORFEIT_MS) return;
+      if (Date.now() < flagRetryAtRef.current) return;
       flagFiredRef.current = true;
       const opponentIsHost = mpSync.matchState.host.uid !== mpSync.myUid;
-      void mpSync.writeOutcomeIfFirst(opponentIsHost ? 'host-resign' : 'guest-resign');
+      void mpSync
+        .writeOutcomeIfFirst(opponentIsHost ? 'host-resign' : 'guest-resign', 'flag')
+        .then((ok) => {
+          if (ok) return;
+          flagRetryAtRef.current = Date.now() + 4000;
+          flagFiredRef.current = false;
+        });
     }
   }, [mpClocks, mpSync]);
 
@@ -7688,10 +7707,17 @@ function App() {
         );
         const opp = mpSync.opponentDisplayName;
         // QA-04 — a flag fall or an inactivity forfeit is not a resignation.
+        // The match says which it was (endReason); one ended by an older
+        // client does not, and falls back to the clock and this tab.
+        const endReason = mpSync.matchState.endReason;
         const resignCause =
-          myView === 'human-resign' && mpSelfResignedRef.current === mpSync.matchState.code
-            ? 'resign'
-            : mpResignCause({ ...mpSync.matchState, outcome: mpEndOutcome });
+          endReason === 'flag'
+            ? 'timeout'
+            : endReason === 'inactive' || endReason === 'resign'
+              ? endReason
+              : myView === 'human-resign' && mpSelfResignedRef.current === mpSync.matchState.code
+                ? 'resign'
+                : mpResignCause({ ...mpSync.matchState, outcome: mpEndOutcome });
         const headline =
           myView === 'human-win'
             ? `You won vs ${opp}!`
@@ -7700,7 +7726,9 @@ function App() {
                 ? `You ran out of time vs ${opp}.`
                 : resignCause === 'resign'
                   ? `You resigned vs ${opp}.`
-                  : `You lost vs ${opp}.`
+                  : resignCause === 'inactive'
+                    ? `You left the game vs ${opp}.`
+                    : `You lost vs ${opp}.`
               : myView === 'ai-win'
                 ? `You lost vs ${opp}.`
                 : `Draw vs ${opp}.`;
@@ -7714,7 +7742,9 @@ function App() {
               ? `${loserName} ran out of time.`
               : resignCause === 'resign'
                 ? `${loserName} resigned.`
-                : `${loserName} resigned or left the game.`
+                : resignCause === 'inactive'
+                  ? `${loserName} left the game.`
+                  : `${loserName} resigned or left the game.`
             : mpEndOutcome === 'draw'
               ? 'Match drawn.'
               : `${mpEndOutcome === 'white-win' ? 'White' : 'Black'} wins by checkmate.`;

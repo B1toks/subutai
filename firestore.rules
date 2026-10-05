@@ -51,69 +51,152 @@ service cloud.firestore {
         && p.total <= p.movePoints + p.capturePoints + p.qualityPoints + p.rotationPoints + p.outcomeBonus
         && (p.counted == false || moveCount >= 10);
     }
-    function gameBacksBest(uid, gameId, points) {
-      return gameId is string
-        && exists(/databases/$(database)/documents/games/$(gameId))
-        && get(/databases/$(database)/documents/games/$(gameId)).data.playerId == uid
-        && get(/databases/$(database)/documents/games/$(gameId)).data.points.total == points;
+    function gameDoc(gameId) {
+      return get(/databases/$(database)/documents/games/$(gameId)).data;
+    }
+    function nameDoc(slug) {
+      return /databases/$(database)/documents/displayNames/$(slug);
+    }
+
+    // QA-06 — the profile shows only a name this uid holds in /displayNames
+    // (getAfter: the client reserves it in the same transaction). The shown
+    // name must be its slug up to case: the characters the name picker
+    // allows (none of them regex syntax), matched case-insensitively against
+    // a slug with no capitals. Not lower(): it only folds ASCII, and would
+    // refuse every Cyrillic name. No NFKC either, so a name NFKC changes
+    // (fullwidth letters) cannot be taken.
+    function nameReserved(uid) {
+      let d = request.resource.data;
+      return d.displayName.matches('[\\p{L}\\p{N} _-]+')
+        && !d.displayNameLower.matches('.*[\\p{Lu}\\p{Lt}].*')
+        && d.displayNameLower.matches('(?i)' + d.displayName)
+        && getAfter(nameDoc(d.displayNameLower)).data.uid == uid;
+    }
+    // One reservation per uid: moving to a new name releases the old one in
+    // the same write.
+    function oldNameReleased(uid) {
+      let old = resource.data.displayNameLower;
+      return request.resource.data.displayNameLower == old
+        || !existsAfter(nameDoc(old))
+        || getAfter(nameDoc(old)).data.uid != uid;
+    }
+
+    // QA-06 — a games counter never goes below 0 or up by more than one game
+    // per write. Only checked when the write changes it, so a profile with
+    // an old bad value can still save games.
+    function counterOk(f, ak) {
+      let v = request.resource.data.get(f, 0);
+      return !ak.hasAny([f])
+        || (v is int && v >= 0 && v <= resource.data.get(f, 0) + 1);
+    }
+
+    // QA-06 — best points, its game id and the snapshot the leaderboard
+    // shows ("Survived", "Bot Slayer") change only together, and only to a
+    // counted game of this player in this mode whose outcome and length
+    // the snapshot repeats.
+    function bestOk(uid, ak, pointsF, idF, snapF, mode) {
+      return !ak.hasAny([pointsF, idF, snapF])
+        || bestBacked(uid, request.resource.data, pointsF, idF, snapF, mode);
+    }
+    function bestBacked(uid, d, pointsF, idF, snapF, mode) {
+      let g = gameDoc(d[idF]);
+      let s = d[snapF];
+      return g.playerId == uid
+        && g.points.counted == true
+        && g.points.total == d[pointsF]
+        && g.get('gameMode', 'classic') == mode
+        && s is map
+        && s.keys().hasOnly(['chess960Id', 'moveCount', 'outcome', 'createdAt', 'durationMs'])
+        && s.outcome == g.outcome
+        && s.moveCount == g.moveCount
+        && s.chess960Id == g.chess960Id
+        && s.createdAt == request.time
+        && (!('durationMs' in s) || s.durationMs == g.get('durationMs', null));
+    }
+
+    // QA-06 — "Beat Strong" goes up by one only with a win over the
+    // full-strength bot that the profile points at (lastGameId): a counted
+    // game of this player, saved in the last 10 minutes and after the
+    // profile's previous game save (lastGameAt). This write moves
+    // lastGameAt to now, so one game is never counted twice.
+    function strongWinsOk(uid, ak) {
+      let before = resource.data.get('strongWins', 0);
+      let after = request.resource.data.get('strongWins', 0);
+      return !ak.hasAny(['strongWins'])
+        || (after is int && after >= 0
+            && (after <= before || (after == before + 1 && freshStrongWin(uid))));
+    }
+    function freshStrongWin(uid) {
+      let d = request.resource.data;
+      let g = gameDoc(d.lastGameId);
+      return d.lastGameAt == request.time
+        && g.playerId == uid
+        && g.get('botLevel', '') == 'strong'
+        && g.outcome == 'human-win'
+        && g.points.counted == true
+        && g.createdAt > request.time - duration.value(10, 'm')
+        && (!('lastGameAt' in resource.data) || g.createdAt > resource.data.lastGameAt);
+    }
+
+    function userUpdateOk(uid, ak) {
+      let d = request.resource.data;
+      return (!ak.hasAny(['displayName', 'displayNameLower'])
+              || (nameReserved(uid) && oldNameReleased(uid)))
+        && counterOk('gamesPlayed', ak)
+        && counterOk('gamesWon', ak)
+        && counterOk('gamesDrawn', ak)
+        && counterOk('rouletteGamesPlayed', ak)
+        && (!ak.hasAny(['longestSurvivalMoves'])
+            || intIn(d.get('longestSurvivalMoves', 0), 0, 700))
+        // Server time only, and never removed: strongWinsOk counts on it.
+        && (!ak.hasAny(['lastGameAt']) || d.lastGameAt == request.time)
+        && (!ak.hasAny(['lastGameId']) || str(d.lastGameId, 128))
+        && strongWinsOk(uid, ak)
+        && bestOk(uid, ak, 'bestGamePoints', 'bestGameId', 'bestGameSnapshot', 'classic')
+        && bestOk(uid, ak, 'rouletteBestPoints', 'rouletteBestGameId', 'rouletteBestSnapshot', 'roulette');
     }
 
     match /users/{uid} {
       allow read: if true;
+      // A new profile is a name and nothing else: every stat starts through
+      // the update rule below.
       allow create: if isOwner(uid)
                     && request.resource.data.uid == uid
                     && validName(request.resource.data.displayName)
                     && str(request.resource.data.displayNameLower, 20)
-                    && !('bestGamePoints' in request.resource.data)
-                    && !('rouletteBestPoints' in request.resource.data)
-                    // A new profile has beaten nobody yet; the counter only
-                    // grows through the +1-per-write update rule below.
-                    && !('strongWins' in request.resource.data);
+                    && request.resource.data.keys().hasOnly([
+                         'uid', 'displayName', 'displayNameLower', 'createdAt', 'lastActive'
+                       ])
+                    && nameReserved(uid);
       allow update: if isOwner(uid)
                     && request.resource.data.uid == uid
                     && validName(request.resource.data.displayName)
                     && str(request.resource.data.displayNameLower, 20)
                     && request.resource.data.keys().hasOnly([
                          'uid', 'displayName', 'displayNameLower', 'createdAt', 'lastActive',
-                         'lastGameAt', 'gamesPlayed', 'gamesWon', 'gamesDrawn',
+                         'lastGameAt', 'lastGameId', 'gamesPlayed', 'gamesWon', 'gamesDrawn',
                          'bestGamePoints', 'bestGameId', 'bestGameSnapshot', 'longestSurvivalMoves',
                          'rouletteGamesPlayed', 'rouletteBestPoints', 'rouletteBestGameId', 'rouletteBestSnapshot',
                          'strongWins'
                        ])
-                    // V1 — the "Beat Strong" achievement counter may only
-                    // ever grow, one game at a time.
-                    && (
-                      !('strongWins' in request.resource.data)
-                      || (request.resource.data.strongWins is int
-                          && request.resource.data.strongWins >= 0
-                          && request.resource.data.strongWins
-                             <= (('strongWins' in resource.data) ? resource.data.strongWins + 1 : 1))
-                    )
-                    // A leaderboard number may only change to the total of a
-                    // /games doc this player saved (write-once, see below).
-                    && (
-                      !('bestGamePoints' in request.resource.data)
-                      || ('bestGamePoints' in resource.data
-                          && request.resource.data.bestGamePoints == resource.data.bestGamePoints)
-                      || gameBacksBest(uid, request.resource.data.bestGameId, request.resource.data.bestGamePoints)
-                    )
-                    && (
-                      !('rouletteBestPoints' in request.resource.data)
-                      || ('rouletteBestPoints' in resource.data
-                          && request.resource.data.rouletteBestPoints == resource.data.rouletteBestPoints)
-                      || gameBacksBest(uid, request.resource.data.rouletteBestGameId, request.resource.data.rouletteBestPoints)
-                    );
+                    && userUpdateOk(uid, request.resource.data.diff(resource.data).affectedKeys());
       allow delete: if false;
     }
 
     match /displayNames/{name} {
       allow read: if true;
+      // QA-06 — a reservation is created only for the name the profile
+      // takes in the same write; with oldNameReleased() that leaves one
+      // reservation per uid.
       allow create: if signedIn()
                     && request.resource.data.uid == request.auth.uid
-                    && name.size() >= 1 && name.size() <= 20;
+                    && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+                    && name.size() >= 1 && name.size() <= 20
+                    && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.displayNameLower == name;
       allow update: if signedIn()
                     && resource.data.uid == request.auth.uid
-                    && request.resource.data.uid == request.auth.uid;
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.keys().hasOnly(['uid', 'createdAt']);
       allow delete: if signedIn()
                     && resource.data.uid == request.auth.uid;
     }
@@ -132,6 +215,8 @@ service cloud.firestore {
                     && request.resource.data.log.moves.size() <= 700
                     && request.resource.data.log.moves.size() >= request.resource.data.moveCount * 2 - 1
                     && plausiblePoints(request.resource.data.points, request.resource.data.moveCount)
+                    // Server time: strongWinsOk() reads it as "when saved".
+                    && request.resource.data.createdAt == request.time
                     && (!('gameMode' in request.resource.data) || isMode(request.resource.data.gameMode))
                     && (!('botLevel' in request.resource.data) || isBotLevel(request.resource.data.botLevel))
                     // Practice bot levels are never ranked.
@@ -216,6 +301,67 @@ service cloud.firestore {
       allow delete: if isOwner(uid);
     }
 
+    function seated(m, uid) {
+      return uid == m.host.uid || (m.guest != null && uid == m.guest.uid);
+    }
+    function opponentOf(m, uid) {
+      return uid == m.host.uid ? m.guest.uid : m.host.uid;
+    }
+    function loserOf(m, outcome) {
+      return outcome == 'host-resign' ? m.host.uid : m.guest.uid;
+    }
+
+    // QA-05 — whose turn it is changes only when the guest takes the seat
+    // (White starts) or with an appended move. In classic that move hands
+    // the turn to the opponent; in roulette the mover keeps it while
+    // actions are left.
+    function matchTurnOk() {
+      let before = resource.data;
+      let after = request.resource.data;
+      let grew = after.log.moves.size() > before.log.moves.size();
+      let classic = before.get('gameMode', 'classic') != 'roulette';
+      return grew
+        ? (after.currentTurn == opponentOf(before, request.auth.uid)
+           || (!classic && after.currentTurn == before.currentTurn))
+        : (after.currentTurn == before.currentTurn
+           || (before.guest == null && after.guest != null
+               && after.currentTurn == (after.host.color == 'white' ? after.host.uid : after.guest.uid)));
+    }
+
+    // QA-05 — who may end the match. 'X-resign' is written by X, or by X's
+    // opponent once X has been idle for 90 s by server time (the inactivity
+    // forfeit, and the claim of a flag fall whose own client is gone; the
+    // rules cannot see the clock). Mate and draw come from a seated player,
+    // after at least one move.
+    function matchOutcomeOk() {
+      let before = resource.data;
+      let o = request.resource.data.outcome;
+      return before.outcome != null
+        || o == null
+        || (o in ['host-resign', 'guest-resign']
+            && (request.auth.uid == loserOf(before, o)
+                || (seated(before, request.auth.uid)
+                    && request.time > before.lastActivity + duration.value(90, 's'))))
+        || (o in ['white-win', 'black-win', 'draw']
+            && seated(before, request.auth.uid)
+            && request.resource.data.log.moves.size() > 0);
+    }
+
+    // QA-04 — why a match ended in 'X-resign', for the end text. Optional
+    // (older clients do not write it), set only with that outcome, then
+    // frozen: 'resign' by X, 'inactive' by the opponent, 'flag' by either.
+    function matchEndReasonOk() {
+      let before = resource.data;
+      let after = request.resource.data;
+      let r = after.get('endReason', null);
+      return r == before.get('endReason', null)
+        || (before.outcome == null
+            && after.outcome in ['host-resign', 'guest-resign']
+            && (r == 'flag'
+                || (r == 'resign' && request.auth.uid == loserOf(before, after.outcome))
+                || (r == 'inactive' && request.auth.uid != loserOf(before, after.outcome))));
+    }
+
     match /matches/{code} {
       allow read: if signedIn();
 
@@ -229,6 +375,7 @@ service cloud.firestore {
                     && request.resource.data.status == 'waiting'
                     && request.resource.data.guest == null
                     && request.resource.data.outcome == null
+                    && !('endReason' in request.resource.data)
                     && request.resource.data.log.moves.size() == 0
                     && (!('gameMode' in request.resource.data) || isMode(request.resource.data.gameMode));
 
@@ -241,7 +388,13 @@ service cloud.firestore {
       //   - outcome is write-once; status only takes known values;
       //   - the move log only ever GROWS by at most one entry per write,
       //     and only the player whose turn it is may grow it;
-      //   - currentTurn always names a seated player.
+      //   - currentTurn always names a seated player, and moves only with
+      //     the join or a move (matchTurnOk);
+      //   - lastActivity is server time, so the 90 s in matchOutcomeOk
+      //     cannot be shortened by back-dating it;
+      //   - who may write which outcome and endReason (matchOutcomeOk,
+      //     matchEndReasonOk); the mode is frozen, so a classic match
+      //     cannot turn roulette to keep the turn.
       // Legit paths: guest join (no log change), move / rotate append on
       // own turn (+1), spin (no log change), resign / flag / mate outcome
       // writes (no log change) from either seat.
@@ -250,6 +403,8 @@ service cloud.firestore {
         && request.resource.data.chess960Id == resource.data.chess960Id
         && request.resource.data.seed == resource.data.seed
         && request.resource.data.code == resource.data.code
+        && request.resource.data.get('gameMode', 'classic') == resource.data.get('gameMode', 'classic')
+        && request.resource.data.lastActivity == request.time
         && request.resource.data.status in ['waiting', 'active', 'completed']
         && (resource.data.guest == null
             || request.resource.data.guest == resource.data.guest)
@@ -268,6 +423,9 @@ service cloud.firestore {
             || request.resource.data.currentTurn == request.resource.data.host.uid
             || (request.resource.data.guest != null
                 && request.resource.data.currentTurn == request.resource.data.guest.uid))
+        && matchTurnOk()
+        && matchOutcomeOk()
+        && matchEndReasonOk()
         && (
           resource.data.host.uid == request.auth.uid
           || (resource.data.guest != null && resource.data.guest.uid == request.auth.uid)

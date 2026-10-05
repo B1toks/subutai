@@ -124,6 +124,9 @@ export async function saveCompletedGame(args: {
       const patch: Record<string, unknown> = {
         lastGameAt: serverTimestamp(),
         lastActive: serverTimestamp(),
+        // QA-06 — the rules count a strongWins +1 only against the game
+        // the profile points at here.
+        lastGameId: gameRef.id,
       };
 
       if (gameMode === 'roulette') {

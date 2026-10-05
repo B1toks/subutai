@@ -8,6 +8,7 @@ import { db } from '../firebase/client';
 import {
   subscribeMatch,
   type MatchDoc,
+  type MatchEndReason,
   type MatchOutcome,
 } from '../firebase/matches';
 import {
@@ -72,7 +73,37 @@ function consumeSlotIndex(
 }
 
 const OPPONENT_OFFLINE_WARN_MS = 60_000;
-const OPPONENT_OFFLINE_FORFEIT_MS = 90_000;
+/** firestore.rules holds the same 90 s: before it, by server time, only
+ *  the idle player can end the match with their own 'X-resign'. */
+export const OPPONENT_OFFLINE_FORFEIT_MS = 90_000;
+
+/** The waiting peer ends the match for an opponent idle past the limit.
+ *  Transaction-guarded: a move or another ending that lands first wins. */
+export async function writeInactivityForfeit(code: string, myUid: string): Promise<void> {
+  const ref = doc(db, 'matches', code);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) return;
+    const data = snap.data() as MatchDoc;
+    if (data.outcome) return;
+    if (!inactivityForfeitApplies(data)) return; // a move started the clock
+    const txLast = data.lastActivity?.toMillis?.();
+    if (
+      typeof txLast === 'number' &&
+      Date.now() - txLast < OPPONENT_OFFLINE_FORFEIT_MS
+    ) {
+      return;
+    }
+    const outcome: MatchOutcome =
+      data.host.uid === myUid ? 'guest-resign' : 'host-resign';
+    tx.update(ref, {
+      status: 'completed',
+      outcome,
+      endReason: 'inactive',
+      lastActivity: serverTimestamp(),
+    });
+  });
+}
 
 export interface MultiplayerSyncHandle {
   matchState: MatchDoc;
@@ -94,10 +125,14 @@ export interface MultiplayerSyncHandle {
    *  action but doesn't consume a slot. */
   sendRotate: () => Promise<void>;
   /** Resolves true when THIS resignation is the outcome that was written
-   *  (false: it failed, or another outcome landed first). */
-  resign: () => Promise<boolean>;
-  /** Race-safe terminal-outcome write (mate/draw detected locally). */
-  writeOutcomeIfFirst: (outcome: MatchOutcome) => Promise<void>;
+   *  (false: it failed, or another outcome landed first). `reason` is
+   *  'flag' when my own clock ran out. */
+  resign: (reason?: 'resign' | 'flag') => Promise<boolean>;
+  /** Race-safe terminal-outcome write (mate/draw detected locally, or the
+   *  opponent's flag fall). Resolves false only when the write failed —
+   *  the rules refuse a claim for the opponent before 90 s of their
+   *  inactivity, so that one is retried. */
+  writeOutcomeIfFirst: (outcome: MatchOutcome, endReason?: MatchEndReason) => Promise<boolean>;
   // Q.D.3: full solo-roulette parity. The bag, action count and used
   // slot indices live on the match doc so both peers can render the
   // SAME chip strip + Spin button + slot-consumption UI as solo.
@@ -205,28 +240,9 @@ export function useMultiplayerSync(
       if (typeof last !== 'number') return;
       const elapsed = Date.now() - last;
       if (elapsed < OPPONENT_OFFLINE_FORFEIT_MS) return;
-      const outcome: MatchOutcome =
-        matchState.host.uid === myUid ? 'guest-resign' : 'host-resign';
-      const ref = doc(db, 'matches', matchState.code);
-      void runTransaction(db, async (tx) => {
-        const snap = await tx.get(ref);
-        if (!snap.exists()) return;
-        const data = snap.data() as MatchDoc;
-        if (data.outcome) return;
-        if (!inactivityForfeitApplies(data)) return; // a move started the clock
-        const txLast = data.lastActivity?.toMillis?.();
-        if (
-          typeof txLast === 'number' &&
-          Date.now() - txLast < OPPONENT_OFFLINE_FORFEIT_MS
-        ) {
-          return;
-        }
-        tx.update(ref, {
-          status: 'completed',
-          outcome,
-          lastActivity: serverTimestamp(),
-        });
-      }).catch((err) => console.error('[mp] forfeit write failed', err));
+      void writeInactivityForfeit(matchState.code, myUid).catch((err) =>
+        console.error('[mp] forfeit write failed', err),
+      );
     }, 4000);
     return () => clearInterval(interval);
   }, [matchState, myUid]);
@@ -469,7 +485,7 @@ export function useMultiplayerSync(
     }
   }
 
-  async function resign(): Promise<boolean> {
+  async function resign(reason: 'resign' | 'flag' = 'resign'): Promise<boolean> {
     if (liveMatch.status !== 'active') return false;
     let wrote = false;
     setBusy(true);
@@ -489,6 +505,7 @@ export function useMultiplayerSync(
         tx.update(ref, {
           status: 'completed',
           outcome,
+          endReason: reason,
           lastActivity: serverTimestamp(),
         });
         wrote = true;
@@ -503,7 +520,10 @@ export function useMultiplayerSync(
     return wrote;
   }
 
-  async function writeOutcomeIfFirst(outcome: MatchOutcome): Promise<void> {
+  async function writeOutcomeIfFirst(
+    outcome: MatchOutcome,
+    endReason?: MatchEndReason,
+  ): Promise<boolean> {
     const ref = doc(db, 'matches', liveMatch.code);
     try {
       await runTransaction(db, async (tx) => {
@@ -514,11 +534,14 @@ export function useMultiplayerSync(
         tx.update(ref, {
           status: 'completed',
           outcome,
+          ...(endReason ? { endReason } : {}),
           lastActivity: serverTimestamp(),
         });
       });
+      return true;
     } catch (err) {
       console.error('[mp] outcome write failed', err);
+      return false;
     }
   }
 
