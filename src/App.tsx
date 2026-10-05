@@ -98,6 +98,7 @@ import {
   attachSearchScoreToLastMove,
   computeSAN,
   createGameLog,
+  unclassifiedMoveIndexes,
   updateMoveAnalysisAt,
 } from './recording/log';
 import { buildSavedGameFromLog, buildSavedGameSnapshot } from './memory/build';
@@ -364,6 +365,18 @@ function LocalTurnSlot({ side, toMove }: { side: 'white' | 'black'; toMove: 'whi
       {mine ? 'Your move' : `${toMove === 'white' ? 'White' : 'Black'} to move`}
     </span>
   );
+}
+
+/** A finished solo game, as finishGame hands it to the Firestore save. */
+interface FinishedGameSave {
+  outcome: GameOutcome;
+  points: GamePoints;
+  durationMs: number;
+  log: GameLog;
+  gameMode: GameMode;
+  botLevel: BotStrength;
+  chess960Id: string;
+  seed: number;
 }
 
 /** V1 — pointer to the solo game in progress, for a new tab to resume.
@@ -1736,48 +1749,95 @@ function App() {
     setIsNewBest(false);
     setCurrentRank(null);
 
+    const job: FinishedGameSave = {
+      outcome,
+      points,
+      durationMs,
+      log,
+      gameMode,
+      botLevel,
+      chess960Id: positionLabel,
+      seed,
+    };
     if (!user || !displayName) {
-      // Not signed in / no name yet — show summary locally and skip Firestore.
+      // N-6 — the page has only just opened (a reload, a new tab) and the
+      // sign-in has not answered yet: the game on the board came back from
+      // Memory in ~0.2 s, the user takes a moment longer, and a game that
+      // ends in between used to show its summary and never be saved (this
+      // runs once per game). Keep the finished game and save it as soon as
+      // the sign-in resolves. Signed out for good / no name yet: show the
+      // summary locally and skip Firestore, as before.
+      if (authLoading) {
+        pendingSaveRef.current.push(job);
+        setSavingGame(true);
+      }
       return;
     }
+    await saveFinishedGame(job, user.uid, displayName);
+  }
 
-    setSavingGame(true);
+  /** The Firestore half of finishGame (also run later, see N-6). The UI
+   *  state it fills in belongs to the summary of that game, so it is only
+   *  touched while that game is still the last one finished. */
+  async function saveFinishedGame(job: FinishedGameSave, uid: string, name: string) {
+    const stillShown = () => completedLogIdRef.current === job.log.id;
+    if (stillShown()) setSavingGame(true);
     try {
       // Snapshot the pre-write best so the modal can show "old" alongside new.
-      const oldBest = await getPersonalBest(user.uid, gameMode);
-      setPersonalBest(oldBest);
+      const oldBest = await getPersonalBest(uid, job.gameMode);
+      if (stillShown()) setPersonalBest(oldBest);
 
       const { gameId, isNewBest: nb, newRank } = await saveCompletedGame({
-        uid: user.uid,
-        displayName,
-        log,
-        outcome,
-        points,
-        chess960Id: positionLabel,
-        seed,
+        uid,
+        displayName: name,
+        log: job.log,
+        outcome: job.outcome,
+        points: job.points,
+        chess960Id: job.chess960Id,
+        seed: job.seed,
         humanColor: HUMAN_COLOR,
-        gameMode,
-        durationMs,
-        botLevel,
+        gameMode: job.gameMode,
+        durationMs: job.durationMs,
+        botLevel: job.botLevel,
       });
-      setLastGameId(gameId);
-      setIsNewBest(nb);
-      setCurrentRank(newRank);
-      if (nb) setPersonalBest(points.total);
+      if (stillShown()) {
+        setLastGameId(gameId);
+        setIsNewBest(nb);
+        setCurrentRank(newRank);
+        if (nb) setPersonalBest(job.points.total);
+      }
     } catch (err) {
       console.error('[finishGame] save failed', err);
       // QA-03 — a refusal by the rules is not a connection problem, and
       // telling the player to check their connection sent them the wrong way.
       const denied = (err as { code?: unknown } | null)?.code === 'permission-denied';
-      setSaveError(
-        denied
-          ? 'This game wasn’t counted: the server refused to save it.'
-          : 'Could not save this game. Check your connection.',
-      );
+      if (stillShown()) {
+        setSaveError(
+          denied
+            ? 'This game wasn’t counted: the server refused to save it.'
+            : 'Could not save this game. Check your connection.',
+        );
+      }
     } finally {
-      setSavingGame(false);
+      if (stillShown()) setSavingGame(false);
     }
   }
+
+  // N-6 — finished games waiting for the sign-in (see finishGame). A list:
+  // a second game can end before the sign-in answers.
+  const pendingSaveRef = useRef<FinishedGameSave[]>([]);
+  useEffect(() => {
+    const jobs = pendingSaveRef.current;
+    if (jobs.length === 0 || authLoading) return;
+    pendingSaveRef.current = [];
+    if (!user || !displayName) {
+      // Signed out after all: nothing to save to.
+      if (jobs.some((j) => completedLogIdRef.current === j.log.id)) setSavingGame(false);
+      return;
+    }
+    for (const job of jobs) void saveFinishedGame(job, user.uid, displayName);
+    // saveFinishedGame closes over nothing but stable setters and refs.
+  }, [authLoading, user, displayName]);
 
   // Auto-mode completion: when a self-play game ends, save to
   // /training_games (separate collection from the human leaderboard) and
@@ -2117,6 +2177,9 @@ function App() {
   useEffect(() => {
     logIdRef.current = log.id;
   }, [log.id]);
+  // F7 — only the newest background classification run may go on (a Game
+  // Review closing starts a catch-up run; the one it replaces stops).
+  const classifyRunRef = useRef(0);
 
   // Watching-mode autoplay: when enabled, advances one move every
   // WATCH_AUTOPLAY_MS until we hit the end of the replay.
@@ -2488,6 +2551,7 @@ function App() {
       // The caller has just put this log on the board; the ref would only
       // catch up after the next render, and the loop below checks it first.
       logIdRef.current = capturedId;
+      const run = ++classifyRunRef.current;
       // Pre-compute all positions synchronously — cheap (no search) — so the
       // classifier can grab `stateBefore` for each move by index later.
       const states: BoardState[] = [loadedLog.initialState];
@@ -2506,12 +2570,20 @@ function App() {
       // Only the last move's analysis feeds the bar — otherwise it would
       // pinball through 30 mid-game scores while the loading completes.
       let lastAnalysis: MoveAnalysis | null = null;
+      // A catch-up run may classify only some moves; the bar still belongs to
+      // the position after the last one.
+      let lastRealIndex = -1;
+      loadedLog.moves.forEach((entry, i) => {
+        if (entry.move.kind !== 'topologyToggle' && entry.move.from && entry.move.to) lastRealIndex = i;
+      });
       (async () => {
         for (let i = 0; i < loadedLog.moves.length; i++) {
           const entry = loadedLog.moves[i];
           if (entry.move.kind === 'topologyToggle' || !entry.move.from || !entry.move.to) {
             continue;
           }
+          // Already classified (a catch-up run after a Game Review).
+          if (entry.analysis && !entry.analysis.superseded) continue;
           // F7 — a request dropped by a newer batch (Game Review starting
           // on the same worker cancels whatever is queued or running) is
           // asked again, not skipped: the move it was for would otherwise
@@ -2519,7 +2591,7 @@ function App() {
           // replaced ends the loop; a few tries bound a busy worker.
           let a: MoveAnalysis | null = null;
           for (let attempt = 0; attempt < 5; attempt++) {
-            if (logIdRef.current !== capturedId) return;
+            if (logIdRef.current !== capturedId || classifyRunRef.current !== run) return;
             const r = await classifyAsync(states[i], entry.move, states[i + 1], {
               budgetMs: scaleBudgetMs(1000),
               maxDepth: 7,
@@ -2530,13 +2602,15 @@ function App() {
               break;
             }
           }
-          if (!a) continue; // DEF-6: dropped by a newer batch, five times
+          // DEF-6: dropped by a newer batch, five times. The catch-up run
+          // when a Game Review closes picks it up again.
+          if (!a) continue;
           setLog((prev) =>
             prev.id === capturedId ? updateMoveAnalysisAt(prev, i, a) : prev,
           );
-          lastAnalysis = a;
+          if (i === lastRealIndex) lastAnalysis = a;
         }
-        if (lastAnalysis) pushSearchEval(lastAnalysis);
+        if (lastAnalysis && classifyRunRef.current === run) pushSearchEval(lastAnalysis);
       })();
     },
     [pushSearchEval],
@@ -5562,6 +5636,18 @@ function App() {
             // paints the spinner FIRST and runs the switch after.
             busy.navigate('Back to the board', () => {
               setView('game');
+              // F7 — moves of the game on the board that are not classified yet
+              // (the review took the classifier for a while, or dropped some
+              // of its requests when it started or closed) are classified
+              // now, with no action from the player.
+              if (
+                !activeReviewLog &&
+                !isMultiplayer &&
+                !watchingGame &&
+                unclassifiedMoveIndexes(log).length > 0
+              ) {
+                classifyImportedLog(log);
+              }
               // Drop the snapshot so the next plain Review opens the live log.
               setActiveReviewLog(null);
               setActiveReviewMeta(null);

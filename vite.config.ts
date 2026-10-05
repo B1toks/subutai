@@ -11,8 +11,11 @@ import react from '@vitejs/plugin-react';
  * Every origin below maps to a real integration:
  *   script   Spotify IFrame API (+ its CDN), Deezer JSONP BPM lookup,
  *            'wasm-unsafe-eval' for the essentia.js WASM beat tracker.
- *   connect  Firebase Auth/Firestore (googleapis), Twitch IRC websocket,
- *            7TV + ivr.fi emote lookups, Spotify oEmbed, Google Fonts.
+ *   connect  Firebase Auth (identitytoolkit / securetoken) and Firestore
+ *            (firestore.googleapis.com), all under *.googleapis.com;
+ *            Twitch IRC websocket, 7TV + ivr.fi emote lookups, Spotify
+ *            oEmbed, Google Fonts. The app does not use the Realtime
+ *            Database, so *.firebaseio.com is not allowed.
  *   frame    the Spotify embed player; Firebase auth helper iframe.
  *   img      7TV emote CDN; blob:/data: for generated canvases.
  *   media    blob: for the local-file music mode.
@@ -38,7 +41,7 @@ const CSP = [
   "worker-src 'self' blob:",
   "child-src 'self' blob: https://open.spotify.com",
   "frame-src https://open.spotify.com https://subutai-chess.firebaseapp.com",
-  "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://open.spotify.com https://*.spotifycdn.com https://api.deezer.com https://7tv.io https://api.ivr.fi wss://irc-ws.chat.twitch.tv https://fonts.googleapis.com https://fonts.gstatic.com",
+  "connect-src 'self' https://*.googleapis.com https://open.spotify.com https://*.spotifycdn.com https://api.deezer.com https://7tv.io https://api.ivr.fi wss://irc-ws.chat.twitch.tv https://fonts.googleapis.com https://fonts.gstatic.com",
   'upgrade-insecure-requests',
 ].join('; ');
 

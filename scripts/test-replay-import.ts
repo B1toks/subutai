@@ -138,5 +138,26 @@ try {
   }
 }
 
+// N-7 — a castle as the second action of a turn, when BOTH sides could castle
+// there: the log must load into the position that was played (the side that
+// made the turn's first action castled), not the one the alternation points to.
+{
+  const kingsOf = (text: string) => {
+    const r = replayFromNotation(text, { roulette: true });
+    const where = (c: 'white' | 'black') =>
+      Object.entries(r.final.pieces).find(([, p]) => p?.type === 'king' && p.color === c)?.[0];
+    return `white king ${where('white')}, black king ${where('black')}`;
+  };
+  const common = '1. Ng1→f3  g2→g3\n2. Ng8→f6  g7→g6\n3. Bf1→g2  e2→e3\n4. Bf8→g7  e7→e6\n';
+  const whiteCastles = kingsOf(`${H}${common}5. a2→a3  O-O\n6. a7→a6  h7→h6`);
+  check('roulette: White castles as its second action (Black could too)', whiteCastles === 'white king g1, black king e8', whiteCastles);
+  const blackCastles = kingsOf(`${H}${common}5. a2→a3  h2→h3\n6. a7→a6  O-O`);
+  check('roulette: Black castles as its second action (White could too)', blackCastles === 'white king e1, black king g8', blackCastles);
+  // Where only one reading replays to the end, that one wins: after White's
+  // O-O the white rook is on f1, so a later Rf1→e1 needs White to have castled.
+  const onlyOne = kingsOf(`${H}${common}5. a2→a3  O-O\n6. Rf1→e1  a7→a6`);
+  check('roulette: the reading under which the rest of the log replays wins', onlyOne === 'white king g1, black king e8', onlyOne);
+}
+
 console.log(failures ? `\n${failures} FAILED` : '\nALL PASS');
 if (failures) process.exitCode = 1;

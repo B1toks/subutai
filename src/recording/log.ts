@@ -105,6 +105,17 @@ export function attachSearchScoreToLastMove(
   return { ...log, moves: updated };
 }
 
+/** Indices of the real (non-rotation) moves that have no classification yet.
+ *  A superseded result is a placeholder, not a classification. */
+export function unclassifiedMoveIndexes(log: GameLog): number[] {
+  const out: number[] = [];
+  log.moves.forEach((entry, i) => {
+    if (entry.move.kind === 'topologyToggle' || !entry.move.from || !entry.move.to) return;
+    if (!entry.analysis || entry.analysis.superseded) out.push(i);
+  });
+  return out;
+}
+
 /** Patch a specific move (by index) with an analysis. Used by the
  *  imported-log classifier where moves are processed out-of-order. */
 export function updateMoveAnalysisAt(
