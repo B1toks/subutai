@@ -148,7 +148,7 @@ async function seedGame(id, o = {}) {
     log: { initialTopology: 'A', moves: [] },
     outcome: o.outcome ?? 'human-win',
     moveCount: o.moveCount ?? 12,
-    points: points({ total: o.total ?? 120, counted: o.counted ?? true }),
+    points: o.points ?? points({ total: o.total ?? 120, counted: o.counted ?? true }),
     gameMode: o.gameMode ?? 'classic',
     botLevel: o.botLevel ?? 'strong',
     vsAI: true,
@@ -411,6 +411,43 @@ describe('stats: /users after a saved game (QA-06)', () => {
   it('denied: strongWins +2 in one write', async () => {
     await seedGame('g1');
     await denied(updateDoc(me('alice'), { strongWins: 2, lastGameId: 'g1', lastGameAt: serverTimestamp() }));
+  });
+
+  // R-14 — /games docs saved before these rules (under v1.0.2 or the
+  // bridge) were never held to the date and caps checked at create.
+  const year2100 = () => Timestamp.fromDate(new Date('2100-01-01T00:00:00Z'));
+  const rouletteBest = (id, total) => ({
+    rouletteBestPoints: total,
+    rouletteBestGameId: id,
+    rouletteBestSnapshot: { outcome: 'human-win', moveCount: 12, chess960Id: 'RNBQKBNR', createdAt: serverTimestamp() },
+  });
+
+  it('denied (R-14): strongWins +1 against a win dated 2100', async () => {
+    await seedGame('future', { createdAt: year2100() });
+    await denied(updateDoc(me('alice'), { strongWins: 1, lastGameId: 'future', lastGameAt: serverTimestamp() }));
+  });
+
+  it('denied (R-14): a best from a game dated 2100', async () => {
+    await seedGame('future', { total: 150, createdAt: year2100() });
+    await denied(
+      updateDoc(me('alice'), {
+        bestGamePoints: 150,
+        bestGameId: 'future',
+        bestGameSnapshot: { outcome: 'human-win', moveCount: 12, chess960Id: 'RNBQKBNR', createdAt: serverTimestamp() },
+      }),
+    );
+  });
+
+  it('denied (R-14): a roulette best of 6010, or one with quality or rotation points; allowed at the cap', async () => {
+    const p = (o) => ({ ...points({ total: 0 }), movePoints: 60, capturePoints: 400, outcomeBonus: 500, ...o });
+    await seedGame('r6010', { gameMode: 'roulette', points: p({ qualityPoints: 5050, total: 6010 }) });
+    await seedGame('quality', { gameMode: 'roulette', points: p({ qualityPoints: 10, total: 970 }) });
+    await seedGame('rotation', { gameMode: 'roulette', points: p({ rotationPoints: 10, total: 970 }) });
+    await seedGame('cap', { gameMode: 'roulette', points: p({ outcomeBonus: 1190, total: 1650 }) });
+    await denied(updateDoc(me('alice'), rouletteBest('r6010', 6010)));
+    await denied(updateDoc(me('alice'), rouletteBest('quality', 970)));
+    await denied(updateDoc(me('alice'), rouletteBest('rotation', 970)));
+    await updateDoc(me('alice'), rouletteBest('cap', 1650));
   });
 
   it('denied: a counter below 0 or up by more than one', async () => {
