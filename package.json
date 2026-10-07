@@ -9,7 +9,7 @@
     "build:gh": "vite build",
     "deploy": "npm run build && gh-pages -d dist",
     "lint": "eslint .",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-subutai \"node --import ./tests/rules/register.mjs --test --test-isolation=none tests/rules/rules.test.mjs\"",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-subutai \"node --import ./tests/rules/register.mjs --test --test-isolation=none tests/rules/rules.test.mjs tests/rules/attacks.test.mjs tests/rules/clock.test.mjs tests/rules/v102.test.mjs\"",
     "preview": "vite preview"
   },
   "dependencies": {

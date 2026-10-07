@@ -56,6 +56,10 @@ export interface MatchDoc {
   endReason?: MatchEndReason;
   createdAt: Timestamp;
   lastActivity: Timestamp;
+  /** R-7 — server time the turn on the clock started: the join, then each
+   *  appended move. firestore.rules measures the 90 s of inactivity from
+   *  it. Absent on matches from before it (and before the join). */
+  turnStartedAt?: Timestamp;
   // Stage Q.D — optional so old docs keep working. Treated as 'classic'
   // / null / {} when absent.
   gameMode?: MatchGameMode;
@@ -205,6 +209,7 @@ export async function joinMatch(
       status: 'active',
       currentTurn,
       lastActivity: serverTimestamp(),
+      turnStartedAt: serverTimestamp(),
     });
 
     return {

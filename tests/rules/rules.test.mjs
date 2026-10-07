@@ -83,11 +83,15 @@ async function newPlayer(uid, name) {
   await claimDisplayName(uid, name);
 }
 
+/** A breakdown computeGamePoints() could give: 5 per move, the rest from
+ *  captures (up to 400), then quality (R-4 caps both modes). */
 function points({ total = 120, moveCount = 12, counted = true } = {}) {
+  const movePoints = Math.min(total, 5 * moveCount);
+  const capturePoints = Math.min(400, total - movePoints);
   return {
-    movePoints: total,
-    capturePoints: 0,
-    qualityPoints: 0,
+    movePoints,
+    capturePoints,
+    qualityPoints: total - movePoints - capturePoints,
     rotationPoints: 0,
     outcomeBonus: 0,
     total,
@@ -166,6 +170,43 @@ describe('names: /users and /displayNames (QA-06)', () => {
     assert.equal((await read('displayNames/олександр їжак')).uid, 'olek');
     await newPlayer('odos', 'ΟΔΟΣ');
     assert.equal((await read('displayNames/οδος')).uid, 'odos');
+  });
+
+  it('allowed: Greek names with a final sigma, Korean, a name with a space (R-5 keeps them)', async () => {
+    await newPlayer('nikos', 'Νίκος');
+    assert.equal((await read('displayNames/νίκος')).uid, 'nikos');
+    await newPlayer('sas', 'ΣΑΣ ΣΟΥ');
+    assert.equal((await read('displayNames/σας σου')).uid, 'sas');
+    await newPlayer('ji', '김지수');
+    await newPlayer('ann', 'Ann Lee-Smith_2');
+  });
+
+  it('allowed: a Turkish name with İ, claimed and renamed (R-11)', async () => {
+    await newPlayer('ayse', 'İpek');
+    assert.equal((await read('users/ayse')).displayNameLower, 'i̇pek');
+    actAs('ayse');
+    await changeDisplayName('ayse', 'İpek', 'İPEK İnce');
+    assert.equal((await read('users/ayse')).displayName, 'İPEK İnce');
+    await changeDisplayName('ayse', 'İPEK İnce', 'Ayşe');
+    assert.equal(await read('displayNames/i̇pek i̇nce'), undefined);
+  });
+
+  it('allowed: a profile from before the reservations renames (R-11)', async () => {
+    await seed('users/old', { uid: 'old', displayName: 'Oldie', displayNameLower: 'oldie' });
+    actAs('old');
+    await changeDisplayName('old', 'Oldie', 'Newbie');
+    assert.equal((await read('users/old')).displayNameLower, 'newbie');
+    assert.equal((await read('displayNames/newbie')).uid, 'old');
+  });
+
+  it('denied: a reservation of a name the client never writes (İ as I, or İ kept in the slug)', async () => {
+    await newPlayer('ayse', 'İpek');
+    for (const slug of ['ipek', 'İpek']) {
+      const b = writeBatch(as('mal'));
+      b.set(doc(as('mal'), 'displayNames', slug), { uid: 'mal', createdAt: serverTimestamp() });
+      b.set(me('mal'), { uid: 'mal', displayName: 'İpek', displayNameLower: slug, createdAt: serverTimestamp(), lastActive: serverTimestamp() });
+      await denied(b.commit());
+    }
   });
 
   it('allowed: claiming the same name again in another case', async () => {
@@ -496,7 +537,9 @@ async function playMove(code) {
   return currentTurn;
 }
 
-const idle = (code, ms = 100_000) => patch(`matches/${code}`, { lastActivity: ago(ms) });
+/** The player on turn has been idle `ms`: their turn started that long ago. */
+const idle = (code, ms = 100_000) =>
+  patch(`matches/${code}`, { lastActivity: ago(ms), turnStartedAt: ago(ms) });
 const loserOutcome = (uid) => (uid === HOST.uid ? 'host-resign' : 'guest-resign');
 
 describe('online: /matches (QA-04, QA-05)', () => {
@@ -513,6 +556,67 @@ describe('online: /matches (QA-04, QA-05)', () => {
     m = await match(code);
     assert.equal(m.log.moves.length, 2);
     assert.equal(m.currentTurn, white);
+  });
+
+  it('allowed: the join and every move stamp turnStartedAt with server time (R-7)', async () => {
+    const { code } = await startMatch();
+    let m = await match(code);
+    assert.ok(m.turnStartedAt instanceof Timestamp);
+    const joined = m.turnStartedAt.toMillis();
+    await new Promise((r) => setTimeout(r, 20));
+    await playMove(code);
+    m = await match(code);
+    assert.ok(m.turnStartedAt.toMillis() > joined);
+  });
+
+  it('allowed (R-7): the player on turn touches the match without moving; the forfeit and the flag claim still land', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code); // Black on turn
+    await idle(code);
+    await updateDoc(doc(as(black), 'matches', code), { lastActivity: serverTimestamp() });
+    actAs(white);
+    await writeInactivityForfeit(code, white);
+    assert.equal((await match(code)).outcome, loserOutcome(black));
+
+    const timed = await startMatch('classic', 60);
+    await playMove(timed.code);
+    await idle(timed.code);
+    await updateDoc(doc(as(timed.black), 'matches', timed.code), { lastActivity: serverTimestamp() });
+    const ok = await (await hookAs(timed.white, timed.code)).writeOutcomeIfFirst(loserOutcome(timed.black), 'flag');
+    assert.equal(ok, true);
+  });
+
+  it('allowed (R-7): a match from before turnStartedAt counts from lastActivity until its next move sets it', async () => {
+    const { code, white, black } = await startMatch();
+    await patch(`matches/${code}`, { turnStartedAt: deleteField() });
+    await playMove(code);
+    assert.ok((await match(code)).turnStartedAt instanceof Timestamp);
+    await patch(`matches/${code}`, { turnStartedAt: deleteField(), lastActivity: ago(100_000) });
+    actAs(white);
+    await writeInactivityForfeit(code, white);
+    assert.equal((await match(code)).outcome, loserOutcome(black));
+  });
+
+  it('denied (R-7): turnStartedAt moved without a move, back-dated with one, removed, or set at create', async () => {
+    const { code, white, black } = await startMatch();
+    const fs = (uid) => doc(as(uid), 'matches', code);
+    await denied(updateDoc(fs(white), { turnStartedAt: serverTimestamp(), lastActivity: serverTimestamp() }));
+    await denied(updateDoc(fs(black), { turnStartedAt: deleteField(), lastActivity: serverTimestamp() }));
+    const m = await match(code);
+    const entry = { move: { kind: 'topologyToggle' }, san: 'R', topology: 'A', timestamp: Date.now() };
+    await denied(updateDoc(fs(white), {
+      'log.moves': [...m.log.moves, entry], currentTurn: black, turnStartedAt: ago(10 * MIN), lastActivity: serverTimestamp(),
+    }));
+    await denied(updateDoc(fs(white), {
+      'log.moves': [...m.log.moves, entry], currentTurn: black, lastActivity: serverTimestamp(),
+    }));
+    await denied(
+      setDoc(doc(as(HOST.uid), 'matches', 'ZZZZZZ'), {
+        code: 'ZZZZZZ', chess960Id: 'RNBQKBNR', seed: 1, host: { ...HOST, color: 'white' }, guest: null,
+        status: 'waiting', currentTurn: '', log: { initialTopology: 'A', moves: [] }, outcome: null,
+        createdAt: serverTimestamp(), lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
+      }),
+    );
   });
 
   it('allowed: a rotation in classic passes the turn', async () => {
@@ -539,6 +643,70 @@ describe('online: /matches (QA-04, QA-05)', () => {
     m = await match(code);
     assert.equal(m.log.moves.length, 2);
     assert.equal(m.currentTurn, black);
+  });
+
+  it('denied (R-8): roulette state written off turn, a spin that is not one, actions that do not run down', async () => {
+    const { code, white, black } = await startMatch('roulette');
+    const ref = (uid) => doc(as(uid), 'matches', code);
+    const spin = (uid, o = {}) =>
+      updateDoc(ref(uid), {
+        rouletteSlots: ['pawn', 'pawn', 'pawn', 'pawn'],
+        rouletteActionsLeft: 2,
+        usedRouletteSlots: [],
+        rouletteSpinsByPlayer: { [uid]: 1 },
+        rouletteSpinCount: 1,
+        lastActivity: serverTimestamp(),
+        ...o,
+      });
+    await denied(spin(black)); // off turn
+    await denied(spin(white, { rouletteActionsLeft: 5 }));
+    await denied(spin(white, { rouletteSlots: ['queen', 'queen', 'queen', 'dragon'] }));
+    await denied(spin(white, { rouletteSlots: ['queen', 'queen'] }));
+    await denied(spin(white, { rouletteSpinCount: 7 }));
+    await denied(spin(white, { rouletteSpinsByPlayer: { [white]: 1, [black]: 9 } }));
+    await (await hookAs(white, code)).spinRoulette();
+    await denied(spin(white, { rouletteSpinsByPlayer: { [white]: 2 }, rouletteSpinCount: 2 })); // bag already full
+
+    const stamp = { lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp() };
+    const entry = () => ({ move: { kind: 'topologyToggle' }, san: 'R', topology: 'A', timestamp: Date.now() });
+    await denied(updateDoc(ref(white), { 'log.moves': [entry()], ...stamp })); // actions stay at 2
+    await denied(updateDoc(ref(white), { 'log.moves': [entry()], rouletteActionsLeft: 1, usedRouletteSlots: [7], ...stamp }));
+    await denied(updateDoc(ref(white), { 'log.moves': [entry()], rouletteActionsLeft: 1, rouletteSlots: ['queen', 'queen', 'queen', 'queen'], ...stamp }));
+    await denied(updateDoc(ref(white), { 'log.moves': [entry()], rouletteActionsLeft: 1, currentTurn: black, ...stamp }));
+    await denied(updateDoc(ref(black), { rouletteSlots: null, rouletteActionsLeft: 0, lastActivity: serverTimestamp() }));
+    await (await hookAs(white, code)).sendRotate(); // the honest first action
+    const m = await match(code);
+    assert.equal(m.rouletteActionsLeft, 1);
+    // the last action must end the turn and empty the bag
+    await denied(updateDoc(ref(white), { 'log.moves': [...m.log.moves, entry()], rouletteActionsLeft: 0, ...stamp }));
+    await denied(updateDoc(ref(white), { 'log.moves': [...m.log.moves, entry()], currentTurn: black, rouletteActionsLeft: 0, ...stamp }));
+  });
+
+  it('denied (M6): a field a match does not have, at the top or in log / guest, the initial topology, roulette state in classic', async () => {
+    const { code, white } = await startMatch();
+    const ref = doc(as(white), 'matches', code);
+    await denied(updateDoc(ref, { clock: { whiteMs: 1 }, lastActivity: serverTimestamp() }));
+    await denied(updateDoc(ref, { 'log.note': 'x', lastActivity: serverTimestamp() }));
+    await denied(updateDoc(ref, { 'log.initialTopology': 'B', lastActivity: serverTimestamp() }));
+    await denied(updateDoc(ref, { rouletteActionsLeft: 2, lastActivity: serverTimestamp() }));
+    actAs(HOST.uid);
+    const fresh = await createMatch(HOST);
+    await denied(
+      updateDoc(doc(as(GUEST.uid), 'matches', fresh), {
+        guest: { ...GUEST, color: (await match(fresh)).host.color === 'white' ? 'black' : 'white', rating: 3000 },
+        status: 'active',
+        currentTurn: (await match(fresh)).host.color === 'white' ? HOST.uid : GUEST.uid,
+        lastActivity: serverTimestamp(),
+        turnStartedAt: serverTimestamp(),
+      }),
+    );
+    await denied(
+      setDoc(doc(as(HOST.uid), 'matches', 'ZZZZZZ'), {
+        code: 'ZZZZZZ', chess960Id: 'RNBQKBNR', seed: 1, host: { ...HOST, color: 'white' }, guest: null,
+        status: 'waiting', currentTurn: '', log: { initialTopology: 'A', moves: [] }, outcome: null,
+        rouletteActionsLeft: 2, createdAt: serverTimestamp(), lastActivity: serverTimestamp(),
+      }),
+    );
   });
 
   it('allowed: resign, and both players save the match to /games', async () => {
@@ -625,7 +793,31 @@ describe('online: /matches (QA-04, QA-05)', () => {
     const m = await match(code);
     await denied(
       updateDoc(doc(as(white), 'matches', code), {
-        'log.moves': [...m.log.moves, { move: { kind: 'topologyToggle' }, san: 'R', topology: 'A', timestamp: 1 }],
+        'log.moves': [...m.log.moves, { move: { kind: 'topologyToggle' }, san: 'R', topology: 'A', timestamp: Date.now() }],
+        lastActivity: serverTimestamp(),
+        turnStartedAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('denied: an append that also rewrites an earlier move (R-2)', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code);
+    await playMove(code);
+    const m = await match(code);
+    const forged = { ...m.log.moves[0], san: 'Qxf7#' };
+    const next = { ...m.log.moves[1], timestamp: Date.now() };
+    await denied(
+      updateDoc(doc(as(white), 'matches', code), {
+        'log.moves': [forged, m.log.moves[1], next],
+        currentTurn: black,
+        lastActivity: serverTimestamp(),
+        turnStartedAt: serverTimestamp(),
+      }),
+    );
+    await denied(
+      updateDoc(doc(as(black), 'matches', code), {
+        'log.moves': [forged, m.log.moves[1]],
         lastActivity: serverTimestamp(),
       }),
     );
@@ -908,6 +1100,17 @@ describe('known limits (allowed, by design or by what rules can see)', () => {
     });
     await updateDoc(me('alice'), { strongWins: 1, lastGameId: ref.id, lastGameAt: serverTimestamp() });
     await denied(updateDoc(me('alice'), { strongWins: 2, lastGameId: ref.id, lastGameAt: serverTimestamp() }));
+  });
+
+  it('QA-05 stays open online (R-3 not done): after one move either player writes a win or a draw, on either turn', async () => {
+    const { code, white } = await startMatch();
+    await playMove(code); // Black on turn, no mate anywhere
+    await updateDoc(doc(as(white), 'matches', code), {
+      status: 'completed',
+      outcome: 'white-win',
+      lastActivity: serverTimestamp(),
+    });
+    assert.equal((await match(code)).outcome, 'white-win');
   });
 
   it('in a timed match the opponent can end it after 90 s idle, clock or not', async () => {

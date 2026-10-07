@@ -2,15 +2,16 @@
 // Node, transpiled with the project's TypeScript, with Vite-style
 // extensionless imports resolved. src/firebase/client.ts (the production
 // Firebase config) is never loaded: every import of it gets client-stub.mjs,
-// which talks to the emulator only.
+// which talks to the emulator only. That holds for any copy of src/ too
+// (the v1.0.2 client the old-client suite runs, see old-client.mjs).
 import { existsSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import ts from 'typescript';
 
-const SRC = fileURLToPath(new URL('../../src/', import.meta.url));
-const CLIENT = path.join(SRC, 'firebase', 'client.ts');
+const CLIENT_TAIL = path.sep + path.join('src', 'firebase', 'client.ts');
+const isClient = (file) => file.endsWith(CLIENT_TAIL);
 const STUB = new URL('./client-stub.mjs', import.meta.url).href;
 const TS_FILE = /\.tsx?$/;
 
@@ -23,7 +24,7 @@ export async function resolve(specifier, context, next) {
   if (specifier.startsWith('.') && parent) {
     const base = path.resolve(path.dirname(parent), specifier);
     const hit = [base, `${base}.ts`, `${base}.tsx`, path.join(base, 'index.ts')].find(isFile);
-    if (hit === CLIENT) return { url: STUB, shortCircuit: true };
+    if (hit && isClient(hit)) return { url: STUB, shortCircuit: true };
     if (hit && TS_FILE.test(hit)) return { url: pathToFileURL(hit).href, shortCircuit: true };
   }
   return next(specifier, context);
@@ -32,7 +33,7 @@ export async function resolve(specifier, context, next) {
 export async function load(url, context, next) {
   if (url.startsWith('file:') && TS_FILE.test(url)) {
     const file = fileURLToPath(url);
-    if (file === CLIENT) throw new Error('rules tests must never load the production client');
+    if (isClient(file)) throw new Error('rules tests must never load the production client');
     const { outputText } = ts.transpileModule(await readFile(file, 'utf8'), {
       fileName: file,
       compilerOptions: {

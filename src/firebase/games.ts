@@ -91,10 +91,12 @@ export async function saveCompletedGame(args: {
     chess960Id,
     seed,
     humanColor,
-    durationMs,
     botLevel,
   } = args;
   const gameMode = args.gameMode ?? 'classic';
+  // R-4 — firestore.rules takes no negative duration; a wall clock set
+  // back during the game would give one.
+  const durationMs = args.durationMs === undefined ? undefined : Math.max(0, args.durationMs);
 
   const gamePayload: Record<string, unknown> = {
     playerId: uid,
