@@ -87,6 +87,17 @@ Display names, saved games, the leaderboard, and the feedback collector use Fire
 - The Firebase web API key is public by design; restrict it by HTTP referrer in the Google Cloud console.
 - Audit, open items and the launch checklist: [docs/SECURITY-AUDIT-2026-09.md](./docs/SECURITY-AUDIT-2026-09.md), [docs/LAUNCH-CHECKLIST-V1.md](./docs/LAUNCH-CHECKLIST-V1.md).
 
+## License
+
+The source code is licensed under the **GNU Affero General Public License v3.0**
+(see [LICENSE](./LICENSE)). If you run a modified version of Subutai as a
+network service, the AGPL requires you to offer its users the source of that
+version.
+
+The name "Subutai" and the logo are not covered by the license. Third-party
+components and their licenses are listed in [NOTICE.md](./NOTICE.md); note that
+the bundled tempo model is **non-commercial** (CC BY-NC-SA 4.0).
+
 ## My role
 
 Joined the project as **Technical Lead** for the front-end implementation, working with an international 5-person team at FH St. Pölten. Owned the technical architecture and most of the implementation — segment-rotation math, custom castling, state sync.
