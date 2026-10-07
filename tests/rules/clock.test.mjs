@@ -17,7 +17,7 @@ const { generateLegalMoves } = await import('../../src/engine/moves.ts');
 
 let env;
 before(async () => {
-  env = await initializeTestEnvironment({ projectId: PROJECT_ID, firestore: { rules: readFileSync(new URL('../../firestore.rules', import.meta.url), 'utf8') } });
+  env = await initializeTestEnvironment({ projectId: PROJECT_ID, firestore: { rules: readFileSync(process.env.RULES_FILE ?? new URL('../../firestore.rules', import.meta.url), 'utf8') } });
 });
 beforeEach(async () => { await env.clearFirestore(); });
 after(async () => { await terminateAll(); await env.cleanup(); });
