@@ -75,7 +75,7 @@ import {
 } from 'lucide-react';
 import type { GameReviewMeta } from './components/GameReview';
 import { OPPONENT_OFFLINE_FORFEIT_MS, useMultiplayerSync } from './components/MultiplayerGameView';
-import { mpResignCause, turnStartedMs } from './firebase/matchEnd';
+import { drawOfferHolds, mpResignCause, turnStartedMs } from './firebase/matchEnd';
 import { rejoinMatch, type MatchDoc, type MatchOutcome } from './firebase/matches';
 import {
   saveMultiplayerGameToGames,
@@ -396,6 +396,8 @@ function drawOfferTitle(block: DrawOfferBlock | null, opponent: string): string 
       return `${opponent} offers a draw`;
     case 'move-first':
       return 'Offer a draw again after your next move';
+    case 'declined':
+      return 'Draw declined. Offer one after the next move';
   }
 }
 
@@ -1762,9 +1764,9 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMultiplayer, mpSync?.matchState.status, mpSync?.matchState.outcome]);
 
-  // Online: tell me when my draw offer is declined. A decline clears the
-  // field with the log as it was; a move retires the offer too, but then
-  // the log has grown, and an accept ends the match.
+  // Online: tell me when my draw offer is declined. A decline marks the
+  // offer `declined` with the log as it was; a move retires the offer too,
+  // but then the log has grown, and an accept ends the match.
   const mpMyDrawOfferRef = useRef<{ code: string; atPly: number } | null>(null);
   useEffect(() => {
     if (!isMultiplayer || !mpSync) return;
@@ -1781,7 +1783,8 @@ function App() {
       mine.code === m.code &&
       m.status === 'active' &&
       !m.outcome &&
-      !m.drawOffer &&
+      m.drawOffer?.declined &&
+      m.drawOffer.atPly === mine.atPly &&
       m.log.moves.length === mine.atPly
     ) {
       toast.show(`${mpSync.opponentDisplayName} declined the draw.`, 'info', 2400);
@@ -3191,9 +3194,11 @@ function App() {
     // only once the opponent's turn has run 90 s by server time (R-7:
     // from turnStartedAt, which only a move restarts); until
     // then only their own client can end it. Wait for that, and retry
-    // when the server still says no (clock skew).
+    // when the server still says no (clock skew). A draw offer they made
+    // on that turn holds the claim until I answer it (drawOfferHolds).
     const theirs = mpSync.myColor === 'white' ? mpClocks.black : mpClocks.white;
     if (theirs <= 0) {
+      if (drawOfferHolds(mpSync.matchState)) return;
       const last = turnStartedMs(mpSync.matchState);
       if (typeof last === 'number' && Date.now() - last < OPPONENT_OFFLINE_FORFEIT_MS) return;
       if (Date.now() < flagRetryAtRef.current) return;

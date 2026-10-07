@@ -56,10 +56,12 @@ export interface MatchDoc {
   /** QA-04 — set with a resign outcome, or 'agreement' with a draw;
    *  absent on matches ended by older clients and on every other outcome. */
   endReason?: MatchEndReason;
-  /** The last draw offer, { by: uid, atPly: log length }. It stands only
-   *  while the log is that long (src/utils/drawOffer.ts), so a move
-   *  retires it even when the mover's client leaves the field alone.
-   *  Absent on matches nobody offered a draw in, and on older docs. */
+  /** The last draw offer, { by: uid, atPly: log length }, with
+   *  `declined: true` once the other player said no. It stands only while
+   *  the log is that long and nobody declined it (src/utils/drawOffer.ts),
+   *  so a move retires it even when the mover's client leaves the field
+   *  alone. An accepted offer stays on the finished match. Absent on
+   *  matches nobody offered a draw in, and on older docs. */
   drawOffer?: DrawOffer | null;
   createdAt: Timestamp;
   lastActivity: Timestamp;

@@ -1,6 +1,8 @@
 /* Draw by agreement: the offer rules both Local (hot-seat) and Online use
  * (src/utils/drawOffer.ts). One offer at a time, retired by any move, and
  * a side that offered may not offer again until it has moved itself.
+ * Online, a declined offer stays marked until the next move: one offer
+ * per ply.
  *
  * Run: npx tsx scripts/test-draw-offer.ts
  */
@@ -94,6 +96,20 @@ check('a move with nothing on the table returns the same table', drawTableAfterM
 const uidTable: DrawTable<string> = offerDraw(NO_DRAW_OFFERS, 'uid-host', 2);
 check('uid seat: the guest may answer', canAnswerDraw(uidTable.offer, 'uid-guest', 2), true);
 check('uid seat: the host may not answer itself', canAnswerDraw(uidTable.offer, 'uid-host', 2), false);
+
+// --- Online: a decline marks the offer, one offer per ply --------------
+// The match doc keeps a declined offer until the next move; the rules let
+// nobody offer at a ply that already had one.
+const declinedOnline: DrawTable<string> = {
+  offer: { by: 'uid-host', atPly: 2, declined: true },
+  waiting: [],
+};
+check('a declined offer does not stand', standingDrawOffer(declinedOnline.offer, 2), null);
+check('nobody answers a declined offer', canAnswerDraw(declinedOnline.offer, 'uid-guest', 2), false);
+check('the player who declined may not offer at that ply', drawOfferBlock(declinedOnline, 'uid-guest', 2), 'declined');
+check('the player who offered may not either', drawOfferBlock(declinedOnline, 'uid-host', 2), 'declined');
+check('the own lock speaks first', drawOfferBlock({ ...declinedOnline, waiting: ['uid-host'] }, 'uid-host', 2), 'move-first');
+check('after a move either may offer', canOfferDraw(declinedOnline, 'uid-guest', 3), true);
 
 if (failures) {
   console.log(`\n${failures} FAILED`);
