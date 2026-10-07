@@ -149,7 +149,8 @@ export interface MultiplayerSyncHandle {
 }
 
 /** R-1 — the timestamp of a new log entry. firestore.rules takes one no
- *  earlier than the previous entry and within 60 s of server time; the
+ *  earlier than the previous entry and, in a match with a clock, within
+ *  60 s of server time; the
  *  previous entry is the opponent's, stamped by their clock, which can be
  *  ahead of mine by more than the time I took to reply. Stamped inside the
  *  transaction, so a retried write is not stamped at the first try. */

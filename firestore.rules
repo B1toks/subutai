@@ -477,6 +477,10 @@ service cloud.firestore {
     // whose clocks disagree still write in order. What it leaves open: a
     // mover can back-date (down to the previous stamp) and so charge up to
     // 60 s of their own thinking per move to the opponent.
+    // The 60 s window holds only where there is a clock, as the client
+    // sees one: classic with a time control. Without one (roulette has
+    // none) the stamps only count up what each side spent, on screen, and
+    // a device more than 60 s off can still play.
     function matchClockOk() {
       let before = resource.data;
       let after = request.resource.data;
@@ -484,13 +488,19 @@ service cloud.firestore {
         && after.get('timeIncrementSec', null) == before.get('timeIncrementSec', null)
         && (after.log.moves.size() == before.log.moves.size()
             || moveStampOk(after.log.moves[before.log.moves.size()].get('timestamp', null),
-                           before.log.moves));
+                           before.log.moves, timedMatch(before)));
     }
-    function moveStampOk(ts, moves) {
+    function timedMatch(m) {
+      return m.get('gameMode', 'classic') != 'roulette'
+        && m.get('timeControlSec', null) is number
+        && m.timeControlSec > 0;
+    }
+    function moveStampOk(ts, moves, timed) {
       let skewMs = 60000;
       return ts is int
-        && ts >= request.time.toMillis() - skewMs
-        && ts <= request.time.toMillis() + skewMs
+        && (!timed
+            || (ts >= request.time.toMillis() - skewMs
+                && ts <= request.time.toMillis() + skewMs))
         && (moves.size() == 0 || ts >= moves[moves.size() - 1].get('timestamp', 0));
     }
     function timeControlOk(d) {
@@ -635,7 +645,8 @@ service cloud.firestore {
       //     matchOutcomeOk cannot be shortened by back-dating, and only the
       //     join or a move restarts them (turnStartOk, R-7);
       //   - the time control is frozen and a move's timestamp follows the
-      //     previous one, near server time (matchClockOk, R-1);
+      //     previous one, near server time where there is a clock
+      //     (matchClockOk, R-1);
       //   - roulette state moves only with a spin or an action of the
       //     player on turn (rouletteOk, R-8);
       //   - who may write which outcome and endReason (matchOutcomeOk,
