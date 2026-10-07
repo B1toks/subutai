@@ -83,11 +83,15 @@ async function newPlayer(uid, name) {
   await claimDisplayName(uid, name);
 }
 
+/** A breakdown computeGamePoints() could give: 5 per move, the rest from
+ *  captures (up to 400), then quality (R-4 caps both modes). */
 function points({ total = 120, moveCount = 12, counted = true } = {}) {
+  const movePoints = Math.min(total, 5 * moveCount);
+  const capturePoints = Math.min(400, total - movePoints);
   return {
-    movePoints: total,
-    capturePoints: 0,
-    qualityPoints: 0,
+    movePoints,
+    capturePoints,
+    qualityPoints: total - movePoints - capturePoints,
     rotationPoints: 0,
     outcomeBonus: 0,
     total,

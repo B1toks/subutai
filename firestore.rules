@@ -38,10 +38,18 @@ service cloud.firestore {
     // per-field ceilings (max material 3900cp/10, 10 quality pts per move,
     // roulette win base 500 + speed bonus 900). Blocks the obvious
     // "bestGamePoints: 999999" troll without needing to replay the game.
-    function plausiblePoints(p, moveCount) {
+    // R-4 — and the ceilings of its mode: classic scores 5 per move (half
+    // on a resign); roulette has no quality or rotation points and tops out
+    // at 500 + (60 - 10) * 15 + 400 = 1650. This raises the price of a
+    // made-up game; it does not stop one (the rules cannot replay chess).
+    function plausiblePoints(p, moveCount, mode) {
       return p is map
+        && p.keys().hasOnly([
+             'movePoints', 'capturePoints', 'qualityPoints', 'rotationPoints', 'outcomeBonus',
+             'total', 'moveCount', 'captureValueCp', 'moveQualityCounts', 'counted'
+           ])
         && p.total is int && p.total >= 0
-        && p.moveCount is int
+        && p.moveCount == moveCount
         && p.counted is bool
         && intIn(p.movePoints, 0, 1500)
         && intIn(p.capturePoints, 0, 400)
@@ -49,7 +57,14 @@ service cloud.firestore {
         && intIn(p.rotationPoints, 0, 600)
         && intIn(p.outcomeBonus, 0, 500)
         && p.total <= p.movePoints + p.capturePoints + p.qualityPoints + p.rotationPoints + p.outcomeBonus
-        && (p.counted == false || moveCount >= 10);
+        && (p.counted == false || moveCount >= 10)
+        && (mode == 'roulette'
+            ? p.qualityPoints == 0 && p.rotationPoints == 0 && p.total <= 1650
+            : p.movePoints <= 5 * moveCount)
+        && (!('captureValueCp' in p) || p.captureValueCp is int)
+        && (!('moveQualityCounts' in p)
+            || (p.moveQualityCounts is map
+                && p.moveQualityCounts.keys().hasOnly(['brilliant', 'best', 'good', 'mistake', 'blunder'])));
     }
     function gameDoc(gameId) {
       return get(/databases/$(database)/documents/games/$(gameId)).data;
@@ -148,7 +163,8 @@ service cloud.firestore {
         && s.moveCount == g.moveCount
         && s.chess960Id == g.chess960Id
         && s.createdAt == request.time
-        && (!('durationMs' in s) || s.durationMs == g.get('durationMs', null));
+        && (!('durationMs' in s)
+            || (s.durationMs is number && s.durationMs >= 0 && s.durationMs == g.get('durationMs', null)));
     }
 
     // QA-06 — "Beat Strong" goes up by one only with a win over the
@@ -261,7 +277,18 @@ service cloud.firestore {
                     && request.resource.data.log.moves is list
                     && request.resource.data.log.moves.size() <= 700
                     && request.resource.data.log.moves.size() >= request.resource.data.moveCount * 2 - 1
-                    && plausiblePoints(request.resource.data.points, request.resource.data.moveCount)
+                    // R-4 — what a save has (a bot game, or one player's copy
+                    // of an online match), and nothing else.
+                    && request.resource.data.keys().hasOnly([
+                         'playerId', 'playerName', 'opponentId', 'opponentName', 'chess960Id', 'seed',
+                         'humanColor', 'log', 'outcome', 'moveCount', 'points', 'matchCode', 'vsAI',
+                         'gameMode', 'createdAt', 'durationMs', 'botLevel'
+                       ])
+                    && request.resource.data.log.keys().hasOnly(['initialTopology', 'moves'])
+                    && (!('durationMs' in request.resource.data)
+                        || (request.resource.data.durationMs is number && request.resource.data.durationMs >= 0))
+                    && plausiblePoints(request.resource.data.points, request.resource.data.moveCount,
+                                       request.resource.data.get('gameMode', 'classic'))
                     // Server time: strongWinsOk() reads it as "when saved".
                     && request.resource.data.createdAt == request.time
                     && (!('gameMode' in request.resource.data) || isMode(request.resource.data.gameMode))

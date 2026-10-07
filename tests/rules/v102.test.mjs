@@ -36,8 +36,10 @@ const read = async (p) => (await getDoc(doc(owner(), p))).data();
 const seed = (p, d) => setDoc(doc(owner(), p), d);
 const denied = (p) => assert.rejects(p, (e) => e?.code === 'permission-denied');
 
+// A breakdown computeGamePoints() could give (R-4 caps): 5 per move, the rest from captures.
 function points({ total = 120, moveCount = 12, counted = true } = {}) {
-  return { movePoints: total, capturePoints: 0, qualityPoints: 0, rotationPoints: 0, outcomeBonus: 0, total, moveCount,
+  const movePoints = Math.min(total, 5 * moveCount), capturePoints = Math.min(400, total - movePoints);
+  return { movePoints, capturePoints, qualityPoints: total - movePoints - capturePoints, rotationPoints: 0, outcomeBonus: 0, total, moveCount,
     captureValueCp: 0, moveQualityCounts: { brilliant: 0, best: 0, good: 0, mistake: 0, blunder: 0 }, counted };
 }
 function gameLog(n) {

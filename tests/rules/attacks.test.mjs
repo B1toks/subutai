@@ -47,7 +47,7 @@ function fakeGame(uid, { moveCount = 10, outcome = 'human-win', points } = {}) {
   return {
     playerId: uid, playerName: 'Anyone', chess960Id: 'RNBQKBNR', humanColor: 'white',
     outcome, moveCount, log: { moves: garbageMoves(moveCount * 2 - 1) },
-    points: points ?? { total: 100, moveCount, counted: true, movePoints: 100, capturePoints: 0,
+    points: points ?? { total: 5 * moveCount, moveCount, counted: true, movePoints: 5 * moveCount, capturePoints: 0,
       qualityPoints: 0, rotationPoints: 0, outcomeBonus: 0 },
     createdAt: serverTimestamp(),
   };
@@ -70,7 +70,7 @@ describe('U: /users stats', () => {
     await allowed(updateDoc(doc(as('mallory'), 'users/mallory'), { longestSurvivalMoves: 700 }));
   });
 
-  it('U3 ALLOWED: strongWins +1 per made-up /games doc, 25 in a row', async () => {
+  it('U3 ALLOWED (known limit, R-4): strongWins +1 per made-up /games doc, 25 in a row', async () => {
     const db = as('mallory');
     for (let i = 1; i <= 25; i++) {
       const g = await addDoc(collection(db, 'games'), fakeGame('mallory'));
@@ -81,7 +81,7 @@ describe('U: /users stats', () => {
     assert.equal((await read('users/mallory')).strongWins, 25);
   });
 
-  it('U4 ALLOWED: bestGamePoints 6010 from a made-up /games doc (moveCount 300, garbage log)', async () => {
+  it('U4 ALLOWED (known limit, R-4: the caps let a 300-move classic game reach 6010, real ceiling ~5470): bestGamePoints 6010 from a made-up /games doc (moveCount 300, garbage log)', async () => {
     const db = as('mallory');
     const points = { total: 6010, moveCount: 300, counted: true, movePoints: 1500, capturePoints: 400,
       qualityPoints: 3010, rotationPoints: 600, outcomeBonus: 500 };
@@ -92,29 +92,32 @@ describe('U: /users stats', () => {
     }));
   });
 
-  it('U4b ALLOWED: a 10-move made-up game scores 3110 (every cap at its ceiling)', async () => {
+  it('U4b DENIED (R-4): a 10-move made-up game scores 3110 (classic: 5 points a move)', async () => {
     const db = as('mallory');
     const points = { total: 3110, moveCount: 10, counted: true, movePoints: 1500, capturePoints: 400,
       qualityPoints: 110, rotationPoints: 600, outcomeBonus: 500 };
-    await allowed(addDoc(collection(db, 'games'), fakeGame('mallory', { moveCount: 10, points })));
+    await denied(addDoc(collection(db, 'games'), fakeGame('mallory', { moveCount: 10, points })));
   });
 
-  it('U4c ALLOWED: roulette best 6010 the same way', async () => {
+  it('U4c DENIED (R-4): roulette 6010 the same way (roulette: no quality / rotation points, 1650 at most)', async () => {
     const db = as('mallory');
     const points = { total: 6010, moveCount: 300, counted: true, movePoints: 1500, capturePoints: 400,
       qualityPoints: 3010, rotationPoints: 600, outcomeBonus: 500 };
-    const g = await addDoc(collection(db, 'games'), { ...fakeGame('mallory', { moveCount: 300, points }), gameMode: 'roulette' });
-    await allowed(updateDoc(doc(db, 'users/mallory'), {
-      rouletteBestPoints: 6010, rouletteBestGameId: g.id,
-      rouletteBestSnapshot: { chess960Id: 'RNBQKBNR', moveCount: 300, outcome: 'human-win', createdAt: serverTimestamp() },
-    }));
+    await denied(addDoc(collection(db, 'games'), { ...fakeGame('mallory', { moveCount: 300, points }), gameMode: 'roulette' }));
+    const roulette = (total, extra = {}) => ({ ...fakeGame('mallory', { moveCount: 10, points: { total, moveCount: 10, counted: true,
+      movePoints: 750, capturePoints: 400, qualityPoints: 0, rotationPoints: 0, outcomeBonus: 500, ...extra } }), gameMode: 'roulette' });
+    await allowed(addDoc(collection(db, 'games'), roulette(1650)));
+    await denied(addDoc(collection(db, 'games'), roulette(1651, { capturePoints: 401 })));
+    await denied(addDoc(collection(db, 'games'), roulette(1650, { movePoints: 740, qualityPoints: 10 })));
+    await denied(addDoc(collection(db, 'games'), roulette(1650, { movePoints: 735, rotationPoints: 15 })));
   });
 
-  it('U5 ALLOWED: snapshot durationMs of 1 ms (or negative) copied from the made-up game', async () => {
+  it('U5 DENIED (R-4): a negative durationMs, in the game or the snapshot', async () => {
     const db = as('mallory');
-    const g = await addDoc(collection(db, 'games'), { ...fakeGame('mallory'), durationMs: -5 });
-    await allowed(updateDoc(doc(db, 'users/mallory'), {
-      bestGamePoints: 100, bestGameId: g.id,
+    await denied(addDoc(collection(db, 'games'), { ...fakeGame('mallory'), durationMs: -5 }));
+    const g = await addDoc(collection(db, 'games'), { ...fakeGame('mallory'), durationMs: 5 });
+    await denied(updateDoc(doc(db, 'users/mallory'), {
+      bestGamePoints: 50, bestGameId: g.id,
       bestGameSnapshot: { chess960Id: 'RNBQKBNR', moveCount: 10, outcome: 'human-win', createdAt: serverTimestamp(), durationMs: -5 },
     }));
   });
@@ -125,12 +128,15 @@ describe('U: /users stats', () => {
     }));
   });
 
-  it('U7 ALLOWED: /games playerName is any name (not tied to the reservation)', async () => {
+  it('U7 ALLOWED (known limit, R-12): /games playerName is any name (not tied to the reservation)', async () => {
     await allowed(addDoc(collection(as('mallory'), 'games'), { ...fakeGame('mallory', { outcome: 'ai-win' }), playerName: 'Alice' }));
   });
 
-  it('U8 ALLOWED: /games with arbitrary extra fields (no hasOnly)', async () => {
-    await allowed(addDoc(collection(as('mallory'), 'games'), { ...fakeGame('mallory'), vsAI: 'yes', junk: 'x'.repeat(500_000) }));
+  it('U8 DENIED (R-4): /games with arbitrary extra fields, in the doc, its log or its points', async () => {
+    await denied(addDoc(collection(as('mallory'), 'games'), { ...fakeGame('mallory'), junk: 'x' }));
+    await denied(addDoc(collection(as('mallory'), 'games'), { ...fakeGame('mallory'), log: { moves: garbageMoves(19), junk: 'x' } }));
+    await denied(addDoc(collection(as('mallory'), 'games'), fakeGame('mallory', { points: { ...fakeGame('mallory').points, junk: 'x' } })));
+    await denied(addDoc(collection(as('mallory'), 'games'), { ...fakeGame('mallory'), vsAI: 'yes', junk: 'x'.repeat(500_000) }));
   });
 
   // closed
@@ -151,15 +157,18 @@ describe('U: /users stats', () => {
     await claim('alice', 'Alice', 'alice');
     const g = await addDoc(collection(as('alice'), 'games'), fakeGame('alice'));
     await denied(updateDoc(doc(as('mallory'), 'users/mallory'), {
-      bestGamePoints: 100, bestGameId: g.id,
+      bestGamePoints: 50, bestGameId: g.id,
       bestGameSnapshot: { chess960Id: 'RNBQKBNR', moveCount: 10, outcome: 'human-win', createdAt: serverTimestamp() },
     }));
   });
-  it('U12 DENIED: points total over the sum of its parts / a 7-move counted game', async () => {
+  it('U12 DENIED: points total over the sum of its parts / a 7-move counted game / (R-4) points.moveCount or movePoints off', async () => {
     const db = as('mallory');
-    await denied(addDoc(collection(db, 'games'), fakeGame('mallory', { points: { total: 101, moveCount: 10, counted: true,
-      movePoints: 100, capturePoints: 0, qualityPoints: 0, rotationPoints: 0, outcomeBonus: 0 } })));
+    await denied(addDoc(collection(db, 'games'), fakeGame('mallory', { points: { total: 51, moveCount: 10, counted: true,
+      movePoints: 50, capturePoints: 0, qualityPoints: 0, rotationPoints: 0, outcomeBonus: 0 } })));
     await denied(addDoc(collection(db, 'games'), fakeGame('mallory', { moveCount: 7 })));
+    // R-4 — points.moveCount is the game's; classic is 5 points a move
+    await denied(addDoc(collection(db, 'games'), fakeGame('mallory', { points: { ...fakeGame('mallory').points, moveCount: 300 } })));
+    await denied(addDoc(collection(db, 'games'), fakeGame('mallory', { points: { ...fakeGame('mallory').points, movePoints: 51, total: 51 } })));
   });
   it('U13 DENIED: create a profile with stats; remove bestGamePoints', async () => {
     const db = as('eve');
@@ -168,7 +177,7 @@ describe('U: /users stats', () => {
       tx.set(doc(db, 'users', 'eve'), { uid: 'eve', displayName: 'Eve', displayNameLower: 'eve', strongWins: 5 });
     }));
     const g = await addDoc(collection(as('mallory'), 'games'), fakeGame('mallory'));
-    await updateDoc(doc(as('mallory'), 'users/mallory'), { bestGamePoints: 100, bestGameId: g.id,
+    await updateDoc(doc(as('mallory'), 'users/mallory'), { bestGamePoints: 50, bestGameId: g.id,
       bestGameSnapshot: { chess960Id: 'RNBQKBNR', moveCount: 10, outcome: 'human-win', createdAt: serverTimestamp() } });
     await denied(updateDoc(doc(as('mallory'), 'users/mallory'), { bestGamePoints: deleteField() }));
   });
