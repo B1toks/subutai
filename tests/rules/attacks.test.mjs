@@ -326,21 +326,35 @@ describe('M: matches', () => {
     await allowed(updateDoc(m('guest'), { lastActivity: serverTimestamp() }));
     assert.deepEqual((await read('matches/ABC123')).turnStartedAt, before);
   });
-  it('M5 ALLOWED: roulette — one player appends 6 moves in a row, keeping the turn', async () => {
+  it('M5 DENIED (R-8): roulette — no action without a spin; two actions per spin, and the second ends the turn', async () => {
     await activeMatch({ mode: 'roulette', moves: 0, turn: 'host' });
-    let moves = [];
-    for (let i = 1; i <= 6; i++) {
-      moves = [...moves, { san: `h${i}`, timestamp: Date.now() }];
-      await updateDoc(m('host'), { 'log.moves': moves, lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp() });
-    }
-    assert.equal((await read('matches/ABC123')).log.moves.length, 6);
+    const stamp = { lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp() };
+    const move = (i) => ({ san: `h${i}`, timestamp: Date.now() });
+    await denied(updateDoc(m('host'), { 'log.moves': [move(1)], ...stamp }));
+    await allowed(updateDoc(m('host'), {
+      rouletteSlots: ['pawn', 'pawn', 'knight', 'king'], rouletteActionsLeft: 2, usedRouletteSlots: [],
+      rouletteSpinsByPlayer: { host: 1 }, rouletteSpinCount: 1, lastActivity: serverTimestamp(),
+    }));
+    const one = [move(1)];
+    await allowed(updateDoc(m('host'), { 'log.moves': one, rouletteActionsLeft: 1, usedRouletteSlots: [0], ...stamp }));
+    const two = [...one, move(2)];
+    await denied(updateDoc(m('host'), { 'log.moves': two, rouletteActionsLeft: 1, ...stamp }));
+    await denied(updateDoc(m('host'), { 'log.moves': two, rouletteActionsLeft: 0, ...stamp }));
+    await allowed(updateDoc(m('host'), {
+      'log.moves': two, currentTurn: 'guest', rouletteSlots: null, rouletteActionsLeft: 0, usedRouletteSlots: [], ...stamp,
+    }));
+    await denied(updateDoc(m('host'), { 'log.moves': [...two, move(3)], ...stamp }));
+    assert.equal((await read('matches/ABC123')).log.moves.length, 2);
   });
-  it('M6 ALLOWED: unchecked fields — either player writes anything else on the doc (clock, spin, junk)', async () => {
+  it('M6 DENIED (M6): unchecked fields — either player writes anything else on the doc (clock, spin, junk)', async () => {
     await activeMatch({ moves: 2, turn: 'host' });
-    await allowed(updateDoc(m('guest'), {
+    await denied(updateDoc(m('guest'), {
       clock: { whiteMs: 0, blackMs: 999999999 }, spin: 'anything', junk: 'x', 'log.initialTopology': 'B',
       lastActivity: serverTimestamp(),
     }));
+    await denied(updateDoc(m('guest'), { junk: 'x', lastActivity: serverTimestamp() }));
+    await denied(updateDoc(m('guest'), { 'log.initialTopology': 'B', lastActivity: serverTimestamp() }));
+    await denied(updateDoc(m('guest'), { 'log.extra': 1, lastActivity: serverTimestamp() }));
   });
   it('M7 ALLOWED: join with the same colour as the host', async () => {
     await seed('matches/ABC123', {

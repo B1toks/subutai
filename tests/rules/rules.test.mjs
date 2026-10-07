@@ -641,6 +641,70 @@ describe('online: /matches (QA-04, QA-05)', () => {
     assert.equal(m.currentTurn, black);
   });
 
+  it('denied (R-8): roulette state written off turn, a spin that is not one, actions that do not run down', async () => {
+    const { code, white, black } = await startMatch('roulette');
+    const ref = (uid) => doc(as(uid), 'matches', code);
+    const spin = (uid, o = {}) =>
+      updateDoc(ref(uid), {
+        rouletteSlots: ['pawn', 'pawn', 'pawn', 'pawn'],
+        rouletteActionsLeft: 2,
+        usedRouletteSlots: [],
+        rouletteSpinsByPlayer: { [uid]: 1 },
+        rouletteSpinCount: 1,
+        lastActivity: serverTimestamp(),
+        ...o,
+      });
+    await denied(spin(black)); // off turn
+    await denied(spin(white, { rouletteActionsLeft: 5 }));
+    await denied(spin(white, { rouletteSlots: ['queen', 'queen', 'queen', 'dragon'] }));
+    await denied(spin(white, { rouletteSlots: ['queen', 'queen'] }));
+    await denied(spin(white, { rouletteSpinCount: 7 }));
+    await denied(spin(white, { rouletteSpinsByPlayer: { [white]: 1, [black]: 9 } }));
+    await (await hookAs(white, code)).spinRoulette();
+    await denied(spin(white, { rouletteSpinsByPlayer: { [white]: 2 }, rouletteSpinCount: 2 })); // bag already full
+
+    const stamp = { lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp() };
+    const entry = () => ({ move: { kind: 'topologyToggle' }, san: 'R', topology: 'A', timestamp: Date.now() });
+    await denied(updateDoc(ref(white), { 'log.moves': [entry()], ...stamp })); // actions stay at 2
+    await denied(updateDoc(ref(white), { 'log.moves': [entry()], rouletteActionsLeft: 1, usedRouletteSlots: [7], ...stamp }));
+    await denied(updateDoc(ref(white), { 'log.moves': [entry()], rouletteActionsLeft: 1, rouletteSlots: ['queen', 'queen', 'queen', 'queen'], ...stamp }));
+    await denied(updateDoc(ref(white), { 'log.moves': [entry()], rouletteActionsLeft: 1, currentTurn: black, ...stamp }));
+    await denied(updateDoc(ref(black), { rouletteSlots: null, rouletteActionsLeft: 0, lastActivity: serverTimestamp() }));
+    await (await hookAs(white, code)).sendRotate(); // the honest first action
+    const m = await match(code);
+    assert.equal(m.rouletteActionsLeft, 1);
+    // the last action must end the turn and empty the bag
+    await denied(updateDoc(ref(white), { 'log.moves': [...m.log.moves, entry()], rouletteActionsLeft: 0, ...stamp }));
+    await denied(updateDoc(ref(white), { 'log.moves': [...m.log.moves, entry()], currentTurn: black, rouletteActionsLeft: 0, ...stamp }));
+  });
+
+  it('denied (M6): a field a match does not have, at the top or in log / guest, the initial topology, roulette state in classic', async () => {
+    const { code, white } = await startMatch();
+    const ref = doc(as(white), 'matches', code);
+    await denied(updateDoc(ref, { clock: { whiteMs: 1 }, lastActivity: serverTimestamp() }));
+    await denied(updateDoc(ref, { 'log.note': 'x', lastActivity: serverTimestamp() }));
+    await denied(updateDoc(ref, { 'log.initialTopology': 'B', lastActivity: serverTimestamp() }));
+    await denied(updateDoc(ref, { rouletteActionsLeft: 2, lastActivity: serverTimestamp() }));
+    actAs(HOST.uid);
+    const fresh = await createMatch(HOST);
+    await denied(
+      updateDoc(doc(as(GUEST.uid), 'matches', fresh), {
+        guest: { ...GUEST, color: (await match(fresh)).host.color === 'white' ? 'black' : 'white', rating: 3000 },
+        status: 'active',
+        currentTurn: (await match(fresh)).host.color === 'white' ? HOST.uid : GUEST.uid,
+        lastActivity: serverTimestamp(),
+        turnStartedAt: serverTimestamp(),
+      }),
+    );
+    await denied(
+      setDoc(doc(as(HOST.uid), 'matches', 'ZZZZZZ'), {
+        code: 'ZZZZZZ', chess960Id: 'RNBQKBNR', seed: 1, host: { ...HOST, color: 'white' }, guest: null,
+        status: 'waiting', currentTurn: '', log: { initialTopology: 'A', moves: [] }, outcome: null,
+        rouletteActionsLeft: 2, createdAt: serverTimestamp(), lastActivity: serverTimestamp(),
+      }),
+    );
+  });
+
   it('allowed: resign, and both players save the match to /games', async () => {
     const { code, white } = await startMatch();
     await playMove(code);

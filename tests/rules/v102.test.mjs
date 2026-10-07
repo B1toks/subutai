@@ -208,8 +208,8 @@ describe('extra (rules level)', () => {
     await updateDoc(doc(firestoreFor('victim'), 'mm_queue/troll'), { matchCode: 'ABCDEF', claimedBy: 'victim' });
     await updateDoc(doc(firestoreFor('troll'), 'mm_queue/troll'), { matchCode: null });
   });
-  it('roulette: off turn, the opponent poisons the bag (4 kings, 0 actions left)', async () => {
-    const { code, white, black } = await start('roulette');
-    await updateDoc(doc(firestoreFor(black), `matches/${code}`), { rouletteSlots: ['king', 'king', 'king', 'king'], rouletteActionsLeft: 0, lastActivity: serverTimestamp() });
+  it('roulette DENIED (R-8): off turn, the opponent poisons the bag (4 kings, 0 actions left)', async () => {
+    const { code, black } = await start('roulette');
+    await denied(updateDoc(doc(firestoreFor(black), `matches/${code}`), { rouletteSlots: ['king', 'king', 'king', 'king'], rouletteActionsLeft: 0, lastActivity: serverTimestamp() }));
   });
 });

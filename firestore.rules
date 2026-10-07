@@ -364,8 +364,8 @@ service cloud.firestore {
 
     // QA-05 — whose turn it is changes only when the guest takes the seat
     // (to White) or with an appended move. In classic that move hands the
-    // turn to the opponent; in roulette the mover may keep it (how many
-    // actions a roulette turn has is not checked here).
+    // turn to the opponent; in roulette the mover may keep it (when, is
+    // rouletteOk's: while actions are left).
     function matchTurnOk() {
       let before = resource.data;
       let after = request.resource.data;
@@ -446,6 +446,83 @@ service cloud.firestore {
         && (d.get('timeIncrementSec', null) == null || intIn(d.timeIncrementSec, 0, 60));
     }
 
+    // M6 — the fields a match has; the nested ones too.
+    function matchKeysOk(d) {
+      return d.keys().hasOnly([
+          'code', 'chess960Id', 'seed', 'host', 'guest', 'status', 'currentTurn', 'log',
+          'outcome', 'endReason', 'createdAt', 'lastActivity', 'turnStartedAt', 'gameMode',
+          'timeControlSec', 'timeIncrementSec', 'rouletteSlots', 'rouletteActionsLeft',
+          'usedRouletteSlots', 'rouletteSpinsByPlayer', 'rouletteSpinCount'
+        ])
+        && d.log is map
+        && d.log.keys().hasOnly(['initialTopology', 'moves'])
+        && d.log.moves is list
+        && d.host.keys().hasOnly(['uid', 'displayName', 'color'])
+        && (d.guest == null || d.guest.keys().hasOnly(['uid', 'displayName', 'color']));
+    }
+
+    // R-8 — roulette state changes only for the player on turn, and only
+    // the way the client moves it:
+    //   - a spin, with no move, on an empty bag: 4 piece types, 2 actions,
+    //     no slot used, the spinner's spin count and the total +1;
+    //   - a move or rotate spends one action of a spun bag: the bag stays,
+    //     at most one slot gets used, the turn stays; the last action ends
+    //     the turn and empties the bag;
+    //   - no other write touches it, and in classic nothing does.
+    // Which piece types a spin rolls is the spinner's word: the rules
+    // cannot see the board or the dice.
+    function rouletteOk() {
+      let before = resource.data;
+      let after = request.resource.data;
+      let changed = after.diff(before).affectedKeys().hasAny([
+        'rouletteSlots', 'rouletteActionsLeft', 'usedRouletteSlots',
+        'rouletteSpinsByPlayer', 'rouletteSpinCount'
+      ]);
+      return before.get('gameMode', 'classic') != 'roulette'
+        ? !changed
+        : after.log.moves.size() > before.log.moves.size()
+          ? rouletteActionOk(before, after)
+          : (!changed || rouletteSpinOk(before, after));
+    }
+    function rouletteActionOk(before, after) {
+      let left = before.get('rouletteActionsLeft', 0);
+      let used = before.get('usedRouletteSlots', []);
+      return left is int && left >= 1
+        && before.get('rouletteSlots', null) != null
+        && after.get('rouletteSpinsByPlayer', {}) == before.get('rouletteSpinsByPlayer', {})
+        && after.get('rouletteSpinCount', 0) == before.get('rouletteSpinCount', 0)
+        && (left == 1
+            ? (after.rouletteSlots == null
+               && after.rouletteActionsLeft == 0
+               && after.usedRouletteSlots == []
+               && after.currentTurn == opponentOf(before, request.auth.uid))
+            : (after.rouletteSlots == before.rouletteSlots
+               && after.rouletteActionsLeft == left - 1
+               && after.currentTurn == before.currentTurn
+               // a spin leaves no slot used, so this is the first action
+               && (after.usedRouletteSlots == used
+                   || (used == []
+                       && after.usedRouletteSlots.size() == 1
+                       && after.usedRouletteSlots[0] in [0, 1, 2, 3]))));
+    }
+    function rouletteSpinOk(before, after) {
+      let uid = request.auth.uid;
+      let spins = before.get('rouletteSpinsByPlayer', {});
+      return before.status == 'active'
+        && before.outcome == null
+        && before.currentTurn == uid
+        && before.get('rouletteSlots', null) == null
+        && after.rouletteSlots is list
+        && after.rouletteSlots.size() == 4
+        && after.rouletteSlots.hasOnly(['pawn', 'knight', 'bishop', 'rook', 'queen', 'king'])
+        && after.rouletteActionsLeft == 2
+        && after.usedRouletteSlots == []
+        && after.rouletteSpinsByPlayer is map
+        && after.rouletteSpinsByPlayer.diff(spins).affectedKeys().hasOnly([uid])
+        && after.rouletteSpinsByPlayer[uid] == spins.get(uid, 0) + 1
+        && after.rouletteSpinCount == before.get('rouletteSpinCount', 0) + 1;
+    }
+
     // QA-04 — why a match ended in 'X-resign', for the end text. Optional
     // (older clients do not write it), set only with that outcome, then
     // frozen: 'resign' by X, 'inactive' by the opponent, 'flag' by either.
@@ -476,6 +553,14 @@ service cloud.firestore {
                     && request.resource.data.outcome == null
                     && !('endReason' in request.resource.data)
                     && !('turnStartedAt' in request.resource.data)
+                    && matchKeysOk(request.resource.data)
+                    && request.resource.data.log.initialTopology in ['A', 'B']
+                    // R-8 — no bag, no actions until a spin.
+                    && request.resource.data.get('rouletteSlots', null) == null
+                    && request.resource.data.get('rouletteActionsLeft', 0) == 0
+                    && request.resource.data.get('usedRouletteSlots', []) == []
+                    && request.resource.data.get('rouletteSpinsByPlayer', {}) == {}
+                    && request.resource.data.get('rouletteSpinCount', 0) == 0
                     && request.resource.data.log.moves.size() == 0
                     && (!('gameMode' in request.resource.data) || isMode(request.resource.data.gameMode))
                     && timeControlOk(request.resource.data);
@@ -484,7 +569,9 @@ service cloud.firestore {
       // rules, so a hand-crafted client can append a legal-looking illegal
       // move on its own turn; a Cloud Function remains the full fix). What
       // IS enforced closes every cheap hole:
-      //   - identity fields (host, chess960Id, seed, code) are immutable;
+      //   - the doc has only the match's own fields (matchKeysOk, M6);
+      //   - identity fields (host, chess960Id, seed, code, the log's
+      //     initial topology) are immutable;
       //   - guest is write-once (null -> value, then frozen);
       //   - outcome is write-once; status only takes known values;
       //   - the move log only ever GROWS by at most one entry per write,
@@ -497,6 +584,8 @@ service cloud.firestore {
       //     join or a move restarts them (turnStartOk, R-7);
       //   - the time control is frozen and a move's timestamp follows the
       //     previous one, near server time (matchClockOk, R-1);
+      //   - roulette state moves only with a spin or an action of the
+      //     player on turn (rouletteOk, R-8);
       //   - who may write which outcome and endReason (matchOutcomeOk,
       //     matchEndReasonOk); the mode is frozen, so a classic match
       //     cannot turn roulette to keep the turn.
@@ -504,6 +593,8 @@ service cloud.firestore {
       // own turn (+1), spin (no log change), resign / flag / mate outcome
       // writes (no log change) from either seat.
       allow update: if signedIn()
+        && matchKeysOk(request.resource.data)
+        && request.resource.data.log.initialTopology == resource.data.log.initialTopology
         && request.resource.data.host == resource.data.host
         && request.resource.data.chess960Id == resource.data.chess960Id
         && request.resource.data.seed == resource.data.seed
@@ -541,6 +632,7 @@ service cloud.firestore {
         && matchTurnOk()
         && matchClockOk()
         && turnStartOk()
+        && rouletteOk()
         && matchOutcomeOk()
         && matchEndReasonOk()
         && (
