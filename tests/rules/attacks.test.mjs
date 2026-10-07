@@ -248,18 +248,22 @@ async function activeMatch({ mode = 'classic', moves = 0, turn = 'host' } = {}) 
 const m = (uid) => doc(as(uid), 'matches/ABC123');
 
 describe('M: matches', () => {
-  it('M1 ALLOWED: the player NOT on turn rewrites the whole move history (same length)', async () => {
+  it('M1 DENIED (R-2): the player NOT on turn rewrites the whole move history (same length)', async () => {
     await activeMatch({ moves: 4, turn: 'host' });
-    await allowed(updateDoc(m('guest'), {
+    await denied(updateDoc(m('guest'), {
       'log.moves': [{ san: 'f3' }, { san: 'e5' }, { san: 'g4' }, { san: 'Qh4#' }],
       lastActivity: serverTimestamp(),
     }));
-    assert.equal((await read('matches/ABC123')).log.moves[3].san, 'Qh4#');
+    assert.equal((await read('matches/ABC123')).log.moves[3].san, 'm3');
   });
-  it('M1b ALLOWED: on own turn, append one move AND rewrite earlier ones', async () => {
+  it('M1b DENIED (R-2): on own turn, append one move AND rewrite earlier ones', async () => {
     await activeMatch({ moves: 2, turn: 'host' });
-    await allowed(updateDoc(m('host'), {
+    await denied(updateDoc(m('host'), {
       'log.moves': [{ san: 'X' }, { san: 'Y' }, { san: 'Z' }], currentTurn: 'guest', lastActivity: serverTimestamp(),
+    }));
+    // The same append over the untouched history goes through.
+    await allowed(updateDoc(m('host'), {
+      'log.moves': [{ san: 'm0' }, { san: 'm1' }, { san: 'Z' }], currentTurn: 'guest', lastActivity: serverTimestamp(),
     }));
   });
   it('M2 ALLOWED: claim "white-win" (no mate) after one move, on the opponent\'s turn', async () => {

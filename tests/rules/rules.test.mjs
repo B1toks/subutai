@@ -631,6 +631,28 @@ describe('online: /matches (QA-04, QA-05)', () => {
     );
   });
 
+  it('denied: an append that also rewrites an earlier move (R-2)', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code);
+    await playMove(code);
+    const m = await match(code);
+    const forged = { ...m.log.moves[0], san: 'Qxf7#' };
+    const next = { ...m.log.moves[1], timestamp: Date.now() };
+    await denied(
+      updateDoc(doc(as(white), 'matches', code), {
+        'log.moves': [forged, m.log.moves[1], next],
+        currentTurn: black,
+        lastActivity: serverTimestamp(),
+      }),
+    );
+    await denied(
+      updateDoc(doc(as(black), 'matches', code), {
+        'log.moves': [forged, m.log.moves[1]],
+        lastActivity: serverTimestamp(),
+      }),
+    );
+  });
+
   it('denied: taking the turn without a move', async () => {
     const { code, black } = await startMatch();
     await denied(

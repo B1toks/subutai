@@ -396,7 +396,8 @@ service cloud.firestore {
       //   - guest is write-once (null -> value, then frozen);
       //   - outcome is write-once; status only takes known values;
       //   - the move log only ever GROWS by at most one entry per write,
-      //     and only the player whose turn it is may grow it;
+      //     only the player whose turn it is may grow it, and the entries
+      //     already there never change (R-2);
       //   - currentTurn always names a seated player, and moves only with
       //     the join or a move (matchTurnOk);
       //   - lastActivity is server time, so the 90 s in matchOutcomeOk
@@ -431,6 +432,11 @@ service cloud.firestore {
             || request.resource.data.outcome in ['white-win', 'black-win', 'draw', 'host-resign', 'guest-resign'])
         && request.resource.data.log.moves.size() >= resource.data.log.moves.size()
         && request.resource.data.log.moves.size() <= resource.data.log.moves.size() + 1
+        // R-2 — the moves already there stay as they are: a write may only
+        // append, never rewrite the history, on or off turn. (A slice of an
+        // empty list is an index error in rules, hence the size check.)
+        && (resource.data.log.moves.size() == 0
+            || request.resource.data.log.moves[0:resource.data.log.moves.size()] == resource.data.log.moves)
         && (request.resource.data.log.moves.size() == resource.data.log.moves.size()
             || resource.data.currentTurn == request.auth.uid)
         && (request.resource.data.currentTurn == ''
