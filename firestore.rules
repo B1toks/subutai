@@ -425,16 +425,24 @@ service cloud.firestore {
     // write moves: a write that changes nothing else no longer holds them
     // off. A match from before the field falls back to lastActivity until
     // its next move.
+    // Where the field is, it is a timestamp: a null written into a match
+    // from before the field read as "no turn start" and refused every
+    // forfeit claim. One the bridge rules let in stays (only changes are
+    // checked), so turnStart() reads anything but a timestamp as absent.
     function turnStartOk() {
       let before = resource.data;
       let after = request.resource.data;
       return ((before.guest == null && after.guest != null)
               || after.log.moves.size() > before.log.moves.size())
         ? after.get('turnStartedAt', null) == request.time
-        : after.get('turnStartedAt', null) == before.get('turnStartedAt', null);
+        : after.get('turnStartedAt', null) == before.get('turnStartedAt', null)
+          && (!('turnStartedAt' in after)
+              || after.turnStartedAt is timestamp
+              || ('turnStartedAt' in before && after.turnStartedAt == before.turnStartedAt));
     }
     function turnStart(m) {
-      return m.get('turnStartedAt', m.lastActivity);
+      let t = m.get('turnStartedAt', null);
+      return t is timestamp ? t : m.lastActivity;
     }
 
     // QA-05 — who may end the match. 'X-resign' is written by X, or by X's

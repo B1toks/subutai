@@ -656,6 +656,28 @@ describe('online: /matches (QA-04, QA-05)', () => {
     );
   });
 
+  it('denied (R-7): a null, a string or a number put in turnStartedAt of a match from before the field', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code); // Black on turn
+    await patch(`matches/${code}`, { turnStartedAt: deleteField() });
+    for (const v of [null, 'now', 0]) {
+      await denied(updateDoc(doc(as(black), 'matches', code), { turnStartedAt: v, lastActivity: serverTimestamp() }));
+    }
+    await patch(`matches/${code}`, { lastActivity: ago(100_000) });
+    actAs(white);
+    await writeInactivityForfeit(code, white);
+    assert.equal((await match(code)).outcome, loserOutcome(black));
+  });
+
+  it('allowed (R-7): a null turnStartedAt left from the bridge rules reads as absent — the forfeit counts from lastActivity', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code); // Black on turn
+    await patch(`matches/${code}`, { turnStartedAt: null, lastActivity: ago(100_000) });
+    actAs(white);
+    await writeInactivityForfeit(code, white);
+    assert.equal((await match(code)).outcome, loserOutcome(black));
+  });
+
   it('allowed: a rotation in classic passes the turn', async () => {
     const { code, white, black } = await startMatch();
     // Classic sendRotate hands off to sendMove without awaiting it.
