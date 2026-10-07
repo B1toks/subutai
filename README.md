@@ -2,7 +2,7 @@
 
 A **Chess 960 variant** with dynamically rotating 2×2 board segments and custom castling. Built as the technical implementation for **[Lucid Dreams 2026](https://www.lucid-dreams.at/2026-projekte/projekt-027)** — FH St. Pölten's annual interactive media exhibition.
 
-♟ **Live:** [b1toks.github.io/subutai](https://b1toks.github.io/subutai/)
+♟ **Live:** [subutai.honchar.dev](https://subutai.honchar.dev/)
 ✦ **Exhibition:** [Lucid Dreams · Projekt 027](https://www.lucid-dreams.at/2026-projekte/projekt-027)
 
 ---
