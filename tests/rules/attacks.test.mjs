@@ -178,45 +178,81 @@ describe('U: /users stats', () => {
 describe('N: names', () => {
   beforeEach(async () => { await claim('alice', 'Boss', 'boss'); });
 
-  it('N1 ALLOWED: "Boss " (trailing space) under slug "boss " while alice holds "boss"', async () => {
-    await allowed(claim('mallory', 'Boss ', 'boss '));
-    assert.equal((await read('users/mallory')).displayName, 'Boss ');
+  it('N1 DENIED (R-5): "Boss " (trailing space) under slug "boss " while alice holds "boss"', async () => {
+    await denied(claim('mallory', 'Boss ', 'boss '));
   });
-  it('N1b ALLOWED: " Boss" (leading space)', async () => {
-    await allowed(claim('mallory', ' Boss', ' boss'));
+  it('N1b DENIED (R-5): " Boss" (leading space); "Bo  ss" (two spaces, shown as one)', async () => {
+    await denied(claim('mallory', ' Boss', ' boss'));
+    await claim('bob', 'Bo ss', 'bo ss');
+    await denied(claim('mallory', 'Bo  ss', 'bo  ss'));
   });
-  it('N2 ALLOWED?: exactly "Boss" under slug "boſs" (U+017F long s, folds to s)', async () => {
-    await allowed(claim('mallory', 'Boss', 'boſs'));
-    const u = await read('users/mallory');
-    assert.equal(u.displayName, 'Boss');
+  it('N2 DENIED (R-5): exactly "Boss" under slug "boſs" (U+017F long s, folds to s)', async () => {
+    await denied(claim('mallory', 'Boss', 'boſs'));
   });
   // The emulator's regex tables do not fold U+1C80–U+1C88 to Cyrillic, so
-  // these are refused here already; whether prod folds them is unknown.
-  it('N3 DENIED (emulator): exactly "Олег" under slug with U+1C82 (CYRILLIC SMALL LETTER NARROW O)', async () => {
+  // these were refused here already; the rules now refuse them by name,
+  // whatever prod's tables do.
+  it('N3 DENIED (R-5): exactly "Олег" under slug with U+1C82 (CYRILLIC SMALL LETTER NARROW O)', async () => {
     await claim('oleg', 'Олег', 'олег');
     await denied(claim('mallory', 'Олег', 'ᲂлег'));
   });
-  it('N3b DENIED (emulator): exactly "Стас" via U+1C83 (WIDE ES) and U+1C84 (TALL TE)', async () => {
+  it('N3b DENIED (R-5): exactly "Стас" via U+1C83 (WIDE ES) and U+1C84 (TALL TE)', async () => {
     await claim('stas', 'Стас', 'стас');
     await denied(claim('mallory', 'Стас', 'ᲃᲄас'));
   });
-  it('N3c ALLOWED?: Greek "Σοφια" via final sigma ς in the slug', async () => {
+  it('N3c DENIED (R-5): Greek "Σοφια" via final sigma ς in the slug', async () => {
     await claim('sofia', 'Σοφια', 'σοφια');
-    await allowed(claim('mallory', 'Σοφια', 'ςοφια'));
+    await denied(claim('mallory', 'Σοφια', 'ςοφια'));
   });
-  it('N4 ALLOWED: Hangul "한" precomposed vs conjoining jamo (renders the same)', async () => {
-    await claim('han', '한', '한');
-    await allowed(claim('mallory', '한', '한'));
+  it('N3d DENIED (R-5): "Νίκος" via a word-final σ (the client writes ς there); "Σας Σου" via ς mid-word', async () => {
+    await claim('nikos', 'Νίκος', 'νίκος');
+    await denied(claim('mallory', 'Νίκος', 'νίκοσ'));
+    await denied(claim('mallory', 'ΝΊΚΟΣ', 'νίκοσ'));
+    await claim('sas', 'Σας Σου', 'σας σου');
+    await denied(claim('mallory', 'Σας Σου', 'σας ςου'));
+    await denied(claim('mallory', 'Σας Σου', 'σασ σου'));
   });
-  it('N5 ALLOWED: homoglyph "Bоss" (Cyrillic о) — expected, not a rules job', async () => {
+  it('N4 DENIED (R-5): Hangul "한" precomposed vs conjoining jamo, or 하 + a final jamo (renders the same)', async () => {
+    await claim('han', '한국어', '한국어'); // 한국어
+    await denied(claim('mallory', '한국어', '한국어'));
+    await denied(claim('mallory', '한국어', '한국어'));
+  });
+  it('N4b DENIED (R-5): an invisible Hangul filler after the name ("Boss" + U+3164 / U+FFA0 / U+1160 / U+115F)', async () => {
+    for (const filler of ['ㅤ', 'ﾠ', 'ᅠ', 'ᅟ']) {
+      await denied(claim('mallory', `Boss${filler}`, `boss${filler}`));
+    }
+  });
+  it('N4c DENIED (R-5): every other fold variant a slug could carry, against a name held under the plain letter', async () => {
+    // [variant in the slug, the plain lowercase letter, its capital]
+    const folds = [
+      ['µ', 'μ', 'Μ'], ['ͅ', 'ι', 'Ι'], ['ϐ', 'β', 'Β'],
+      ['ϑ', 'θ', 'Θ'], ['ϕ', 'φ', 'Φ'], ['ϖ', 'π', 'Π'],
+      ['ϰ', 'κ', 'Κ'], ['ϱ', 'ρ', 'Ρ'], ['ϵ', 'ε', 'Ε'],
+      ['ẛ', 'ṡ', 'Ṡ'], ['ι', 'ι', 'Ι'],
+      ['ᲀ', 'в', 'В'], ['ᲁ', 'д', 'Д'], ['ᲅ', 'т', 'Т'],
+      ['ᲆ', 'ъ', 'Ъ'], ['ᲇ', 'ѣ', 'Ѣ'], ['ᲈ', 'ꙋ', 'Ꙋ'],
+    ];
+    for (const [variant, plain, cap] of folds) {
+      const shown = `${cap}${plain}${plain}`;
+      await env.clearFirestore();
+      await claim('victim', shown, `${plain}${plain}${plain}`);
+      await denied(claim('mallory', shown, `${variant}${plain}${plain}`));
+    }
+    // Roman numerals and circled letters fold upper onto lower: no slug may carry them.
+    await denied(claim('mallory', 'ⅫⅫⅫ', 'ⅻⅻⅻ'));
+    await denied(claim('mallory', 'Ⓑoss', 'ⓑoss'));
+  });
+  it('N5 ALLOWED (known limit): homoglyph "Bоss" (Cyrillic о) — expected, not a rules job', async () => {
     await allowed(claim('mallory', 'Bоss', 'bоss'));
   });
-  it('N6 ALLOWED: legacy profile showing "legacy" with no reservation — anyone takes it', async () => {
+  it('N6 ALLOWED (known limit, R-13 data): legacy profile showing "legacy" with no reservation — anyone takes it', async () => {
     await seed('users/old', { uid: 'old', displayName: 'Legacy', displayNameLower: 'legacy' });
     await allowed(claim('mallory', 'Legacy', 'legacy'));
   });
-  it('N7 ALLOWED: displayName of 1 character (app requires 3)', async () => {
-    await allowed(claim('mallory', 'B', 'b'));
+  it('N7 DENIED (R-5): displayName of 1 or 2 characters (app requires 3), or over 20', async () => {
+    await denied(claim('mallory', 'B', 'b'));
+    await denied(claim('mallory', 'Bo', 'bo'));
+    await denied(claim('mallory', 'B'.repeat(21), 'b'.repeat(21)));
   });
   // closed
   it('N8 DENIED: take "boss" outright / "BOSS" with slug "boss"', async () => {

@@ -168,6 +168,43 @@ describe('names: /users and /displayNames (QA-06)', () => {
     assert.equal((await read('displayNames/οδος')).uid, 'odos');
   });
 
+  it('allowed: Greek names with a final sigma, Korean, a name with a space (R-5 keeps them)', async () => {
+    await newPlayer('nikos', 'Νίκος');
+    assert.equal((await read('displayNames/νίκος')).uid, 'nikos');
+    await newPlayer('sas', 'ΣΑΣ ΣΟΥ');
+    assert.equal((await read('displayNames/σας σου')).uid, 'sas');
+    await newPlayer('ji', '김지수');
+    await newPlayer('ann', 'Ann Lee-Smith_2');
+  });
+
+  it('allowed: a Turkish name with İ, claimed and renamed (R-11)', async () => {
+    await newPlayer('ayse', 'İpek');
+    assert.equal((await read('users/ayse')).displayNameLower, 'i̇pek');
+    actAs('ayse');
+    await changeDisplayName('ayse', 'İpek', 'İPEK İnce');
+    assert.equal((await read('users/ayse')).displayName, 'İPEK İnce');
+    await changeDisplayName('ayse', 'İPEK İnce', 'Ayşe');
+    assert.equal(await read('displayNames/i̇pek i̇nce'), undefined);
+  });
+
+  it('allowed: a profile from before the reservations renames (R-11)', async () => {
+    await seed('users/old', { uid: 'old', displayName: 'Oldie', displayNameLower: 'oldie' });
+    actAs('old');
+    await changeDisplayName('old', 'Oldie', 'Newbie');
+    assert.equal((await read('users/old')).displayNameLower, 'newbie');
+    assert.equal((await read('displayNames/newbie')).uid, 'old');
+  });
+
+  it('denied: a reservation of a name the client never writes (İ as I, or İ kept in the slug)', async () => {
+    await newPlayer('ayse', 'İpek');
+    for (const slug of ['ipek', 'İpek']) {
+      const b = writeBatch(as('mal'));
+      b.set(doc(as('mal'), 'displayNames', slug), { uid: 'mal', createdAt: serverTimestamp() });
+      b.set(me('mal'), { uid: 'mal', displayName: 'İpek', displayNameLower: slug, createdAt: serverTimestamp(), lastActive: serverTimestamp() });
+      await denied(b.commit());
+    }
+  });
+
   it('allowed: claiming the same name again in another case', async () => {
     await newPlayer('alice', 'Alice');
     actAs('alice');

@@ -54,14 +54,16 @@ describe('v1.0.2 profile and saves', () => {
     await changeDisplayName('alice', 'Alice', 'Алиса');
     assert.equal((await read('users/alice')).displayNameLower, 'алиса');
   });
-  it('profile: a Turkish name with İ is refused (client allows it)', async () => {
+  it('profile (fixed, R-11): a Turkish name with İ is claimed', async () => {
     actAs('ayse');
-    await denied(claimDisplayName('ayse', 'İpek'));
+    await claimDisplayName('ayse', 'İpek');
+    assert.equal((await read('users/ayse')).displayName, 'İpek');
   });
-  it('profile: a legacy profile with no reservation cannot rename', async () => {
+  it('profile (fixed, R-11): a legacy profile with no reservation renames', async () => {
     await seed('users/old', { uid: 'old', displayName: 'Oldie', displayNameLower: 'oldie' });
     actAs('old');
-    await denied(changeDisplayName('old', 'Oldie', 'Newbie'));
+    await changeDisplayName('old', 'Oldie', 'Newbie');
+    assert.equal((await read('users/old')).displayNameLower, 'newbie');
   });
   it('save: loss, draw, first best (classic) — profile updated', async () => {
     actAs('alice'); await claimDisplayName('alice', 'Alice');

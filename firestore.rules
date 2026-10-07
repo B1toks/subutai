@@ -65,12 +65,49 @@ service cloud.firestore {
     // a slug with no capitals. Not lower(): it only folds ASCII, and would
     // refuse every Cyrillic name. No NFKC either, so a name NFKC changes
     // (fullwidth letters) cannot be taken.
+    // İ is the one letter whose lowercase is two characters (i + U+0307,
+    // what the client's toLowerCase() writes); (?i) does not fold them,
+    // so the slug's i + U+0307 is read back as İ (R-11).
     function nameReserved(uid) {
       let d = request.resource.data;
-      return d.displayName.matches('[\\p{L}\\p{N} _-]+')
+      return shownNameOk(d.displayName)
         && !d.displayNameLower.matches('.*[\\p{Lu}\\p{Lt}].*')
-        && d.displayNameLower.matches('(?i)' + d.displayName)
+        && slugCanonical(d.displayNameLower)
+        && d.displayNameLower.replace('i\\x{307}', 'İ').matches('(?i)' + d.displayName)
         && getAfter(nameDoc(d.displayNameLower)).data.uid == uid;
+    }
+    // R-5 — a name as the name picker takes it: 3-20 characters, no space
+    // at either end, no two in a row (HTML shows "Boss " and "Bo  ss" as
+    // "Boss" and "Bo ss").
+    function shownNameOk(n) {
+      return n is string && n.size() >= 3 && n.size() <= 20
+        && n.matches('[\\p{L}\\p{N}_-]([\\p{L}\\p{N} _-]*[\\p{L}\\p{N}_-])?')
+        && !n.matches('.*  .*');
+    }
+    // R-5 — one slug per shown name. (?i) folds more than the client's
+    // toLowerCase() + NFKC, so a name can match a second slug that the
+    // client never writes; that slug is free, and its holder shows the
+    // name byte for byte. Refused in a slug:
+    //   - lowercase letters (?i) folds onto another lowercase letter, which
+    //     NFKC turns into it (µ ſ ϐ ϑ ϕ ϖ ϰ ϱ ϵ ẛ ι), and U+0345;
+    //   - U+1C80-U+1C88 (variant Cyrillic в д о с т т ъ ѣ ꙋ), which nobody
+    //     types;
+    //   - Roman numerals and circled letters (upper and lower fold onto
+    //     each other; NFKC turns them into Latin letters, so no name the
+    //     client writes has them);
+    //   - Hangul conjoining jamo and fillers: a jamo sequence shows as the
+    //     syllable it composes to, and the fillers show as nothing. Names
+    //     typed with compatibility jamo were refused already (NFKC);
+    //   - ς and σ where the client would not put them: toLowerCase() writes
+    //     ς only at the end of a word (after a lowercase letter, not before
+    //     one), σ everywhere else. A ban on ς would refuse Νίκος and ΟΔΟΣ.
+    function slugCanonical(s) {
+      return !s.matches('.*[\\x{B5}\\x{17F}\\x{345}\\x{3D0}\\x{3D1}\\x{3D5}\\x{3D6}\\x{3F0}\\x{3F1}\\x{3F5}\\x{1100}-\\x{11FF}\\x{1C80}-\\x{1C88}\\x{1E9B}\\x{1FBE}\\x{2160}-\\x{217F}\\x{24B6}-\\x{24E9}\\x{3164}\\x{FFA0}].*')
+        // ς with no lowercase letter before it, or one after it
+        && !s.matches('(|.*[^\\p{Ll}\\p{Lm}])\\p{Lm}*\\x{3C2}.*')
+        && !s.matches('.*\\x{3C2}\\p{Lm}*\\p{Ll}.*')
+        // σ after a lowercase letter and not before one
+        && !s.matches('.*\\p{Ll}\\p{Lm}*\\x{3C3}\\p{Lm}*([^\\p{Ll}\\p{Lm}].*)?');
     }
     // One reservation per uid: moving to a new name releases the old one in
     // the same write.
@@ -160,11 +197,12 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if true;
       // A new profile is a name and nothing else: every stat starts through
-      // the update rule below.
+      // the update rule below. A slug runs up to 40: each İ in a 20-letter
+      // name lowercases to two characters.
       allow create: if isOwner(uid)
                     && request.resource.data.uid == uid
                     && validName(request.resource.data.displayName)
-                    && str(request.resource.data.displayNameLower, 20)
+                    && str(request.resource.data.displayNameLower, 40)
                     && request.resource.data.keys().hasOnly([
                          'uid', 'displayName', 'displayNameLower', 'createdAt', 'lastActive'
                        ])
@@ -172,7 +210,7 @@ service cloud.firestore {
       allow update: if isOwner(uid)
                     && request.resource.data.uid == uid
                     && validName(request.resource.data.displayName)
-                    && str(request.resource.data.displayNameLower, 20)
+                    && str(request.resource.data.displayNameLower, 40)
                     && request.resource.data.keys().hasOnly([
                          'uid', 'displayName', 'displayNameLower', 'createdAt', 'lastActive',
                          'lastGameAt', 'lastGameId', 'gamesPlayed', 'gamesWon', 'gamesDrawn',
@@ -192,7 +230,7 @@ service cloud.firestore {
       allow create: if signedIn()
                     && request.resource.data.uid == request.auth.uid
                     && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
-                    && name.size() >= 1 && name.size() <= 20
+                    && name.size() >= 1 && name.size() <= 40
                     && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.displayNameLower == name;
       allow update: if signedIn()
                     && resource.data.uid == request.auth.uid
@@ -200,10 +238,14 @@ service cloud.firestore {
                     && request.resource.data.keys().hasOnly(['uid', 'createdAt']);
       // Not the name the profile still shows: freed, it could be taken by
       // someone else while this profile keeps showing it.
+      // R-11 — deleting a reservation that is not there is a no-op, and it
+      // is what a rename sends for a profile from before the reservations
+      // (changeDisplayName deletes the old slug unread).
       allow delete: if signedIn()
-                    && resource.data.uid == request.auth.uid
-                    && (!existsAfter(/databases/$(database)/documents/users/$(request.auth.uid))
-                        || getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.displayNameLower != name);
+                    && (resource == null
+                        || (resource.data.uid == request.auth.uid
+                            && (!existsAfter(/databases/$(database)/documents/users/$(request.auth.uid))
+                                || getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.displayNameLower != name)));
     }
 
     match /games/{gameId} {

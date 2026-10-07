@@ -92,5 +92,8 @@ export function normalizeDisplayName(name: string): string {
 export function isValidDisplayName(name: string): boolean {
   const trimmed = name.trim();
   if (trimmed.length < 3 || trimmed.length > 20) return false;
+  // R-5 — firestore.rules refuses two spaces in a row (shown as one, so
+  // "Bo  ss" would pass for "Bo ss").
+  if (trimmed.includes('  ')) return false;
   return /^[\p{L}\p{N} _-]+$/u.test(trimmed);
 }
