@@ -1,6 +1,17 @@
 import type { MatchDoc } from './matches';
 
 /**
+ * R-7 — when the turn on the clock started, by server time (ms): the join
+ * or the last move. firestore.rules lets the opponent end the match 90 s
+ * after it, so the watchdog, the idle warning and the flag claim count
+ * from it too; lastActivity moves with every write. It stands in on a
+ * match from before turnStartedAt. Undefined while a write is pending.
+ */
+export function turnStartedMs(match: MatchDoc): number | undefined {
+  return (match.turnStartedAt ?? match.lastActivity)?.toMillis?.();
+}
+
+/**
  * QA-04 — does the inactivity forfeit apply to this match right now?
  *
  * A match with a clock already ends itself when a player runs out of time

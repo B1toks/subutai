@@ -74,7 +74,7 @@ import {
 } from 'lucide-react';
 import type { GameReviewMeta } from './components/GameReview';
 import { OPPONENT_OFFLINE_FORFEIT_MS, useMultiplayerSync } from './components/MultiplayerGameView';
-import { mpResignCause } from './firebase/matchEnd';
+import { mpResignCause, turnStartedMs } from './firebase/matchEnd';
 import { rejoinMatch, type MatchDoc, type MatchOutcome } from './firebase/matches';
 import {
   saveMultiplayerGameToGames,
@@ -3038,12 +3038,13 @@ function App() {
     // itself. Same transaction-guarded write local mate detection uses,
     // so a simultaneous self-forfeit can't double-settle the match.
     // QA-05 — the rules cannot see the clock, so they take this claim
-    // only once the opponent has been idle 90 s by server time; until
+    // only once the opponent's turn has run 90 s by server time (R-7:
+    // from turnStartedAt, which only a move restarts); until
     // then only their own client can end it. Wait for that, and retry
     // when the server still says no (clock skew).
     const theirs = mpSync.myColor === 'white' ? mpClocks.black : mpClocks.white;
     if (theirs <= 0) {
-      const last = mpSync.matchState.lastActivity?.toMillis?.();
+      const last = turnStartedMs(mpSync.matchState);
       if (typeof last === 'number' && Date.now() - last < OPPONENT_OFFLINE_FORFEIT_MS) return;
       if (Date.now() < flagRetryAtRef.current) return;
       flagFiredRef.current = true;

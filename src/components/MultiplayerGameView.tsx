@@ -20,7 +20,7 @@ import {
 import { applyMove, isInCheck } from '../engine/moves';
 import { applyRotationMove } from '../engine/auxetic';
 import { computeSAN } from '../recording/log';
-import { inactivityForfeitApplies } from '../firebase/matchEnd';
+import { inactivityForfeitApplies, turnStartedMs } from '../firebase/matchEnd';
 
 const ROULETTE_PIECE_BAG: PieceType[] = [
   'pawn',
@@ -73,8 +73,9 @@ function consumeSlotIndex(
 }
 
 const OPPONENT_OFFLINE_WARN_MS = 60_000;
-/** firestore.rules holds the same 90 s: before it, by server time, only
- *  the idle player can end the match with their own 'X-resign'. */
+/** firestore.rules holds the same 90 s, from the start of the turn
+ *  (turnStartedMs): before it, by server time, only the idle player can
+ *  end the match with their own 'X-resign'. */
 export const OPPONENT_OFFLINE_FORFEIT_MS = 90_000;
 
 /** The waiting peer ends the match for an opponent idle past the limit.
@@ -87,7 +88,7 @@ export async function writeInactivityForfeit(code: string, myUid: string): Promi
     const data = snap.data() as MatchDoc;
     if (data.outcome) return;
     if (!inactivityForfeitApplies(data)) return; // a move started the clock
-    const txLast = data.lastActivity?.toMillis?.();
+    const txLast = turnStartedMs(data);
     if (
       typeof txLast === 'number' &&
       Date.now() - txLast < OPPONENT_OFFLINE_FORFEIT_MS
@@ -227,7 +228,7 @@ export function useMultiplayerSync(
       return;
     }
     const interval = setInterval(() => {
-      const last = matchState.lastActivity?.toMillis?.();
+      const last = turnStartedMs(matchState);
       if (typeof last !== 'number') return;
       const elapsed = Date.now() - last;
       setSelfAfkWarning(elapsed >= OPPONENT_OFFLINE_WARN_MS);
@@ -245,7 +246,7 @@ export function useMultiplayerSync(
     if (matchState.currentTurn === myUid) return;
     if (!inactivityForfeitApplies(matchState)) return;
     const interval = setInterval(() => {
-      const last = matchState.lastActivity?.toMillis?.();
+      const last = turnStartedMs(matchState);
       if (typeof last !== 'number') return;
       const elapsed = Date.now() - last;
       if (elapsed < OPPONENT_OFFLINE_FORFEIT_MS) return;
@@ -361,6 +362,7 @@ export function useMultiplayerSync(
             { ...savedMove, timestamp: nextMoveTimestamp(data.log.moves) },
           ],
           lastActivity: serverTimestamp(),
+          turnStartedAt: serverTimestamp(),
         };
         if (data.gameMode === 'roulette') {
           const newActions = (data.rouletteActionsLeft ?? 0) - 1;
@@ -440,6 +442,7 @@ export function useMultiplayerSync(
             { ...savedMove, timestamp: nextMoveTimestamp(data.log.moves) },
           ],
           lastActivity: serverTimestamp(),
+          turnStartedAt: serverTimestamp(),
         };
         // Rotate uses an action but doesn't consume a slot.
         if (newActions <= 0) {

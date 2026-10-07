@@ -278,7 +278,7 @@ async function activeMatch({ mode = 'classic', moves = 0, turn = 'host' } = {}) 
     chess960Id: 'RNBQKBNR', seed: 1, status: 'active', gameMode: mode,
     currentTurn: turn, outcome: null,
     log: { initialTopology: 'A', moves: Array.from({ length: moves }, (_, i) => ({ san: `m${i}` })) },
-    createdAt: ago(5 * 60_000), lastActivity: ago(5_000),
+    createdAt: ago(5 * 60_000), lastActivity: ago(5_000), turnStartedAt: ago(5_000),
   });
 }
 const m = (uid) => doc(as(uid), 'matches/ABC123');
@@ -299,7 +299,7 @@ describe('M: matches', () => {
     }));
     // The same append over the untouched history goes through.
     await allowed(updateDoc(m('host'), {
-      'log.moves': [{ san: 'm0' }, { san: 'm1' }, { san: 'Z', timestamp: Date.now() }], currentTurn: 'guest', lastActivity: serverTimestamp(),
+      'log.moves': [{ san: 'm0' }, { san: 'm1' }, { san: 'Z', timestamp: Date.now() }], currentTurn: 'guest', lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
     }));
   });
   it('M2 ALLOWED: claim "white-win" (no mate) after one move, on the opponent\'s turn', async () => {
@@ -310,24 +310,28 @@ describe('M: matches', () => {
     await activeMatch({ moves: 1, turn: 'guest' });
     await allowed(updateDoc(m('guest'), { outcome: 'draw', status: 'completed', lastActivity: serverTimestamp() }));
   });
-  it('M4 ALLOWED: the player on turn stalls forever — a no-op write resets the 90 s, the forfeit claim fails', async () => {
+  it('M4 DENIED (R-7): stalling — a no-op write by the player on turn no longer holds off the forfeit claim', async () => {
     await activeMatch({ moves: 2, turn: 'host' });
-    await seed('matches/ABC123', { ...(await read('matches/ABC123')), lastActivity: ago(120_000) });
+    await seed('matches/ABC123', { ...(await read('matches/ABC123')), lastActivity: ago(120_000), turnStartedAt: ago(120_000) });
     // host on turn, idle 120 s, touches the doc without moving:
     await allowed(updateDoc(m('host'), { lastActivity: serverTimestamp() }));
-    await denied(updateDoc(m('guest'), { outcome: 'host-resign', endReason: 'inactive', status: 'completed', lastActivity: serverTimestamp() }));
-    await denied(updateDoc(m('guest'), { outcome: 'host-resign', endReason: 'flag', status: 'completed', lastActivity: serverTimestamp() }));
-  });
-  it('M4b ALLOWED: the player NOT on turn can also reset the idle timer of the opponent? (no-op by guest)', async () => {
+    await allowed(updateDoc(m('guest'), { outcome: 'host-resign', endReason: 'inactive', status: 'completed', lastActivity: serverTimestamp() }));
+    // ...nor by moving turnStartedAt itself
     await activeMatch({ moves: 2, turn: 'host' });
+    await denied(updateDoc(m('host'), { turnStartedAt: serverTimestamp(), lastActivity: serverTimestamp() }));
+  });
+  it('M4b allowed, harmless since R-7: a no-op write by either player moves lastActivity only', async () => {
+    await activeMatch({ moves: 2, turn: 'host' });
+    const before = (await read('matches/ABC123')).turnStartedAt;
     await allowed(updateDoc(m('guest'), { lastActivity: serverTimestamp() }));
+    assert.deepEqual((await read('matches/ABC123')).turnStartedAt, before);
   });
   it('M5 ALLOWED: roulette — one player appends 6 moves in a row, keeping the turn', async () => {
     await activeMatch({ mode: 'roulette', moves: 0, turn: 'host' });
     let moves = [];
     for (let i = 1; i <= 6; i++) {
       moves = [...moves, { san: `h${i}`, timestamp: Date.now() }];
-      await updateDoc(m('host'), { 'log.moves': moves, lastActivity: serverTimestamp() });
+      await updateDoc(m('host'), { 'log.moves': moves, lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp() });
     }
     assert.equal((await read('matches/ABC123')).log.moves.length, 6);
   });
@@ -346,7 +350,7 @@ describe('M: matches', () => {
     });
     await allowed(updateDoc(m('guest'), {
       guest: { uid: 'guest', displayName: 'Guest', color: 'white' }, status: 'active', currentTurn: 'host',
-      lastActivity: serverTimestamp(),
+      lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
     }));
   });
   it('M8 ALLOWED: host joins own match as guest (same uid in both seats)', async () => {
@@ -357,20 +361,20 @@ describe('M: matches', () => {
     });
     await allowed(updateDoc(m('host'), {
       guest: { uid: 'host', displayName: 'Host2', color: 'black' }, status: 'active', currentTurn: 'host',
-      lastActivity: serverTimestamp(),
+      lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
     }));
   });
   it('M9 ALLOWED: in a timed match, the opponent ends it after 90 s of thinking (clock not seen)', async () => {
     await activeMatch({ moves: 2, turn: 'host' });
-    await seed('matches/ABC123', { ...(await read('matches/ABC123')), lastActivity: ago(91_000), timeControl: { initialMs: 600000 } });
+    await seed('matches/ABC123', { ...(await read('matches/ABC123')), lastActivity: ago(91_000), turnStartedAt: ago(91_000), timeControlSec: 600 });
     await allowed(updateDoc(m('guest'), { outcome: 'host-resign', endReason: 'flag', status: 'completed', lastActivity: serverTimestamp() }));
   });
   // closed
   it('M10 DENIED: classic — a move that keeps the turn; a move off turn; two moves at once', async () => {
     await activeMatch({ moves: 0, turn: 'host' });
-    await denied(updateDoc(m('host'), { 'log.moves': [{ san: 'a' }], lastActivity: serverTimestamp() }));
-    await denied(updateDoc(m('guest'), { 'log.moves': [{ san: 'a' }], currentTurn: 'host', lastActivity: serverTimestamp() }));
-    await denied(updateDoc(m('host'), { 'log.moves': [{ san: 'a' }, { san: 'b' }], currentTurn: 'guest', lastActivity: serverTimestamp() }));
+    await denied(updateDoc(m('host'), { 'log.moves': [{ san: 'a', timestamp: Date.now() }], lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp() }));
+    await denied(updateDoc(m('guest'), { 'log.moves': [{ san: 'a', timestamp: Date.now() }], currentTurn: 'host', lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp() }));
+    await denied(updateDoc(m('host'), { 'log.moves': [{ san: 'a', timestamp: Date.now() }, { san: 'b', timestamp: Date.now() }], currentTurn: 'guest', lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp() }));
   });
   it('M11 DENIED: opponent resignation before 90 s; the player on turn calling the other idle', async () => {
     await activeMatch({ moves: 2, turn: 'host' });
@@ -381,7 +385,7 @@ describe('M: matches', () => {
   it('M12 DENIED: back-dated lastActivity; outcome changed after the end; third party writes', async () => {
     await activeMatch({ moves: 2, turn: 'host' });
     await denied(updateDoc(m('guest'), { lastActivity: ago(200_000) }));
-    await denied(updateDoc(m('mallory'), { 'log.moves': [{ san: 'a' }, { san: 'b' }], lastActivity: serverTimestamp() }));
+    await denied(updateDoc(m('mallory'), { 'log.moves': [{ san: 'm0' }, { san: 'm1' }, { san: 'b', timestamp: Date.now() }], lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp() }));
     await updateDoc(m('host'), { outcome: 'host-resign', status: 'completed', lastActivity: serverTimestamp() });
     await denied(updateDoc(m('host'), { outcome: 'white-win', lastActivity: serverTimestamp() }));
   });

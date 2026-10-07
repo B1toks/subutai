@@ -378,6 +378,24 @@ service cloud.firestore {
           : after.currentTurn == before.currentTurn;
     }
 
+    // R-7 — when the player on turn started it, by server time: set by the
+    // join and by every appended move, left alone by every other write. The
+    // 90 s of inactivity run from it, not from lastActivity, which every
+    // write moves: a write that changes nothing else no longer holds them
+    // off. A match from before the field falls back to lastActivity until
+    // its next move.
+    function turnStartOk() {
+      let before = resource.data;
+      let after = request.resource.data;
+      return ((before.guest == null && after.guest != null)
+              || after.log.moves.size() > before.log.moves.size())
+        ? after.get('turnStartedAt', null) == request.time
+        : after.get('turnStartedAt', null) == before.get('turnStartedAt', null);
+    }
+    function turnStart(m) {
+      return m.get('turnStartedAt', m.lastActivity);
+    }
+
     // QA-05 — who may end the match. 'X-resign' is written by X, or by X's
     // opponent once X, on turn, has been idle for 90 s by server time (the
     // inactivity forfeit, and the claim of a flag fall whose own client is
@@ -392,7 +410,7 @@ service cloud.firestore {
             && (request.auth.uid == loserOf(before, o)
                 || (seated(before, request.auth.uid)
                     && before.currentTurn == loserOf(before, o)
-                    && request.time > before.lastActivity + duration.value(90, 's'))))
+                    && request.time > turnStart(before) + duration.value(90, 's'))))
         || (o in ['white-win', 'black-win', 'draw']
             && seated(before, request.auth.uid)
             && request.resource.data.log.moves.size() > 0);
@@ -457,6 +475,7 @@ service cloud.firestore {
                     && request.resource.data.guest == null
                     && request.resource.data.outcome == null
                     && !('endReason' in request.resource.data)
+                    && !('turnStartedAt' in request.resource.data)
                     && request.resource.data.log.moves.size() == 0
                     && (!('gameMode' in request.resource.data) || isMode(request.resource.data.gameMode))
                     && timeControlOk(request.resource.data);
@@ -473,8 +492,9 @@ service cloud.firestore {
       //     already there never change (R-2);
       //   - currentTurn always names a seated player, and moves only with
       //     the join or a move (matchTurnOk);
-      //   - lastActivity is server time, so the 90 s in matchOutcomeOk
-      //     cannot be shortened by back-dating it;
+      //   - lastActivity and turnStartedAt are server time, so the 90 s in
+      //     matchOutcomeOk cannot be shortened by back-dating, and only the
+      //     join or a move restarts them (turnStartOk, R-7);
       //   - the time control is frozen and a move's timestamp follows the
       //     previous one, near server time (matchClockOk, R-1);
       //   - who may write which outcome and endReason (matchOutcomeOk,
@@ -520,6 +540,7 @@ service cloud.firestore {
                 && request.resource.data.currentTurn == request.resource.data.guest.uid))
         && matchTurnOk()
         && matchClockOk()
+        && turnStartOk()
         && matchOutcomeOk()
         && matchEndReasonOk()
         && (

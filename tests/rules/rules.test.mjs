@@ -533,7 +533,9 @@ async function playMove(code) {
   return currentTurn;
 }
 
-const idle = (code, ms = 100_000) => patch(`matches/${code}`, { lastActivity: ago(ms) });
+/** The player on turn has been idle `ms`: their turn started that long ago. */
+const idle = (code, ms = 100_000) =>
+  patch(`matches/${code}`, { lastActivity: ago(ms), turnStartedAt: ago(ms) });
 const loserOutcome = (uid) => (uid === HOST.uid ? 'host-resign' : 'guest-resign');
 
 describe('online: /matches (QA-04, QA-05)', () => {
@@ -550,6 +552,67 @@ describe('online: /matches (QA-04, QA-05)', () => {
     m = await match(code);
     assert.equal(m.log.moves.length, 2);
     assert.equal(m.currentTurn, white);
+  });
+
+  it('allowed: the join and every move stamp turnStartedAt with server time (R-7)', async () => {
+    const { code } = await startMatch();
+    let m = await match(code);
+    assert.ok(m.turnStartedAt instanceof Timestamp);
+    const joined = m.turnStartedAt.toMillis();
+    await new Promise((r) => setTimeout(r, 20));
+    await playMove(code);
+    m = await match(code);
+    assert.ok(m.turnStartedAt.toMillis() > joined);
+  });
+
+  it('allowed (R-7): the player on turn touches the match without moving; the forfeit and the flag claim still land', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code); // Black on turn
+    await idle(code);
+    await updateDoc(doc(as(black), 'matches', code), { lastActivity: serverTimestamp() });
+    actAs(white);
+    await writeInactivityForfeit(code, white);
+    assert.equal((await match(code)).outcome, loserOutcome(black));
+
+    const timed = await startMatch('classic', 60);
+    await playMove(timed.code);
+    await idle(timed.code);
+    await updateDoc(doc(as(timed.black), 'matches', timed.code), { lastActivity: serverTimestamp() });
+    const ok = await (await hookAs(timed.white, timed.code)).writeOutcomeIfFirst(loserOutcome(timed.black), 'flag');
+    assert.equal(ok, true);
+  });
+
+  it('allowed (R-7): a match from before turnStartedAt counts from lastActivity until its next move sets it', async () => {
+    const { code, white, black } = await startMatch();
+    await patch(`matches/${code}`, { turnStartedAt: deleteField() });
+    await playMove(code);
+    assert.ok((await match(code)).turnStartedAt instanceof Timestamp);
+    await patch(`matches/${code}`, { turnStartedAt: deleteField(), lastActivity: ago(100_000) });
+    actAs(white);
+    await writeInactivityForfeit(code, white);
+    assert.equal((await match(code)).outcome, loserOutcome(black));
+  });
+
+  it('denied (R-7): turnStartedAt moved without a move, back-dated with one, removed, or set at create', async () => {
+    const { code, white, black } = await startMatch();
+    const fs = (uid) => doc(as(uid), 'matches', code);
+    await denied(updateDoc(fs(white), { turnStartedAt: serverTimestamp(), lastActivity: serverTimestamp() }));
+    await denied(updateDoc(fs(black), { turnStartedAt: deleteField(), lastActivity: serverTimestamp() }));
+    const m = await match(code);
+    const entry = { move: { kind: 'topologyToggle' }, san: 'R', topology: 'A', timestamp: Date.now() };
+    await denied(updateDoc(fs(white), {
+      'log.moves': [...m.log.moves, entry], currentTurn: black, turnStartedAt: ago(10 * MIN), lastActivity: serverTimestamp(),
+    }));
+    await denied(updateDoc(fs(white), {
+      'log.moves': [...m.log.moves, entry], currentTurn: black, lastActivity: serverTimestamp(),
+    }));
+    await denied(
+      setDoc(doc(as(HOST.uid), 'matches', 'ZZZZZZ'), {
+        code: 'ZZZZZZ', chess960Id: 'RNBQKBNR', seed: 1, host: { ...HOST, color: 'white' }, guest: null,
+        status: 'waiting', currentTurn: '', log: { initialTopology: 'A', moves: [] }, outcome: null,
+        createdAt: serverTimestamp(), lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
+      }),
+    );
   });
 
   it('allowed: a rotation in classic passes the turn', async () => {
@@ -662,8 +725,9 @@ describe('online: /matches (QA-04, QA-05)', () => {
     const m = await match(code);
     await denied(
       updateDoc(doc(as(white), 'matches', code), {
-        'log.moves': [...m.log.moves, { move: { kind: 'topologyToggle' }, san: 'R', topology: 'A', timestamp: 1 }],
+        'log.moves': [...m.log.moves, { move: { kind: 'topologyToggle' }, san: 'R', topology: 'A', timestamp: Date.now() }],
         lastActivity: serverTimestamp(),
+        turnStartedAt: serverTimestamp(),
       }),
     );
   });
@@ -680,6 +744,7 @@ describe('online: /matches (QA-04, QA-05)', () => {
         'log.moves': [forged, m.log.moves[1], next],
         currentTurn: black,
         lastActivity: serverTimestamp(),
+        turnStartedAt: serverTimestamp(),
       }),
     );
     await denied(

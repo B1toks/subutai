@@ -87,7 +87,7 @@ describe('C: clock forgery in a timed match (5 min)', () => {
     // Black (attacker): take White's honest entry, append a reply whose timestamp is 10 min in the past
     const forged = { ...m.log.moves[0], timestamp: Date.now() - 10 * 60_000 };
     await denied(updateDoc(doc(firestoreFor(black), `matches/${code}`), {
-      'log.moves': [...m.log.moves, forged], currentTurn: white, lastActivity: serverTimestamp(),
+      'log.moves': [...m.log.moves, forged], currentTurn: white, lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
     }));
     m = await read(`matches/${code}`);
     assert.equal(m.log.moves.length, 1);
@@ -111,7 +111,7 @@ describe('C: clock forgery in a timed match (5 min)', () => {
     await denied(createMatch({ uid: 'hana', displayName: 'Hana' }, 'classic', 180, 600));
   });
 
-  it('C2 the flagged attacker stalls: pings lastActivity every <90 s, the honest flag claim never lands', async () => {
+  it('C2 DENIED (R-7): the flagged attacker stalls by pinging lastActivity — the honest flag claim lands anyway', async () => {
     const H = { uid: 'hana', displayName: 'Hana' }, G = { uid: 'gus', displayName: 'Gus' };
     actAs(H.uid);
     const code = await createMatch(H, 'classic', 60, null);
@@ -122,14 +122,15 @@ describe('C: clock forgery in a timed match (5 min)', () => {
     const hw = await hookAs(white, code);
     await hw.sendMove(generateLegalMoves(hw.boardState).find((mv) => mv.kind !== 'topologyToggle'));
     // Black (attacker) is on turn; pretend 5 min have passed (its 60 s flag is long down)
-    await updateDoc(doc(firestoreFor('owner'), `matches/${code}`), { lastActivity: Timestamp.fromMillis(Date.now() - 300_000) });
+    const fiveMinAgo = Timestamp.fromMillis(Date.now() - 300_000);
+    await updateDoc(doc(firestoreFor('owner'), `matches/${code}`), { lastActivity: fiveMinAgo, turnStartedAt: fiveMinAgo });
     // attacker pings
     await updateDoc(doc(firestoreFor(black), `matches/${code}`), { lastActivity: serverTimestamp() });
     // honest White claims the flag through the app
     const hw2 = await hookAs(white, code);
     const loser = black === H.uid ? 'host-resign' : 'guest-resign';
-    assert.equal(await hw2.writeOutcomeIfFirst(loser, 'flag'), false);
-    assert.equal((await read(`matches/${code}`)).outcome, null);
+    assert.equal(await hw2.writeOutcomeIfFirst(loser, 'flag'), true);
+    assert.equal((await read(`matches/${code}`)).outcome, loser);
   });
 });
 
@@ -176,7 +177,7 @@ describe('C: honest players whose device clocks are wrong (R-1 window, 60 s)', (
     const m = await read(`matches/${code}`);
     const prev = m.log.moves[0].timestamp;
     const append = (timestamp) => updateDoc(doc(firestoreFor(black), `matches/${code}`), {
-      'log.moves': [...m.log.moves, { ...m.log.moves[0], timestamp }], currentTurn: white, lastActivity: serverTimestamp(),
+      'log.moves': [...m.log.moves, { ...m.log.moves[0], timestamp }], currentTurn: white, lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
     });
     await denied(append(prev - 1));
     await denied(append(Date.now() + 61_000));
@@ -193,7 +194,7 @@ describe('C: honest players whose device clocks are wrong (R-1 window, 60 s)', (
     const moves = [{ ...m.log.moves[0], timestamp: Date.now() - 50_000 }];
     await updateDoc(doc(firestoreFor('owner'), `matches/${code}`), { 'log.moves': moves });
     await updateDoc(doc(firestoreFor(black), `matches/${code}`), {
-      'log.moves': [...moves, { ...moves[0], timestamp: moves[0].timestamp }], currentTurn: white, lastActivity: serverTimestamp(),
+      'log.moves': [...moves, { ...moves[0], timestamp: moves[0].timestamp }], currentTurn: white, lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
     });
     const clocks = mpClocks(await read(`matches/${code}`));
     assert.ok(clocks.black > 299_000, `Black was charged nothing: ${JSON.stringify(clocks)}`);

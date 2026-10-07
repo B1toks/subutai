@@ -20,6 +20,9 @@ const { createMatch, joinMatch } = await from('firebase/matches.ts');
 const { saveMultiplayerGameToGames } = await from('firebase/multiplayerGames.ts');
 const { useMultiplayerSync } = await from('components/MultiplayerGameView.tsx');
 const { generateLegalMoves } = await from('engine/moves.ts');
+// The current client, for the opponent's side of a match (R-7: v1.0.2 cannot join one).
+const { joinMatch: joinMatchNow } = await import('../../src/firebase/matches.ts');
+const { useMultiplayerSync: useSyncNow } = await import('../../src/components/MultiplayerGameView.tsx');
 
 let env;
 before(async () => {
@@ -92,41 +95,49 @@ describe('v1.0.2 profile and saves', () => {
   });
 });
 
-async function hookAs(uid, code) {
+async function hookAs(uid, code, hook = useMultiplayerSync) {
   actAs(uid);
   const live = await read(`matches/${code}`);
   let h = null;
-  function Probe() { h = useMultiplayerSync(live, uid, () => {}); return null; }
+  function Probe() { h = hook(live, uid, () => {}); return null; }
   renderToString(React.createElement(Probe));
   return h;
 }
+/** A match v1.0.2 creates and the CURRENT client joins: a v1.0.2 join is
+ *  refused since R-7 (tested below), so the opponent sits on the new app. */
 async function start(mode = 'classic', tc = null) {
   const H = { uid: 'hana', displayName: 'Hana' }, G = { uid: 'gus', displayName: 'Gus' };
   actAs(H.uid); const code = await createMatch(H, mode, tc, null);
-  actAs(G.uid); const m = await joinMatch(code, G);
+  actAs(G.uid); const m = await joinMatchNow(code, G);
   const white = m.host.color === 'white' ? H.uid : G.uid;
   return { code, white, black: white === H.uid ? G.uid : H.uid };
 }
+/** One legal move by whoever is on turn, through the CURRENT client's hook. */
 async function play(code) {
   const { currentTurn } = await read(`matches/${code}`);
-  const h = await hookAs(currentTurn, code);
+  const h = await hookAs(currentTurn, code, useSyncNow);
   await h.sendMove(generateLegalMoves(h.boardState).find((x) => x.kind !== 'topologyToggle'));
 }
 const loserOf = (uid) => (uid === 'hana' ? 'host-resign' : 'guest-resign');
 
 describe('v1.0.2 online', () => {
-  it('create, join, moves', async () => {
-    const { code } = await start();
-    await play(code); await play(code); await play(code);
-    assert.equal((await read(`matches/${code}`)).log.moves.length, 3);
+  it('BREAKS (R-7): joinMatch is refused — it does not stamp turnStartedAt', async () => {
+    actAs('hana'); const code = await createMatch({ uid: 'hana', displayName: 'Hana' }, 'classic', null, null);
+    actAs('gus'); await denied(joinMatch(code, { uid: 'gus', displayName: 'Gus' }));
+    assert.equal((await read(`matches/${code}`)).status, 'waiting');
   });
-  it('roulette: spin and actions', async () => {
+  it('BREAKS (R-7): its moves are refused — they do not stamp turnStartedAt (the hook shows "Move failed")', async () => {
+    const { code, white } = await start();
+    const h = await hookAs(white, code);
+    await h.sendMove(generateLegalMoves(h.boardState).find((x) => x.kind !== 'topologyToggle'));
+    assert.equal((await read(`matches/${code}`)).log.moves.length, 0);
+  });
+  it('roulette: the spin works; BREAKS (R-7): its actions (appends) are refused', async () => {
     const { code, white } = await start('roulette');
     await (await hookAs(white, code)).spinRoulette();
+    assert.equal((await read(`matches/${code}`)).rouletteActionsLeft, 2);
     await (await hookAs(white, code)).sendRotate();
-    await (await hookAs(white, code)).sendRotate();
-    const m = await read(`matches/${code}`);
-    assert.equal(m.log.moves.length, 2);
+    assert.equal((await read(`matches/${code}`)).log.moves.length, 0);
   });
   it('resign, and both save the match to /games', async () => {
     const { code, white } = await start();
@@ -147,22 +158,6 @@ describe('v1.0.2 online', () => {
     await (await hookAs(white, code)).writeOutcomeIfFirst('white-win');
     assert.equal((await read(`matches/${code}`)).outcome, 'white-win');
   });
-  it('BREAKS (R-1): devices 40 s ahead / 40 s behind — the reply is stamped before the previous move and refused (v1.0.2 does not stamp max(now, previous))', async () => {
-    const { code, white, black } = await start('classic', 300);
-    const real = Date.now;
-    const move = async (uid, skew) => {
-      Date.now = () => real.call(Date) + skew;
-      try {
-        const h = await hookAs(uid, code);
-        await h.sendMove(generateLegalMoves(h.boardState).find((x) => x.kind !== 'topologyToggle'));
-      } finally { Date.now = real; }
-    };
-    await move(white, +40_000);
-    await move(black, -40_000); // the hook catches the refusal ("Move failed")
-    assert.equal((await read(`matches/${code}`)).log.moves.length, 1);
-    await move(black, +41_000); // a retry lands once its clock is past White's stamp
-    assert.equal((await read(`matches/${code}`)).log.moves.length, 2);
-  });
   it('BREAKS: opponent flag claim < 90 s after the last move — refused, v1.0.2 does not retry (flagFiredRef), timed match after move 1 has no watchdog -> stays active', async () => {
     const { code, white, black } = await start('classic', 60);
     await play(code); // black on the clock, black's client gone
@@ -172,7 +167,9 @@ describe('v1.0.2 online', () => {
   it('inactivity forfeit transaction (copy of v1.0.2 watchdog write) after 90 s, untimed', async () => {
     const { code, white, black } = await start();
     await play(code);
-    await updateDoc(doc(owner(), `matches/${code}`), { lastActivity: Timestamp.fromMillis(Date.now() - 100_000) });
+    // v1.0.2 waits 90 s from lastActivity, never earlier than the rules' turnStartedAt.
+    const ago100 = Timestamp.fromMillis(Date.now() - 100_000);
+    await updateDoc(doc(owner(), `matches/${code}`), { lastActivity: ago100, turnStartedAt: ago100 });
     actAs(white);
     const db = firestoreFor(white);
     await runTransaction(db, async (tx) => {
@@ -182,7 +179,7 @@ describe('v1.0.2 online', () => {
     });
     assert.equal((await read(`matches/${code}`)).outcome, loserOf(black));
   });
-  it('Quick match (v1.0.2 findQuickMatch, two workers)', async () => {
+  it('BREAKS (R-7): Quick match — the claimer hosts, the waiter\'s joinMatch is refused and it reports a timeout', async () => {
     const run = (uid, displayName) => new Promise((res, rej) => {
       const w = new Worker(new URL('./actor.mjs', import.meta.url), { workerData: { uid, displayName, src: OLD.href }, execArgv: ['--import', new URL('./register.mjs', import.meta.url).href] });
       w.once('message', res); w.once('error', rej);
@@ -192,7 +189,8 @@ describe('v1.0.2 online', () => {
     const b = run('qb2', 'Qtwo');
     const [ra, rb] = await Promise.all([a, b]);
     console.log('quick match:', ra, rb);
-    assert.ok(ra.code && ra.code === rb.code);
+    assert.equal(rb.kind, 'hosting');
+    assert.equal(ra.kind, 'timeout');
   });
 });
 
