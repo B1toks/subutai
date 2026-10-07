@@ -5,6 +5,7 @@ import {
   isDisplayNameAvailable,
   isValidDisplayName,
   normalizeDisplayName,
+  sigmaPlacementOk,
 } from '../firebase/auth';
 
 type Mode = 'initial' | 'change';
@@ -22,6 +23,7 @@ type LocalStatus =
   | { kind: 'tooShort' }
   | { kind: 'tooLong' }
   | { kind: 'invalidChars' }
+  | { kind: 'sigma' }
   | { kind: 'unchanged' };
 
 type RemoteStatus =
@@ -39,6 +41,7 @@ function computeLocalStatus(name: string, currentName: string, mode: Mode): Loca
   if (trimmed.length < 3) return { kind: 'tooShort' };
   if (trimmed.length > 20) return { kind: 'tooLong' };
   if (!isValidDisplayName(trimmed)) return { kind: 'invalidChars' };
+  if (!sigmaPlacementOk(normalizeDisplayName(trimmed))) return { kind: 'sigma' };
   if (mode === 'change' && normalizeDisplayName(name) === normalizeDisplayName(currentName)) {
     return { kind: 'unchanged' };
   }
@@ -141,6 +144,8 @@ export function NamePicker({
         return { text: 'Too long: max 20 characters', tone: 'warn' };
       case 'invalidChars':
         return { text: 'Invalid characters', tone: 'warn' };
+      case 'sigma':
+        return { text: 'Use ς only at the end of a word, σ elsewhere', tone: 'warn' };
       case 'checking':
         return { text: 'Checking…', tone: 'neutral' };
       case 'available':

@@ -29,7 +29,7 @@ import {
 } from 'firebase/firestore';
 import { PROJECT_ID, actAs, firestoreFor, terminateAll } from './client-stub.mjs';
 
-const { claimDisplayName, changeDisplayName } = await import('../../src/firebase/auth.ts');
+const { claimDisplayName, changeDisplayName, normalizeDisplayName, sigmaPlacementOk } = await import('../../src/firebase/auth.ts');
 const { saveCompletedGame } = await import('../../src/firebase/games.ts');
 const { createMatch, joinMatch } = await import('../../src/firebase/matches.ts');
 const { saveMultiplayerGameToGames } = await import('../../src/firebase/multiplayerGames.ts');
@@ -179,6 +179,20 @@ describe('names: /users and /displayNames (QA-06)', () => {
     assert.equal((await read('displayNames/σας σου')).uid, 'sas');
     await newPlayer('ji', '김지수');
     await newPlayer('ann', 'Ann Lee-Smith_2');
+  });
+
+  it("the name picker's sigma check (sigmaPlacementOk) refuses exactly the names the rules refuse (R-5)", async () => {
+    const names = ['Νίκος', 'ΟΔΟΣ', 'ΣΑΣ ΣΟΥ', 'Σοφια', 'σας_σου', 'Σσς', 'Νίκοσ', 'νικοσ σας'];
+    let refused = 0;
+    for (const [i, name] of names.entries()) {
+      if (sigmaPlacementOk(normalizeDisplayName(name))) {
+        await newPlayer(`s${i}`, name);
+      } else {
+        refused++;
+        await denied(newPlayer(`s${i}`, name));
+      }
+    }
+    assert.equal(refused, 2);
   });
 
   it('allowed: a Turkish name with İ, claimed and renamed (R-11)', async () => {

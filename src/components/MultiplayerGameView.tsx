@@ -344,11 +344,11 @@ export function useMultiplayerSync(
     setError(null);
     try {
       const san = computeSAN(liveBoard, move);
+      // Stamped in the transaction (nextMoveTimestamp).
       const savedMove = {
         move,
         san,
         topology: liveBoard.topologyState,
-        timestamp: Date.now(),
       };
       await runTransaction(db, async (tx) => {
         const ref = doc(db, 'matches', liveMatch.code);
@@ -423,11 +423,11 @@ export function useMultiplayerSync(
     try {
       const toggleMove: Move = { kind: 'topologyToggle' };
       const san = computeSAN(liveBoard, toggleMove);
+      // Stamped in the transaction (nextMoveTimestamp).
       const savedMove = {
         move: toggleMove,
         san,
         topology: liveBoard.topologyState,
-        timestamp: Date.now(),
       };
       await runTransaction(db, async (tx) => {
         const ref = doc(db, 'matches', liveMatch.code);
