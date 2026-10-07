@@ -145,6 +145,22 @@ describe('v1.0.2 online', () => {
     await (await hookAs(white, code)).writeOutcomeIfFirst('white-win');
     assert.equal((await read(`matches/${code}`)).outcome, 'white-win');
   });
+  it('BREAKS (R-1): devices 40 s ahead / 40 s behind — the reply is stamped before the previous move and refused (v1.0.2 does not stamp max(now, previous))', async () => {
+    const { code, white, black } = await start('classic', 300);
+    const real = Date.now;
+    const move = async (uid, skew) => {
+      Date.now = () => real.call(Date) + skew;
+      try {
+        const h = await hookAs(uid, code);
+        await h.sendMove(generateLegalMoves(h.boardState).find((x) => x.kind !== 'topologyToggle'));
+      } finally { Date.now = real; }
+    };
+    await move(white, +40_000);
+    await move(black, -40_000); // the hook catches the refusal ("Move failed")
+    assert.equal((await read(`matches/${code}`)).log.moves.length, 1);
+    await move(black, +41_000); // a retry lands once its clock is past White's stamp
+    assert.equal((await read(`matches/${code}`)).log.moves.length, 2);
+  });
   it('BREAKS: opponent flag claim < 90 s after the last move — refused, v1.0.2 does not retry (flagFiredRef), timed match after move 1 has no watchdog -> stays active', async () => {
     const { code, white, black } = await start('classic', 60);
     await play(code); // black on the clock, black's client gone

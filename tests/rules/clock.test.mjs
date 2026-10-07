@@ -23,6 +23,7 @@ beforeEach(async () => { await env.clearFirestore(); });
 after(async () => { await terminateAll(); await env.cleanup(); });
 
 const read = async (p) => (await getDoc(doc(firestoreFor('owner'), p))).data();
+const denied = (p) => assert.rejects(p, (e) => e?.code === 'permission-denied');
 async function hookAs(uid, code) {
   actAs(uid);
   const live = await read(`matches/${code}`);
@@ -52,60 +53,62 @@ function mpClocks(match) {
   };
 }
 
+async function start(tc, inc = null) {
+  const H = { uid: 'hana', displayName: 'Hana' }, G = { uid: 'gus', displayName: 'Gus' };
+  actAs(H.uid);
+  const code = await createMatch(H, 'classic', tc, inc);
+  actAs(G.uid);
+  const m0 = await joinMatch(code, G);
+  const white = m0.host.color === 'white' ? H.uid : G.uid;
+  const black = white === H.uid ? G.uid : H.uid;
+  return { code, white, black };
+}
+/** One legal move by `uid` through the app's hook. */
+async function honestMove(uid, code) {
+  const h = await hookAs(uid, code);
+  await h.sendMove(generateLegalMoves(h.boardState).find((mv) => mv.kind !== 'topologyToggle'));
+}
+/** Runs fn with Date.now() off by skewMs, as on a device whose clock is wrong. */
+async function withClock(skewMs, fn) {
+  const real = Date.now;
+  Date.now = () => real.call(Date) + skewMs;
+  try { return await fn(); } finally { Date.now = real; }
+}
+
 describe('C: clock forgery in a timed match (5 min)', () => {
-  it('C1 a back-dated timestamp on my own legal-turn move empties the honest opponent\'s clock; their client then resigns itself', async () => {
-    const H = { uid: 'hana', displayName: 'Hana' }, G = { uid: 'gus', displayName: 'Gus' };
-    actAs(H.uid);
-    const code = await createMatch(H, 'classic', 300, null);
-    actAs(G.uid);
-    const m0 = await joinMatch(code, G);
-    const white = m0.host.color === 'white' ? H.uid : G.uid;
-    const black = white === H.uid ? G.uid : H.uid;
+  it('C1 DENIED (R-1): a timestamp back-dated 10 min on my own legal-turn move is refused; the honest clock stays full', async () => {
+    const { code, white, black } = await start(300);
 
     // honest White moves through the app
-    const hw = await hookAs(white, code);
-    await hw.sendMove(generateLegalMoves(hw.boardState).find((mv) => mv.kind !== 'topologyToggle'));
+    await honestMove(white, code);
     let m = await read(`matches/${code}`);
     assert.equal(m.currentTurn, black);
 
     // Black (attacker): take White's honest entry, append a reply whose timestamp is 10 min in the past
     const forged = { ...m.log.moves[0], timestamp: Date.now() - 10 * 60_000 };
-    await updateDoc(doc(firestoreFor(black), `matches/${code}`), {
+    await denied(updateDoc(doc(firestoreFor(black), `matches/${code}`), {
       'log.moves': [...m.log.moves, forged], currentTurn: white, lastActivity: serverTimestamp(),
-    });
+    }));
     m = await read(`matches/${code}`);
+    assert.equal(m.log.moves.length, 1);
     const clocks = mpClocks(m);
-    console.log('clocks after forged move:', clocks);
-    assert.equal(clocks.white, 0, 'White (honest, on turn) shows 0:00');
-    assert.ok(clocks.black >= 299_000, 'Black lost no time');
-
-    // honest White's client: mine <= 0 -> resign('flag') (App.tsx:3031-3033) — rules accept it
-    const hw2 = await hookAs(white, code);
-    assert.equal(await hw2.resign('flag'), true);
-    m = await read(`matches/${code}`);
-    console.log('outcome:', m.outcome, m.endReason);
-    assert.equal(m.endReason, 'flag');
+    assert.ok(clocks.white > 290_000 && clocks.black > 290_000, JSON.stringify(clocks));
   });
 
-  it('C3 off turn, with no move, the opponent sets timeControlSec to 1 on an UNTIMED match: the honest client now counts down and flags', async () => {
-    const H = { uid: 'hana', displayName: 'Hana' }, G = { uid: 'gus', displayName: 'Gus' };
-    actAs(H.uid);
-    const code = await createMatch(H, 'classic', null, null);
-    actAs(G.uid);
-    const m0 = await joinMatch(code, G);
-    const white = m0.host.color === 'white' ? H.uid : G.uid;
-    const black = white === H.uid ? G.uid : H.uid;
-    const hw = await hookAs(white, code);
-    await hw.sendMove(generateLegalMoves(hw.boardState).find((mv) => mv.kind !== 'topologyToggle'));
-    const hb = await hookAs(black, code);
-    await hb.sendMove(generateLegalMoves(hb.boardState).find((mv) => mv.kind !== 'topologyToggle'));
-    await new Promise((r) => setTimeout(r, 1200));
+  it('C3 DENIED (R-1): the time control is frozen once the match exists, and set only to a real one', async () => {
+    const { code, white, black } = await start(null);
+    await honestMove(white, code);
+    await honestMove(black, code);
     // White on turn; Black (off turn) rewrites the time control
-    await updateDoc(doc(firestoreFor(black), `matches/${code}`), { timeControlSec: 1, lastActivity: serverTimestamp() });
-    const m = await read(`matches/${code}`);
-    const c = mpClocks(m);
-    console.log('C3 clocks:', c);
-    assert.equal(c.white, 0);
+    await denied(updateDoc(doc(firestoreFor(black), `matches/${code}`), { timeControlSec: 1, lastActivity: serverTimestamp() }));
+    await denied(updateDoc(doc(firestoreFor(black), `matches/${code}`), { timeIncrementSec: 30, lastActivity: serverTimestamp() }));
+    // ...nor on a timed one, nor by the player on turn with a move
+    const t = await start(300, 0);
+    await denied(updateDoc(doc(firestoreFor(t.white), `matches/${t.code}`), { timeControlSec: 3600, lastActivity: serverTimestamp() }));
+    // A host cannot open a match on a 1 s clock (or a 10 min increment) either.
+    actAs('hana');
+    await denied(createMatch({ uid: 'hana', displayName: 'Hana' }, 'classic', 1, null));
+    await denied(createMatch({ uid: 'hana', displayName: 'Hana' }, 'classic', 180, 600));
   });
 
   it('C2 the flagged attacker stalls: pings lastActivity every <90 s, the honest flag claim never lands', async () => {
@@ -127,5 +130,72 @@ describe('C: clock forgery in a timed match (5 min)', () => {
     const loser = black === H.uid ? 'host-resign' : 'guest-resign';
     assert.equal(await hw2.writeOutcomeIfFirst(loser, 'flag'), false);
     assert.equal((await read(`matches/${code}`)).outcome, null);
+  });
+});
+
+describe('C: honest players whose device clocks are wrong (R-1 window, 60 s)', () => {
+  // [White's skew, Black's skew]: one clock behind and one ahead is the
+  // worst case — up to 80 s between two stamps written a second apart.
+  const pairs = [
+    [+40_000, -40_000], [-40_000, +40_000], [+20_000, -20_000],
+    [-20_000, +20_000], [-40_000, -40_000], [+40_000, 0],
+  ];
+  for (const [ws, bs] of pairs) {
+    it(`C4 allowed: White ${ws / 1000} s, Black ${bs / 1000} s — every move lands, stamps never go back`, async () => {
+      const { code, white, black } = await start(300);
+      for (let ply = 0; ply < 8; ply++) {
+        await withClock(ply % 2 === 0 ? ws : bs, () => honestMove(ply % 2 === 0 ? white : black, code));
+      }
+      const m = await read(`matches/${code}`);
+      assert.equal(m.log.moves.length, 8, 'a move was refused');
+      const stamps = m.log.moves.map((e) => e.timestamp);
+      for (let i = 1; i < stamps.length; i++) assert.ok(stamps[i] >= stamps[i - 1], `stamp ${i} went back`);
+      // On either device, neither clock lost more than the gap between the
+      // two devices (charged at most once, then max(now, previous) keeps
+      // the stamps in step).
+      const gap = Math.abs(ws - bs);
+      for (const view of [ws, bs]) {
+        const clocks = await withClock(view, () => mpClocks(m));
+        assert.ok(clocks.white >= 300_000 - gap - 5_000 && clocks.black >= 300_000 - gap - 5_000,
+          `view ${view / 1000} s: ${JSON.stringify(clocks)}`);
+      }
+    });
+  }
+
+  it('denied (known limit): a device more than 60 s off cannot move at all', async () => {
+    const { code, white } = await start(300);
+    await withClock(-70_000, () => honestMove(white, code));
+    assert.equal((await read(`matches/${code}`)).log.moves.length, 0);
+    await withClock(+70_000, () => honestMove(white, code));
+    assert.equal((await read(`matches/${code}`)).log.moves.length, 0);
+  });
+
+  it('denied: a stamp before the previous one, outside the window, or not a whole number', async () => {
+    const { code, white, black } = await start(300);
+    await honestMove(white, code);
+    const m = await read(`matches/${code}`);
+    const prev = m.log.moves[0].timestamp;
+    const append = (timestamp) => updateDoc(doc(firestoreFor(black), `matches/${code}`), {
+      'log.moves': [...m.log.moves, { ...m.log.moves[0], timestamp }], currentTurn: white, lastActivity: serverTimestamp(),
+    });
+    await denied(append(prev - 1));
+    await denied(append(Date.now() + 61_000));
+    await denied(append(String(Date.now())));
+    await denied(append(Date.now() + 0.5));
+    await denied(append(null));
+  });
+
+  it('ALLOWED (known limit, R-1 residual): back-dating to the previous stamp charges my thinking time (up to 60 s) to the opponent', async () => {
+    const { code, white, black } = await start(300);
+    await honestMove(white, code);
+    // White moved 50 s ago; Black has been thinking since.
+    const m = await read(`matches/${code}`);
+    const moves = [{ ...m.log.moves[0], timestamp: Date.now() - 50_000 }];
+    await updateDoc(doc(firestoreFor('owner'), `matches/${code}`), { 'log.moves': moves });
+    await updateDoc(doc(firestoreFor(black), `matches/${code}`), {
+      'log.moves': [...moves, { ...moves[0], timestamp: moves[0].timestamp }], currentTurn: white, lastActivity: serverTimestamp(),
+    });
+    const clocks = mpClocks(await read(`matches/${code}`));
+    assert.ok(clocks.black > 299_000, `Black was charged nothing: ${JSON.stringify(clocks)}`);
   });
 });

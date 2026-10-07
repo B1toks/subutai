@@ -147,6 +147,15 @@ export interface MultiplayerSyncHandle {
   spinRoulette: () => Promise<void>;
 }
 
+/** R-1 — the timestamp of a new log entry. firestore.rules takes one no
+ *  earlier than the previous entry and within 60 s of server time; the
+ *  previous entry is the opponent's, stamped by their clock, which can be
+ *  ahead of mine by more than the time I took to reply. Stamped inside the
+ *  transaction, so a retried write is not stamped at the first try. */
+function nextMoveTimestamp(moves: MatchDoc['log']['moves']): number {
+  return Math.max(Date.now(), moves[moves.length - 1]?.timestamp ?? 0);
+}
+
 /** Rebuild the canonical board from the log. Topology toggles (Rotate)
  *  flow through here just like any other move (Stage T1). */
 export function rebuildBoardFromMatch(match: MatchDoc): BoardState {
@@ -347,7 +356,10 @@ export function useMultiplayerSync(
         if (data.currentTurn !== liveMyUid) throw new Error('NOT_YOUR_TURN');
         if (data.status !== 'active') throw new Error('MATCH_NOT_ACTIVE');
         const patch: Record<string, unknown> = {
-          'log.moves': [...data.log.moves, savedMove],
+          'log.moves': [
+            ...data.log.moves,
+            { ...savedMove, timestamp: nextMoveTimestamp(data.log.moves) },
+          ],
           lastActivity: serverTimestamp(),
         };
         if (data.gameMode === 'roulette') {
@@ -423,7 +435,10 @@ export function useMultiplayerSync(
         if (data.status !== 'active') throw new Error('MATCH_NOT_ACTIVE');
         const newActions = (data.rouletteActionsLeft ?? 0) - 1;
         const patch: Record<string, unknown> = {
-          'log.moves': [...data.log.moves, savedMove],
+          'log.moves': [
+            ...data.log.moves,
+            { ...savedMove, timestamp: nextMoveTimestamp(data.log.moves) },
+          ],
           lastActivity: serverTimestamp(),
         };
         // Rotate uses an action but doesn't consume a slot.

@@ -356,6 +356,36 @@ service cloud.firestore {
             && request.resource.data.log.moves.size() > 0);
     }
 
+    // R-1 — both clients compute the clock from the move timestamps (the
+    // mover's Date.now()), timeControlSec and timeIncrementSec. The time
+    // control is set once, at create; a new entry is stamped no earlier
+    // than the one before it and within 60 s of server time.
+    // Why 60 s: device clocks drift 20-40 s and a slow write adds seconds;
+    // the honest client stamps max(now, previous stamp) so two players
+    // whose clocks disagree still write in order. What it leaves open: a
+    // mover can back-date (down to the previous stamp) and so charge up to
+    // 60 s of their own thinking per move to the opponent.
+    function matchClockOk() {
+      let before = resource.data;
+      let after = request.resource.data;
+      return after.get('timeControlSec', null) == before.get('timeControlSec', null)
+        && after.get('timeIncrementSec', null) == before.get('timeIncrementSec', null)
+        && (after.log.moves.size() == before.log.moves.size()
+            || moveStampOk(after.log.moves[before.log.moves.size()].get('timestamp', null),
+                           before.log.moves));
+    }
+    function moveStampOk(ts, moves) {
+      let skewMs = 60000;
+      return ts is int
+        && ts >= request.time.toMillis() - skewMs
+        && ts <= request.time.toMillis() + skewMs
+        && (moves.size() == 0 || ts >= moves[moves.size() - 1].get('timestamp', 0));
+    }
+    function timeControlOk(d) {
+      return (d.get('timeControlSec', null) == null || intIn(d.timeControlSec, 60, 3600))
+        && (d.get('timeIncrementSec', null) == null || intIn(d.timeIncrementSec, 0, 60));
+    }
+
     // QA-04 — why a match ended in 'X-resign', for the end text. Optional
     // (older clients do not write it), set only with that outcome, then
     // frozen: 'resign' by X, 'inactive' by the opponent, 'flag' by either.
@@ -386,7 +416,8 @@ service cloud.firestore {
                     && request.resource.data.outcome == null
                     && !('endReason' in request.resource.data)
                     && request.resource.data.log.moves.size() == 0
-                    && (!('gameMode' in request.resource.data) || isMode(request.resource.data.gameMode));
+                    && (!('gameMode' in request.resource.data) || isMode(request.resource.data.gameMode))
+                    && timeControlOk(request.resource.data);
 
       // DEF-8 hardening (still partial: chess legality can't be expressed in
       // rules, so a hand-crafted client can append a legal-looking illegal
@@ -402,6 +433,8 @@ service cloud.firestore {
       //     the join or a move (matchTurnOk);
       //   - lastActivity is server time, so the 90 s in matchOutcomeOk
       //     cannot be shortened by back-dating it;
+      //   - the time control is frozen and a move's timestamp follows the
+      //     previous one, near server time (matchClockOk, R-1);
       //   - who may write which outcome and endReason (matchOutcomeOk,
       //     matchEndReasonOk); the mode is frozen, so a classic match
       //     cannot turn roulette to keep the turn.
@@ -444,6 +477,7 @@ service cloud.firestore {
             || (request.resource.data.guest != null
                 && request.resource.data.currentTurn == request.resource.data.guest.uid))
         && matchTurnOk()
+        && matchClockOk()
         && matchOutcomeOk()
         && matchEndReasonOk()
         && (
