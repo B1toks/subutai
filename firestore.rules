@@ -9,6 +9,10 @@ service cloud.firestore {
     // attacks: oversized / malformed documents, leaderboard numbers that no
     // saved game backs, foreign writes to other players' records, move
     // appends off-turn, and rewriting a match's history.
+    // What they do not close (a mate or draw written without one, made-up
+    // leaderboard games, client-stamped clocks, ...) is listed with its
+    // test under "Known limits" in docs/FIRESTORE-RULES.md; that file also
+    // says in which order to deploy the client and these rules.
 
     function signedIn() {
       return request.auth != null;
@@ -427,7 +431,10 @@ service cloud.firestore {
     // opponent once X, on turn, has been idle for 90 s by server time (the
     // inactivity forfeit, and the claim of a flag fall whose own client is
     // gone; the rules cannot see the clock). Mate and draw come from a
-    // seated player, after at least one move.
+    // seated player, after at least one move. Known limit (QA-05, R-3):
+    // nothing ties them to a mate or to the move that gave it, so either
+    // player can write either one; the client writes the result apart from
+    // the mating move (writeOutcomeIfFirst), which a tighter rule needs.
     function matchOutcomeOk() {
       let before = resource.data;
       let o = request.resource.data.outcome;

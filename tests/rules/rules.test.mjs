@@ -1102,6 +1102,17 @@ describe('known limits (allowed, by design or by what rules can see)', () => {
     await denied(updateDoc(me('alice'), { strongWins: 2, lastGameId: ref.id, lastGameAt: serverTimestamp() }));
   });
 
+  it('QA-05 stays open online (R-3 not done): after one move either player writes a win or a draw, on either turn', async () => {
+    const { code, white } = await startMatch();
+    await playMove(code); // Black on turn, no mate anywhere
+    await updateDoc(doc(as(white), 'matches', code), {
+      status: 'completed',
+      outcome: 'white-win',
+      lastActivity: serverTimestamp(),
+    });
+    assert.equal((await match(code)).outcome, 'white-win');
+  });
+
   it('in a timed match the opponent can end it after 90 s idle, clock or not', async () => {
     const { code, white, black } = await startMatch('classic', 600);
     await playMove(code);

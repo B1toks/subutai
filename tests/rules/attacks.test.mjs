@@ -57,7 +57,7 @@ function fakeGame(uid, { moveCount = 10, outcome = 'human-win', points } = {}) {
 describe('U: /users stats', () => {
   beforeEach(async () => { await claim('mallory', 'Mallory', 'mallory'); });
 
-  it('U1 ALLOWED: gamesWon / gamesPlayed +1 per write, 300 writes, no game behind', async () => {
+  it('U1 ALLOWED (known limit, R-12): gamesWon / gamesPlayed +1 per write, 300 writes, no game behind', async () => {
     const db = as('mallory');
     for (let i = 1; i <= 300; i++) {
       await updateDoc(doc(db, 'users/mallory'), { gamesWon: i, gamesPlayed: i });
@@ -66,7 +66,7 @@ describe('U: /users stats', () => {
     assert.equal(u.gamesWon, 300);
   });
 
-  it('U2 ALLOWED: longestSurvivalMoves 700 with no game', async () => {
+  it('U2 ALLOWED (known limit, R-12): longestSurvivalMoves 700 with no game', async () => {
     await allowed(updateDoc(doc(as('mallory'), 'users/mallory'), { longestSurvivalMoves: 700 }));
   });
 
@@ -122,7 +122,7 @@ describe('U: /users stats', () => {
     }));
   });
 
-  it('U6 ALLOWED: createdAt / lastActive any type or date (profile "member since 1970")', async () => {
+  it('U6 ALLOWED (known limit, R-12): createdAt / lastActive any type or date (profile "member since 1970")', async () => {
     await allowed(updateDoc(doc(as('mallory'), 'users/mallory'), {
       createdAt: Timestamp.fromMillis(0), lastActive: 'whenever',
     }));
@@ -311,11 +311,11 @@ describe('M: matches', () => {
       'log.moves': [{ san: 'm0' }, { san: 'm1' }, { san: 'Z', timestamp: Date.now() }], currentTurn: 'guest', lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
     }));
   });
-  it('M2 ALLOWED: claim "white-win" (no mate) after one move, on the opponent\'s turn', async () => {
+  it('M2 ALLOWED (known limit, R-3: QA-05 stays open online): claim "white-win" (no mate) after one move, on the opponent\'s turn', async () => {
     await activeMatch({ moves: 1, turn: 'guest' });
     await allowed(updateDoc(m('host'), { outcome: 'white-win', status: 'completed', lastActivity: serverTimestamp() }));
   });
-  it('M3 ALLOWED: "draw" any time after one move, by the losing side', async () => {
+  it('M3 ALLOWED (known limit, R-3: QA-05 stays open online): "draw" any time after one move, by the losing side', async () => {
     await activeMatch({ moves: 1, turn: 'guest' });
     await allowed(updateDoc(m('guest'), { outcome: 'draw', status: 'completed', lastActivity: serverTimestamp() }));
   });
@@ -365,7 +365,7 @@ describe('M: matches', () => {
     await denied(updateDoc(m('guest'), { 'log.initialTopology': 'B', lastActivity: serverTimestamp() }));
     await denied(updateDoc(m('guest'), { 'log.extra': 1, lastActivity: serverTimestamp() }));
   });
-  it('M7 ALLOWED: join with the same colour as the host', async () => {
+  it('M7 ALLOWED (known limit, R-10): join with the same colour as the host', async () => {
     await seed('matches/ABC123', {
       code: 'ABC123', host: { uid: 'host', displayName: 'Host', color: 'white' }, guest: null,
       chess960Id: 'RNBQKBNR', seed: 1, status: 'waiting', gameMode: 'classic', currentTurn: 'host', outcome: null,
@@ -376,7 +376,7 @@ describe('M: matches', () => {
       lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
     }));
   });
-  it('M8 ALLOWED: host joins own match as guest (same uid in both seats)', async () => {
+  it('M8 ALLOWED (known limit, R-10): host joins own match as guest (same uid in both seats)', async () => {
     await seed('matches/ABC123', {
       code: 'ABC123', host: { uid: 'host', displayName: 'Host', color: 'white' }, guest: null,
       chess960Id: 'RNBQKBNR', seed: 1, status: 'waiting', gameMode: 'classic', currentTurn: 'host', outcome: null,
@@ -387,7 +387,7 @@ describe('M: matches', () => {
       lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
     }));
   });
-  it('M9 ALLOWED: in a timed match, the opponent ends it after 90 s of thinking (clock not seen)', async () => {
+  it('M9 ALLOWED (known limit, R-9): in a timed match, the opponent ends it after 90 s of thinking (clock not seen)', async () => {
     await activeMatch({ moves: 2, turn: 'host' });
     await seed('matches/ABC123', { ...(await read('matches/ABC123')), lastActivity: ago(91_000), turnStartedAt: ago(91_000), timeControlSec: 600 });
     await allowed(updateDoc(m('guest'), { outcome: 'host-resign', endReason: 'flag', status: 'completed', lastActivity: serverTimestamp() }));
@@ -420,7 +420,7 @@ describe('M: matches', () => {
 
 // ── /mm_queue (Quick match) ────────────────────────────────────────────
 describe('Q: quick match queue', () => {
-  it('Q1 ALLOWED: anyone stamps any matchCode on a waiting player (steer them into a chosen / dead match)', async () => {
+  it('Q1 ALLOWED (known limit, R-10): anyone stamps any matchCode on a waiting player (steer them into a chosen / dead match)', async () => {
     await seed('mm_queue/alice', { uid: 'alice', displayName: 'Alice', matchCode: null, createdAt: ago(1000) });
     await allowed(updateDoc(doc(as('mallory'), 'mm_queue/alice'), { matchCode: 'ZZZZZZ', claimedBy: 'mallory' }));
   });

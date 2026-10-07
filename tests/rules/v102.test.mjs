@@ -197,15 +197,15 @@ describe('v1.0.2 online', () => {
 });
 
 describe('extra (rules level)', () => {
-  it('any signed-in user lists every match (friend codes enumerable)', async () => {
+  it('ALLOWED (known limit, R-10): any signed-in user lists every match (friend codes enumerable)', async () => {
     await start();
     const s = await getDocs(collection(firestoreFor('stranger'), 'matches'));
     assert.equal(s.size, 1);
   });
-  it('mm_queue entry with createdAt in 1970 (sorts first forever)', async () => {
+  it('ALLOWED (known limit, R-10): mm_queue entry with createdAt in 1970 (sorts first forever)', async () => {
     await setDoc(doc(firestoreFor('troll'), 'mm_queue/troll'), { uid: 'troll', displayName: 'Troll', matchCode: null, createdAt: Timestamp.fromMillis(0) });
   });
-  it('mm_queue owner resets matchCode to null after being claimed (bait)', async () => {
+  it('ALLOWED (known limit, R-10): mm_queue owner resets matchCode to null after being claimed (bait)', async () => {
     await setDoc(doc(firestoreFor('troll'), 'mm_queue/troll'), { uid: 'troll', displayName: 'Troll', matchCode: null, createdAt: serverTimestamp() });
     await updateDoc(doc(firestoreFor('victim'), 'mm_queue/troll'), { matchCode: 'ABCDEF', claimedBy: 'victim' });
     await updateDoc(doc(firestoreFor('troll'), 'mm_queue/troll'), { matchCode: null });
