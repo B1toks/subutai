@@ -5,7 +5,7 @@
  *
  * Run: npx tsx scripts/test-mp-end-cause.ts
  */
-import { inactivityForfeitApplies, mpResignCause } from '../src/firebase/matchEnd';
+import { drawOfferHolds, inactivityForfeitApplies, mpResignCause } from '../src/firebase/matchEnd';
 import type { MatchDoc } from '../src/firebase/matches';
 import type { Move } from '../src/engine';
 
@@ -79,6 +79,15 @@ check('forfeit applies: untimed', inactivityForfeitApplies(match({ stamps: three
 check('forfeit applies: timed, before the first move', inactivityForfeitApplies(match({ stamps: [], end: 0 })), true);
 check('forfeit off: timed, clock running', inactivityForfeitApplies(match({ stamps: three, end: 0 })), false);
 check('forfeit applies: roulette even with a control', inactivityForfeitApplies(match({ stamps: three, end: 0, gameMode: 'roulette' })), true);
+
+// --- R-7: a draw offer made on turn holds the forfeit and the flag claim ---
+// Three moves in: Black (the guest) is on turn.
+const onTurn = { stamps: three, end: 0, currentTurn: 'g' };
+check('hold: the player on turn offered', drawOfferHolds(match({ ...onTurn, drawOffer: { by: 'g', atPly: 3 } })), true);
+check('no hold: the offer came from the player waiting', drawOfferHolds(match({ ...onTurn, drawOffer: { by: 'h', atPly: 3 } })), false);
+check('no hold: declined', drawOfferHolds(match({ ...onTurn, drawOffer: { by: 'g', atPly: 3, declined: true } })), false);
+check('no hold: a move retired it', drawOfferHolds(match({ ...onTurn, drawOffer: { by: 'g', atPly: 2 } })), false);
+check('no hold: no offer', drawOfferHolds(match(onTurn)), false);
 
 if (failures) {
   console.log(`\n${failures} FAILED`);

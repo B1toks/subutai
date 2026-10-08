@@ -427,7 +427,9 @@ service cloud.firestore {
     // 90 s of inactivity run from it, not from lastActivity, which every
     // write moves: a write that changes nothing else no longer holds them
     // off. A match from before the field falls back to lastActivity until
-    // its next move.
+    // its next move. One more write sets it: the decline of a draw offer
+    // made by the player on turn, who waited for the answer meanwhile
+    // (see matchDrawOfferOk).
     // Where the field is, it is a timestamp: a null written into a match
     // from before the field read as "no turn start" and refused every
     // forfeit claim. One the bridge rules let in stays (only changes are
@@ -436,7 +438,8 @@ service cloud.firestore {
       let before = resource.data;
       let after = request.resource.data;
       return ((before.guest == null && after.guest != null)
-              || after.log.moves.size() > before.log.moves.size())
+              || after.log.moves.size() > before.log.moves.size()
+              || (drawOfferHolds(before) && after.get('drawOffer', null) != before.drawOffer))
         ? after.get('turnStartedAt', null) == request.time
         // unchanged, and not added as a null (equal to an absent field)
         : after.get('turnStartedAt', null) == before.get('turnStartedAt', null)
@@ -450,8 +453,9 @@ service cloud.firestore {
     // QA-05 — who may end the match. 'X-resign' is written by X, or by X's
     // opponent once X, on turn, has been idle for 90 s by server time (the
     // inactivity forfeit, and the claim of a flag fall whose own client is
-    // gone; the rules cannot see the clock). Mate and draw come from a
-    // seated player, after at least one move. Known limit (QA-05, R-3):
+    // gone; the rules cannot see the clock) and is not waiting for the
+    // answer to their own draw offer (drawOfferHolds). Mate and draw come
+    // from a seated player, after at least one move. Known limit (QA-05, R-3):
     // nothing ties them to a mate or to the move that gave it, so either
     // player can write either one; the client writes the result apart from
     // the mating move (writeOutcomeIfFirst), which a tighter rule needs.
@@ -464,6 +468,7 @@ service cloud.firestore {
             && (request.auth.uid == loserOf(before, o)
                 || (seated(before, request.auth.uid)
                     && before.currentTurn == loserOf(before, o)
+                    && !drawOfferHolds(before)
                     && request.time > turnStart(before) + duration.value(90, 's'))))
         || (o in ['white-win', 'black-win', 'draw']
             && seated(before, request.auth.uid)
@@ -518,7 +523,7 @@ service cloud.firestore {
           'code', 'chess960Id', 'seed', 'host', 'guest', 'status', 'currentTurn', 'log',
           'outcome', 'endReason', 'createdAt', 'lastActivity', 'turnStartedAt', 'gameMode',
           'timeControlSec', 'timeIncrementSec', 'rouletteSlots', 'rouletteActionsLeft',
-          'usedRouletteSlots', 'rouletteSpinsByPlayer', 'rouletteSpinCount'
+          'usedRouletteSlots', 'rouletteSpinsByPlayer', 'rouletteSpinCount', 'drawOffer'
         ])
         && d.log is map
         && d.log.keys().hasOnly(['initialTopology', 'moves'])
@@ -592,6 +597,8 @@ service cloud.firestore {
     // QA-04 — why a match ended in 'X-resign', for the end text. Optional
     // (older clients do not write it), set only with that outcome, then
     // frozen: 'resign' by X, 'inactive' by the opponent, 'flag' by either.
+    // 'agreement' goes with a 'draw' only: the other player accepting the
+    // standing draw offer, in a write that is not a move.
     function matchEndReasonOk() {
       let before = resource.data;
       let after = request.resource.data;
@@ -601,7 +608,61 @@ service cloud.firestore {
             && after.outcome in ['host-resign', 'guest-resign']
             && (r == 'flag'
                 || (r == 'resign' && request.auth.uid == loserOf(before, after.outcome))
-                || (r == 'inactive' && request.auth.uid != loserOf(before, after.outcome))));
+                || (r == 'inactive' && request.auth.uid != loserOf(before, after.outcome))))
+        || (before.outcome == null
+            && after.outcome == 'draw'
+            && r == 'agreement'
+            && standingDrawOffer(before)
+            && request.auth.uid != before.drawOffer.by
+            && after.log.moves.size() == before.log.moves.size());
+    }
+
+    // Draw by agreement. drawOffer is { by, atPly }, and { by, atPly,
+    // declined: true } once the other player says no. It stands while
+    // atPly is the length of the log and nobody has declined it, so ANY
+    // move retires it, a move by a client that never touches the field
+    // included.
+    //   - Offer: a seated player, in their own name, on an active match
+    //     after the first move, at the current ply, and only if no offer
+    //     was made at this ply yet (standing or declined): one offer per
+    //     half-move between both players. The write changes nothing else
+    //     but the server time.
+    //   - Decline: the other player marks the standing offer declined.
+    //     The record stays until the next move, which is what keeps a
+    //     second offer off this ply.
+    //   - Accept: outcome 'draw', endReason 'agreement' (matchEndReasonOk),
+    //     the offer left as it is.
+    //   - A move may drop the field, and anybody may drop a retired one.
+    // R-7 — an offer made by the player on turn holds the 90 s: while it
+    // stands, the opponent cannot end the match for them (matchOutcomeOk),
+    // and the decline starts their turn over (turnStartOk). One offer per
+    // half-move and only the opponent's decline: the hold can neither be
+    // renewed by the offering player nor stretched past the answer.
+    function standingDrawOffer(m) {
+      let o = m.get('drawOffer', null);
+      return o != null && o.atPly == m.log.moves.size() && !('declined' in o);
+    }
+    // The player on turn offered a draw and is waiting for the answer.
+    function drawOfferHolds(m) {
+      return standingDrawOffer(m) && m.drawOffer.by == m.currentTurn;
+    }
+    function matchDrawOfferOk() {
+      let before = resource.data;
+      let after = request.resource.data;
+      let b = before.get('drawOffer', null);
+      let a = after.get('drawOffer', null);
+      let plies = before.log.moves.size();
+      return a == b
+        || (a == null
+            && (after.log.moves.size() > plies || b.atPly < plies))
+        || (before.status == 'active'
+            && after.diff(before).affectedKeys().hasOnly(['drawOffer', 'lastActivity', 'turnStartedAt'])
+            && ((plies > 0
+                 && (b == null || b.atPly < plies)
+                 && a == { 'by': request.auth.uid, 'atPly': plies })
+                || (standingDrawOffer(before)
+                    && request.auth.uid != b.by
+                    && a == { 'by': b.by, 'atPly': b.atPly, 'declined': true })));
     }
 
     match /matches/{code} {
@@ -619,6 +680,7 @@ service cloud.firestore {
                     && request.resource.data.outcome == null
                     && !('endReason' in request.resource.data)
                     && !('turnStartedAt' in request.resource.data)
+                    && !('drawOffer' in request.resource.data)
                     && matchKeysOk(request.resource.data)
                     && request.resource.data.log.initialTopology in ['A', 'B']
                     // R-8 — no bag, no actions until a spin.
@@ -647,7 +709,8 @@ service cloud.firestore {
       //     the join or a move (matchTurnOk);
       //   - lastActivity and turnStartedAt are server time, so the 90 s in
       //     matchOutcomeOk cannot be shortened by back-dating, and only the
-      //     join or a move restarts them (turnStartOk, R-7);
+      //     join, a move or the answer to an offer the player on turn is
+      //     waiting on restarts them (turnStartOk, R-7);
       //   - the time control is frozen and a move's timestamp follows the
       //     previous one, at most 60 s ahead of server time, and no more
       //     than 60 s behind it where there is a clock (matchClockOk, R-1);
@@ -655,10 +718,12 @@ service cloud.firestore {
       //     player on turn (rouletteOk, R-8);
       //   - who may write which outcome and endReason (matchOutcomeOk,
       //     matchEndReasonOk); the mode is frozen, so a classic match
-      //     cannot turn roulette to keep the turn.
+      //     cannot turn roulette to keep the turn;
+      //   - who may offer, decline and accept a draw (matchDrawOfferOk).
       // Legit paths: guest join (no log change), move / rotate append on
       // own turn (+1), spin (no log change), resign / flag / mate outcome
-      // writes (no log change) from either seat.
+      // writes (no log change) from either seat, draw offer / decline /
+      // accept (no log change).
       allow update: if signedIn()
         && matchKeysOk(request.resource.data)
         && request.resource.data.log.initialTopology == resource.data.log.initialTopology
@@ -702,6 +767,7 @@ service cloud.firestore {
         && rouletteOk()
         && matchOutcomeOk()
         && matchEndReasonOk()
+        && matchDrawOfferOk()
         && (
           resource.data.host.uid == request.auth.uid
           || (resource.data.guest != null && resource.data.guest.uid == request.auth.uid)

@@ -1,4 +1,5 @@
 import type { MatchDoc } from './matches';
+import { standingDrawOffer } from '../utils/drawOffer';
 
 /**
  * R-7 — when the turn on the clock started, by server time (ms): the join
@@ -9,6 +10,17 @@ import type { MatchDoc } from './matches';
  */
 export function turnStartedMs(match: MatchDoc): number | undefined {
   return (match.turnStartedAt ?? match.lastActivity)?.toMillis?.();
+}
+
+/**
+ * R-7 — the player on turn offered a draw and waits for the answer. While
+ * that offer stands, firestore.rules let nobody but that player end the
+ * match for them: no inactivity forfeit, no flag claim. The opponent
+ * answers first; a decline starts the turn over (turnStartedAt).
+ */
+export function drawOfferHolds(match: MatchDoc): boolean {
+  const offer = standingDrawOffer(match.drawOffer, match.log.moves.length);
+  return !!offer && offer.by === match.currentTurn;
 }
 
 /**

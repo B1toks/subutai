@@ -12,12 +12,19 @@
  * that has offered may not offer again until it has made a move itself,
  * so a declined offer cannot be put straight back on the table.
  *
+ * Online, a decline does not clear the offer: it marks it `declined` and
+ * the record stays until the next move. Nobody may offer at a ply that
+ * already had an offer, which the Firestore rules hold for both players
+ * (a hand-crafted client included). Hot-seat clears the offer instead.
+ *
  * `Seat` is whatever names a player: a colour in hot-seat, a uid online.
  */
 
 export interface DrawOffer<Seat extends string = string> {
   readonly by: Seat;
   readonly atPly: number;
+  /** Online: the other side said no. The offer no longer stands. */
+  readonly declined?: true;
 }
 
 export interface DrawTable<Seat extends string = string> {
@@ -38,14 +45,16 @@ export type DrawOfferBlock =
   /** The other side has an offer standing: answer that one instead. */
   | 'answer'
   /** `who` offered since their last move and must move before offering again. */
-  | 'move-first';
+  | 'move-first'
+  /** An offer made at this ply was declined: the next one waits for a move. */
+  | 'declined';
 
 /** The offer still standing `plies` moves into the game, or null. */
 export function standingDrawOffer<Seat extends string>(
   offer: DrawOffer<Seat> | null | undefined,
   plies: number,
 ): DrawOffer<Seat> | null {
-  return offer && offer.atPly === plies ? offer : null;
+  return offer && offer.atPly === plies && !offer.declined ? offer : null;
 }
 
 export function drawOfferBlock<Seat extends string>(
@@ -57,6 +66,7 @@ export function drawOfferBlock<Seat extends string>(
   const standing = standingDrawOffer(table.offer, plies);
   if (standing) return standing.by === who ? 'offered' : 'answer';
   if (table.waiting.includes(who)) return 'move-first';
+  if (table.offer?.atPly === plies) return 'declined';
   return null;
 }
 
