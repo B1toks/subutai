@@ -8,6 +8,7 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+import { createMockUserToken } from '@firebase/util';
 import { Timestamp, doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { PROJECT_ID, actAs, firestoreFor, terminateAll } from './client-stub.mjs';
 
@@ -67,6 +68,36 @@ async function start(tc, inc = null, mode = 'classic') {
 async function honestMove(uid, code) {
   const h = await hookAs(uid, code);
   await h.sendMove(generateLegalMoves(h.boardState).find((mv) => mv.kind !== 'topologyToggle'));
+}
+/** Appends to the log, through REST as `uid`, a copy of the last entry
+ *  stamped `stamp` (a decimal string: an int64 the JS SDK cannot write, it
+ *  sends numbers past 2^53 as doubles), passing the turn to `next`; `patch`
+ *  sets more fields, as REST values. Resolves to { status, json }. */
+async function restAppend(uid, code, stamp, next, patch = {}) {
+  const base = `http://${process.env.FIRESTORE_EMULATOR_HOST}/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+  const name = `projects/${PROJECT_ID}/databases/(default)/documents/matches/${code}`;
+  const call = async (url, token, body) => {
+    const res = await fetch(url, {
+      method: body ? 'POST' : 'GET',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: body && JSON.stringify(body),
+    });
+    return { status: res.status, json: await res.json() };
+  };
+  const { json: cur } = await call(`${base}/matches/${code}`, 'owner');
+  const moves = cur.fields.log.mapValue.fields.moves.arrayValue.values;
+  const entry = structuredClone(moves[moves.length - 1]);
+  entry.mapValue.fields.timestamp = { integerValue: stamp };
+  moves.push(entry);
+  cur.fields.currentTurn = { stringValue: next };
+  Object.assign(cur.fields, patch);
+  const token = createMockUserToken({ sub: uid, user_id: uid }, PROJECT_ID);
+  return call(`${base}:commit`, token, {
+    writes: [{
+      update: { name, fields: cur.fields },
+      updateTransforms: ['lastActivity', 'turnStartedAt'].map((fieldPath) => ({ fieldPath, setToServerValue: 'REQUEST_TIME' })),
+    }],
+  });
 }
 /** Runs fn with Date.now() off by skewMs, as on a device whose clock is wrong. */
 async function withClock(skewMs, fn) {
@@ -201,28 +232,41 @@ describe('C: honest players whose device clocks are wrong (R-1 window, 60 s)', (
   });
 });
 
-describe('C: no clock, no window (R-1 window only where the client runs a clock)', () => {
-  it('allowed: devices 70 s ahead and 70 s behind play an untimed classic match', async () => {
+describe('C: no clock, no lower bound (R-1: only the upper end of the window holds everywhere)', () => {
+  it('allowed: devices 70 s behind play an untimed classic match', async () => {
     const { code, white, black } = await start(null);
     for (let ply = 0; ply < 4; ply++) {
-      await withClock(ply % 2 === 0 ? +70_000 : -70_000, () => honestMove(ply % 2 === 0 ? white : black, code));
+      await withClock(-70_000, () => honestMove(ply % 2 === 0 ? white : black, code));
     }
     const stamps = (await read(`matches/${code}`)).log.moves.map((e) => e.timestamp);
     assert.equal(stamps.length, 4, 'a move was refused');
     for (let i = 1; i < stamps.length; i++) assert.ok(stamps[i] >= stamps[i - 1], `stamp ${i} went back`);
   });
 
-  it('allowed: a device 70 s off plays roulette, with no time control and with one (the client runs no clock in roulette)', async () => {
+  it('allowed: a device 70 s behind plays roulette, with no time control and with one (the client runs no clock in roulette)', async () => {
     for (const tc of [null, 300]) {
       const { code, white } = await start(tc, null, 'roulette');
-      await withClock(+70_000, async () => { await (await hookAs(white, code)).spinRoulette(); });
-      await withClock(+70_000, async () => { await (await hookAs(white, code)).sendRotate(); });
+      await withClock(-70_000, async () => { await (await hookAs(white, code)).spinRoulette(); });
+      await withClock(-70_000, async () => { await (await hookAs(white, code)).sendRotate(); });
       await withClock(-70_000, async () => { await (await hookAs(white, code)).sendRotate(); });
       assert.equal((await read(`matches/${code}`)).log.moves.length, 2, `tc ${tc}: an action was refused`);
     }
   });
 
-  it('denied: without a clock a stamp is still a whole number no earlier than the previous one (10 min ahead lands)', async () => {
+  it('denied (known limit): a device more than 60 s ahead cannot move, with a clock or without, in classic or roulette', async () => {
+    for (const [tc, mode] of [[null, 'classic'], [null, 'roulette'], [300, 'roulette']]) {
+      const { code, white } = await start(tc, null, mode);
+      if (mode === 'roulette') {
+        await withClock(+70_000, async () => { await (await hookAs(white, code)).spinRoulette(); });
+        await withClock(+70_000, async () => { await (await hookAs(white, code)).sendRotate(); });
+      } else {
+        await withClock(+70_000, () => honestMove(white, code));
+      }
+      assert.equal((await read(`matches/${code}`)).log.moves.length, 0, `tc ${tc}, ${mode}: a move landed`);
+    }
+  });
+
+  it('denied: without a clock a stamp is still a whole number no earlier than the previous one and at most 60 s ahead', async () => {
     const { code, white, black } = await start(null);
     await honestMove(white, code);
     const m = await read(`matches/${code}`);
@@ -233,6 +277,48 @@ describe('C: no clock, no window (R-1 window only where the client runs a clock)
     await denied(append(prev - 1));
     await denied(append(String(Date.now())));
     await denied(append(null));
-    await append(Date.now() + 10 * 60_000);
+    await denied(append(Date.now() + 61_000));
+    await denied(append(Date.now() + 10 * 60_000));
+    await append(Date.now() + 50_000);
+  });
+
+  // A stamp past 2^53 reads back in the JS client as a double; the honest
+  // next stamp, max(now, that), is then written as a double and refused
+  // (not an int), so the match could not be played on.
+  const huge = ['9007199254740992', '9007199254740993', '9223372036854775807'];
+
+  it('denied: a stamp of 2^53 or more, written through REST, in an untimed classic match', async () => {
+    const { code, white, black } = await start(null);
+    await honestMove(white, code);
+    for (const stamp of huge) {
+      const res = await restAppend(black, code, stamp, white);
+      assert.equal(res.status, 403, `${stamp}: ${JSON.stringify(res.json)}`);
+    }
+    // the same REST write with an honest stamp lands, and White plays on
+    assert.equal((await restAppend(black, code, String(Date.now()), white)).status, 200);
+    await honestMove(white, code);
+    assert.equal((await read(`matches/${code}`)).log.moves.length, 3);
+  });
+
+  it('denied: a stamp of 2^53 or more, written through REST, in roulette (no time control and 300 s)', async () => {
+    for (const tc of [null, 300]) {
+      const { code, white, black } = await start(tc, null, 'roulette');
+      await (await hookAs(white, code)).spinRoulette();
+      await (await hookAs(white, code)).sendRotate();
+      // White's last action: the bag empties and the turn passes
+      const last = {
+        rouletteSlots: { nullValue: null },
+        rouletteActionsLeft: { integerValue: '0' },
+        usedRouletteSlots: { arrayValue: {} },
+      };
+      for (const stamp of huge) {
+        const res = await restAppend(white, code, stamp, black, last);
+        assert.equal(res.status, 403, `tc ${tc}, ${stamp}: ${JSON.stringify(res.json)}`);
+      }
+      assert.equal((await restAppend(white, code, String(Date.now()), black, last)).status, 200, `tc ${tc}`);
+      await (await hookAs(black, code)).spinRoulette();
+      await (await hookAs(black, code)).sendRotate();
+      assert.equal((await read(`matches/${code}`)).log.moves.length, 3, `tc ${tc}`);
+    }
   });
 });

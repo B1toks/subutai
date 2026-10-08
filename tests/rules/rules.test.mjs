@@ -29,7 +29,7 @@ import {
 } from 'firebase/firestore';
 import { PROJECT_ID, actAs, firestoreFor, terminateAll } from './client-stub.mjs';
 
-const { claimDisplayName, changeDisplayName, normalizeDisplayName, sigmaPlacementOk } = await import('../../src/firebase/auth.ts');
+const { claimDisplayName, changeDisplayName, displayNameProblem } = await import('../../src/firebase/auth.ts');
 const { saveCompletedGame } = await import('../../src/firebase/games.ts');
 const { createMatch, joinMatch } = await import('../../src/firebase/matches.ts');
 const { saveMultiplayerGameToGames } = await import('../../src/firebase/multiplayerGames.ts');
@@ -182,18 +182,32 @@ describe('names: /users and /displayNames (QA-06)', () => {
     await newPlayer('ann', 'Ann Lee-Smith_2');
   });
 
-  it("the name picker's sigma check (sigmaPlacementOk) refuses exactly the names the rules refuse (R-5)", async () => {
-    const names = ['Νίκος', 'ΟΔΟΣ', 'ΣΑΣ ΣΟΥ', 'Σοφια', 'σας_σου', 'Σσς', 'Νίκοσ', 'νικοσ σας'];
-    let refused = 0;
-    for (const [i, name] of names.entries()) {
-      if (sigmaPlacementOk(normalizeDisplayName(name))) {
-        await newPlayer(`s${i}`, name);
-      } else {
-        refused++;
-        await denied(newPlayer(`s${i}`, name));
+  it('the name picker (displayNameProblem) refuses exactly the names the rules refuse (R-5)', async () => {
+    const take = [
+      'Alice', 'Олександр Їжак', '김민수', 'İpek', 'Ayşe', 'µ-man', 'ſam', '-ab-',
+      'Νίκος', 'ΟΔΟΣ', 'ΣΑΣ ΣΟΥ', 'Σοφια', 'σας_σου', 'Σσς',
+      // past the BMP: two UTF-16 units each, as the rules count them too
+      '𠀀𠀀', '𠀀𠀀𠀀', '𠀀'.repeat(10),
+    ];
+    const refuse = [
+      // NFKC turns these into a slug the rules refuse: conjoining jamo,
+      // a capital, or letters the shown name does not match
+      'ㅋㅋㅋ', 'ﾡﾡﾡ', 'Ａｂｃ', 'ᴬbc', 'ℂat', 'ﬁsh', 'Ⅻ Club', 'ⓐbc', '𝐀𝐁𝐂', 'ϒϒϒ', 'ǅemal',
+      // the sigma rule, the shape of the name
+      'Νίκοσ', 'νικοσ σας', 'Bo  ss', 'ab', 'a'.repeat(21), '𠀀'.repeat(11), 'a.b.c',
+    ];
+    const verdicts = [];
+    for (const [i, name] of [...take, ...refuse].entries()) {
+      const picker = displayNameProblem(name) === null;
+      let rules = true;
+      try { await newPlayer(`n${i}`, name); } catch (e) {
+        assert.equal(e?.code, 'permission-denied', `${name}: ${e}`);
+        rules = false;
       }
+      verdicts.push({ name, picker, rules });
     }
-    assert.equal(refused, 2);
+    assert.deepEqual(verdicts.filter((v) => v.picker !== v.rules), []);
+    assert.deepEqual(verdicts.filter((v) => !v.rules).map((v) => v.name), refuse);
   });
 
   it('allowed: a Turkish name with İ, claimed and renamed (R-11)', async () => {
@@ -458,11 +472,31 @@ describe('stats: /users after a saved game (QA-06)', () => {
     await seedGame('r6010', { gameMode: 'roulette', points: p({ qualityPoints: 5050, total: 6010 }) });
     await seedGame('quality', { gameMode: 'roulette', points: p({ qualityPoints: 10, total: 970 }) });
     await seedGame('rotation', { gameMode: 'roulette', points: p({ rotationPoints: 10, total: 970 }) });
-    await seedGame('cap', { gameMode: 'roulette', points: p({ outcomeBonus: 1190, total: 1650 }) });
+    await seedGame('cap', { gameMode: 'roulette', points: p({ movePoints: 750, total: 1650 }) });
     await denied(updateDoc(me('alice'), rouletteBest('r6010', 6010)));
     await denied(updateDoc(me('alice'), rouletteBest('quality', 970)));
     await denied(updateDoc(me('alice'), rouletteBest('rotation', 970)));
     await updateDoc(me('alice'), rouletteBest('cap', 1650));
+  });
+
+  it('denied (R-14): a classic best from a game over the classic caps (move, quality, outcome points, moveCount); allowed at them', async () => {
+    const best = (id, total) => ({
+      bestGamePoints: total,
+      bestGameId: id,
+      bestGameSnapshot: { outcome: 'human-win', moveCount: 12, chess960Id: 'RNBQKBNR', createdAt: serverTimestamp() },
+    });
+    // 12 moves: movePoints up to 60, qualityPoints up to 130, outcomeBonus up to 500
+    const p = (o) => ({ ...points({ total: 0 }), ...o });
+    await seedGame('moves', { points: p({ movePoints: 1500, total: 1500 }) });
+    await seedGame('quality', { points: p({ qualityPoints: 1000, total: 1000 }) });
+    await seedGame('bonus', { points: p({ outcomeBonus: 2000, total: 2000 }) });
+    await seedGame('count', { points: p({ movePoints: 60, total: 60, moveCount: 300 }) });
+    await seedGame('cap', { points: p({ movePoints: 60, capturePoints: 400, qualityPoints: 130, outcomeBonus: 500, total: 1090 }) });
+    await denied(updateDoc(me('alice'), best('moves', 1500)));
+    await denied(updateDoc(me('alice'), best('quality', 1000)));
+    await denied(updateDoc(me('alice'), best('bonus', 2000)));
+    await denied(updateDoc(me('alice'), best('count', 60)));
+    await updateDoc(me('alice'), best('cap', 1090));
   });
 
   it('denied: a counter below 0 or up by more than one', async () => {

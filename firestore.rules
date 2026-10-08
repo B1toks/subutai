@@ -62,13 +62,16 @@ service cloud.firestore {
         && intIn(p.outcomeBonus, 0, 500)
         && p.total <= p.movePoints + p.capturePoints + p.qualityPoints + p.rotationPoints + p.outcomeBonus
         && (p.counted == false || moveCount >= 10)
-        && (mode == 'roulette'
-            ? p.qualityPoints == 0 && p.rotationPoints == 0 && p.total <= 1650
-            : p.movePoints <= 5 * moveCount)
+        && (mode == 'roulette' ? rouletteCapOk(p) : p.movePoints <= 5 * moveCount)
         && (!('captureValueCp' in p) || p.captureValueCp is int)
         && (!('moveQualityCounts' in p)
             || (p.moveQualityCounts is map
                 && p.moveQualityCounts.keys().hasOnly(['brilliant', 'best', 'good', 'mistake', 'blunder'])));
+    }
+    // The roulette cap, part of plausiblePoints: checked at create and
+    // again on a game read for a best (bestBacked, R-14).
+    function rouletteCapOk(p) {
+      return p.qualityPoints == 0 && p.rotationPoints == 0 && p.total <= 1650;
     }
     function gameDoc(gameId) {
       return get(/databases/$(database)/documents/games/$(gameId)).data;
@@ -152,8 +155,9 @@ service cloud.firestore {
     // the snapshot repeats.
     // R-14 — the game is read, not written, here, so the checks /games
     // makes at create do not hold for one saved before them (under the
-    // v1.0.2 or bridge rules): its date and roulette's cap are checked
-    // again. A game dated in the future is not trusted.
+    // v1.0.2 or bridge rules): its date and its points (plausiblePoints,
+    // with the caps of its mode) are checked again. A game dated in the
+    // future is not trusted.
     function bestOk(uid, ak, pointsF, idF, snapF, mode) {
       return !ak.hasAny([pointsF, idF, snapF])
         || bestBacked(uid, request.resource.data, pointsF, idF, snapF, mode);
@@ -163,8 +167,7 @@ service cloud.firestore {
       let s = d[snapF];
       return g.playerId == uid
         && g.createdAt <= request.time
-        && (mode != 'roulette'
-            || (g.points.qualityPoints == 0 && g.points.rotationPoints == 0 && g.points.total <= 1650))
+        && plausiblePoints(g.points, g.moveCount, mode)
         && g.points.counted == true
         && g.points.total == d[pointsF]
         && g.get('gameMode', 'classic') == mode
@@ -438,10 +441,9 @@ service cloud.firestore {
               || after.log.moves.size() > before.log.moves.size()
               || (drawOfferHolds(before) && after.get('drawOffer', null) != before.drawOffer))
         ? after.get('turnStartedAt', null) == request.time
+        // unchanged, and not added as a null (equal to an absent field)
         : after.get('turnStartedAt', null) == before.get('turnStartedAt', null)
-          && (!('turnStartedAt' in after)
-              || after.turnStartedAt is timestamp
-              || ('turnStartedAt' in before && after.turnStartedAt == before.turnStartedAt));
+          && (!('turnStartedAt' in after) || 'turnStartedAt' in before);
     }
     function turnStart(m) {
       let t = m.get('turnStartedAt', null);
@@ -482,10 +484,13 @@ service cloud.firestore {
     // whose clocks disagree still write in order. What it leaves open: a
     // mover can back-date (down to the previous stamp) and so charge up to
     // 60 s of their own thinking per move to the opponent.
-    // The 60 s window holds only where there is a clock, as the client
-    // sees one: classic with a time control. Without one (roulette has
-    // none) the stamps only count up what each side spent, on screen, and
-    // a device more than 60 s off can still play.
+    // The lower end of the window holds only where there is a clock, as
+    // the client sees one: classic with a time control. Without one
+    // (roulette has none) the stamps only count up what each side spent,
+    // on screen, and a device more than 60 s behind can still play. The
+    // upper end holds everywhere: a stamp of 2^53 or more, which only a
+    // REST write can make, comes back to the JS client as a double, and
+    // every later stamp, max(now, that), would be refused as not an int.
     function matchClockOk() {
       let before = resource.data;
       let after = request.resource.data;
@@ -503,9 +508,8 @@ service cloud.firestore {
     function moveStampOk(ts, moves, timed) {
       let skewMs = 60000;
       return ts is int
-        && (!timed
-            || (ts >= request.time.toMillis() - skewMs
-                && ts <= request.time.toMillis() + skewMs))
+        && ts <= request.time.toMillis() + skewMs
+        && (!timed || ts >= request.time.toMillis() - skewMs)
         && (moves.size() == 0 || ts >= moves[moves.size() - 1].get('timestamp', 0));
     }
     function timeControlOk(d) {
@@ -708,8 +712,8 @@ service cloud.firestore {
       //     join, a move or the answer to an offer the player on turn is
       //     waiting on restarts them (turnStartOk, R-7);
       //   - the time control is frozen and a move's timestamp follows the
-      //     previous one, near server time where there is a clock
-      //     (matchClockOk, R-1);
+      //     previous one, at most 60 s ahead of server time, and no more
+      //     than 60 s behind it where there is a clock (matchClockOk, R-1);
       //   - roulette state moves only with a spin or an action of the
       //     player on turn (rouletteOk, R-8);
       //   - who may write which outcome and endReason (matchOutcomeOk,
