@@ -435,10 +435,9 @@ service cloud.firestore {
       return ((before.guest == null && after.guest != null)
               || after.log.moves.size() > before.log.moves.size())
         ? after.get('turnStartedAt', null) == request.time
+        // unchanged, and not added as a null (equal to an absent field)
         : after.get('turnStartedAt', null) == before.get('turnStartedAt', null)
-          && (!('turnStartedAt' in after)
-              || after.turnStartedAt is timestamp
-              || ('turnStartedAt' in before && after.turnStartedAt == before.turnStartedAt));
+          && (!('turnStartedAt' in after) || 'turnStartedAt' in before);
     }
     function turnStart(m) {
       let t = m.get('turnStartedAt', null);
