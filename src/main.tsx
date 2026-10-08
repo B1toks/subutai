@@ -18,6 +18,15 @@ const ShowcaseView = lazy(() =>
 // Firestore data and never writes anything back.
 const isShowcase = new URLSearchParams(window.location.search).get('showcase') === '1';
 
+// The kiosk is the only view set in Inter (the app itself is system-ui),
+// so the face is fetched for it alone instead of blocking every first paint.
+if (isShowcase) {
+  const inter = document.createElement('link');
+  inter.rel = 'stylesheet';
+  inter.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap';
+  document.head.appendChild(inter);
+}
+
 // V1 — async font swap. index.html loads the decorative theme faces with
 // media="print" so they never block first paint; this flips them live once
 // downloaded. Used to be an inline onload= handler, which the production

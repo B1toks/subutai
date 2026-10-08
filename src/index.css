@@ -1,16 +1,6 @@
 :root {
-  --bg: #0c0c18;
-  --text: #d4c8a0;
-  --text-muted: #8a7e60;
-  --tile-light: #c8b98a;
-  --tile-dark: #5c4033;
-  --accent-gold: #d4a843;
-  --accent-teal: #2d8a6e;
-  --btn-bg: #2a2a40;
-  --btn-border: rgba(180, 160, 100, 0.3);
-  --danger: #dc2626;
-  --success: #22c55e;
-
+  /* Colour tokens live in App.css (one block per theme); a second palette
+     here was fully overridden by it and only misled readers. */
   --board-size: min(100vw - 32px, 520px);
 
   font: 16px/1.45 system-ui, 'Segoe UI', Roboto, sans-serif;

@@ -165,7 +165,6 @@
 
   /* Typography */
   --font-display: 'Cinzel', 'Times New Roman', serif;
-  --font-body: 'Inter', system-ui, sans-serif;
   /* System monos only: JetBrains Mono is deliberately not loaded
      (index.html, Sprint 5.2), so naming it only made the move log
      differ between machines that happen to have it installed. */
@@ -308,7 +307,6 @@
 
   /* Typography */
   --font-display: 'Cinzel', 'Times New Roman', serif;
-  --font-body: 'Inter', system-ui, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
   color-scheme: light;
@@ -440,7 +438,6 @@
 
   /* Typography — gothic display */
   --font-display: 'Cinzel Decorative', 'Cinzel', 'Times New Roman', serif;
-  --font-body: 'Cormorant Garamond', 'Inter', serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
   color-scheme: dark;
@@ -566,7 +563,6 @@
   --sacrifice-color: 255, 79, 216;
 
   --font-display: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  --font-body: 'Inter', system-ui, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
   color-scheme: dark;
@@ -10126,7 +10122,8 @@ button:active:not(:disabled) {
 }
 
 .position-label-key {
-  font-family: var(--font-body);
+  /* The app's sans (index.css), against the mono code beside it. */
+  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
   font-size: 8.5px;
   font-weight: 700;
   letter-spacing: 0.08em;
