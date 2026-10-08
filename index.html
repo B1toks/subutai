@@ -1,103 +1,44 @@
 <!doctype html>
+<!--
+  Subutai moved from https://b1toks.github.io/subutai/ to https://subutai.honchar.dev/.
+  This page replaces the whole gh-pages branch once the new domain is live,
+  not before (npx gh-pages -d scripts/redirect). It is not part of the app
+  build. The script runs first and keeps ?game=… share links and any #hash;
+  the meta refresh is the fallback without JavaScript (Chrome never fires it
+  once the script has started the navigation); the link is for everyone else.
+-->
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/subutai/favicon.svg" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover"
-    />
-    <meta name="theme-color" content="#0e0a06" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-
-    <!-- Sprint 4.4 — SEO + social cards -->
-    <title>Subutai — Auxetic Chess960</title>
-    <meta
-      name="description"
-      content="Chess960 on a living board: every 2×2 block can rotate mid-game, rewiring the geometry. Play vs AI, hot-seat, or online. Free, no install."
-    />
-    <link rel="canonical" href="https://b1toks.github.io/subutai/" />
-    <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Subutai" />
-    <meta property="og:title" content="Subutai — Auxetic Chess960" />
-    <meta
-      property="og:description"
-      content="Chess960 on a living board: every 2×2 block can rotate mid-game. The signature move is twisting the board itself."
-    />
-    <meta property="og:url" content="https://b1toks.github.io/subutai/" />
-    <meta property="og:image" content="https://b1toks.github.io/subutai/og-image.png" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Subutai — Auxetic Chess960" />
-    <meta
-      name="twitter:description"
-      content="Chess960 on a living board: every 2×2 block can rotate mid-game."
-    />
-    <meta name="twitter:image" content="https://b1toks.github.io/subutai/og-image.png" />
-
-    <!-- Sprint 5.2 — structured data for rich search results. -->
-    <script type="application/ld+json">
-      {
-        "@context": "https://schema.org",
-        "@type": "VideoGame",
-        "name": "Subutai",
-        "alternateName": "Subutai — Auxetic Chess960",
-        "url": "https://b1toks.github.io/subutai/",
-        "image": "https://b1toks.github.io/subutai/og-image.png",
-        "description": "Chess960 on a living board: every 2×2 block can rotate mid-game, rewiring the geometry. Play vs AI, hot-seat, or online. Free, no install.",
-        "genre": ["Strategy", "Board Game", "Chess"],
-        "gamePlatform": ["Web Browser", "PWA"],
-        "applicationCategory": "Game",
-        "operatingSystem": "Any",
-        "playMode": ["SinglePlayer", "MultiPlayer"],
-        "isAccessibleForFree": true,
-        "offers": {
-          "@type": "Offer",
-          "price": "0",
-          "priceCurrency": "USD"
-        }
-      }
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Subutai has moved</title>
+    <link rel="canonical" href="https://subutai.honchar.dev/" />
+    <script>
+      location.replace('https://subutai.honchar.dev/' + location.search + location.hash);
     </script>
-
-    <!-- Sprint 4.4 — PWA -->
-    <link rel="manifest" href="/subutai/manifest.webmanifest" />
-    <link rel="apple-touch-icon" href="/subutai/apple-touch-icon.png" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <!-- Sprint 5.2 — font diet. Inter (the body face, needed at first
-         paint) loads normally; the decorative theme faces load async
-         (print-media swap) so they never block FCP. Dropped Orbitron
-         (unused) and JetBrains Mono (move log falls back to Consolas/
-         system mono — one fewer render-blocking download). -->
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap"
-      rel="stylesheet"
-    />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Cinzel+Decorative:wght@700;900&family=Cormorant+Garamond:ital,wght@0,400;0,700;1,400&display=swap"
-      rel="stylesheet"
-      media="print"
-      onload="this.media='all'"
-    />
-    <noscript>
-      <link
-        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Cinzel+Decorative:wght@700;900&family=Cormorant+Garamond:ital,wght@0,400;0,700;1,400&family=Inter:wght@400;500;700&display=swap"
-        rel="stylesheet"
-      />
-    </noscript>
-    <script type="module" crossorigin src="/subutai/assets/index-D0b0eoRO.js"></script>
-    <link rel="modulepreload" crossorigin href="/subutai/assets/jsx-runtime-BN4ZKciC.js">
-    <link rel="modulepreload" crossorigin href="/subutai/assets/board-DzbCztPX.js">
-    <link rel="modulepreload" crossorigin href="/subutai/assets/search-By7Dh5d5.js">
-    <link rel="modulepreload" crossorigin href="/subutai/assets/Icon-DRZXYAHM.js">
-    <link rel="modulepreload" crossorigin href="/subutai/assets/engine-C69HnjZC.js">
-    <link rel="modulepreload" crossorigin href="/subutai/assets/client-D5IW_BzO.js">
-    <link rel="stylesheet" crossorigin href="/subutai/assets/index-CtXsxYZY.css">
+    <meta http-equiv="refresh" content="0; url=https://subutai.honchar.dev/" />
+    <meta name="theme-color" content="#131022" />
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: grid;
+        place-items: center;
+        padding: 0 16px;
+        background: #131022;
+        color: #e9edff;
+        font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        text-align: center;
+      }
+      a {
+        color: #4ee1ff;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <p>Subutai has moved to <a href="https://subutai.honchar.dev/">subutai.honchar.dev</a>.</p>
   </body>
 </html>
