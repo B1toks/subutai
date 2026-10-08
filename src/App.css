@@ -166,7 +166,10 @@
   /* Typography */
   --font-display: 'Cinzel', 'Times New Roman', serif;
   --font-body: 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+  /* System monos only: JetBrains Mono is deliberately not loaded
+     (index.html, Sprint 5.2), so naming it only made the move log
+     differ between machines that happen to have it installed. */
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
   /* Spacing scale (4px base) — shared across all themes */
   --space-1: 4px;
@@ -306,7 +309,7 @@
   /* Typography */
   --font-display: 'Cinzel', 'Times New Roman', serif;
   --font-body: 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
   color-scheme: light;
 }
@@ -438,7 +441,7 @@
   /* Typography — gothic display */
   --font-display: 'Cinzel Decorative', 'Cinzel', 'Times New Roman', serif;
   --font-body: 'Cormorant Garamond', 'Inter', serif;
-  --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
   color-scheme: dark;
 }
@@ -562,9 +565,9 @@
   /* Sacrifice: hot magenta */
   --sacrifice-color: 255, 79, 216;
 
-  --font-display: 'JetBrains Mono', 'Consolas', monospace;
+  --font-display: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --font-body: 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
   color-scheme: dark;
 }
