@@ -2,10 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   changeDisplayName,
   claimDisplayName,
+  displayNameProblem,
   isDisplayNameAvailable,
-  isValidDisplayName,
   normalizeDisplayName,
-  sigmaPlacementOk,
 } from '../firebase/auth';
 
 type Mode = 'initial' | 'change';
@@ -24,6 +23,7 @@ type LocalStatus =
   | { kind: 'tooLong' }
   | { kind: 'invalidChars' }
   | { kind: 'sigma' }
+  | { kind: 'changesWhenSaved' }
   | { kind: 'unchanged' };
 
 type RemoteStatus =
@@ -38,10 +38,8 @@ const CHECK_DEBOUNCE_MS = 400;
 function computeLocalStatus(name: string, currentName: string, mode: Mode): LocalStatus | null {
   const trimmed = name.trim();
   if (trimmed.length === 0) return { kind: 'idle' };
-  if (trimmed.length < 3) return { kind: 'tooShort' };
-  if (trimmed.length > 20) return { kind: 'tooLong' };
-  if (!isValidDisplayName(trimmed)) return { kind: 'invalidChars' };
-  if (!sigmaPlacementOk(normalizeDisplayName(trimmed))) return { kind: 'sigma' };
+  const problem = displayNameProblem(trimmed);
+  if (problem) return { kind: problem };
   if (mode === 'change' && normalizeDisplayName(name) === normalizeDisplayName(currentName)) {
     return { kind: 'unchanged' };
   }
@@ -146,6 +144,8 @@ export function NamePicker({
         return { text: 'Invalid characters', tone: 'warn' };
       case 'sigma':
         return { text: 'Use ς only at the end of a word, σ elsewhere', tone: 'warn' };
+      case 'changesWhenSaved':
+        return { text: 'Some letters here can’t be used: type them as plain letters', tone: 'warn' };
       case 'checking':
         return { text: 'Checking…', tone: 'neutral' };
       case 'available':

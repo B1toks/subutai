@@ -29,7 +29,7 @@ import {
 } from 'firebase/firestore';
 import { PROJECT_ID, actAs, firestoreFor, terminateAll } from './client-stub.mjs';
 
-const { claimDisplayName, changeDisplayName, normalizeDisplayName, sigmaPlacementOk } = await import('../../src/firebase/auth.ts');
+const { claimDisplayName, changeDisplayName, displayNameProblem } = await import('../../src/firebase/auth.ts');
 const { saveCompletedGame } = await import('../../src/firebase/games.ts');
 const { createMatch, joinMatch } = await import('../../src/firebase/matches.ts');
 const { saveMultiplayerGameToGames } = await import('../../src/firebase/multiplayerGames.ts');
@@ -181,18 +181,32 @@ describe('names: /users and /displayNames (QA-06)', () => {
     await newPlayer('ann', 'Ann Lee-Smith_2');
   });
 
-  it("the name picker's sigma check (sigmaPlacementOk) refuses exactly the names the rules refuse (R-5)", async () => {
-    const names = ['Νίκος', 'ΟΔΟΣ', 'ΣΑΣ ΣΟΥ', 'Σοφια', 'σας_σου', 'Σσς', 'Νίκοσ', 'νικοσ σας'];
-    let refused = 0;
-    for (const [i, name] of names.entries()) {
-      if (sigmaPlacementOk(normalizeDisplayName(name))) {
-        await newPlayer(`s${i}`, name);
-      } else {
-        refused++;
-        await denied(newPlayer(`s${i}`, name));
+  it('the name picker (displayNameProblem) refuses exactly the names the rules refuse (R-5)', async () => {
+    const take = [
+      'Alice', 'Олександр Їжак', '김민수', 'İpek', 'Ayşe', 'µ-man', 'ſam', '-ab-',
+      'Νίκος', 'ΟΔΟΣ', 'ΣΑΣ ΣΟΥ', 'Σοφια', 'σας_σου', 'Σσς',
+      // past the BMP: two UTF-16 units each, as the rules count them too
+      '𠀀𠀀', '𠀀𠀀𠀀', '𠀀'.repeat(10),
+    ];
+    const refuse = [
+      // NFKC turns these into a slug the rules refuse: conjoining jamo,
+      // a capital, or letters the shown name does not match
+      'ㅋㅋㅋ', 'ﾡﾡﾡ', 'Ａｂｃ', 'ᴬbc', 'ℂat', 'ﬁsh', 'Ⅻ Club', 'ⓐbc', '𝐀𝐁𝐂', 'ϒϒϒ', 'ǅemal',
+      // the sigma rule, the shape of the name
+      'Νίκοσ', 'νικοσ σας', 'Bo  ss', 'ab', 'a'.repeat(21), '𠀀'.repeat(11), 'a.b.c',
+    ];
+    const verdicts = [];
+    for (const [i, name] of [...take, ...refuse].entries()) {
+      const picker = displayNameProblem(name) === null;
+      let rules = true;
+      try { await newPlayer(`n${i}`, name); } catch (e) {
+        assert.equal(e?.code, 'permission-denied', `${name}: ${e}`);
+        rules = false;
       }
+      verdicts.push({ name, picker, rules });
     }
-    assert.equal(refused, 2);
+    assert.deepEqual(verdicts.filter((v) => v.picker !== v.rules), []);
+    assert.deepEqual(verdicts.filter((v) => !v.rules).map((v) => v.name), refuse);
   });
 
   it('allowed: a Turkish name with İ, claimed and renamed (R-11)', async () => {
