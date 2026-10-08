@@ -92,6 +92,7 @@ import {
 import { logGameStart } from './firebase/gameStarts';
 import { startPresenceHeartbeat, stopPresenceHeartbeat } from './firebase/presence';
 import { computeGamePoints, type GameOutcome, type GamePoints } from './analysis/points';
+import { MATE_SCALE_CPL, pawns } from './analysis/lossText';
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
 import {
@@ -5546,7 +5547,7 @@ function App() {
    * The move log, in two versions.
    *
    * On screen it carries the coaching marks — ⭐ for the engine's own
-   * choice, ? and ?? for mistakes, and the "← Better: … (−123 cp)" tail.
+   * choice, ? and ?? for mistakes, and the "← Better: … (−1.2 pawns)" tail.
    * That is the whole point of the panel and it stays.
    *
    * What goes on the clipboard is the bare log. A pasted log is an INPUT:
@@ -5601,11 +5602,14 @@ function App() {
             if (first) {
               san += ` \u2190 Better: ${first}`;
             }
-            // Append the centipawn loss so the player can gauge how marginal
-            // the suggestion is. cpl 50-100 = borderline, 300+ = real blunder.
-            // Stage L's float-eval makes cpl a non-integer \u2014 round for display.
-            if (a.cpl > 0) {
-              san += ` (\u2212${Math.round(a.cpl)} cp)`;
+            // Append the loss so the player can gauge how marginal the
+            // suggestion is, in pawns like the review screen says it (a
+            // number of centipawns means nothing to most players). A
+            // mate-scale loss is not a number of pawns, so it gets words.
+            if (a.cpl >= MATE_SCALE_CPL) {
+              san += gameMode === 'roulette' ? ' (hangs the king)' : ' (allows mate)';
+            } else if (a.cpl > 0) {
+              san += ` (\u2212${pawns(a.cpl)} pawns)`;
             }
           }
         }
@@ -5617,7 +5621,7 @@ function App() {
       lines.push(line);
     }
     return lines.join('\n');
-  }, [log.moves, positionLabel, notationSeed]);
+  }, [log.moves, positionLabel, notationSeed, gameMode]);
 
   const notationString = useMemo(() => buildNotation(true), [buildNotation]);
 
