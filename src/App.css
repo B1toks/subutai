@@ -9476,7 +9476,7 @@ button:active:not(:disabled) {
   }
 }
 
-/* ─── Neon logo (2 variants, click to switch) ────────────────────── */
+/* ─── Brand mark (one logo, not interactive) ─────────────────────── */
 .neon-logo-btn {
   display: inline-flex;
   align-items: center;
@@ -9487,7 +9487,7 @@ button:active:not(:disabled) {
   background: transparent;
   border: 0;
   border-radius: 10px;
-  cursor: pointer;
+  cursor: default;
   flex-shrink: 0;
   align-self: center;
   transition: transform 0.15s, filter 0.2s;
