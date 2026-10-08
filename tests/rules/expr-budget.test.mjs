@@ -92,6 +92,11 @@ async function spin(uid, code) {
   await patch(`matches/${code}`, { rouletteSlots: ['pawn', 'knight', 'pawn', 'knight'] });
 }
 const m = (code) => read(`matches/${code}`);
+/** offerDraw, checked: the app's own write must land in setup. */
+async function offerOf(uid, code) {
+  await (await hookAs(uid, code)).offerDraw();
+  assert.equal((await m(code)).drawOffer?.by, uid, 'the draw offer did not land in setup');
+}
 
 const pts = (o = {}) => ({ movePoints: 60, capturePoints: 0, qualityPoints: 0, rotationPoints: 0, outcomeBonus: 0, total: 60,
   moveCount: 12, captureValueCp: 0, moveQualityCounts: { brilliant: 0, best: 0, good: 0, mistake: 0, blunder: 0 }, counted: true, ...o });
@@ -143,6 +148,39 @@ const CASES = [
   }, async (c) => { actAs(c.white); await writeInactivityForfeit(c.code, c.white); }, async (c) => !!(await m(c.code)).outcome],
   ['/matches: mate written by writeOutcomeIfFirst', 'matches', async () => { const c = await start(); await move(c.white, c.code); return c; },
     async (c) => (await hookAs(c.white, c.code)).writeOutcomeIfFirst('white-win'), async (c) => !!(await m(c.code)).outcome],
+
+  // The draw offer (drawOfferHolds, drawOfferOk). After White's first move Black is on turn.
+  ['/matches: draw offer on turn (offerDraw)', 'matches', async () => { const c = await start(); await move(c.white, c.code); return c; },
+    async (c) => (await hookAs(c.black, c.code)).offerDraw(), async (c) => (await m(c.code)).drawOffer?.by === c.black],
+  ['/matches: draw offer off turn', 'matches', async () => { const c = await start(); await move(c.white, c.code); return c; },
+    async (c) => (await hookAs(c.white, c.code)).offerDraw(), async (c) => (await m(c.code)).drawOffer?.by === c.white],
+  ['/matches: decline of an offer made on turn, restarts the turn (answerDraw)', 'matches', async () => {
+    const c = await start(); await move(c.white, c.code); await offerOf(c.black, c.code); return c;
+  }, async (c) => (await hookAs(c.white, c.code)).answerDraw(false), async (c) => (await m(c.code)).drawOffer?.declined === true],
+  ['/matches: accept of an offer made on turn', 'matches', async () => {
+    const c = await start(); await move(c.white, c.code); await offerOf(c.black, c.code); return c;
+  }, async (c) => (await hookAs(c.white, c.code)).answerDraw(true), async (c) => (await m(c.code)).outcome === 'draw'],
+  ['/matches: classic move that retires the opponent\'s offer', 'matches', async () => {
+    const c = await start(); await move(c.white, c.code); await offerOf(c.white, c.code); return c;
+  }, (c) => move(c.black, c.code), async (c) => (await m(c.code)).log.moves.length === 2],
+  ['/matches: roulette last action with the mover\'s offer standing', 'matches', async () => {
+    const c = await start('roulette'); await spin(c.white, c.code); await (await hookAs(c.white, c.code)).sendRotate();
+    await offerOf(c.white, c.code); return c;
+  }, async (c) => (await hookAs(c.white, c.code)).sendRotate(), async (c) => (await m(c.code)).currentTurn === c.black],
+  ['/matches: inactivity forfeit with a declined offer on the table', 'matches', async () => {
+    const c = await start(); await move(c.white, c.code); await offerOf(c.black, c.code);
+    await (await hookAs(c.white, c.code)).answerDraw(false);
+    await patch(`matches/${c.code}`, { lastActivity: ago(100_000), turnStartedAt: ago(100_000) }); return c;
+  }, async (c) => { actAs(c.white); await writeInactivityForfeit(c.code, c.white); }, async (c) => !!(await m(c.code)).outcome],
+  ['/matches: inactivity forfeit with a retired offer (offered on turn, then moved)', 'matches', async () => {
+    const c = await start(); await move(c.white, c.code); await offerOf(c.black, c.code); await move(c.black, c.code);
+    await patch(`matches/${c.code}`, { lastActivity: ago(100_000), turnStartedAt: ago(100_000) }); return c;
+  }, async (c) => { actAs(c.black); await writeInactivityForfeit(c.code, c.black); }, async (c) => !!(await m(c.code)).outcome],
+  ['/matches: flag claim with a declined offer on the table, 1+2', 'matches', async () => {
+    const c = await start('classic', 60); await move(c.white, c.code); await offerOf(c.black, c.code);
+    await (await hookAs(c.white, c.code)).answerDraw(false);
+    await patch(`matches/${c.code}`, { lastActivity: ago(100_000), turnStartedAt: ago(100_000) }); return c;
+  }, async (c) => (await hookAs(c.white, c.code)).writeOutcomeIfFirst(c.loser(c.black), 'flag'), async (c) => !!(await m(c.code)).outcome],
 ];
 
 /** One probe: rules with K pads on target, fresh data, set up, switch on, the write. */
