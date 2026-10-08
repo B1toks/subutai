@@ -7537,7 +7537,7 @@ function App() {
               <span className="mode-card-content">
                 <span className="mode-card-title">Classic</span>
                 <span className="mode-card-subtitle">
-                  Standard chess960 + topology rotation
+                  Standard Chess960 + topology rotation
                 </span>
               </span>
             </button>

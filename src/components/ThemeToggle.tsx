@@ -26,7 +26,7 @@ const BLURB: Record<ThemeChoice, string> = {
   neon: 'indigo night, cyan and magenta',
   wood: 'warm wood room at night',
   'wood-light': 'clean daylight board',
-  fantasy: 'parchment and arcane gold',
+  fantasy: 'gothic bronze and gold',
 };
 
 /**
