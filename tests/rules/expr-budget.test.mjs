@@ -4,6 +4,7 @@
 // rules). Run on its own:
 //   firebase emulators:exec --only firestore --project demo-subutai
 //     "node --import ./tests/rules/register.mjs --test --test-isolation=none tests/rules/expr-budget.test.mjs"
+// (EXPR_ONLY=users or EXPR_ONLY=matches: only those writes.)
 //
 // Method: K no-op conditions (`request.time != null`) go in front of the
 // update rule, behind a switch: they are evaluated only once /padflag/on
@@ -156,10 +157,13 @@ async function probe([, target, setup, act, landed], k) {
   return { ok: await landed(ctx), limit: errors.some((e) => /1000 expressions|expressions/i.test(e)), errors };
 }
 
+// EXPR_ONLY=users (or matches) measures only those writes, after the calibration.
+const ONLY = process.env.EXPR_ONLY;
+
 it('expression margin of the honest writes', { timeout: 30 * 60_000 }, async () => {
   const rows = [];
   let perPad = null;
-  for (const c of CASES) {
+  for (const c of CASES.filter((c) => !ONLY || c[1] === 'calib' || c[1] === ONLY)) {
     const zero = await probe(c, 0);
     assert.ok(zero.ok, `${c[0]} does not land with no pads: ${zero.errors.join(' | ')}`);
     let lo = 0, hi = 1000; // lo lands, hi does not

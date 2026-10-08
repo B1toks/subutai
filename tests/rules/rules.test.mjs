@@ -457,11 +457,31 @@ describe('stats: /users after a saved game (QA-06)', () => {
     await seedGame('r6010', { gameMode: 'roulette', points: p({ qualityPoints: 5050, total: 6010 }) });
     await seedGame('quality', { gameMode: 'roulette', points: p({ qualityPoints: 10, total: 970 }) });
     await seedGame('rotation', { gameMode: 'roulette', points: p({ rotationPoints: 10, total: 970 }) });
-    await seedGame('cap', { gameMode: 'roulette', points: p({ outcomeBonus: 1190, total: 1650 }) });
+    await seedGame('cap', { gameMode: 'roulette', points: p({ movePoints: 750, total: 1650 }) });
     await denied(updateDoc(me('alice'), rouletteBest('r6010', 6010)));
     await denied(updateDoc(me('alice'), rouletteBest('quality', 970)));
     await denied(updateDoc(me('alice'), rouletteBest('rotation', 970)));
     await updateDoc(me('alice'), rouletteBest('cap', 1650));
+  });
+
+  it('denied (R-14): a classic best from a game over the classic caps (move, quality, outcome points, moveCount); allowed at them', async () => {
+    const best = (id, total) => ({
+      bestGamePoints: total,
+      bestGameId: id,
+      bestGameSnapshot: { outcome: 'human-win', moveCount: 12, chess960Id: 'RNBQKBNR', createdAt: serverTimestamp() },
+    });
+    // 12 moves: movePoints up to 60, qualityPoints up to 130, outcomeBonus up to 500
+    const p = (o) => ({ ...points({ total: 0 }), ...o });
+    await seedGame('moves', { points: p({ movePoints: 1500, total: 1500 }) });
+    await seedGame('quality', { points: p({ qualityPoints: 1000, total: 1000 }) });
+    await seedGame('bonus', { points: p({ outcomeBonus: 2000, total: 2000 }) });
+    await seedGame('count', { points: p({ movePoints: 60, total: 60, moveCount: 300 }) });
+    await seedGame('cap', { points: p({ movePoints: 60, capturePoints: 400, qualityPoints: 130, outcomeBonus: 500, total: 1090 }) });
+    await denied(updateDoc(me('alice'), best('moves', 1500)));
+    await denied(updateDoc(me('alice'), best('quality', 1000)));
+    await denied(updateDoc(me('alice'), best('bonus', 2000)));
+    await denied(updateDoc(me('alice'), best('count', 60)));
+    await updateDoc(me('alice'), best('cap', 1090));
   });
 
   it('denied: a counter below 0 or up by more than one', async () => {

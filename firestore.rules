@@ -68,8 +68,8 @@ service cloud.firestore {
             || (p.moveQualityCounts is map
                 && p.moveQualityCounts.keys().hasOnly(['brilliant', 'best', 'good', 'mistake', 'blunder'])));
     }
-    // The roulette cap: checked at create (plausiblePoints) and again on a
-    // game read for a best (bestBacked, R-14).
+    // The roulette cap, part of plausiblePoints: checked at create and
+    // again on a game read for a best (bestBacked, R-14).
     function rouletteCapOk(p) {
       return p.qualityPoints == 0 && p.rotationPoints == 0 && p.total <= 1650;
     }
@@ -155,8 +155,9 @@ service cloud.firestore {
     // the snapshot repeats.
     // R-14 — the game is read, not written, here, so the checks /games
     // makes at create do not hold for one saved before them (under the
-    // v1.0.2 or bridge rules): its date and roulette's cap are checked
-    // again. A game dated in the future is not trusted.
+    // v1.0.2 or bridge rules): its date and its points (plausiblePoints,
+    // with the caps of its mode) are checked again. A game dated in the
+    // future is not trusted.
     function bestOk(uid, ak, pointsF, idF, snapF, mode) {
       return !ak.hasAny([pointsF, idF, snapF])
         || bestBacked(uid, request.resource.data, pointsF, idF, snapF, mode);
@@ -166,7 +167,7 @@ service cloud.firestore {
       let s = d[snapF];
       return g.playerId == uid
         && g.createdAt <= request.time
-        && (mode != 'roulette' || rouletteCapOk(g.points))
+        && plausiblePoints(g.points, g.moveCount, mode)
         && g.points.counted == true
         && g.points.total == d[pointsF]
         && g.get('gameMode', 'classic') == mode
