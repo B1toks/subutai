@@ -786,6 +786,7 @@ export function GameReview({ log: liveLog, onBack, meta, gameId }: Props) {
               onClick={() => setReviewIdx(0)}
               disabled={reviewIdx === 0}
               title="Start (Home)"
+              aria-label="Go to the start"
             >
               «
             </button>
@@ -795,6 +796,7 @@ export function GameReview({ log: liveLog, onBack, meta, gameId }: Props) {
               onClick={() => setReviewIdx((i) => Math.max(0, i - 1))}
               disabled={reviewIdx === 0}
               title="Previous (←)"
+              aria-label="Previous move"
             >
               ‹
             </button>
@@ -809,6 +811,7 @@ export function GameReview({ log: liveLog, onBack, meta, gameId }: Props) {
               }
               disabled={reviewIdx === log.moves.length}
               title="Next (→)"
+              aria-label="Next move"
             >
               ›
             </button>
@@ -818,6 +821,7 @@ export function GameReview({ log: liveLog, onBack, meta, gameId }: Props) {
               onClick={() => setReviewIdx(log.moves.length)}
               disabled={reviewIdx === log.moves.length}
               title="End (End)"
+              aria-label="Go to the end"
             >
               »
             </button>

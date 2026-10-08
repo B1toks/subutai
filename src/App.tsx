@@ -8145,7 +8145,12 @@ function App() {
                 aria-label="Interface scale"
               />
               {uiScale !== 1 && (
-                <button type="button" className="help-scale-reset" onClick={() => pickUiScale(1)}>
+                <button
+                  type="button"
+                  className="help-scale-reset"
+                  onClick={() => pickUiScale(1)}
+                  aria-label="Reset interface scale to 100%"
+                >
                   100%
                 </button>
               )}
