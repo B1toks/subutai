@@ -53,10 +53,10 @@ function mpClocks(match) {
   };
 }
 
-async function start(tc, inc = null) {
+async function start(tc, inc = null, mode = 'classic') {
   const H = { uid: 'hana', displayName: 'Hana' }, G = { uid: 'gus', displayName: 'Gus' };
   actAs(H.uid);
-  const code = await createMatch(H, 'classic', tc, inc);
+  const code = await createMatch(H, mode, tc, inc);
   actAs(G.uid);
   const m0 = await joinMatch(code, G);
   const white = m0.host.color === 'white' ? H.uid : G.uid;
@@ -163,7 +163,7 @@ describe('C: honest players whose device clocks are wrong (R-1 window, 60 s)', (
     });
   }
 
-  it('denied (known limit): a device more than 60 s off cannot move at all', async () => {
+  it('denied (known limit): with a clock, a device more than 60 s off cannot move at all', async () => {
     const { code, white } = await start(300);
     await withClock(-70_000, () => honestMove(white, code));
     assert.equal((await read(`matches/${code}`)).log.moves.length, 0);
@@ -198,5 +198,41 @@ describe('C: honest players whose device clocks are wrong (R-1 window, 60 s)', (
     });
     const clocks = mpClocks(await read(`matches/${code}`));
     assert.ok(clocks.black > 299_000, `Black was charged nothing: ${JSON.stringify(clocks)}`);
+  });
+});
+
+describe('C: no clock, no window (R-1 window only where the client runs a clock)', () => {
+  it('allowed: devices 70 s ahead and 70 s behind play an untimed classic match', async () => {
+    const { code, white, black } = await start(null);
+    for (let ply = 0; ply < 4; ply++) {
+      await withClock(ply % 2 === 0 ? +70_000 : -70_000, () => honestMove(ply % 2 === 0 ? white : black, code));
+    }
+    const stamps = (await read(`matches/${code}`)).log.moves.map((e) => e.timestamp);
+    assert.equal(stamps.length, 4, 'a move was refused');
+    for (let i = 1; i < stamps.length; i++) assert.ok(stamps[i] >= stamps[i - 1], `stamp ${i} went back`);
+  });
+
+  it('allowed: a device 70 s off plays roulette, with no time control and with one (the client runs no clock in roulette)', async () => {
+    for (const tc of [null, 300]) {
+      const { code, white } = await start(tc, null, 'roulette');
+      await withClock(+70_000, async () => { await (await hookAs(white, code)).spinRoulette(); });
+      await withClock(+70_000, async () => { await (await hookAs(white, code)).sendRotate(); });
+      await withClock(-70_000, async () => { await (await hookAs(white, code)).sendRotate(); });
+      assert.equal((await read(`matches/${code}`)).log.moves.length, 2, `tc ${tc}: an action was refused`);
+    }
+  });
+
+  it('denied: without a clock a stamp is still a whole number no earlier than the previous one (10 min ahead lands)', async () => {
+    const { code, white, black } = await start(null);
+    await honestMove(white, code);
+    const m = await read(`matches/${code}`);
+    const prev = m.log.moves[0].timestamp;
+    const append = (timestamp) => updateDoc(doc(firestoreFor(black), `matches/${code}`), {
+      'log.moves': [...m.log.moves, { ...m.log.moves[0], timestamp }], currentTurn: white, lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
+    });
+    await denied(append(prev - 1));
+    await denied(append(String(Date.now())));
+    await denied(append(null));
+    await append(Date.now() + 10 * 60_000);
   });
 });

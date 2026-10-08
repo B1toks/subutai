@@ -97,3 +97,14 @@ export function isValidDisplayName(name: string): boolean {
   if (trimmed.includes('  ')) return false;
   return /^[\p{L}\p{N} _-]+$/u.test(trimmed);
 }
+
+/** R-5 — firestore.rules (slugCanonical) take ς in a slug only where
+ *  toLowerCase() writes it, at the end of a word, and σ everywhere else.
+ *  A name typed with σ at the end of a word ("Νίκοσ"), or with a modifier
+ *  letter or ª before a final Σ, lowercases to a slug they refuse; the
+ *  same three patterns, so the picker can say so before the save fails. */
+export function sigmaPlacementOk(slug: string): boolean {
+  return !/(^|[^\p{Ll}\p{Lm}])\p{Lm}*ς/u.test(slug)
+    && !/ς\p{Lm}*\p{Ll}/u.test(slug)
+    && !/\p{Ll}\p{Lm}*σ\p{Lm}*([^\p{Ll}\p{Lm}]|$)/u.test(slug);
+}

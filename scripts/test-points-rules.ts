@@ -16,6 +16,7 @@ const POINTS_KEYS = [
   'movePoints', 'capturePoints', 'qualityPoints', 'rotationPoints', 'outcomeBonus',
   'total', 'moveCount', 'captureValueCp', 'moveQualityCounts', 'counted',
 ];
+const QUALITY_KEYS = ['brilliant', 'best', 'good', 'mistake', 'blunder'];
 
 /** firestore.rules plausiblePoints(p, moveCount, mode), transcribed. */
 function plausiblePoints(p: GamePoints, moveCount: number, mode: 'classic' | 'roulette'): boolean {
@@ -36,7 +37,10 @@ function plausiblePoints(p: GamePoints, moveCount: number, mode: 'classic' | 'ro
     (mode === 'roulette'
       ? p.qualityPoints === 0 && p.rotationPoints === 0 && p.total <= 1650
       : p.movePoints <= 5 * moveCount) &&
-    Number.isInteger(p.captureValueCp)
+    (!('captureValueCp' in p) || Number.isInteger(p.captureValueCp)) &&
+    (!('moveQualityCounts' in p) ||
+      (typeof p.moveQualityCounts === 'object' && p.moveQualityCounts !== null &&
+        Object.keys(p.moveQualityCounts).every((k) => QUALITY_KEYS.includes(k))))
   );
 }
 

@@ -150,6 +150,10 @@ service cloud.firestore {
     // shows ("Survived", "Bot Slayer") change only together, and only to a
     // counted game of this player in this mode whose outcome and length
     // the snapshot repeats.
+    // R-14 — the game is read, not written, here, so the checks /games
+    // makes at create do not hold for one saved before them (under the
+    // v1.0.2 or bridge rules): its date and roulette's cap are checked
+    // again. A game dated in the future is not trusted.
     function bestOk(uid, ak, pointsF, idF, snapF, mode) {
       return !ak.hasAny([pointsF, idF, snapF])
         || bestBacked(uid, request.resource.data, pointsF, idF, snapF, mode);
@@ -158,6 +162,9 @@ service cloud.firestore {
       let g = gameDoc(d[idF]);
       let s = d[snapF];
       return g.playerId == uid
+        && g.createdAt <= request.time
+        && (mode != 'roulette'
+            || (g.points.qualityPoints == 0 && g.points.rotationPoints == 0 && g.points.total <= 1650))
         && g.points.counted == true
         && g.points.total == d[pointsF]
         && g.get('gameMode', 'classic') == mode
@@ -193,6 +200,9 @@ service cloud.firestore {
         && g.outcome == 'human-win'
         && g.points.counted == true
         && g.createdAt > request.time - duration.value(10, 'm')
+        // R-14 — not one dated in the future: it would stay fresh and
+        // newer than lastGameAt forever.
+        && g.createdAt <= request.time
         && (!('lastGameAt' in resource.data) || g.createdAt > resource.data.lastGameAt);
     }
 
@@ -417,6 +427,10 @@ service cloud.firestore {
     // its next move. One more write sets it: the decline of a draw offer
     // made by the player on turn, who waited for the answer meanwhile
     // (see matchDrawOfferOk).
+    // Where the field is, it is a timestamp: a null written into a match
+    // from before the field read as "no turn start" and refused every
+    // forfeit claim. One the bridge rules let in stays (only changes are
+    // checked), so turnStart() reads anything but a timestamp as absent.
     function turnStartOk() {
       let before = resource.data;
       let after = request.resource.data;
@@ -424,10 +438,14 @@ service cloud.firestore {
               || after.log.moves.size() > before.log.moves.size()
               || (drawOfferHolds(before) && after.get('drawOffer', null) != before.drawOffer))
         ? after.get('turnStartedAt', null) == request.time
-        : after.get('turnStartedAt', null) == before.get('turnStartedAt', null);
+        : after.get('turnStartedAt', null) == before.get('turnStartedAt', null)
+          && (!('turnStartedAt' in after)
+              || after.turnStartedAt is timestamp
+              || ('turnStartedAt' in before && after.turnStartedAt == before.turnStartedAt));
     }
     function turnStart(m) {
-      return m.get('turnStartedAt', m.lastActivity);
+      let t = m.get('turnStartedAt', null);
+      return t is timestamp ? t : m.lastActivity;
     }
 
     // QA-05 — who may end the match. 'X-resign' is written by X, or by X's
@@ -464,6 +482,10 @@ service cloud.firestore {
     // whose clocks disagree still write in order. What it leaves open: a
     // mover can back-date (down to the previous stamp) and so charge up to
     // 60 s of their own thinking per move to the opponent.
+    // The 60 s window holds only where there is a clock, as the client
+    // sees one: classic with a time control. Without one (roulette has
+    // none) the stamps only count up what each side spent, on screen, and
+    // a device more than 60 s off can still play.
     function matchClockOk() {
       let before = resource.data;
       let after = request.resource.data;
@@ -471,13 +493,19 @@ service cloud.firestore {
         && after.get('timeIncrementSec', null) == before.get('timeIncrementSec', null)
         && (after.log.moves.size() == before.log.moves.size()
             || moveStampOk(after.log.moves[before.log.moves.size()].get('timestamp', null),
-                           before.log.moves));
+                           before.log.moves, timedMatch(before)));
     }
-    function moveStampOk(ts, moves) {
+    function timedMatch(m) {
+      return m.get('gameMode', 'classic') != 'roulette'
+        && m.get('timeControlSec', null) is number
+        && m.timeControlSec > 0;
+    }
+    function moveStampOk(ts, moves, timed) {
       let skewMs = 60000;
       return ts is int
-        && ts >= request.time.toMillis() - skewMs
-        && ts <= request.time.toMillis() + skewMs
+        && (!timed
+            || (ts >= request.time.toMillis() - skewMs
+                && ts <= request.time.toMillis() + skewMs))
         && (moves.size() == 0 || ts >= moves[moves.size() - 1].get('timestamp', 0));
     }
     function timeControlOk(d) {
@@ -680,7 +708,8 @@ service cloud.firestore {
       //     join, a move or the answer to an offer the player on turn is
       //     waiting on restarts them (turnStartOk, R-7);
       //   - the time control is frozen and a move's timestamp follows the
-      //     previous one, near server time (matchClockOk, R-1);
+      //     previous one, near server time where there is a clock
+      //     (matchClockOk, R-1);
       //   - roulette state moves only with a spin or an action of the
       //     player on turn (rouletteOk, R-8);
       //   - who may write which outcome and endReason (matchOutcomeOk,

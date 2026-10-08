@@ -170,7 +170,8 @@ export interface MultiplayerSyncHandle {
 }
 
 /** R-1 — the timestamp of a new log entry. firestore.rules takes one no
- *  earlier than the previous entry and within 60 s of server time; the
+ *  earlier than the previous entry and, in a match with a clock, within
+ *  60 s of server time; the
  *  previous entry is the opponent's, stamped by their clock, which can be
  *  ahead of mine by more than the time I took to reply. Stamped inside the
  *  transaction, so a retried write is not stamped at the first try. */
@@ -375,11 +376,11 @@ export function useMultiplayerSync(
     setError(null);
     try {
       const san = computeSAN(liveBoard, move);
+      // Stamped in the transaction (nextMoveTimestamp).
       const savedMove = {
         move,
         san,
         topology: liveBoard.topologyState,
-        timestamp: Date.now(),
       };
       await runTransaction(db, async (tx) => {
         const ref = doc(db, 'matches', liveMatch.code);
@@ -457,11 +458,11 @@ export function useMultiplayerSync(
     try {
       const toggleMove: Move = { kind: 'topologyToggle' };
       const san = computeSAN(liveBoard, toggleMove);
+      // Stamped in the transaction (nextMoveTimestamp).
       const savedMove = {
         move: toggleMove,
         san,
         topology: liveBoard.topologyState,
-        timestamp: Date.now(),
       };
       await runTransaction(db, async (tx) => {
         const ref = doc(db, 'matches', liveMatch.code);
