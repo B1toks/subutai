@@ -643,8 +643,13 @@
 .bg-wave-grid {
   position: fixed;
   inset: 0;
+  /* Sized to match the backing store BackgroundWaveGrid draws at
+     (innerWidth x innerHeight): vw includes the scrollbar like innerWidth,
+     and dvh follows the mobile URL bar like innerHeight, so the grid is
+     never stretched. A canvas needs both: inset alone does not size it. */
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   pointer-events: none;
   z-index: 0;
 }
@@ -3767,6 +3772,7 @@ body.checkmate-flash::after {
   bottom: 12px;
   width: 330px;
   max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
   display: flex;
   flex-direction: column;
   /* subtle top-lit gradient instead of a flat panel */
@@ -4302,6 +4308,7 @@ body.checkmate-flash::after {
   right: auto;
   width: 340px;
   max-height: 100vh;
+  max-height: 100dvh;
   border-radius: 0;
   border-top: none;
   border-bottom: none;
