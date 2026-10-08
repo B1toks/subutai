@@ -7419,6 +7419,9 @@ function App() {
               placeholder="RQKRNBBN"
               maxLength={8}
               aria-label="Chess960 starting rank"
+              spellCheck={false}
+              autoComplete="off"
+              autoCapitalize="characters"
             />
             {formationInputValue && !isValidChess960Key(formationInputValue.trim().toUpperCase()) && (
               <span className="position-input-error">Invalid 960 code</span>
@@ -7718,8 +7721,12 @@ function App() {
               className="replay-textarea"
               value={replayText}
               onChange={(e) => setReplayText(e.target.value)}
-              placeholder='[Chess960 "RQKRNBBN"]\n[Seed "123"]\n\n1. e2→e4  e7→e5\n2. A→B  g8→f6\n...'
+              placeholder='[Chess960 "RQKRNBBN"]\n[Seed "123"]\n\n1. e2→e4  e7→e5\n2. A→B  g8→f6\n…'
               rows={10}
+              aria-label="Move log to replay"
+              spellCheck={false}
+              autoComplete="off"
+              autoCapitalize="off"
             />
             {replayError && <div className="replay-error">{replayError}</div>}
             <div className="replay-actions">
@@ -8095,7 +8102,7 @@ function App() {
             <h2>Subutai &mdash; Auxetic Chess960</h2>
             <p>
               Subutai combines <strong>Chess960</strong> (Fischer random chess) with an
-              <strong> <a href="https://www.youtube.com/shorts/RLO48ETn6LE" target="_blank"> auxetic board</a></strong> that can rotate between two stable states.
+              <strong> <a href="https://www.youtube.com/shorts/RLO48ETn6LE" target="_blank" rel="noopener noreferrer"> auxetic board</a></strong> that can rotate between two stable states.
             </p>
             <p><strong>How it works:</strong></p>
             <ul>
