@@ -71,7 +71,7 @@ const STEPS: TourStep[] = [
     title: 'Coaching tools',
     body:
       'The cap toggles your helper kit: a support map (who defends whom), ' +
-      'a threat map, and the star of the set, the 💡 Hint button: the ' +
+      'a threat map, and the Hint button (the light bulb): the ' +
       'engine suggests a strong move, and even tells you when rotating ' +
       'the board is the best play. Switch the kit off for a pure game.',
   },

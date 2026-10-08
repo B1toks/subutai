@@ -22,11 +22,12 @@
 
 /* ═══════════════════════════════════════════════════════════════════
    DESIGN TOKENS
-   Four palettes: neon (default), warm-wood, wood-light, fantasy. The
-   resolved theme is written to [data-theme] on <html> by
-   src/ui/themeStore.ts, which also implements the "Adaptive" choice
-   (neon in topology A, wood-light in topology B). Wood reproduces the
-   pre-Sprint-1 palette 1:1 — no visual regression.
+   Four palettes: warm-wood (the :root block below), wood-light,
+   fantasy and neon. The resolved theme is written to [data-theme] on
+   <html> by src/ui/themeStore.ts, which also implements the "Adaptive"
+   choice, the default for a new visitor (neon in topology A, wood-light
+   in topology B). Wood reproduces the pre-Sprint-1 palette 1:1 — no
+   visual regression.
    V1 retired the cyberpunk palette: it sat between neon and wood without
    committing to either, and saved copies of it migrate to neon.
 
@@ -164,8 +165,10 @@
 
   /* Typography */
   --font-display: 'Cinzel', 'Times New Roman', serif;
-  --font-body: 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+  /* System monos only: JetBrains Mono is deliberately not loaded
+     (index.html, Sprint 5.2), so naming it only made the move log
+     differ between machines that happen to have it installed. */
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
   /* Spacing scale (4px base) — shared across all themes */
   --space-1: 4px;
@@ -304,8 +307,7 @@
 
   /* Typography */
   --font-display: 'Cinzel', 'Times New Roman', serif;
-  --font-body: 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
   color-scheme: light;
 }
@@ -436,8 +438,7 @@
 
   /* Typography — gothic display */
   --font-display: 'Cinzel Decorative', 'Cinzel', 'Times New Roman', serif;
-  --font-body: 'Cormorant Garamond', 'Inter', serif;
-  --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
   color-scheme: dark;
 }
@@ -561,9 +562,8 @@
   /* Sacrifice: hot magenta */
   --sacrifice-color: 255, 79, 216;
 
-  --font-display: 'JetBrains Mono', 'Consolas', monospace;
-  --font-body: 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+  --font-display: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
   color-scheme: dark;
 }
@@ -639,8 +639,13 @@
 .bg-wave-grid {
   position: fixed;
   inset: 0;
+  /* Sized to match the backing store BackgroundWaveGrid draws at
+     (innerWidth x innerHeight): vw includes the scrollbar like innerWidth,
+     and dvh follows the mobile URL bar like innerHeight, so the grid is
+     never stretched. A canvas needs both: inset alone does not size it. */
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   pointer-events: none;
   z-index: 0;
 }
@@ -1754,8 +1759,9 @@
   box-shadow: inset 0 0 0 2px var(--last-move-ring);
 }
 
-/* S2.4 — engine hint pair. Teal so it can't be confused with the blue
-   last-move pair or the gold selection. Pulses until the next move. */
+/* S2.4 — engine hint pair. Teal so it can't be confused with the
+   last-move pair (each theme's --last-move-*) or the gold selection.
+   Pulses until the next move. */
 @keyframes hint-pulse {
   0%, 100% { box-shadow: inset 0 0 0 2px rgba(20, 184, 166, 0.5); }
   50%      { box-shadow: inset 0 0 0 3px rgba(20, 184, 166, 0.95), 0 0 12px rgba(20, 184, 166, 0.5); }
@@ -1771,12 +1777,14 @@
   background: rgba(20, 184, 166, 0.38);
 }
 
+/* The halo is mixed from --danger, the same token as the ring, so neon's
+   magenta ring no longer wears a red glow. */
 /* Sprint 3.2 — pulse the king's tile while it's in check so the warning
    reads as live rather than a static ring. mated-king keeps the static
    ring since the checkmate-flash overlay on body handles the punch. */
 @keyframes king-check-pulse {
-  0%, 100% { box-shadow: inset 0 0 0 4px var(--danger), 0 0 16px rgba(220, 38, 38, 0.6); }
-  50%      { box-shadow: inset 0 0 0 5px var(--danger), 0 0 28px rgba(220, 38, 38, 0.9); }
+  0%, 100% { box-shadow: inset 0 0 0 4px var(--danger), 0 0 16px color-mix(in srgb, var(--danger) 60%, transparent); }
+  50%      { box-shadow: inset 0 0 0 5px var(--danger), 0 0 28px color-mix(in srgb, var(--danger) 90%, transparent); }
 }
 
 .tile.checked-king::before {
@@ -1788,11 +1796,11 @@
 }
 
 .tile.mated-king::before {
-  box-shadow: inset 0 0 0 4px var(--danger), 0 0 24px rgba(220, 38, 38, 0.8);
+  box-shadow: inset 0 0 0 4px var(--danger), 0 0 24px color-mix(in srgb, var(--danger) 80%, transparent);
 }
 
 .tile.mating-piece::before {
-  box-shadow: inset 0 0 0 4px var(--danger), 0 0 16px rgba(220, 38, 38, 0.6);
+  box-shadow: inset 0 0 0 4px var(--danger), 0 0 16px color-mix(in srgb, var(--danger) 60%, transparent);
 }
 
 /* Full-screen white-out flash when the game ends in checkmate. Added
@@ -2393,10 +2401,13 @@ body.checkmate-flash::after {
   border-style: dashed;
 }
 
+/* Same lit state as inside .action-buttons-group: hot-seat's top row
+   carries a second Preview toggle, and it used to light up danger red
+   while its twin on the bottom row showed the theme accent. */
 .action-btn.active {
-  background: rgba(220, 38, 38, 0.3);
-  border-color: rgba(220, 38, 38, 0.6);
-  color: var(--danger-very-light);
+  background: var(--bg-mid);
+  color: var(--accent-primary);
+  box-shadow: inset 0 -2px 0 var(--accent-primary);
 }
 
 /* Sprint 3.4.1 — compact icon variant. The old text-button (.rotate-btn)
@@ -3757,6 +3768,7 @@ body.checkmate-flash::after {
   bottom: 12px;
   width: 330px;
   max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
   display: flex;
   flex-direction: column;
   /* subtle top-lit gradient instead of a flat panel */
@@ -4292,6 +4304,7 @@ body.checkmate-flash::after {
   right: auto;
   width: 340px;
   max-height: 100vh;
+  max-height: 100dvh;
   border-radius: 0;
   border-top: none;
   border-bottom: none;
@@ -4760,7 +4773,14 @@ body.checkmate-flash::after {
 .tc-face.is-low.is-running {
   border-color: var(--accent-danger);
   box-shadow: 0 0 12px -3px var(--accent-danger);
-  animation: afk-breathe 1s ease-in-out infinite;
+  animation: clock-low-pulse 1s ease-in-out infinite;
+}
+
+/* The pulse is built from the same token as the border: the AFK nudge's
+   gold breathing used to light an urgent red face in gold. */
+@keyframes clock-low-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-danger) 0%, transparent); }
+  50%      { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-danger) 35%, transparent), 0 0 28px color-mix(in srgb, var(--accent-danger) 25%, transparent); }
 }
 
 @media (max-width: 720px) {
@@ -5752,6 +5772,20 @@ body.checkmate-flash::after {
   font-size: 13px;
   color: var(--text-muted);
   margin: 0 0 16px;
+}
+
+/* Dialog headings break into even lines and dialog prose avoids a
+   one-word last line; nothing else sets text-wrap, so placement is free. */
+.modal-title,
+.help-dialog h2,
+.help-dialog h3,
+.mp-completion-title {
+  text-wrap: balance;
+}
+.modal-subtitle,
+.help-dialog p,
+.namepicker-tagline {
+  text-wrap: pretty;
 }
 
 .namepicker-tagline {
@@ -8122,8 +8156,22 @@ body.checkmate-flash::after {
   .app-shell.is-blunder-flash .app-root,
   .screen-flash-effect.screen-flash-blunder,
   .screen-flash-effect.screen-flash-brilliant,
-  .brilliant-sparkle {
+  .brilliant-sparkle,
+  .tile.hint-from::before,
+  .tile.hint-to::before,
+  .tc-face.is-low.is-running,
+  .eval-bar.is-mate {
     animation: none;
+  }
+  /* The hint and mate-bar loops carried their whole signal in the pulse;
+     hold them near its midpoint instead of dropping it. (The low-time
+     clock keeps its static danger border and glow.) */
+  .tile.hint-from::before,
+  .tile.hint-to::before {
+    box-shadow: inset 0 0 0 3px rgba(20, 184, 166, 0.75);
+  }
+  .eval-bar.is-mate {
+    box-shadow: 0 0 11px rgba(255, 200, 80, 0.6);
   }
   /* Sparkles depend on the float animation entirely — hide them
      instead of leaving frozen lucide glyphs scattered across the
@@ -8137,7 +8185,7 @@ body.checkmate-flash::after {
    FANTASY THEME — gothic chess-set enhancements
    Only loaded when [data-theme="fantasy"] is set on <html>. Adds an
    ambient bronze/red mist gradient on .app-shell, decorative gold
-   corner accents on the board, an engraved Cinzel Decorative title,
+   corner accents on the board, a gold-ink shadow on the title,
    and a per-piece gold/bronze drop-shadow so the set reads as
    "polished metal" rather than the wood-stained default.
    ═══════════════════════════════════════════════════════════════════ */
@@ -8159,7 +8207,7 @@ body.checkmate-flash::after {
   z-index: 1;
 }
 
-/* Engraved-style title — Cinzel Decorative + warm gold ink shadow */
+/* Engraved-style title — warm gold ink shadow */
 [data-theme="fantasy"] .app-header h1 {
   /* M.16 — only colour + gold-ink shadow; font / spacing stay on the base
      rule so the wordmark is identical to every other theme. */
@@ -8278,8 +8326,8 @@ body.checkmate-flash::after {
    older ones upward, which feels natural for a bottom-anchored row. */
 .toast-container {
   position: fixed;
-  bottom: var(--space-4);
-  right: var(--space-4);
+  bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+  right: calc(var(--space-4) + env(safe-area-inset-right, 0px));
   display: flex;
   flex-direction: column-reverse;
   gap: var(--space-2);
@@ -9307,7 +9355,7 @@ button:active:not(:disabled) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   NEON THEME — Stitch redesign try-on (design/neon-stitch branch).
+   NEON THEME — the Stitch redesign.
    Tokens live in the [data-theme="neon"] block up top; everything here
    is additive structure: the gradient room, glowing card borders, the
    dual-color mode cards and the wordmark treatment.
@@ -9428,7 +9476,7 @@ button:active:not(:disabled) {
   }
 }
 
-/* ─── Neon logo (5 variants, click to cycle) ─────────────────────── */
+/* ─── Neon logo (2 variants, click to switch) ────────────────────── */
 .neon-logo-btn {
   display: inline-flex;
   align-items: center;
@@ -9456,13 +9504,14 @@ button:active:not(:disabled) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   LAYOUT EXPERIMENT — design/neon-stitch branch only.
+   STITCH LAYOUT
    Full Stitch-mock structure: fixed left icon rail (the old header
    buttons), top bar with LIVE strip, GAME SETUP consolidated in the
    right sidebar (opponent + mode + time control), clock chips above
    the board (existing S2.5 strip, now countdown-capable in solo).
-   Uses theme tokens throughout so all five themes survive; tuned for
-   neon. Desktop-only rail — mobile keeps the stock header row.
+   Uses theme tokens throughout so every theme survives; tuned for
+   neon. Desktop rail — at 720px and below it becomes the left drawer
+   (V1 — MOBILE PANELS).
    ═══════════════════════════════════════════════════════════════════ */
 
 /* Brand: bigger mark, optically centered against the wordmark */
@@ -9549,13 +9598,15 @@ button:active:not(:disabled) {
     left: 0;
     top: 0;
     bottom: 0;
-    width: 68px;
+    /* A phone in landscape is wider than 720px: the rail grows by the
+       notch inset and keeps its icons out of it. */
+    width: calc(68px + env(safe-area-inset-left, 0px));
     flex-direction: column;
     justify-content: flex-start;
     align-items: center;
     flex-wrap: nowrap;
     gap: var(--space-2);
-    padding: 14px 0 calc(14px + env(safe-area-inset-bottom, 0px));
+    padding: calc(14px + env(safe-area-inset-top, 0px)) 0 calc(14px + env(safe-area-inset-bottom, 0px)) env(safe-area-inset-left, 0px);
     background: var(--bg-card);
     border-right: 1px solid var(--border-subtle);
     overflow-y: auto;
@@ -9685,7 +9736,7 @@ button:active:not(:disabled) {
   text-shadow: 0 0 12px rgba(255, 79, 216, 0.8);
 }
 
-/* Layout experiment follow-ups (design/neon-stitch):
+/* Stitch layout follow-ups:
    1. Rail tooltips open to the RIGHT of the icons (the stock side="bottom"
       geometry points them under the fixed rail edge).
    2. A left-docked music panel starts AFTER the rail instead of under it. */
@@ -9694,14 +9745,14 @@ button:active:not(:disabled) {
      Tooltip.tsx — the element is portalled to <body> now, so a
      descendant selector on .header-controls no longer reaches it. */
   .music-dock.is-docked-left {
-    left: 68px;
+    left: calc(68px + env(safe-area-inset-left, 0px));
   }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
    V1 LAUNCH LAYOUT — top-bar actions, rail grouping, game-setup panel.
    Builds on the Stitch rail above; neon is the default theme but every
-   rule reads through tokens so the other four themes keep working.
+   rule reads through tokens so every other theme keeps working.
    ═══════════════════════════════════════════════════════════════════ */
 
 /* Top bar: brand | (rail on desktop) | actions. */
@@ -10071,7 +10122,8 @@ button:active:not(:disabled) {
 }
 
 .position-label-key {
-  font-family: var(--font-body);
+  /* The app's sans (index.css), against the mono code beside it. */
+  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
   font-size: 8.5px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -10579,16 +10631,17 @@ html[data-theme-swap] *::after {
 
 /* Support arrows. A 1.8px mid-teal hairline over cream is a scratch;
    thicker, darker and fully opaque, with a soft light halo underneath so
-   it stays legible where it crosses a dark square too. */
-[data-theme="wood-light"] .support-arrow {
+   it stays legible where it crosses a dark square too. The colours sit on
+   the overlay so the arrowhead markers in its <defs> inherit them too. */
+[data-theme="wood-light"] .support-overlay {
   --support-stroke: #14705c;
+  --support-hover-stroke: #b8560c;
+}
+[data-theme="wood-light"] .support-arrow {
   stroke-width: 2.8;
   opacity: 1;
   paint-order: stroke;
   filter: drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.9));
-}
-[data-theme="wood-light"] .support-arrow-hover {
-  --support-hover-stroke: #b8560c;
 }
 
 /* Hint. Teal at 22% is nothing on cream; this keeps the same hue and
@@ -10777,14 +10830,14 @@ html[data-theme-swap] *::after {
     left: 0;
     top: 0;
     bottom: 0;
-    width: 86px;
+    width: calc(86px + env(safe-area-inset-left, 0px));
     z-index: 940;
     flex-direction: column;
     flex-wrap: nowrap;
     justify-content: flex-start;
     align-items: center;
     gap: var(--space-2);
-    padding: 14px 0 calc(14px + env(safe-area-inset-bottom, 0px));
+    padding: calc(14px + env(safe-area-inset-top, 0px)) 0 calc(14px + env(safe-area-inset-bottom, 0px)) env(safe-area-inset-left, 0px);
     background: var(--bg-card);
     border-right: 1px solid var(--border-subtle);
     overflow-y: auto;
@@ -10805,7 +10858,7 @@ html[data-theme-swap] *::after {
     width: min(86vw, 340px);
     z-index: 940;
     margin: 0;
-    padding: 14px 14px calc(14px + env(safe-area-inset-bottom, 0px));
+    padding: calc(14px + env(safe-area-inset-top, 0px)) calc(14px + env(safe-area-inset-right, 0px)) calc(14px + env(safe-area-inset-bottom, 0px)) 14px;
     background: var(--bg);
     border-left: 1px solid var(--border-subtle);
     overflow-y: auto;

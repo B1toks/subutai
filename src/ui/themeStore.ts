@@ -120,7 +120,20 @@ class ThemeStore {
     };
   }
 
+  /** The browser chrome (address bar, PWA title bar) takes its colour from
+   *  <meta name="theme-color">. index.html ships neon's background; once a
+   *  theme is painted, the meta follows that theme's --bg so wood-light
+   *  is not a light page under a dark bar. */
+  private syncThemeColor(): void {
+    if (typeof document === 'undefined') return;
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if (!meta) return;
+    const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+    if (bg) meta.content = bg;
+  }
+
   private notify(resolved: ResolvedTheme): void {
+    this.syncThemeColor();
     this.listeners.forEach((cb) => {
       try {
         cb(resolved, this.choice);

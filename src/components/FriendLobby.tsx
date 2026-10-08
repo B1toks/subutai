@@ -275,7 +275,7 @@ export function FriendLobby({
           <section className="friend-lobby-card">
             <h3>Create a match</h3>
             <p className="friend-lobby-hint">
-              Shareable 6-character code. Random chess960 position. Random
+              Shareable 6-character code. Random Chess960 position. Random
               side assignment.
             </p>
             <div
@@ -296,7 +296,7 @@ export function FriendLobby({
                 />
                 <span className="friend-lobby-mode-title">Classic</span>
                 <span className="friend-lobby-mode-sub">
-                  Full chess960. Rotate allowed.
+                  Full Chess960. Rotate allowed.
                 </span>
               </label>
               <label

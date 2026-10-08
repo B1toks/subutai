@@ -53,7 +53,9 @@ function stripMarkers(token: string): string {
     // an ASCII "<-", and both the Stage M "Better:" wording and the
     // pre-Stage-M Ukrainian "краще:" one.
     .replace(/\s*(?:←|<-)\s.*$/u, '')
-    .replace(/\s*\([−-]?\d+\s*cp\)\s*$/u, '')
+    // The loss in brackets: "(−123 cp)" from older logs, "(−1.2 pawns)"
+    // and "(allows mate)" / "(hangs the king)" from the move list since V1.
+    .replace(/\s*\((?:[−-]?\d+(?:\.\d+)?\s*(?:cp|pawns?)|allows mate|hangs the king)\)\s*$/u, '')
     .replace(/[^A-Za-z0-9]+$/u, '')
     .replace(/^[^A-Za-z0-9]+/u, '')
     .trim();

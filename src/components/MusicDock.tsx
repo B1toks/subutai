@@ -1327,6 +1327,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
                       className="music-dock-pl-play"
                       onClick={() => void playPlaylistTrack(pl, playing ? nowPlaying!.idx : 0)}
                       title="Play playlist"
+                      aria-label="Play playlist"
                     >
                       <Icon icon={Play} size="sm" aria-hidden />
                     </button>
@@ -1395,7 +1396,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
                           ? ` · ${pl.tracks[nowPlaying!.idx]!.bpm} BPM`
                           : ' · set BPM above'}
                       </span>
-                      <button type="button" className="music-dock-pl-next" onClick={nextTrack} title="Next track">
+                      <button type="button" className="music-dock-pl-next" onClick={nextTrack} title="Next track" aria-label="Next track">
                         <Icon icon={SkipForward} size="sm" aria-hidden />
                       </button>
                     </div>

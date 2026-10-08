@@ -16,6 +16,7 @@ import {
 } from '../engine/auxetic';
 import { allSquares } from '../engine/board';
 import type { BoardState, Color, SquareId } from '../engine/types';
+import { MATE_SCALE_CPL, pawns } from '../analysis/lossText';
 
 // Human is always white in v1 — same convention as App.tsx.
 const HUMAN_COLOR: Color = 'white';
@@ -109,23 +110,6 @@ interface TurningPoint {
 /** Mate-scale losses (search returns ~100000 for a lost king) would swamp
  *  any average; cap a single move's loss at a queen and a half. */
 const CPL_CAP = 1200;
-const MATE_SCALE_CPL = 50_000;
-
-/**
- * V1 — losses in words a player already has.
- *
- * "412 cp" means nothing to someone who has never read an engine's
- * output, and a rating is the wrong analogy (it grades the player, and
- * people take it personally). Every chess player does, however, know what
- * a pawn, a knight, a rook and a queen are worth — so that is the scale:
- * the number becomes pawns, and a big loss gets the piece it amounts to.
- * 100 centipawns is one pawn by definition, so nothing is approximated
- * beyond rounding.
- */
-function pawns(cp: number): string {
-  const v = cp / 100;
-  return v >= 10 ? v.toFixed(0) : v.toFixed(1);
-}
 
 function lossInPieces(cp: number): string {
   if (cp < 50) return 'a sliver';
@@ -802,6 +786,7 @@ export function GameReview({ log: liveLog, onBack, meta, gameId }: Props) {
               onClick={() => setReviewIdx(0)}
               disabled={reviewIdx === 0}
               title="Start (Home)"
+              aria-label="Go to the start"
             >
               «
             </button>
@@ -811,6 +796,7 @@ export function GameReview({ log: liveLog, onBack, meta, gameId }: Props) {
               onClick={() => setReviewIdx((i) => Math.max(0, i - 1))}
               disabled={reviewIdx === 0}
               title="Previous (←)"
+              aria-label="Previous move"
             >
               ‹
             </button>
@@ -825,6 +811,7 @@ export function GameReview({ log: liveLog, onBack, meta, gameId }: Props) {
               }
               disabled={reviewIdx === log.moves.length}
               title="Next (→)"
+              aria-label="Next move"
             >
               ›
             </button>
@@ -834,6 +821,7 @@ export function GameReview({ log: liveLog, onBack, meta, gameId }: Props) {
               onClick={() => setReviewIdx(log.moves.length)}
               disabled={reviewIdx === log.moves.length}
               title="End (End)"
+              aria-label="Go to the end"
             >
               »
             </button>

@@ -92,6 +92,7 @@ import {
 import { logGameStart } from './firebase/gameStarts';
 import { startPresenceHeartbeat, stopPresenceHeartbeat } from './firebase/presence';
 import { computeGamePoints, type GameOutcome, type GamePoints } from './analysis/points';
+import { MATE_SCALE_CPL, pawns } from './analysis/lossText';
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
 import {
@@ -1215,7 +1216,7 @@ function App() {
     white: 0,
     black: 0,
   });
-  // Design experiment (neon-stitch): optional solo time control in seconds.
+  // Stitch layout: optional solo time control in seconds.
   // null = free play (chips keep showing elapsed). With a value the chips
   // show remaining = tc - elapsed, floored at 0. Display-only in solo.
   const [soloTcSec, setSoloTcSec] = useState<number | null>(null);
@@ -5650,7 +5651,7 @@ function App() {
    * The move log, in two versions.
    *
    * On screen it carries the coaching marks — ⭐ for the engine's own
-   * choice, ? and ?? for mistakes, and the "← Better: … (−123 cp)" tail.
+   * choice, ? and ?? for mistakes, and the "← Better: … (−1.2 pawns)" tail.
    * That is the whole point of the panel and it stays.
    *
    * What goes on the clipboard is the bare log. A pasted log is an INPUT:
@@ -5705,11 +5706,14 @@ function App() {
             if (first) {
               san += ` \u2190 Better: ${first}`;
             }
-            // Append the centipawn loss so the player can gauge how marginal
-            // the suggestion is. cpl 50-100 = borderline, 300+ = real blunder.
-            // Stage L's float-eval makes cpl a non-integer \u2014 round for display.
-            if (a.cpl > 0) {
-              san += ` (\u2212${Math.round(a.cpl)} cp)`;
+            // Append the loss so the player can gauge how marginal the
+            // suggestion is, in pawns like the review screen says it (a
+            // number of centipawns means nothing to most players). A
+            // mate-scale loss is not a number of pawns, so it gets words.
+            if (a.cpl >= MATE_SCALE_CPL) {
+              san += gameMode === 'roulette' ? ' (hangs the king)' : ' (allows mate)';
+            } else if (a.cpl > 0) {
+              san += ` (\u2212${pawns(a.cpl)} pawns)`;
             }
           }
         }
@@ -5721,7 +5725,7 @@ function App() {
       lines.push(line);
     }
     return lines.join('\n');
-  }, [log.moves, positionLabel, notationSeed]);
+  }, [log.moves, positionLabel, notationSeed, gameMode]);
 
   const notationString = useMemo(() => buildNotation(true), [buildNotation]);
 
@@ -6047,7 +6051,7 @@ function App() {
         <div className="app-brand">
           <NeonLogo />
           <h1>subutai</h1>
-          {/* Design experiment (neon-stitch): the mock's LIVE strip replaces
+          {/* Stitch layout: the mock's LIVE strip replaces
               the plain tagline. Solo shows a short seed-derived game tag. */}
           <div className="live-strip">
             {/* V1 — the pill reports the real game state: LIVE while a
@@ -6078,16 +6082,21 @@ function App() {
               // LIVE pill's own tooltip, where a hover or a long-press
               // still reaches it, and the header stops being three things
               // fighting over one row.
+              // The seed-derived game tag means nothing to read, so it
+              // lives in the tooltip only; Classic's goal there is the one
+              // Help states (checkmate), not the 50-move survival milestone.
               const label =
                 isMultiplayer && mpSync
                   ? `vs ${mpSync.opponentDisplayName} · ${mpSync.matchState.code}`
-                  : `vs AI · #${Math.abs(seed).toString(36).toUpperCase().slice(-5) || '0'}`;
+                  : 'vs AI';
+              const gameTag = `Game #${Math.abs(seed).toString(36).toUpperCase().slice(-5) || '0'}`;
               const hint =
                 !isMultiplayer && gameMode === 'classic' && opponentMode === 'ai'
-                  ? 'Try to survive 50 moves against the AI'
+                  ? "Checkmate the AI's king to win"
                   : undefined;
+              const title = isMultiplayer && mpSync ? label : hint ? `${hint} · ${gameTag}` : gameTag;
               return (
-                <span className="live-title" title={hint ?? label} data-label={label}>
+                <span className="live-title" title={title} data-label={label}>
                   {isMultiplayer && mpSync ? (
                     <>
                       vs <strong>{mpSync.opponentDisplayName}</strong> · {mpSync.matchState.code}
@@ -6807,7 +6816,7 @@ function App() {
                 <path
                   d="M 0 0 L 3.5 1.25 L 0 2.5"
                   fill="none"
-                  stroke="var(--support-stroke, #14b8a6)"
+                  stroke="var(--support-stroke, var(--accent-teal-bright))"
                   strokeWidth="1.2"
                   strokeLinejoin="round"
                 />
@@ -6823,7 +6832,7 @@ function App() {
                 <path
                   d="M 0 0 L 3.5 1.25 L 0 2.5"
                   fill="none"
-                  stroke="var(--support-hover-stroke, #ea580c)"
+                  stroke="var(--support-hover-stroke, var(--accent-orange))"
                   strokeWidth="1.2"
                   strokeLinejoin="round"
                 />
@@ -7521,6 +7530,9 @@ function App() {
               placeholder="RQKRNBBN"
               maxLength={8}
               aria-label="Chess960 starting rank"
+              spellCheck={false}
+              autoComplete="off"
+              autoCapitalize="characters"
             />
             {formationInputValue && !isValidChess960Key(formationInputValue.trim().toUpperCase()) && (
               <span className="position-input-error">Invalid 960 code</span>
@@ -7614,7 +7626,7 @@ function App() {
             );
           })()}
 
-          {/* Design experiment (neon-stitch): mode cards moved here from
+          {/* Stitch layout: mode cards moved here from
               above the board — the mock's GAME SETUP panel owns opponent,
               mode and time control together. */}
           <h3 className="setup-sub-label">Mode</h3>
@@ -7639,7 +7651,7 @@ function App() {
               <span className="mode-card-content">
                 <span className="mode-card-title">Classic</span>
                 <span className="mode-card-subtitle">
-                  Standard chess960 + topology rotation
+                  Standard Chess960 + topology rotation
                 </span>
               </span>
             </button>
@@ -7820,8 +7832,12 @@ function App() {
               className="replay-textarea"
               value={replayText}
               onChange={(e) => setReplayText(e.target.value)}
-              placeholder='[Chess960 "RQKRNBBN"]\n[Seed "123"]\n\n1. e2→e4  e7→e5\n2. A→B  g8→f6\n...'
+              placeholder='[Chess960 "RQKRNBBN"]\n[Seed "123"]\n\n1. e2→e4  e7→e5\n2. A→B  g8→f6\n…'
               rows={10}
+              aria-label="Move log to replay"
+              spellCheck={false}
+              autoComplete="off"
+              autoCapitalize="off"
             />
             {replayError && <div className="replay-error">{replayError}</div>}
             <div className="replay-actions">
@@ -8103,7 +8119,7 @@ function App() {
                 </button>
               </div>
               <p className="mp-completion-footnote">
-                PvP games don&apos;t affect leaderboard points.
+                Online games don&apos;t affect leaderboard points.
               </p>
             </div>
           </div>
@@ -8210,7 +8226,7 @@ function App() {
             <h2>Subutai &mdash; Auxetic Chess960</h2>
             <p>
               Subutai combines <strong>Chess960</strong> (Fischer random chess) with an
-              <strong> <a href="https://www.youtube.com/shorts/RLO48ETn6LE" target="_blank"> auxetic board</a></strong> that can rotate between two stable states.
+              <strong> <a href="https://www.youtube.com/shorts/RLO48ETn6LE" target="_blank" rel="noopener noreferrer"> auxetic board</a></strong> that can rotate between two stable states.
             </p>
             <p><strong>How it works:</strong></p>
             <ul>
@@ -8253,7 +8269,12 @@ function App() {
                 aria-label="Interface scale"
               />
               {uiScale !== 1 && (
-                <button type="button" className="help-scale-reset" onClick={() => pickUiScale(1)}>
+                <button
+                  type="button"
+                  className="help-scale-reset"
+                  onClick={() => pickUiScale(1)}
+                  aria-label="Reset interface scale to 100%"
+                >
                   100%
                 </button>
               )}

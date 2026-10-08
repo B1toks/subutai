@@ -4,7 +4,7 @@
 Метод: повне читання `src/firebase/**`, `firestore.rules`, `src/twitch/**`,
 `src/music/**`, `src/components/MusicDock.tsx`, `App.tsx` (рендер, клок,
 завершення гри, AI-планувальник), `index.html`, `sw.js`; перевірка кожної
-заяви попереднього QA-звіту (`final_report.md`) проти поточного коду;
+заяви попереднього QA-звіту (`qa-2026-07/final_report.md`) проти поточного коду;
 жива верифікація в dev (`:5173`) і в production-збірці з CSP (`:4173`).
 
 Статуси: **FIXED** (у цій гілці, перевірено) · **MITIGATED** (ризик

@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover"
@@ -68,15 +68,12 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <!-- Sprint 5.2 — font diet. Inter (the body face, needed at first
-         paint) loads normally; the decorative theme faces load async
+    <!-- Sprint 5.2 — font diet. The decorative theme faces load async
          (print-media swap) so they never block FCP. Dropped Orbitron
          (unused) and JetBrains Mono (move log falls back to Consolas/
-         system mono — one fewer render-blocking download). -->
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap"
-      rel="stylesheet"
-    />
+         system mono). The app's text is system-ui (index.css), so Inter
+         is not loaded here either: only the ?showcase=1 kiosk sets it,
+         and main.tsx loads it for that view alone. -->
     <link
       href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Cinzel+Decorative:wght@700;900&family=Cormorant+Garamond:ital,wght@0,400;0,700;1,400&display=swap"
       rel="stylesheet"
@@ -85,7 +82,7 @@
     />
     <noscript>
       <link
-        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Cinzel+Decorative:wght@700;900&family=Cormorant+Garamond:ital,wght@0,400;0,700;1,400&family=Inter:wght@400;500;700&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Cinzel+Decorative:wght@700;900&family=Cormorant+Garamond:ital,wght@0,400;0,700;1,400&display=swap"
         rel="stylesheet"
       />
     </noscript>
