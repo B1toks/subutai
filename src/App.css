@@ -4760,7 +4760,14 @@ body.checkmate-flash::after {
 .tc-face.is-low.is-running {
   border-color: var(--accent-danger);
   box-shadow: 0 0 12px -3px var(--accent-danger);
-  animation: afk-breathe 1s ease-in-out infinite;
+  animation: clock-low-pulse 1s ease-in-out infinite;
+}
+
+/* The pulse is built from the same token as the border: the AFK nudge's
+   gold breathing used to light an urgent red face in gold. */
+@keyframes clock-low-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-danger) 0%, transparent); }
+  50%      { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-danger) 35%, transparent), 0 0 28px color-mix(in srgb, var(--accent-danger) 25%, transparent); }
 }
 
 @media (max-width: 720px) {
