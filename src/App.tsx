@@ -1214,7 +1214,7 @@ function App() {
     white: 0,
     black: 0,
   });
-  // Design experiment (neon-stitch): optional solo time control in seconds.
+  // Stitch layout: optional solo time control in seconds.
   // null = free play (chips keep showing elapsed). With a value the chips
   // show remaining = tc - elapsed, floored at 0. Display-only in solo.
   const [soloTcSec, setSoloTcSec] = useState<number | null>(null);
@@ -5947,7 +5947,7 @@ function App() {
         <div className="app-brand">
           <NeonLogo />
           <h1>subutai</h1>
-          {/* Design experiment (neon-stitch): the mock's LIVE strip replaces
+          {/* Stitch layout: the mock's LIVE strip replaces
               the plain tagline. Solo shows a short seed-derived game tag. */}
           <div className="live-strip">
             {/* V1 — the pill reports the real game state: LIVE while a
@@ -7512,7 +7512,7 @@ function App() {
             );
           })()}
 
-          {/* Design experiment (neon-stitch): mode cards moved here from
+          {/* Stitch layout: mode cards moved here from
               above the board — the mock's GAME SETUP panel owns opponent,
               mode and time control together. */}
           <h3 className="setup-sub-label">Mode</h3>

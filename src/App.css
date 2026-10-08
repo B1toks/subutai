@@ -22,11 +22,12 @@
 
 /* ═══════════════════════════════════════════════════════════════════
    DESIGN TOKENS
-   Four palettes: neon (default), warm-wood, wood-light, fantasy. The
-   resolved theme is written to [data-theme] on <html> by
-   src/ui/themeStore.ts, which also implements the "Adaptive" choice
-   (neon in topology A, wood-light in topology B). Wood reproduces the
-   pre-Sprint-1 palette 1:1 — no visual regression.
+   Four palettes: warm-wood (the :root block below), wood-light,
+   fantasy and neon. The resolved theme is written to [data-theme] on
+   <html> by src/ui/themeStore.ts, which also implements the "Adaptive"
+   choice, the default for a new visitor (neon in topology A, wood-light
+   in topology B). Wood reproduces the pre-Sprint-1 palette 1:1 — no
+   visual regression.
    V1 retired the cyberpunk palette: it sat between neon and wood without
    committing to either, and saved copies of it migrate to neon.
 
@@ -1754,8 +1755,9 @@
   box-shadow: inset 0 0 0 2px var(--last-move-ring);
 }
 
-/* S2.4 — engine hint pair. Teal so it can't be confused with the blue
-   last-move pair or the gold selection. Pulses until the next move. */
+/* S2.4 — engine hint pair. Teal so it can't be confused with the
+   last-move pair (each theme's --last-move-*) or the gold selection.
+   Pulses until the next move. */
 @keyframes hint-pulse {
   0%, 100% { box-shadow: inset 0 0 0 2px rgba(20, 184, 166, 0.5); }
   50%      { box-shadow: inset 0 0 0 3px rgba(20, 184, 166, 0.95), 0 0 12px rgba(20, 184, 166, 0.5); }
@@ -8147,7 +8149,7 @@ body.checkmate-flash::after {
    FANTASY THEME — gothic chess-set enhancements
    Only loaded when [data-theme="fantasy"] is set on <html>. Adds an
    ambient bronze/red mist gradient on .app-shell, decorative gold
-   corner accents on the board, an engraved Cinzel Decorative title,
+   corner accents on the board, a gold-ink shadow on the title,
    and a per-piece gold/bronze drop-shadow so the set reads as
    "polished metal" rather than the wood-stained default.
    ═══════════════════════════════════════════════════════════════════ */
@@ -8169,7 +8171,7 @@ body.checkmate-flash::after {
   z-index: 1;
 }
 
-/* Engraved-style title — Cinzel Decorative + warm gold ink shadow */
+/* Engraved-style title — warm gold ink shadow */
 [data-theme="fantasy"] .app-header h1 {
   /* M.16 — only colour + gold-ink shadow; font / spacing stay on the base
      rule so the wordmark is identical to every other theme. */
@@ -9317,7 +9319,7 @@ button:active:not(:disabled) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   NEON THEME — Stitch redesign try-on (design/neon-stitch branch).
+   NEON THEME — the Stitch redesign.
    Tokens live in the [data-theme="neon"] block up top; everything here
    is additive structure: the gradient room, glowing card borders, the
    dual-color mode cards and the wordmark treatment.
@@ -9438,7 +9440,7 @@ button:active:not(:disabled) {
   }
 }
 
-/* ─── Neon logo (5 variants, click to cycle) ─────────────────────── */
+/* ─── Neon logo (2 variants, click to switch) ────────────────────── */
 .neon-logo-btn {
   display: inline-flex;
   align-items: center;
@@ -9466,13 +9468,14 @@ button:active:not(:disabled) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   LAYOUT EXPERIMENT — design/neon-stitch branch only.
+   STITCH LAYOUT
    Full Stitch-mock structure: fixed left icon rail (the old header
    buttons), top bar with LIVE strip, GAME SETUP consolidated in the
    right sidebar (opponent + mode + time control), clock chips above
    the board (existing S2.5 strip, now countdown-capable in solo).
-   Uses theme tokens throughout so all five themes survive; tuned for
-   neon. Desktop-only rail — mobile keeps the stock header row.
+   Uses theme tokens throughout so every theme survives; tuned for
+   neon. Desktop rail — at 720px and below it becomes the left drawer
+   (V1 — MOBILE PANELS).
    ═══════════════════════════════════════════════════════════════════ */
 
 /* Brand: bigger mark, optically centered against the wordmark */
@@ -9697,7 +9700,7 @@ button:active:not(:disabled) {
   text-shadow: 0 0 12px rgba(255, 79, 216, 0.8);
 }
 
-/* Layout experiment follow-ups (design/neon-stitch):
+/* Stitch layout follow-ups:
    1. Rail tooltips open to the RIGHT of the icons (the stock side="bottom"
       geometry points them under the fixed rail edge).
    2. A left-docked music panel starts AFTER the rail instead of under it. */
@@ -9713,7 +9716,7 @@ button:active:not(:disabled) {
 /* ═══════════════════════════════════════════════════════════════════
    V1 LAUNCH LAYOUT — top-bar actions, rail grouping, game-setup panel.
    Builds on the Stitch rail above; neon is the default theme but every
-   rule reads through tokens so the other four themes keep working.
+   rule reads through tokens so every other theme keeps working.
    ═══════════════════════════════════════════════════════════════════ */
 
 /* Top bar: brand | (rail on desktop) | actions. */
