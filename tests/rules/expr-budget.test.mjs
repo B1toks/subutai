@@ -14,6 +14,9 @@
 // nothing else behind the switch (calibration) fits K_cal of them, so one
 // costs about 1000 / K_cal expressions, and the write itself about
 // 1000 - K * 1000 / K_cal (the switch, a few expressions, included).
+// A /matches write's K moves between runs by up to 6 on the same rules (the
+// host's colour and the position are random, and the rules branch on
+// them): take the lowest K of a few runs.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { after, it } from 'node:test';
