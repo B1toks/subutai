@@ -62,13 +62,16 @@ service cloud.firestore {
         && intIn(p.outcomeBonus, 0, 500)
         && p.total <= p.movePoints + p.capturePoints + p.qualityPoints + p.rotationPoints + p.outcomeBonus
         && (p.counted == false || moveCount >= 10)
-        && (mode == 'roulette'
-            ? p.qualityPoints == 0 && p.rotationPoints == 0 && p.total <= 1650
-            : p.movePoints <= 5 * moveCount)
+        && (mode == 'roulette' ? rouletteCapOk(p) : p.movePoints <= 5 * moveCount)
         && (!('captureValueCp' in p) || p.captureValueCp is int)
         && (!('moveQualityCounts' in p)
             || (p.moveQualityCounts is map
                 && p.moveQualityCounts.keys().hasOnly(['brilliant', 'best', 'good', 'mistake', 'blunder'])));
+    }
+    // The roulette cap: checked at create (plausiblePoints) and again on a
+    // game read for a best (bestBacked, R-14).
+    function rouletteCapOk(p) {
+      return p.qualityPoints == 0 && p.rotationPoints == 0 && p.total <= 1650;
     }
     function gameDoc(gameId) {
       return get(/databases/$(database)/documents/games/$(gameId)).data;
@@ -163,8 +166,7 @@ service cloud.firestore {
       let s = d[snapF];
       return g.playerId == uid
         && g.createdAt <= request.time
-        && (mode != 'roulette'
-            || (g.points.qualityPoints == 0 && g.points.rotationPoints == 0 && g.points.total <= 1650))
+        && (mode != 'roulette' || rouletteCapOk(g.points))
         && g.points.counted == true
         && g.points.total == d[pointsF]
         && g.get('gameMode', 'classic') == mode
