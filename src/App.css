@@ -5778,6 +5778,20 @@ body.checkmate-flash::after {
   margin: 0 0 16px;
 }
 
+/* Dialog headings break into even lines and dialog prose avoids a
+   one-word last line; nothing else sets text-wrap, so placement is free. */
+.modal-title,
+.help-dialog h2,
+.help-dialog h3,
+.mp-completion-title {
+  text-wrap: balance;
+}
+.modal-subtitle,
+.help-dialog p,
+.namepicker-tagline {
+  text-wrap: pretty;
+}
+
 .namepicker-tagline {
   font-size: 14px;
   line-height: 1.55;
