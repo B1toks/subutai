@@ -24,6 +24,10 @@ export type MatchOutcome =
 
 export type MatchGameMode = 'classic' | 'roulette';
 
+/** QA-04 — why a match ended in 'host-resign' / 'guest-resign': the
+ *  Resign button, the inactivity forfeit, or a flag fall. */
+export type MatchEndReason = 'resign' | 'inactive' | 'flag';
+
 export interface MatchParticipant {
   uid: string;
   displayName: string;
@@ -47,8 +51,15 @@ export interface MatchDoc {
   currentTurn: string;
   log: { initialTopology: TopologyState; moves: SavedMove[] };
   outcome: MatchOutcome | null;
+  /** QA-04 — set with a resign outcome; absent on matches ended by older
+   *  clients and on every other outcome. */
+  endReason?: MatchEndReason;
   createdAt: Timestamp;
   lastActivity: Timestamp;
+  /** R-7 — server time the turn on the clock started: the join, then each
+   *  appended move. firestore.rules measures the 90 s of inactivity from
+   *  it. Absent on matches from before it (and before the join). */
+  turnStartedAt?: Timestamp;
   // Stage Q.D — optional so old docs keep working. Treated as 'classic'
   // / null / {} when absent.
   gameMode?: MatchGameMode;
@@ -198,6 +209,7 @@ export async function joinMatch(
       status: 'active',
       currentTurn,
       lastActivity: serverTimestamp(),
+      turnStartedAt: serverTimestamp(),
     });
 
     return {

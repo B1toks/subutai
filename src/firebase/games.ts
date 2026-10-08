@@ -91,10 +91,12 @@ export async function saveCompletedGame(args: {
     chess960Id,
     seed,
     humanColor,
-    durationMs,
     botLevel,
   } = args;
   const gameMode = args.gameMode ?? 'classic';
+  // R-4 — firestore.rules takes no negative duration; a wall clock set
+  // back during the game would give one.
+  const durationMs = args.durationMs === undefined ? undefined : Math.max(0, args.durationMs);
 
   const gamePayload: Record<string, unknown> = {
     playerId: uid,
@@ -124,6 +126,9 @@ export async function saveCompletedGame(args: {
       const patch: Record<string, unknown> = {
         lastGameAt: serverTimestamp(),
         lastActive: serverTimestamp(),
+        // QA-06 — the rules count a strongWins +1 only against the game
+        // the profile points at here.
+        lastGameId: gameRef.id,
       };
 
       if (gameMode === 'roulette') {

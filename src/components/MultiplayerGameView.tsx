@@ -8,6 +8,7 @@ import { db } from '../firebase/client';
 import {
   subscribeMatch,
   type MatchDoc,
+  type MatchEndReason,
   type MatchOutcome,
 } from '../firebase/matches';
 import {
@@ -19,7 +20,7 @@ import {
 import { applyMove, isInCheck } from '../engine/moves';
 import { applyRotationMove } from '../engine/auxetic';
 import { computeSAN } from '../recording/log';
-import { inactivityForfeitApplies } from '../firebase/matchEnd';
+import { inactivityForfeitApplies, turnStartedMs } from '../firebase/matchEnd';
 
 const ROULETTE_PIECE_BAG: PieceType[] = [
   'pawn',
@@ -72,7 +73,38 @@ function consumeSlotIndex(
 }
 
 const OPPONENT_OFFLINE_WARN_MS = 60_000;
-const OPPONENT_OFFLINE_FORFEIT_MS = 90_000;
+/** firestore.rules holds the same 90 s, from the start of the turn
+ *  (turnStartedMs): before it, by server time, only the idle player can
+ *  end the match with their own 'X-resign'. */
+export const OPPONENT_OFFLINE_FORFEIT_MS = 90_000;
+
+/** The waiting peer ends the match for an opponent idle past the limit.
+ *  Transaction-guarded: a move or another ending that lands first wins. */
+export async function writeInactivityForfeit(code: string, myUid: string): Promise<void> {
+  const ref = doc(db, 'matches', code);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) return;
+    const data = snap.data() as MatchDoc;
+    if (data.outcome) return;
+    if (!inactivityForfeitApplies(data)) return; // a move started the clock
+    const txLast = turnStartedMs(data);
+    if (
+      typeof txLast === 'number' &&
+      Date.now() - txLast < OPPONENT_OFFLINE_FORFEIT_MS
+    ) {
+      return;
+    }
+    const outcome: MatchOutcome =
+      data.host.uid === myUid ? 'guest-resign' : 'host-resign';
+    tx.update(ref, {
+      status: 'completed',
+      outcome,
+      endReason: 'inactive',
+      lastActivity: serverTimestamp(),
+    });
+  });
+}
 
 export interface MultiplayerSyncHandle {
   matchState: MatchDoc;
@@ -94,10 +126,14 @@ export interface MultiplayerSyncHandle {
    *  action but doesn't consume a slot. */
   sendRotate: () => Promise<void>;
   /** Resolves true when THIS resignation is the outcome that was written
-   *  (false: it failed, or another outcome landed first). */
-  resign: () => Promise<boolean>;
-  /** Race-safe terminal-outcome write (mate/draw detected locally). */
-  writeOutcomeIfFirst: (outcome: MatchOutcome) => Promise<void>;
+   *  (false: it failed, or another outcome landed first). `reason` is
+   *  'flag' when my own clock ran out. */
+  resign: (reason?: 'resign' | 'flag') => Promise<boolean>;
+  /** Race-safe terminal-outcome write (mate/draw detected locally, or the
+   *  opponent's flag fall). Resolves false only when the write failed —
+   *  the rules refuse a claim for the opponent before 90 s of their
+   *  inactivity, so that one is retried. */
+  writeOutcomeIfFirst: (outcome: MatchOutcome, endReason?: MatchEndReason) => Promise<boolean>;
   // Q.D.3: full solo-roulette parity. The bag, action count and used
   // slot indices live on the match doc so both peers can render the
   // SAME chip strip + Spin button + slot-consumption UI as solo.
@@ -110,6 +146,16 @@ export interface MultiplayerSyncHandle {
   mySpinCount: number;
   /** Spin a new 4-slot bag from my remaining piece types. */
   spinRoulette: () => Promise<void>;
+}
+
+/** R-1 — the timestamp of a new log entry. firestore.rules takes one no
+ *  earlier than the previous entry, at most 60 s ahead of server time and,
+ *  in a match with a clock, at most 60 s behind it; the
+ *  previous entry is the opponent's, stamped by their clock, which can be
+ *  ahead of mine by more than the time I took to reply. Stamped inside the
+ *  transaction, so a retried write is not stamped at the first try. */
+function nextMoveTimestamp(moves: MatchDoc['log']['moves']): number {
+  return Math.max(Date.now(), moves[moves.length - 1]?.timestamp ?? 0);
 }
 
 /** Rebuild the canonical board from the log. Topology toggles (Rotate)
@@ -183,7 +229,7 @@ export function useMultiplayerSync(
       return;
     }
     const interval = setInterval(() => {
-      const last = matchState.lastActivity?.toMillis?.();
+      const last = turnStartedMs(matchState);
       if (typeof last !== 'number') return;
       const elapsed = Date.now() - last;
       setSelfAfkWarning(elapsed >= OPPONENT_OFFLINE_WARN_MS);
@@ -201,32 +247,13 @@ export function useMultiplayerSync(
     if (matchState.currentTurn === myUid) return;
     if (!inactivityForfeitApplies(matchState)) return;
     const interval = setInterval(() => {
-      const last = matchState.lastActivity?.toMillis?.();
+      const last = turnStartedMs(matchState);
       if (typeof last !== 'number') return;
       const elapsed = Date.now() - last;
       if (elapsed < OPPONENT_OFFLINE_FORFEIT_MS) return;
-      const outcome: MatchOutcome =
-        matchState.host.uid === myUid ? 'guest-resign' : 'host-resign';
-      const ref = doc(db, 'matches', matchState.code);
-      void runTransaction(db, async (tx) => {
-        const snap = await tx.get(ref);
-        if (!snap.exists()) return;
-        const data = snap.data() as MatchDoc;
-        if (data.outcome) return;
-        if (!inactivityForfeitApplies(data)) return; // a move started the clock
-        const txLast = data.lastActivity?.toMillis?.();
-        if (
-          typeof txLast === 'number' &&
-          Date.now() - txLast < OPPONENT_OFFLINE_FORFEIT_MS
-        ) {
-          return;
-        }
-        tx.update(ref, {
-          status: 'completed',
-          outcome,
-          lastActivity: serverTimestamp(),
-        });
-      }).catch((err) => console.error('[mp] forfeit write failed', err));
+      void writeInactivityForfeit(matchState.code, myUid).catch((err) =>
+        console.error('[mp] forfeit write failed', err),
+      );
     }, 4000);
     return () => clearInterval(interval);
   }, [matchState, myUid]);
@@ -317,11 +344,11 @@ export function useMultiplayerSync(
     setError(null);
     try {
       const san = computeSAN(liveBoard, move);
+      // Stamped in the transaction (nextMoveTimestamp).
       const savedMove = {
         move,
         san,
         topology: liveBoard.topologyState,
-        timestamp: Date.now(),
       };
       await runTransaction(db, async (tx) => {
         const ref = doc(db, 'matches', liveMatch.code);
@@ -331,8 +358,12 @@ export function useMultiplayerSync(
         if (data.currentTurn !== liveMyUid) throw new Error('NOT_YOUR_TURN');
         if (data.status !== 'active') throw new Error('MATCH_NOT_ACTIVE');
         const patch: Record<string, unknown> = {
-          'log.moves': [...data.log.moves, savedMove],
+          'log.moves': [
+            ...data.log.moves,
+            { ...savedMove, timestamp: nextMoveTimestamp(data.log.moves) },
+          ],
           lastActivity: serverTimestamp(),
+          turnStartedAt: serverTimestamp(),
         };
         if (data.gameMode === 'roulette') {
           const newActions = (data.rouletteActionsLeft ?? 0) - 1;
@@ -392,11 +423,11 @@ export function useMultiplayerSync(
     try {
       const toggleMove: Move = { kind: 'topologyToggle' };
       const san = computeSAN(liveBoard, toggleMove);
+      // Stamped in the transaction (nextMoveTimestamp).
       const savedMove = {
         move: toggleMove,
         san,
         topology: liveBoard.topologyState,
-        timestamp: Date.now(),
       };
       await runTransaction(db, async (tx) => {
         const ref = doc(db, 'matches', liveMatch.code);
@@ -407,8 +438,12 @@ export function useMultiplayerSync(
         if (data.status !== 'active') throw new Error('MATCH_NOT_ACTIVE');
         const newActions = (data.rouletteActionsLeft ?? 0) - 1;
         const patch: Record<string, unknown> = {
-          'log.moves': [...data.log.moves, savedMove],
+          'log.moves': [
+            ...data.log.moves,
+            { ...savedMove, timestamp: nextMoveTimestamp(data.log.moves) },
+          ],
           lastActivity: serverTimestamp(),
+          turnStartedAt: serverTimestamp(),
         };
         // Rotate uses an action but doesn't consume a slot.
         if (newActions <= 0) {
@@ -469,7 +504,7 @@ export function useMultiplayerSync(
     }
   }
 
-  async function resign(): Promise<boolean> {
+  async function resign(reason: 'resign' | 'flag' = 'resign'): Promise<boolean> {
     if (liveMatch.status !== 'active') return false;
     let wrote = false;
     setBusy(true);
@@ -489,6 +524,7 @@ export function useMultiplayerSync(
         tx.update(ref, {
           status: 'completed',
           outcome,
+          endReason: reason,
           lastActivity: serverTimestamp(),
         });
         wrote = true;
@@ -503,7 +539,10 @@ export function useMultiplayerSync(
     return wrote;
   }
 
-  async function writeOutcomeIfFirst(outcome: MatchOutcome): Promise<void> {
+  async function writeOutcomeIfFirst(
+    outcome: MatchOutcome,
+    endReason?: MatchEndReason,
+  ): Promise<boolean> {
     const ref = doc(db, 'matches', liveMatch.code);
     try {
       await runTransaction(db, async (tx) => {
@@ -514,11 +553,14 @@ export function useMultiplayerSync(
         tx.update(ref, {
           status: 'completed',
           outcome,
+          ...(endReason ? { endReason } : {}),
           lastActivity: serverTimestamp(),
         });
       });
+      return true;
     } catch (err) {
       console.error('[mp] outcome write failed', err);
+      return false;
     }
   }
 

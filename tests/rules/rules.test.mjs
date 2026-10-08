@@ -1,0 +1,1239 @@
+// firestore.rules on the emulator (QA-04, QA-05, QA-06). Run with
+// `npm run test:rules` (needs Java 21+ on PATH).
+//
+// "allowed" tests go through the app's own write paths wherever there is
+// one (claimDisplayName, saveCompletedGame, createMatch / joinMatch, Quick
+// match, the online-game hook), so a rule that breaks the client fails
+// here. "denied" tests are the writes a hand-crafted client could make,
+// each breaking one condition. "old client" tests replay what v1.0.2 sends.
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { after, before, beforeEach, describe, it } from 'node:test';
+import { Worker } from 'node:worker_threads';
+import React from 'react';
+import { renderToString } from 'react-dom/server';
+import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
+import {
+  Timestamp,
+  addDoc,
+  collection,
+  deleteDoc,
+  deleteField,
+  doc,
+  getDoc,
+  runTransaction,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  writeBatch,
+} from 'firebase/firestore';
+import { PROJECT_ID, actAs, firestoreFor, terminateAll } from './client-stub.mjs';
+
+const { claimDisplayName, changeDisplayName, displayNameProblem } = await import('../../src/firebase/auth.ts');
+const { saveCompletedGame } = await import('../../src/firebase/games.ts');
+const { createMatch, joinMatch } = await import('../../src/firebase/matches.ts');
+const { saveMultiplayerGameToGames } = await import('../../src/firebase/multiplayerGames.ts');
+const { useMultiplayerSync, writeInactivityForfeit } = await import(
+  '../../src/components/MultiplayerGameView.tsx'
+);
+const { generateLegalMoves } = await import('../../src/engine/moves.ts');
+
+// ── harness ────────────────────────────────────────────────────────────
+
+// RULES_FILE runs the same tests against another rules file (say, the
+// published one) to see which holes it leaves open.
+const RULES = process.env.RULES_FILE ?? new URL('../../firestore.rules', import.meta.url);
+
+let env;
+before(async () => {
+  env = await initializeTestEnvironment({
+    projectId: PROJECT_ID,
+    firestore: { rules: readFileSync(RULES, 'utf8') },
+  });
+});
+beforeEach(async () => {
+  await env.clearFirestore();
+});
+after(async () => {
+  await terminateAll();
+  await env.cleanup();
+});
+
+const as = (uid) => firestoreFor(uid);
+const ago = (ms) => Timestamp.fromMillis(Date.now() - ms);
+const MIN = 60_000;
+
+async function read(path) {
+  return (await getDoc(doc(as('owner'), path))).data();
+}
+async function seed(path, data) {
+  await setDoc(doc(as('owner'), path), data);
+}
+async function patch(path, data) {
+  await updateDoc(doc(as('owner'), path), data);
+}
+async function denied(write) {
+  await assert.rejects(write, (e) => e?.code === 'permission-denied');
+}
+
+// ── profiles and saved games ───────────────────────────────────────────
+
+async function newPlayer(uid, name) {
+  actAs(uid);
+  await claimDisplayName(uid, name);
+}
+
+/** A breakdown computeGamePoints() could give: 5 per move, the rest from
+ *  captures (up to 400), then quality (R-4 caps both modes). */
+function points({ total = 120, moveCount = 12, counted = true } = {}) {
+  const movePoints = Math.min(total, 5 * moveCount);
+  const capturePoints = Math.min(400, total - movePoints);
+  return {
+    movePoints,
+    capturePoints,
+    qualityPoints: total - movePoints - capturePoints,
+    rotationPoints: 0,
+    outcomeBonus: 0,
+    total,
+    moveCount,
+    captureValueCp: 0,
+    moveQualityCounts: { brilliant: 0, best: 0, good: 0, mistake: 0, blunder: 0 },
+    counted,
+  };
+}
+
+function gameLog(entries) {
+  return {
+    id: 'log',
+    createdAt: new Date().toISOString(),
+    randomSeed: 1,
+    initialTopology: 'A',
+    initialState: null,
+    moves: Array.from({ length: entries }, (_, i) => ({
+      san: 'R',
+      move: { kind: 'topologyToggle' },
+      topology: 'A',
+      timestamp: 1000 + i,
+    })),
+  };
+}
+
+/** The app's own save (games.ts) of a game against the bot. */
+async function saveGame(uid, o = {}) {
+  const { outcome = 'ai-win', total = 120, moveCount = 12, counted = true } = o;
+  actAs(uid);
+  return saveCompletedGame({
+    uid,
+    displayName: 'Player',
+    log: gameLog(moveCount * 2),
+    outcome,
+    points: points({ total, moveCount, counted }),
+    chess960Id: 'RNBQKBNR',
+    seed: 1,
+    humanColor: 'white',
+    gameMode: o.gameMode ?? 'classic',
+    durationMs: 60_000,
+    botLevel: o.botLevel ?? 'strong',
+  });
+}
+
+/** A /games doc written past the rules (owner), for attacks that point at it. */
+async function seedGame(id, o = {}) {
+  await seed(`games/${id}`, {
+    playerId: o.playerId ?? 'alice',
+    playerName: 'Player',
+    chess960Id: 'RNBQKBNR',
+    seed: 1,
+    humanColor: 'white',
+    log: { initialTopology: 'A', moves: [] },
+    outcome: o.outcome ?? 'human-win',
+    moveCount: o.moveCount ?? 12,
+    points: o.points ?? points({ total: o.total ?? 120, counted: o.counted ?? true }),
+    gameMode: o.gameMode ?? 'classic',
+    botLevel: o.botLevel ?? 'strong',
+    vsAI: true,
+    createdAt: o.createdAt ?? Timestamp.now(),
+  });
+}
+
+const me = (uid) => doc(as(uid), 'users', uid);
+
+describe('names: /users and /displayNames (QA-06)', () => {
+  it('allowed: a new player claims a name (claimDisplayName)', async () => {
+    await newPlayer('alice', 'Alice');
+    assert.equal((await read('users/alice')).displayName, 'Alice');
+    assert.equal((await read('displayNames/alice')).uid, 'alice');
+  });
+
+  it('allowed: Cyrillic and Greek names', async () => {
+    await newPlayer('olek', 'Олександр Їжак');
+    assert.equal((await read('displayNames/олександр їжак')).uid, 'olek');
+    await newPlayer('odos', 'ΟΔΟΣ');
+    assert.equal((await read('displayNames/οδος')).uid, 'odos');
+  });
+
+  it('allowed: Greek names with a final sigma, Korean, a name with a space (R-5 keeps them)', async () => {
+    await newPlayer('nikos', 'Νίκος');
+    assert.equal((await read('displayNames/νίκος')).uid, 'nikos');
+    await newPlayer('sas', 'ΣΑΣ ΣΟΥ');
+    assert.equal((await read('displayNames/σας σου')).uid, 'sas');
+    await newPlayer('ji', '김지수');
+    await newPlayer('ann', 'Ann Lee-Smith_2');
+  });
+
+  it('the name picker (displayNameProblem) refuses exactly the names the rules refuse (R-5)', async () => {
+    const take = [
+      'Alice', 'Олександр Їжак', '김민수', 'İpek', 'Ayşe', 'µ-man', 'ſam', '-ab-',
+      'Νίκος', 'ΟΔΟΣ', 'ΣΑΣ ΣΟΥ', 'Σοφια', 'σας_σου', 'Σσς',
+      // past the BMP: two UTF-16 units each, as the rules count them too
+      '𠀀𠀀', '𠀀𠀀𠀀', '𠀀'.repeat(10),
+    ];
+    const refuse = [
+      // NFKC turns these into a slug the rules refuse: conjoining jamo,
+      // a capital, or letters the shown name does not match
+      'ㅋㅋㅋ', 'ﾡﾡﾡ', 'Ａｂｃ', 'ᴬbc', 'ℂat', 'ﬁsh', 'Ⅻ Club', 'ⓐbc', '𝐀𝐁𝐂', 'ϒϒϒ', 'ǅemal',
+      // the sigma rule, the shape of the name
+      'Νίκοσ', 'νικοσ σας', 'Bo  ss', 'ab', 'a'.repeat(21), '𠀀'.repeat(11), 'a.b.c',
+    ];
+    const verdicts = [];
+    for (const [i, name] of [...take, ...refuse].entries()) {
+      const picker = displayNameProblem(name) === null;
+      let rules = true;
+      try { await newPlayer(`n${i}`, name); } catch (e) {
+        assert.equal(e?.code, 'permission-denied', `${name}: ${e}`);
+        rules = false;
+      }
+      verdicts.push({ name, picker, rules });
+    }
+    assert.deepEqual(verdicts.filter((v) => v.picker !== v.rules), []);
+    assert.deepEqual(verdicts.filter((v) => !v.rules).map((v) => v.name), refuse);
+  });
+
+  it('allowed: a Turkish name with İ, claimed and renamed (R-11)', async () => {
+    await newPlayer('ayse', 'İpek');
+    assert.equal((await read('users/ayse')).displayNameLower, 'i̇pek');
+    actAs('ayse');
+    await changeDisplayName('ayse', 'İpek', 'İPEK İnce');
+    assert.equal((await read('users/ayse')).displayName, 'İPEK İnce');
+    await changeDisplayName('ayse', 'İPEK İnce', 'Ayşe');
+    assert.equal(await read('displayNames/i̇pek i̇nce'), undefined);
+  });
+
+  it('allowed: a profile from before the reservations renames (R-11)', async () => {
+    await seed('users/old', { uid: 'old', displayName: 'Oldie', displayNameLower: 'oldie' });
+    actAs('old');
+    await changeDisplayName('old', 'Oldie', 'Newbie');
+    assert.equal((await read('users/old')).displayNameLower, 'newbie');
+    assert.equal((await read('displayNames/newbie')).uid, 'old');
+  });
+
+  it('denied: a reservation of a name the client never writes (İ as I, or İ kept in the slug)', async () => {
+    await newPlayer('ayse', 'İpek');
+    for (const slug of ['ipek', 'İpek']) {
+      const b = writeBatch(as('mal'));
+      b.set(doc(as('mal'), 'displayNames', slug), { uid: 'mal', createdAt: serverTimestamp() });
+      b.set(me('mal'), { uid: 'mal', displayName: 'İpek', displayNameLower: slug, createdAt: serverTimestamp(), lastActive: serverTimestamp() });
+      await denied(b.commit());
+    }
+  });
+
+  it('allowed: claiming the same name again in another case', async () => {
+    await newPlayer('alice', 'Alice');
+    actAs('alice');
+    await claimDisplayName('alice', 'ALICE');
+    assert.equal((await read('users/alice')).displayName, 'ALICE');
+  });
+
+  it('allowed: a name change releases the old name (changeDisplayName)', async () => {
+    await newPlayer('alice', 'Alice');
+    actAs('alice');
+    await changeDisplayName('alice', 'Alice', 'Alicia');
+    assert.equal((await read('users/alice')).displayNameLower, 'alicia');
+    assert.equal(await read('displayNames/alice'), undefined);
+    assert.equal((await read('displayNames/alicia')).uid, 'alice');
+  });
+
+  it("denied: the profile takes another player's reserved name", async () => {
+    await newPlayer('alice', 'Alice');
+    await newPlayer('bob', 'Bob');
+    await denied(updateDoc(me('alice'), { displayName: 'Bob', displayNameLower: 'bob' }));
+  });
+
+  it('denied: the shown name differs from the reserved one', async () => {
+    await newPlayer('alice', 'Alice');
+    await newPlayer('bob', 'Bob');
+    await denied(updateDoc(me('alice'), { displayName: 'Bob' }));
+  });
+
+  it("denied: another player's name shown through a slug in capitals", async () => {
+    await newPlayer('alice', 'Alice');
+    await newPlayer('bob', 'Bob');
+    const b = writeBatch(as('bob'));
+    b.delete(doc(as('bob'), 'displayNames', 'bob'));
+    b.set(doc(as('bob'), 'displayNames', 'ALICE'), { uid: 'bob', createdAt: serverTimestamp() });
+    b.update(me('bob'), { displayName: 'Alice', displayNameLower: 'ALICE' });
+    await denied(b.commit());
+  });
+
+  it('denied: a name with regex syntax in it', async () => {
+    await newPlayer('alice', 'Alice');
+    await denied(updateDoc(me('alice'), { displayName: 'al.*' }));
+  });
+
+  it('denied: a profile under a name nobody reserved', async () => {
+    await denied(
+      setDoc(me('carol'), {
+        uid: 'carol',
+        displayName: 'Carol',
+        displayNameLower: 'carol',
+        createdAt: serverTimestamp(),
+        lastActive: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('denied: a new profile that starts with stats', async () => {
+    const b = writeBatch(as('carol'));
+    b.set(doc(as('carol'), 'displayNames', 'carol'), { uid: 'carol', createdAt: serverTimestamp() });
+    b.set(me('carol'), {
+      uid: 'carol',
+      displayName: 'Carol',
+      displayNameLower: 'carol',
+      createdAt: serverTimestamp(),
+      lastActive: serverTimestamp(),
+      gamesPlayed: 500,
+    });
+    await denied(b.commit());
+  });
+
+  it('denied: a second reservation (squatting)', async () => {
+    await newPlayer('alice', 'Alice');
+    await denied(setDoc(doc(as('alice'), 'displayNames', 'qa-squat'), { uid: 'alice' }));
+  });
+
+  it('denied: a new name that keeps the old reservation', async () => {
+    await newPlayer('alice', 'Alice');
+    const b = writeBatch(as('alice'));
+    b.set(doc(as('alice'), 'displayNames', 'alicia'), { uid: 'alice', createdAt: serverTimestamp() });
+    b.update(me('alice'), { displayName: 'Alicia', displayNameLower: 'alicia' });
+    await denied(b.commit());
+  });
+
+  it('denied: releasing the name the profile still shows', async () => {
+    await newPlayer('alice', 'Alice');
+    await denied(deleteDoc(doc(as('alice'), 'displayNames', 'alice')));
+  });
+
+  it('denied: a reservation with fields of its own', async () => {
+    await newPlayer('alice', 'Alice');
+    await denied(
+      setDoc(doc(as('alice'), 'displayNames', 'alice'), { uid: 'alice', createdAt: serverTimestamp(), x: 1 }),
+    );
+  });
+});
+
+describe('stats: /users after a saved game (QA-06)', () => {
+  beforeEach(async () => {
+    await newPlayer('alice', 'Alice');
+    await newPlayer('bob', 'Bob');
+  });
+
+  it('allowed: the first counted game sets the stats and the best (saveCompletedGame)', async () => {
+    const r = await saveGame('alice', { outcome: 'ai-win', total: 150 });
+    const u = await read('users/alice');
+    assert.equal(r.isNewBest, true);
+    assert.equal(u.gamesPlayed, 1);
+    assert.equal(u.gamesWon, 0);
+    assert.equal(u.bestGamePoints, 150);
+    assert.equal(u.bestGameId, r.gameId);
+    assert.equal(u.lastGameId, r.gameId);
+    assert.equal(u.bestGameSnapshot.moveCount, 12);
+    assert.equal(u.longestSurvivalMoves, 12);
+  });
+
+  it('allowed: a later game that is not a best, a draw', async () => {
+    await saveGame('alice', { total: 300 });
+    const r = await saveGame('alice', { outcome: 'draw', total: 100, moveCount: 30 });
+    const u = await read('users/alice');
+    assert.equal(r.isNewBest, false);
+    assert.equal(u.gamesPlayed, 2);
+    assert.equal(u.gamesDrawn, 1);
+    assert.equal(u.bestGamePoints, 300);
+    assert.equal(u.longestSurvivalMoves, 30);
+  });
+
+  it('allowed: wins over Strong count, one each, back to back', async () => {
+    await saveGame('alice', { outcome: 'human-win', total: 200 });
+    await saveGame('alice', { outcome: 'human-win', total: 100 });
+    const u = await read('users/alice');
+    assert.equal(u.strongWins, 2);
+    assert.equal(u.gamesWon, 2);
+  });
+
+  it('allowed: a roulette game updates the roulette group', async () => {
+    const r = await saveGame('alice', { gameMode: 'roulette', outcome: 'human-win', total: 400 });
+    const u = await read('users/alice');
+    assert.equal(u.rouletteGamesPlayed, 1);
+    assert.equal(u.rouletteBestGameId, r.gameId);
+    assert.equal(u.strongWins, 1);
+    assert.equal(u.gamesPlayed, undefined);
+  });
+
+  it('allowed: a practice game is saved and leaves the profile alone', async () => {
+    const r = await saveGame('alice', { outcome: 'human-win', botLevel: 'casual', counted: false });
+    assert.equal((await read(`games/${r.gameId}`)).botLevel, 'casual');
+    assert.equal((await read('users/alice')).gamesPlayed, undefined);
+  });
+
+  it('allowed: a win saved without a bot level counts as Strong, as the client counts it', async () => {
+    actAs('alice');
+    await saveCompletedGame({
+      uid: 'alice',
+      displayName: 'Alice',
+      log: gameLog(24),
+      outcome: 'human-win',
+      points: points(),
+      chess960Id: 'RNBQKBNR',
+      seed: 1,
+      humanColor: 'white',
+    });
+    assert.equal((await read('users/alice')).strongWins, 1);
+  });
+
+  it('allowed: strongWins +1 against a fresh Strong win (5 minutes old)', async () => {
+    await seedGame('g1', { createdAt: ago(5 * MIN) });
+    await updateDoc(me('alice'), { strongWins: 1, lastGameId: 'g1', lastGameAt: serverTimestamp() });
+  });
+
+  it('denied: strongWins +1 with no game behind it', async () => {
+    await denied(updateDoc(me('alice'), { strongWins: 1, lastGameAt: serverTimestamp() }));
+  });
+
+  it('denied: strongWins +1 against a win already counted', async () => {
+    const r = await saveGame('alice', { outcome: 'human-win' });
+    await denied(
+      updateDoc(me('alice'), { strongWins: 2, lastGameId: r.gameId, lastGameAt: serverTimestamp() }),
+    );
+  });
+
+  it('denied: strongWins +1 against a win older than 10 minutes', async () => {
+    await seedGame('g1', { createdAt: ago(11 * MIN) });
+    await denied(updateDoc(me('alice'), { strongWins: 1, lastGameId: 'g1', lastGameAt: serverTimestamp() }));
+  });
+
+  it('denied: strongWins +1 against a Normal-bot win, a loss, an uncounted game, or a game of another player', async () => {
+    await seedGame('normal', { botLevel: 'normal' });
+    await seedGame('loss', { outcome: 'ai-win' });
+    await seedGame('short', { counted: false });
+    await seedGame('bobs', { playerId: 'bob' });
+    for (const id of ['normal', 'loss', 'short', 'bobs']) {
+      await denied(updateDoc(me('alice'), { strongWins: 1, lastGameId: id, lastGameAt: serverTimestamp() }));
+    }
+  });
+
+  it('denied: strongWins +1 that leaves lastGameAt where it was', async () => {
+    await seedGame('g1');
+    await denied(updateDoc(me('alice'), { strongWins: 1, lastGameId: 'g1' }));
+  });
+
+  it('denied: strongWins +2 in one write', async () => {
+    await seedGame('g1');
+    await denied(updateDoc(me('alice'), { strongWins: 2, lastGameId: 'g1', lastGameAt: serverTimestamp() }));
+  });
+
+  // R-14 — /games docs saved before these rules (under v1.0.2 or the
+  // bridge) were never held to the date and caps checked at create.
+  const year2100 = () => Timestamp.fromDate(new Date('2100-01-01T00:00:00Z'));
+  const rouletteBest = (id, total) => ({
+    rouletteBestPoints: total,
+    rouletteBestGameId: id,
+    rouletteBestSnapshot: { outcome: 'human-win', moveCount: 12, chess960Id: 'RNBQKBNR', createdAt: serverTimestamp() },
+  });
+
+  it('denied (R-14): strongWins +1 against a win dated 2100', async () => {
+    await seedGame('future', { createdAt: year2100() });
+    await denied(updateDoc(me('alice'), { strongWins: 1, lastGameId: 'future', lastGameAt: serverTimestamp() }));
+  });
+
+  it('denied (R-14): a best from a game dated 2100', async () => {
+    await seedGame('future', { total: 150, createdAt: year2100() });
+    await denied(
+      updateDoc(me('alice'), {
+        bestGamePoints: 150,
+        bestGameId: 'future',
+        bestGameSnapshot: { outcome: 'human-win', moveCount: 12, chess960Id: 'RNBQKBNR', createdAt: serverTimestamp() },
+      }),
+    );
+  });
+
+  it('denied (R-14): a roulette best of 6010, or one with quality or rotation points; allowed at the cap', async () => {
+    const p = (o) => ({ ...points({ total: 0 }), movePoints: 60, capturePoints: 400, outcomeBonus: 500, ...o });
+    await seedGame('r6010', { gameMode: 'roulette', points: p({ qualityPoints: 5050, total: 6010 }) });
+    await seedGame('quality', { gameMode: 'roulette', points: p({ qualityPoints: 10, total: 970 }) });
+    await seedGame('rotation', { gameMode: 'roulette', points: p({ rotationPoints: 10, total: 970 }) });
+    await seedGame('cap', { gameMode: 'roulette', points: p({ movePoints: 750, total: 1650 }) });
+    await denied(updateDoc(me('alice'), rouletteBest('r6010', 6010)));
+    await denied(updateDoc(me('alice'), rouletteBest('quality', 970)));
+    await denied(updateDoc(me('alice'), rouletteBest('rotation', 970)));
+    await updateDoc(me('alice'), rouletteBest('cap', 1650));
+  });
+
+  it('denied (R-14): a classic best from a game over the classic caps (move, quality, outcome points, moveCount); allowed at them', async () => {
+    const best = (id, total) => ({
+      bestGamePoints: total,
+      bestGameId: id,
+      bestGameSnapshot: { outcome: 'human-win', moveCount: 12, chess960Id: 'RNBQKBNR', createdAt: serverTimestamp() },
+    });
+    // 12 moves: movePoints up to 60, qualityPoints up to 130, outcomeBonus up to 500
+    const p = (o) => ({ ...points({ total: 0 }), ...o });
+    await seedGame('moves', { points: p({ movePoints: 1500, total: 1500 }) });
+    await seedGame('quality', { points: p({ qualityPoints: 1000, total: 1000 }) });
+    await seedGame('bonus', { points: p({ outcomeBonus: 2000, total: 2000 }) });
+    await seedGame('count', { points: p({ movePoints: 60, total: 60, moveCount: 300 }) });
+    await seedGame('cap', { points: p({ movePoints: 60, capturePoints: 400, qualityPoints: 130, outcomeBonus: 500, total: 1090 }) });
+    await denied(updateDoc(me('alice'), best('moves', 1500)));
+    await denied(updateDoc(me('alice'), best('quality', 1000)));
+    await denied(updateDoc(me('alice'), best('bonus', 2000)));
+    await denied(updateDoc(me('alice'), best('count', 60)));
+    await updateDoc(me('alice'), best('cap', 1090));
+  });
+
+  it('denied: a counter below 0 or up by more than one', async () => {
+    await denied(updateDoc(me('alice'), { gamesPlayed: -5 }));
+    await denied(updateDoc(me('alice'), { gamesPlayed: 2 }));
+    await denied(updateDoc(me('alice'), { gamesWon: 2 }));
+    await denied(updateDoc(me('alice'), { rouletteGamesPlayed: 1.5 }));
+  });
+
+  it('denied: longestSurvivalMoves over 700 or not whole', async () => {
+    await denied(updateDoc(me('alice'), { longestSurvivalMoves: 701 }));
+    await denied(updateDoc(me('alice'), { longestSurvivalMoves: 12.5 }));
+  });
+
+  it('denied: bestGameSnapshot rewritten on its own ("won in 300 moves")', async () => {
+    await saveGame('alice', { total: 150 });
+    await denied(
+      updateDoc(me('alice'), {
+        bestGameSnapshot: { outcome: 'human-win', moveCount: 300, chess960Id: 'RNBQKBNR', createdAt: serverTimestamp() },
+      }),
+    );
+  });
+
+  it('denied: a best whose snapshot does not match its game', async () => {
+    await seedGame('g1', { total: 900, outcome: 'ai-win' });
+    await denied(
+      updateDoc(me('alice'), {
+        bestGamePoints: 900,
+        bestGameId: 'g1',
+        bestGameSnapshot: { outcome: 'human-win', moveCount: 12, chess960Id: 'RNBQKBNR', createdAt: serverTimestamp() },
+      }),
+    );
+  });
+
+  it('denied: bestGameId moved to a game with other points', async () => {
+    await saveGame('alice', { total: 150 });
+    await seedGame('g1', { total: 90, outcome: 'ai-win' });
+    await denied(updateDoc(me('alice'), { bestGameId: 'g1' }));
+  });
+
+  it('denied: a best from a practice game, or a classic best from a roulette game', async () => {
+    await seedGame('practice', { total: 900, outcome: 'ai-win', botLevel: 'casual', counted: false });
+    await seedGame('roul', { total: 900, outcome: 'ai-win', gameMode: 'roulette' });
+    for (const id of ['practice', 'roul']) {
+      await denied(
+        updateDoc(me('alice'), {
+          bestGamePoints: 900,
+          bestGameId: id,
+          bestGameSnapshot: { outcome: 'ai-win', moveCount: 12, chess960Id: 'RNBQKBNR', createdAt: serverTimestamp() },
+        }),
+      );
+    }
+  });
+
+  it('denied: lastGameAt back-dated or removed', async () => {
+    await saveGame('alice');
+    await denied(updateDoc(me('alice'), { lastGameAt: ago(60 * MIN) }));
+    await denied(updateDoc(me('alice'), { lastGameAt: deleteField() }));
+  });
+
+  it('denied: a /games doc with a client-chosen createdAt', async () => {
+    actAs('alice');
+    const log = { initialTopology: 'A', moves: gameLog(24).moves };
+    await denied(
+      addDoc(collection(as('alice'), 'games'), {
+        playerId: 'alice',
+        playerName: 'Alice',
+        chess960Id: 'RNBQKBNR',
+        seed: 1,
+        humanColor: 'white',
+        log,
+        outcome: 'human-win',
+        moveCount: 12,
+        points: points(),
+        gameMode: 'classic',
+        botLevel: 'strong',
+        vsAI: true,
+        createdAt: Timestamp.fromMillis(Date.now() + 365 * 24 * 60 * MIN),
+      }),
+    );
+  });
+});
+
+// ── online matches ─────────────────────────────────────────────────────
+
+const HOST = { uid: 'hana', displayName: 'Hana' };
+const GUEST = { uid: 'gus', displayName: 'Gus' };
+
+async function match(code) {
+  return read(`matches/${code}`);
+}
+
+/** The app's own hook (MultiplayerGameView) for `uid`, rendered once on the
+ *  server: its write helpers run as they do in the browser. */
+async function hookAs(uid, code) {
+  actAs(uid);
+  const live = await match(code);
+  let handle = null;
+  function Probe() {
+    handle = useMultiplayerSync(live, uid, () => {});
+    return null;
+  }
+  renderToString(React.createElement(Probe));
+  return handle;
+}
+
+/** createMatch by Hana, joinMatch by Gus — both the app's own. */
+async function startMatch(gameMode = 'classic', timeControlSec = null) {
+  actAs(HOST.uid);
+  const code = await createMatch(HOST, gameMode, timeControlSec, null);
+  actAs(GUEST.uid);
+  const m = await joinMatch(code, GUEST);
+  const white = m.host.color === 'white' ? HOST.uid : GUEST.uid;
+  const black = white === HOST.uid ? GUEST.uid : HOST.uid;
+  return { code, white, black };
+}
+
+/** One legal move by whoever is on turn, through the hook. */
+async function playMove(code) {
+  const { currentTurn } = await match(code);
+  const h = await hookAs(currentTurn, code);
+  const move = generateLegalMoves(h.boardState).find((m) => m.kind !== 'topologyToggle');
+  await h.sendMove(move);
+  return currentTurn;
+}
+
+/** The player on turn has been idle `ms`: their turn started that long ago. */
+const idle = (code, ms = 100_000) =>
+  patch(`matches/${code}`, { lastActivity: ago(ms), turnStartedAt: ago(ms) });
+const loserOutcome = (uid) => (uid === HOST.uid ? 'host-resign' : 'guest-resign');
+
+describe('online: /matches (QA-04, QA-05)', () => {
+  it('allowed: create, join, and moves that pass the turn (classic)', async () => {
+    const { code, white, black } = await startMatch();
+    let m = await match(code);
+    assert.equal(m.status, 'active');
+    assert.equal(m.currentTurn, white);
+    await playMove(code);
+    m = await match(code);
+    assert.equal(m.log.moves.length, 1);
+    assert.equal(m.currentTurn, black);
+    await playMove(code);
+    m = await match(code);
+    assert.equal(m.log.moves.length, 2);
+    assert.equal(m.currentTurn, white);
+  });
+
+  it('allowed: the join and every move stamp turnStartedAt with server time (R-7)', async () => {
+    const { code } = await startMatch();
+    let m = await match(code);
+    assert.ok(m.turnStartedAt instanceof Timestamp);
+    const joined = m.turnStartedAt.toMillis();
+    await new Promise((r) => setTimeout(r, 20));
+    await playMove(code);
+    m = await match(code);
+    assert.ok(m.turnStartedAt.toMillis() > joined);
+  });
+
+  it('allowed (R-7): the player on turn touches the match without moving; the forfeit and the flag claim still land', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code); // Black on turn
+    await idle(code);
+    await updateDoc(doc(as(black), 'matches', code), { lastActivity: serverTimestamp() });
+    actAs(white);
+    await writeInactivityForfeit(code, white);
+    assert.equal((await match(code)).outcome, loserOutcome(black));
+
+    const timed = await startMatch('classic', 60);
+    await playMove(timed.code);
+    await idle(timed.code);
+    await updateDoc(doc(as(timed.black), 'matches', timed.code), { lastActivity: serverTimestamp() });
+    const ok = await (await hookAs(timed.white, timed.code)).writeOutcomeIfFirst(loserOutcome(timed.black), 'flag');
+    assert.equal(ok, true);
+  });
+
+  it('allowed (R-7): a match from before turnStartedAt counts from lastActivity until its next move sets it', async () => {
+    const { code, white, black } = await startMatch();
+    await patch(`matches/${code}`, { turnStartedAt: deleteField() });
+    await playMove(code);
+    assert.ok((await match(code)).turnStartedAt instanceof Timestamp);
+    await patch(`matches/${code}`, { turnStartedAt: deleteField(), lastActivity: ago(100_000) });
+    actAs(white);
+    await writeInactivityForfeit(code, white);
+    assert.equal((await match(code)).outcome, loserOutcome(black));
+  });
+
+  it('denied (R-7): turnStartedAt moved without a move, back-dated with one, removed, or set at create', async () => {
+    const { code, white, black } = await startMatch();
+    const fs = (uid) => doc(as(uid), 'matches', code);
+    await denied(updateDoc(fs(white), { turnStartedAt: serverTimestamp(), lastActivity: serverTimestamp() }));
+    await denied(updateDoc(fs(black), { turnStartedAt: deleteField(), lastActivity: serverTimestamp() }));
+    const m = await match(code);
+    const entry = { move: { kind: 'topologyToggle' }, san: 'R', topology: 'A', timestamp: Date.now() };
+    await denied(updateDoc(fs(white), {
+      'log.moves': [...m.log.moves, entry], currentTurn: black, turnStartedAt: ago(10 * MIN), lastActivity: serverTimestamp(),
+    }));
+    await denied(updateDoc(fs(white), {
+      'log.moves': [...m.log.moves, entry], currentTurn: black, lastActivity: serverTimestamp(),
+    }));
+    await denied(
+      setDoc(doc(as(HOST.uid), 'matches', 'ZZZZZZ'), {
+        code: 'ZZZZZZ', chess960Id: 'RNBQKBNR', seed: 1, host: { ...HOST, color: 'white' }, guest: null,
+        status: 'waiting', currentTurn: '', log: { initialTopology: 'A', moves: [] }, outcome: null,
+        createdAt: serverTimestamp(), lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('denied (R-7): a null, a string or a number put in turnStartedAt of a match from before the field', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code); // Black on turn
+    await patch(`matches/${code}`, { turnStartedAt: deleteField() });
+    for (const v of [null, 'now', 0]) {
+      await denied(updateDoc(doc(as(black), 'matches', code), { turnStartedAt: v, lastActivity: serverTimestamp() }));
+    }
+    await patch(`matches/${code}`, { lastActivity: ago(100_000) });
+    actAs(white);
+    await writeInactivityForfeit(code, white);
+    assert.equal((await match(code)).outcome, loserOutcome(black));
+  });
+
+  it('allowed (R-7): a null turnStartedAt left from the bridge rules reads as absent — the forfeit counts from lastActivity', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code); // Black on turn
+    await patch(`matches/${code}`, { turnStartedAt: null, lastActivity: ago(100_000) });
+    actAs(white);
+    await writeInactivityForfeit(code, white);
+    assert.equal((await match(code)).outcome, loserOutcome(black));
+  });
+
+  it('allowed: a rotation in classic passes the turn', async () => {
+    const { code, white, black } = await startMatch();
+    // Classic sendRotate hands off to sendMove without awaiting it.
+    await (await hookAs(white, code)).sendRotate();
+    let m;
+    for (let i = 0; (m = await match(code)).log.moves.length === 0 && i < 50; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.equal(m.log.moves.length, 1);
+    assert.equal(m.currentTurn, black);
+  });
+
+  it('allowed: roulette — spin, an action that keeps the turn, one that passes it', async () => {
+    const { code, white, black } = await startMatch('roulette');
+    await (await hookAs(white, code)).spinRoulette();
+    assert.equal((await match(code)).rouletteActionsLeft, 2);
+    await (await hookAs(white, code)).sendRotate();
+    let m = await match(code);
+    assert.equal(m.log.moves.length, 1);
+    assert.equal(m.currentTurn, white);
+    await (await hookAs(white, code)).sendRotate();
+    m = await match(code);
+    assert.equal(m.log.moves.length, 2);
+    assert.equal(m.currentTurn, black);
+  });
+
+  it('denied (R-8): roulette state written off turn, a spin that is not one, actions that do not run down', async () => {
+    const { code, white, black } = await startMatch('roulette');
+    const ref = (uid) => doc(as(uid), 'matches', code);
+    const spin = (uid, o = {}) =>
+      updateDoc(ref(uid), {
+        rouletteSlots: ['pawn', 'pawn', 'pawn', 'pawn'],
+        rouletteActionsLeft: 2,
+        usedRouletteSlots: [],
+        rouletteSpinsByPlayer: { [uid]: 1 },
+        rouletteSpinCount: 1,
+        lastActivity: serverTimestamp(),
+        ...o,
+      });
+    await denied(spin(black)); // off turn
+    await denied(spin(white, { rouletteActionsLeft: 5 }));
+    await denied(spin(white, { rouletteSlots: ['queen', 'queen', 'queen', 'dragon'] }));
+    await denied(spin(white, { rouletteSlots: ['queen', 'queen'] }));
+    await denied(spin(white, { rouletteSpinCount: 7 }));
+    await denied(spin(white, { rouletteSpinsByPlayer: { [white]: 1, [black]: 9 } }));
+    await (await hookAs(white, code)).spinRoulette();
+    await denied(spin(white, { rouletteSpinsByPlayer: { [white]: 2 }, rouletteSpinCount: 2 })); // bag already full
+
+    const stamp = { lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp() };
+    const entry = () => ({ move: { kind: 'topologyToggle' }, san: 'R', topology: 'A', timestamp: Date.now() });
+    await denied(updateDoc(ref(white), { 'log.moves': [entry()], ...stamp })); // actions stay at 2
+    await denied(updateDoc(ref(white), { 'log.moves': [entry()], rouletteActionsLeft: 1, usedRouletteSlots: [7], ...stamp }));
+    await denied(updateDoc(ref(white), { 'log.moves': [entry()], rouletteActionsLeft: 1, rouletteSlots: ['queen', 'queen', 'queen', 'queen'], ...stamp }));
+    await denied(updateDoc(ref(white), { 'log.moves': [entry()], rouletteActionsLeft: 1, currentTurn: black, ...stamp }));
+    await denied(updateDoc(ref(black), { rouletteSlots: null, rouletteActionsLeft: 0, lastActivity: serverTimestamp() }));
+    await (await hookAs(white, code)).sendRotate(); // the honest first action
+    const m = await match(code);
+    assert.equal(m.rouletteActionsLeft, 1);
+    // the last action must end the turn and empty the bag
+    await denied(updateDoc(ref(white), { 'log.moves': [...m.log.moves, entry()], rouletteActionsLeft: 0, ...stamp }));
+    await denied(updateDoc(ref(white), { 'log.moves': [...m.log.moves, entry()], currentTurn: black, rouletteActionsLeft: 0, ...stamp }));
+  });
+
+  it('denied (M6): a field a match does not have, at the top or in log / guest, the initial topology, roulette state in classic', async () => {
+    const { code, white } = await startMatch();
+    const ref = doc(as(white), 'matches', code);
+    await denied(updateDoc(ref, { clock: { whiteMs: 1 }, lastActivity: serverTimestamp() }));
+    await denied(updateDoc(ref, { 'log.note': 'x', lastActivity: serverTimestamp() }));
+    await denied(updateDoc(ref, { 'log.initialTopology': 'B', lastActivity: serverTimestamp() }));
+    await denied(updateDoc(ref, { rouletteActionsLeft: 2, lastActivity: serverTimestamp() }));
+    actAs(HOST.uid);
+    const fresh = await createMatch(HOST);
+    await denied(
+      updateDoc(doc(as(GUEST.uid), 'matches', fresh), {
+        guest: { ...GUEST, color: (await match(fresh)).host.color === 'white' ? 'black' : 'white', rating: 3000 },
+        status: 'active',
+        currentTurn: (await match(fresh)).host.color === 'white' ? HOST.uid : GUEST.uid,
+        lastActivity: serverTimestamp(),
+        turnStartedAt: serverTimestamp(),
+      }),
+    );
+    await denied(
+      setDoc(doc(as(HOST.uid), 'matches', 'ZZZZZZ'), {
+        code: 'ZZZZZZ', chess960Id: 'RNBQKBNR', seed: 1, host: { ...HOST, color: 'white' }, guest: null,
+        status: 'waiting', currentTurn: '', log: { initialTopology: 'A', moves: [] }, outcome: null,
+        rouletteActionsLeft: 2, createdAt: serverTimestamp(), lastActivity: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('allowed: resign, and both players save the match to /games', async () => {
+    const { code, white } = await startMatch();
+    await playMove(code);
+    assert.equal(await (await hookAs(white, code)).resign(), true);
+    const m = await match(code);
+    assert.equal(m.outcome, loserOutcome(white));
+    assert.equal(m.endReason, 'resign');
+    for (const uid of [HOST.uid, GUEST.uid]) {
+      actAs(uid);
+      await saveMultiplayerGameToGames(m, uid);
+      assert.equal((await read(`games/mp-${code}-${uid}`)).playerId, uid);
+    }
+  });
+
+  it('allowed: my own flag fall (resign("flag"))', async () => {
+    const { code, white } = await startMatch('classic', 60);
+    await playMove(code);
+    assert.equal(await (await hookAs(white, code)).resign('flag'), true);
+    assert.equal((await match(code)).endReason, 'flag');
+  });
+
+  it("allowed: the opponent's flag claim once the flagged side is 90 s idle", async () => {
+    const { code, white, black } = await startMatch('classic', 60);
+    await playMove(code); // Black is on the clock now
+    await idle(code);
+    const ok = await (await hookAs(white, code)).writeOutcomeIfFirst(loserOutcome(black), 'flag');
+    assert.equal(ok, true);
+    const m = await match(code);
+    assert.equal(m.outcome, loserOutcome(black));
+    assert.equal(m.endReason, 'flag');
+  });
+
+  it("denied: the opponent's flag claim before 90 s (writeOutcomeIfFirst says false, the app retries)", async () => {
+    const { code, white, black } = await startMatch('classic', 60);
+    await playMove(code);
+    const ok = await (await hookAs(white, code)).writeOutcomeIfFirst(loserOutcome(black), 'flag');
+    assert.equal(ok, false);
+    assert.equal((await match(code)).outcome, null);
+  });
+
+  it('allowed: the inactivity forfeit after 90 s (writeInactivityForfeit), untimed', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code);
+    await idle(code);
+    actAs(white);
+    await writeInactivityForfeit(code, white);
+    const m = await match(code);
+    assert.equal(m.outcome, loserOutcome(black));
+    assert.equal(m.endReason, 'inactive');
+  });
+
+  it('allowed: the inactivity forfeit of a White who never moves, timed', async () => {
+    const { code, white, black } = await startMatch('classic', 300);
+    await idle(code);
+    actAs(black);
+    await writeInactivityForfeit(code, black);
+    assert.equal((await match(code)).outcome, loserOutcome(white));
+  });
+
+  it('allowed: mate / draw written by a player after a move', async () => {
+    const { code, black } = await startMatch();
+    await playMove(code);
+    assert.equal(await (await hookAs(black, code)).writeOutcomeIfFirst('draw'), true);
+    const m = await match(code);
+    assert.equal(m.outcome, 'draw');
+    assert.equal(m.endReason, undefined);
+  });
+
+  it("denied: a win written at move 0 (QA-05, RGUASJ)", async () => {
+    const { code, white } = await startMatch();
+    await denied(
+      updateDoc(doc(as(white), 'matches', code), {
+        status: 'completed',
+        outcome: 'black-win',
+        lastActivity: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('denied: a move that keeps the turn (QA-05, 5N4BP3)', async () => {
+    const { code, white } = await startMatch();
+    const m = await match(code);
+    await denied(
+      updateDoc(doc(as(white), 'matches', code), {
+        'log.moves': [...m.log.moves, { move: { kind: 'topologyToggle' }, san: 'R', topology: 'A', timestamp: Date.now() }],
+        lastActivity: serverTimestamp(),
+        turnStartedAt: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('denied: an append that also rewrites an earlier move (R-2)', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code);
+    await playMove(code);
+    const m = await match(code);
+    const forged = { ...m.log.moves[0], san: 'Qxf7#' };
+    const next = { ...m.log.moves[1], timestamp: Date.now() };
+    await denied(
+      updateDoc(doc(as(white), 'matches', code), {
+        'log.moves': [forged, m.log.moves[1], next],
+        currentTurn: black,
+        lastActivity: serverTimestamp(),
+        turnStartedAt: serverTimestamp(),
+      }),
+    );
+    await denied(
+      updateDoc(doc(as(black), 'matches', code), {
+        'log.moves': [forged, m.log.moves[1]],
+        lastActivity: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('denied: taking the turn without a move', async () => {
+    const { code, black } = await startMatch();
+    await denied(
+      updateDoc(doc(as(black), 'matches', code), { currentTurn: black, lastActivity: serverTimestamp() }),
+    );
+  });
+
+  it("denied: writing the opponent's resignation before 90 s", async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code);
+    await denied(
+      updateDoc(doc(as(white), 'matches', code), {
+        status: 'completed',
+        outcome: loserOutcome(black),
+        lastActivity: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('denied: the player on turn calling the waiting opponent idle', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code); // Black on turn, thinking 100 s
+    await idle(code);
+    await denied(
+      updateDoc(doc(as(black), 'matches', code), {
+        status: 'completed',
+        outcome: loserOutcome(white),
+        endReason: 'inactive',
+        lastActivity: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('denied: a match ended with no outcome, or brought back', async () => {
+    const { code, white } = await startMatch();
+    await playMove(code);
+    const fs = as(white);
+    await denied(updateDoc(doc(fs, 'matches', code), { status: 'completed', lastActivity: serverTimestamp() }));
+    await denied(updateDoc(doc(fs, 'matches', code), { status: 'waiting', lastActivity: serverTimestamp() }));
+    await (await hookAs(white, code)).resign();
+    await denied(updateDoc(doc(fs, 'matches', code), { status: 'active', lastActivity: serverTimestamp() }));
+  });
+
+  it('denied: back-dating lastActivity to cut the 90 s short', async () => {
+    const { code, white } = await startMatch();
+    await denied(updateDoc(doc(as(white), 'matches', code), { lastActivity: ago(10 * MIN) }));
+  });
+
+  it('denied: turning a classic match into roulette', async () => {
+    const { code, white } = await startMatch();
+    await denied(
+      updateDoc(doc(as(white), 'matches', code), { gameMode: 'roulette', lastActivity: serverTimestamp() }),
+    );
+  });
+
+  it('denied: an endReason that lies about who ended it', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code);
+    await idle(code);
+    // The opponent may forfeit Black now, but not as "resigned".
+    await denied(
+      updateDoc(doc(as(white), 'matches', code), {
+        status: 'completed',
+        outcome: loserOutcome(black),
+        endReason: 'resign',
+        lastActivity: serverTimestamp(),
+      }),
+    );
+    // Nor resign as "inactive".
+    await denied(
+      updateDoc(doc(as(black), 'matches', code), {
+        status: 'completed',
+        outcome: loserOutcome(black),
+        endReason: 'inactive',
+        lastActivity: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('denied: an endReason without its outcome, changed afterwards, or on a new match', async () => {
+    const { code, white } = await startMatch();
+    await playMove(code);
+    await denied(
+      updateDoc(doc(as(white), 'matches', code), { endReason: 'flag', lastActivity: serverTimestamp() }),
+    );
+    await denied(
+      updateDoc(doc(as(white), 'matches', code), {
+        status: 'completed',
+        outcome: 'draw',
+        endReason: 'flag',
+        lastActivity: serverTimestamp(),
+      }),
+    );
+    await (await hookAs(white, code)).resign();
+    await denied(
+      updateDoc(doc(as(white), 'matches', code), { endReason: 'flag', lastActivity: serverTimestamp() }),
+    );
+    await denied(
+      setDoc(doc(as(HOST.uid), 'matches', 'ZZZZZZ'), {
+        code: 'ZZZZZZ',
+        chess960Id: 'RNBQKBNR',
+        seed: 1,
+        host: { ...HOST, color: 'white' },
+        guest: null,
+        status: 'waiting',
+        currentTurn: '',
+        log: { initialTopology: 'A', moves: [] },
+        outcome: null,
+        endReason: 'resign',
+        createdAt: serverTimestamp(),
+        lastActivity: serverTimestamp(),
+      }),
+    );
+  });
+
+  it('denied: a join that hands the first move to Black, leaves it to nobody, or writes an outcome', async () => {
+    actAs(HOST.uid);
+    const code = await createMatch(HOST);
+    const m = await match(code);
+    const guestColor = m.host.color === 'white' ? 'black' : 'white';
+    const black = guestColor === 'black' ? GUEST.uid : HOST.uid;
+    const white = black === GUEST.uid ? HOST.uid : GUEST.uid;
+    const join = { guest: { ...GUEST, color: guestColor }, status: 'active', lastActivity: serverTimestamp() };
+    await denied(updateDoc(doc(as(GUEST.uid), 'matches', code), { ...join, currentTurn: black }));
+    await denied(updateDoc(doc(as(GUEST.uid), 'matches', code), join));
+    await denied(
+      updateDoc(doc(as(GUEST.uid), 'matches', code), { ...join, currentTurn: white, outcome: 'draw' }),
+    );
+  });
+});
+
+describe('Quick match (two players at once)', () => {
+  function player(uid, displayName) {
+    const w = new Worker(new URL('./actor.mjs', import.meta.url), { workerData: { uid, displayName } });
+    const result = new Promise((resolve, reject) => {
+      w.once('message', resolve);
+      w.once('error', reject);
+    });
+    return { w, result };
+  }
+
+  it('allowed: a waiting player is claimed and joins (findQuickMatch)', async () => {
+    const waiter = player('wendy', 'Wendy');
+    for (let i = 0; !(await read('mm_queue/wendy')); i++) {
+      assert.ok(i < 100, 'the waiter never queued');
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const claimer = player('carl', 'Carl');
+    try {
+      const [w, c] = await Promise.all([waiter.result, claimer.result]);
+      assert.equal(c.kind, 'hosting');
+      assert.deepEqual(w, { kind: 'joined', code: c.code });
+      const m = await match(c.code);
+      assert.equal(m.status, 'active');
+      assert.equal(m.host.uid, 'carl');
+      assert.equal(m.guest.uid, 'wendy');
+    } finally {
+      await Promise.all([waiter.w.terminate(), claimer.w.terminate()]);
+    }
+  });
+});
+
+// ── what v1.0.2 sends ──────────────────────────────────────────────────
+
+describe('old client (v1.0.2)', () => {
+  /** saveCompletedGame as it was: same /games doc, profile patch without lastGameId. */
+  async function oldSave(uid, outcome) {
+    const fs = as(uid);
+    const ref = await addDoc(collection(fs, 'games'), {
+      playerId: uid,
+      playerName: 'Alice',
+      chess960Id: 'RNBQKBNR',
+      seed: 1,
+      humanColor: 'white',
+      log: { initialTopology: 'A', moves: gameLog(24).moves },
+      outcome,
+      moveCount: 12,
+      points: points(),
+      gameMode: 'classic',
+      vsAI: true,
+      createdAt: serverTimestamp(),
+      botLevel: 'strong',
+    });
+    await runTransaction(fs, async (tx) => {
+      const cur = (await tx.get(me(uid))).data();
+      const p = {
+        lastGameAt: serverTimestamp(),
+        lastActive: serverTimestamp(),
+        gamesPlayed: (cur.gamesPlayed ?? 0) + 1,
+        gamesWon: (cur.gamesWon ?? 0) + (outcome === 'human-win' ? 1 : 0),
+        gamesDrawn: cur.gamesDrawn ?? 0,
+        longestSurvivalMoves: Math.max(cur.longestSurvivalMoves ?? 0, 12),
+      };
+      if (outcome === 'human-win') p.strongWins = (cur.strongWins ?? 0) + 1;
+      tx.update(me(uid), p);
+    });
+  }
+
+  beforeEach(async () => {
+    await newPlayer('alice', 'Alice');
+  });
+
+  it('still works: a game that is not a Strong win', async () => {
+    await oldSave('alice', 'ai-win');
+    assert.equal((await read('users/alice')).gamesPlayed, 1);
+  });
+
+  it('BREAKS: a Strong win — the game is saved, its profile stats are refused', async () => {
+    await denied(oldSave('alice', 'human-win'));
+    assert.equal((await read('users/alice')).gamesPlayed, undefined);
+  });
+
+  it('still works: resign and the 90 s forfeit without endReason', async () => {
+    const { code, white, black } = await startMatch();
+    await playMove(code);
+    await idle(code);
+    await updateDoc(doc(as(white), 'matches', code), {
+      status: 'completed',
+      outcome: loserOutcome(black),
+      lastActivity: serverTimestamp(),
+    });
+    const second = await startMatch();
+    await updateDoc(doc(as(second.white), 'matches', second.code), {
+      status: 'completed',
+      outcome: loserOutcome(second.white),
+      lastActivity: serverTimestamp(),
+    });
+  });
+
+  it("BREAKS: the opponent's flag claim before 90 s (it does not retry)", async () => {
+    const { code, white, black } = await startMatch('classic', 60);
+    await playMove(code);
+    await denied(
+      updateDoc(doc(as(white), 'matches', code), {
+        status: 'completed',
+        outcome: loserOutcome(black),
+        lastActivity: serverTimestamp(),
+      }),
+    );
+  });
+});
+
+// ── what the rules still cannot tell ───────────────────────────────────
+
+describe('known limits (allowed, by design or by what rules can see)', () => {
+  beforeEach(async () => {
+    await newPlayer('alice', 'Alice');
+  });
+
+  it('a counter +1 per write with no game behind it', async () => {
+    await updateDoc(me('alice'), { gamesPlayed: 1 });
+    await updateDoc(me('alice'), { gamesPlayed: 2 });
+  });
+
+  it('longestSurvivalMoves up to 700 with no game behind it', async () => {
+    await updateDoc(me('alice'), { longestSurvivalMoves: 700 });
+  });
+
+  it('a made-up Strong win in /games counts once (rules cannot replay chess)', async () => {
+    actAs('alice');
+    const ref = await addDoc(collection(as('alice'), 'games'), {
+      playerId: 'alice',
+      playerName: 'Alice',
+      chess960Id: 'RNBQKBNR',
+      seed: 1,
+      humanColor: 'white',
+      log: { initialTopology: 'A', moves: gameLog(24).moves },
+      outcome: 'human-win',
+      moveCount: 12,
+      points: points(),
+      gameMode: 'classic',
+      botLevel: 'strong',
+      vsAI: true,
+      createdAt: serverTimestamp(),
+    });
+    await updateDoc(me('alice'), { strongWins: 1, lastGameId: ref.id, lastGameAt: serverTimestamp() });
+    await denied(updateDoc(me('alice'), { strongWins: 2, lastGameId: ref.id, lastGameAt: serverTimestamp() }));
+  });
+
+  it('QA-05 stays open online (R-3 not done): after one move either player writes a win or a draw, on either turn', async () => {
+    const { code, white } = await startMatch();
+    await playMove(code); // Black on turn, no mate anywhere
+    await updateDoc(doc(as(white), 'matches', code), {
+      status: 'completed',
+      outcome: 'white-win',
+      lastActivity: serverTimestamp(),
+    });
+    assert.equal((await match(code)).outcome, 'white-win');
+  });
+
+  it('in a timed match the opponent can end it after 90 s idle, clock or not', async () => {
+    const { code, white, black } = await startMatch('classic', 600);
+    await playMove(code);
+    await idle(code);
+    await updateDoc(doc(as(white), 'matches', code), {
+      status: 'completed',
+      outcome: loserOutcome(black),
+      endReason: 'inactive',
+      lastActivity: serverTimestamp(),
+    });
+  });
+
+  it('a name NFKC changes (fullwidth letters) cannot be claimed', async () => {
+    actAs('fw');
+    await assert.rejects(claimDisplayName('fw', 'ＡＢＣ'), (e) => e?.code === 'permission-denied');
+  });
+});

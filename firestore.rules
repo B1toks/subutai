@@ -9,6 +9,10 @@ service cloud.firestore {
     // attacks: oversized / malformed documents, leaderboard numbers that no
     // saved game backs, foreign writes to other players' records, move
     // appends off-turn, and rewriting a match's history.
+    // What they do not close (a mate or draw written without one, made-up
+    // leaderboard games, client-stamped clocks, ...) is listed with its
+    // test under "Known limits" in docs/FIRESTORE-RULES.md; that file also
+    // says in which order to deploy the client and these rules.
 
     function signedIn() {
       return request.auth != null;
@@ -38,10 +42,18 @@ service cloud.firestore {
     // per-field ceilings (max material 3900cp/10, 10 quality pts per move,
     // roulette win base 500 + speed bonus 900). Blocks the obvious
     // "bestGamePoints: 999999" troll without needing to replay the game.
-    function plausiblePoints(p, moveCount) {
+    // R-4 — and the ceilings of its mode: classic scores 5 per move (half
+    // on a resign); roulette has no quality or rotation points and tops out
+    // at 500 + (60 - 10) * 15 + 400 = 1650. This raises the price of a
+    // made-up game; it does not stop one (the rules cannot replay chess).
+    function plausiblePoints(p, moveCount, mode) {
       return p is map
+        && p.keys().hasOnly([
+             'movePoints', 'capturePoints', 'qualityPoints', 'rotationPoints', 'outcomeBonus',
+             'total', 'moveCount', 'captureValueCp', 'moveQualityCounts', 'counted'
+           ])
         && p.total is int && p.total >= 0
-        && p.moveCount is int
+        && p.moveCount == moveCount
         && p.counted is bool
         && intIn(p.movePoints, 0, 1500)
         && intIn(p.capturePoints, 0, 400)
@@ -49,73 +61,224 @@ service cloud.firestore {
         && intIn(p.rotationPoints, 0, 600)
         && intIn(p.outcomeBonus, 0, 500)
         && p.total <= p.movePoints + p.capturePoints + p.qualityPoints + p.rotationPoints + p.outcomeBonus
-        && (p.counted == false || moveCount >= 10);
+        && (p.counted == false || moveCount >= 10)
+        && (mode == 'roulette' ? rouletteCapOk(p) : p.movePoints <= 5 * moveCount)
+        && (!('captureValueCp' in p) || p.captureValueCp is int)
+        && (!('moveQualityCounts' in p)
+            || (p.moveQualityCounts is map
+                && p.moveQualityCounts.keys().hasOnly(['brilliant', 'best', 'good', 'mistake', 'blunder'])));
     }
-    function gameBacksBest(uid, gameId, points) {
-      return gameId is string
-        && exists(/databases/$(database)/documents/games/$(gameId))
-        && get(/databases/$(database)/documents/games/$(gameId)).data.playerId == uid
-        && get(/databases/$(database)/documents/games/$(gameId)).data.points.total == points;
+    // The roulette cap, part of plausiblePoints: checked at create and
+    // again on a game read for a best (bestBacked, R-14).
+    function rouletteCapOk(p) {
+      return p.qualityPoints == 0 && p.rotationPoints == 0 && p.total <= 1650;
+    }
+    function gameDoc(gameId) {
+      return get(/databases/$(database)/documents/games/$(gameId)).data;
+    }
+    function nameDoc(slug) {
+      return /databases/$(database)/documents/displayNames/$(slug);
+    }
+
+    // QA-06 — the profile shows only a name this uid holds in /displayNames
+    // (getAfter: the client reserves it in the same transaction). The shown
+    // name must be its slug up to case: the characters the name picker
+    // allows (none of them regex syntax), matched case-insensitively against
+    // a slug with no capitals. Not lower(): it only folds ASCII, and would
+    // refuse every Cyrillic name. No NFKC either, so a name NFKC changes
+    // (fullwidth letters) cannot be taken.
+    // İ is the one letter whose lowercase is two characters (i + U+0307,
+    // what the client's toLowerCase() writes); (?i) does not fold them,
+    // so the slug's i + U+0307 is read back as İ (R-11).
+    function nameReserved(uid) {
+      let d = request.resource.data;
+      return shownNameOk(d.displayName)
+        && !d.displayNameLower.matches('.*[\\p{Lu}\\p{Lt}].*')
+        && slugCanonical(d.displayNameLower)
+        && d.displayNameLower.replace('i\\x{307}', 'İ').matches('(?i)' + d.displayName)
+        && getAfter(nameDoc(d.displayNameLower)).data.uid == uid;
+    }
+    // R-5 — a name as the name picker takes it: 3-20 characters, no space
+    // at either end, no two in a row (HTML shows "Boss " and "Bo  ss" as
+    // "Boss" and "Bo ss").
+    function shownNameOk(n) {
+      return n is string && n.size() >= 3 && n.size() <= 20
+        && n.matches('[\\p{L}\\p{N}_-]([\\p{L}\\p{N} _-]*[\\p{L}\\p{N}_-])?')
+        && !n.matches('.*  .*');
+    }
+    // R-5 — one slug per shown name. (?i) folds more than the client's
+    // toLowerCase() + NFKC, so a name can match a second slug that the
+    // client never writes; that slug is free, and its holder shows the
+    // name byte for byte. Refused in a slug:
+    //   - lowercase letters (?i) folds onto another lowercase letter, which
+    //     NFKC turns into it (µ ſ ϐ ϑ ϕ ϖ ϰ ϱ ϵ ẛ ι), and U+0345;
+    //   - U+1C80-U+1C88 (variant Cyrillic в д о с т т ъ ѣ ꙋ), which nobody
+    //     types;
+    //   - Roman numerals and circled letters (upper and lower fold onto
+    //     each other; NFKC turns them into Latin letters, so no name the
+    //     client writes has them);
+    //   - Hangul conjoining jamo and fillers: a jamo sequence shows as the
+    //     syllable it composes to, and the fillers show as nothing. Names
+    //     typed with compatibility jamo were refused already (NFKC);
+    //   - ς and σ where the client would not put them: toLowerCase() writes
+    //     ς only at the end of a word (after a lowercase letter, not before
+    //     one), σ everywhere else. A ban on ς would refuse Νίκος and ΟΔΟΣ.
+    function slugCanonical(s) {
+      return !s.matches('.*[\\x{B5}\\x{17F}\\x{345}\\x{3D0}\\x{3D1}\\x{3D5}\\x{3D6}\\x{3F0}\\x{3F1}\\x{3F5}\\x{1100}-\\x{11FF}\\x{1C80}-\\x{1C88}\\x{1E9B}\\x{1FBE}\\x{2160}-\\x{217F}\\x{24B6}-\\x{24E9}\\x{3164}\\x{FFA0}].*')
+        // ς with no lowercase letter before it, or one after it
+        && !s.matches('(|.*[^\\p{Ll}\\p{Lm}])\\p{Lm}*\\x{3C2}.*')
+        && !s.matches('.*\\x{3C2}\\p{Lm}*\\p{Ll}.*')
+        // σ after a lowercase letter and not before one
+        && !s.matches('.*\\p{Ll}\\p{Lm}*\\x{3C3}\\p{Lm}*([^\\p{Ll}\\p{Lm}].*)?');
+    }
+    // One reservation per uid: moving to a new name releases the old one in
+    // the same write.
+    function oldNameReleased(uid) {
+      let old = resource.data.displayNameLower;
+      return request.resource.data.displayNameLower == old
+        || !existsAfter(nameDoc(old))
+        || getAfter(nameDoc(old)).data.uid != uid;
+    }
+
+    // QA-06 — a games counter never goes below 0 or up by more than one game
+    // per write. Only checked when the write changes it, so a profile with
+    // an old bad value can still save games.
+    function counterOk(f, ak) {
+      let v = request.resource.data.get(f, 0);
+      return !ak.hasAny([f])
+        || (v is int && v >= 0 && v <= resource.data.get(f, 0) + 1);
+    }
+
+    // QA-06 — best points, its game id and the snapshot the leaderboard
+    // shows ("Survived", "Bot Slayer") change only together, and only to a
+    // counted game of this player in this mode whose outcome and length
+    // the snapshot repeats.
+    // R-14 — the game is read, not written, here, so the checks /games
+    // makes at create do not hold for one saved before them (under the
+    // v1.0.2 or bridge rules): its date and its points (plausiblePoints,
+    // with the caps of its mode) are checked again. A game dated in the
+    // future is not trusted.
+    function bestOk(uid, ak, pointsF, idF, snapF, mode) {
+      return !ak.hasAny([pointsF, idF, snapF])
+        || bestBacked(uid, request.resource.data, pointsF, idF, snapF, mode);
+    }
+    function bestBacked(uid, d, pointsF, idF, snapF, mode) {
+      let g = gameDoc(d[idF]);
+      let s = d[snapF];
+      return g.playerId == uid
+        && g.createdAt <= request.time
+        && plausiblePoints(g.points, g.moveCount, mode)
+        && g.points.counted == true
+        && g.points.total == d[pointsF]
+        && g.get('gameMode', 'classic') == mode
+        && s is map
+        && s.keys().hasOnly(['chess960Id', 'moveCount', 'outcome', 'createdAt', 'durationMs'])
+        && s.outcome == g.outcome
+        && s.moveCount == g.moveCount
+        && s.chess960Id == g.chess960Id
+        && s.createdAt == request.time
+        && (!('durationMs' in s)
+            || (s.durationMs is number && s.durationMs >= 0 && s.durationMs == g.get('durationMs', null)));
+    }
+
+    // QA-06 — "Beat Strong" goes up by one only with a win over the
+    // full-strength bot that the profile points at (lastGameId): a counted
+    // game of this player, saved in the last 10 minutes and after the
+    // profile's previous game save (lastGameAt). This write moves
+    // lastGameAt to now, so one game is never counted twice.
+    function strongWinsOk(uid, ak) {
+      let before = resource.data.get('strongWins', 0);
+      let after = request.resource.data.get('strongWins', 0);
+      return !ak.hasAny(['strongWins'])
+        || (after is int && after >= 0
+            && (after <= before || (after == before + 1 && freshStrongWin(uid))));
+    }
+    function freshStrongWin(uid) {
+      let d = request.resource.data;
+      let g = gameDoc(d.lastGameId);
+      return d.lastGameAt == request.time
+        && g.playerId == uid
+        // No level means full strength, as saveCompletedGame counts it.
+        && g.get('botLevel', 'strong') == 'strong'
+        && g.outcome == 'human-win'
+        && g.points.counted == true
+        && g.createdAt > request.time - duration.value(10, 'm')
+        // R-14 — not one dated in the future: it would stay fresh and
+        // newer than lastGameAt forever.
+        && g.createdAt <= request.time
+        && (!('lastGameAt' in resource.data) || g.createdAt > resource.data.lastGameAt);
+    }
+
+    function userUpdateOk(uid, ak) {
+      let d = request.resource.data;
+      return (!ak.hasAny(['displayName', 'displayNameLower'])
+              || (nameReserved(uid) && oldNameReleased(uid)))
+        && counterOk('gamesPlayed', ak)
+        && counterOk('gamesWon', ak)
+        && counterOk('gamesDrawn', ak)
+        && counterOk('rouletteGamesPlayed', ak)
+        && (!ak.hasAny(['longestSurvivalMoves'])
+            || intIn(d.get('longestSurvivalMoves', 0), 0, 700))
+        // Server time only, and never removed: strongWinsOk counts on it.
+        && (!ak.hasAny(['lastGameAt']) || d.lastGameAt == request.time)
+        && (!ak.hasAny(['lastGameId']) || str(d.lastGameId, 128))
+        && strongWinsOk(uid, ak)
+        && bestOk(uid, ak, 'bestGamePoints', 'bestGameId', 'bestGameSnapshot', 'classic')
+        && bestOk(uid, ak, 'rouletteBestPoints', 'rouletteBestGameId', 'rouletteBestSnapshot', 'roulette');
     }
 
     match /users/{uid} {
       allow read: if true;
+      // A new profile is a name and nothing else: every stat starts through
+      // the update rule below. A slug runs up to 40: each İ in a 20-letter
+      // name lowercases to two characters.
       allow create: if isOwner(uid)
                     && request.resource.data.uid == uid
                     && validName(request.resource.data.displayName)
-                    && str(request.resource.data.displayNameLower, 20)
-                    && !('bestGamePoints' in request.resource.data)
-                    && !('rouletteBestPoints' in request.resource.data)
-                    // A new profile has beaten nobody yet; the counter only
-                    // grows through the +1-per-write update rule below.
-                    && !('strongWins' in request.resource.data);
+                    && str(request.resource.data.displayNameLower, 40)
+                    && request.resource.data.keys().hasOnly([
+                         'uid', 'displayName', 'displayNameLower', 'createdAt', 'lastActive'
+                       ])
+                    && nameReserved(uid);
       allow update: if isOwner(uid)
                     && request.resource.data.uid == uid
                     && validName(request.resource.data.displayName)
-                    && str(request.resource.data.displayNameLower, 20)
+                    && str(request.resource.data.displayNameLower, 40)
                     && request.resource.data.keys().hasOnly([
                          'uid', 'displayName', 'displayNameLower', 'createdAt', 'lastActive',
-                         'lastGameAt', 'gamesPlayed', 'gamesWon', 'gamesDrawn',
+                         'lastGameAt', 'lastGameId', 'gamesPlayed', 'gamesWon', 'gamesDrawn',
                          'bestGamePoints', 'bestGameId', 'bestGameSnapshot', 'longestSurvivalMoves',
                          'rouletteGamesPlayed', 'rouletteBestPoints', 'rouletteBestGameId', 'rouletteBestSnapshot',
                          'strongWins'
                        ])
-                    // V1 — the "Beat Strong" achievement counter may only
-                    // ever grow, one game at a time.
-                    && (
-                      !('strongWins' in request.resource.data)
-                      || (request.resource.data.strongWins is int
-                          && request.resource.data.strongWins >= 0
-                          && request.resource.data.strongWins
-                             <= (('strongWins' in resource.data) ? resource.data.strongWins + 1 : 1))
-                    )
-                    // A leaderboard number may only change to the total of a
-                    // /games doc this player saved (write-once, see below).
-                    && (
-                      !('bestGamePoints' in request.resource.data)
-                      || ('bestGamePoints' in resource.data
-                          && request.resource.data.bestGamePoints == resource.data.bestGamePoints)
-                      || gameBacksBest(uid, request.resource.data.bestGameId, request.resource.data.bestGamePoints)
-                    )
-                    && (
-                      !('rouletteBestPoints' in request.resource.data)
-                      || ('rouletteBestPoints' in resource.data
-                          && request.resource.data.rouletteBestPoints == resource.data.rouletteBestPoints)
-                      || gameBacksBest(uid, request.resource.data.rouletteBestGameId, request.resource.data.rouletteBestPoints)
-                    );
+                    && userUpdateOk(uid, request.resource.data.diff(resource.data).affectedKeys());
       allow delete: if false;
     }
 
     match /displayNames/{name} {
       allow read: if true;
+      // QA-06 — a reservation is created only for the name the profile
+      // takes in the same write; with oldNameReleased() that leaves one
+      // reservation per uid.
       allow create: if signedIn()
                     && request.resource.data.uid == request.auth.uid
-                    && name.size() >= 1 && name.size() <= 20;
+                    && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+                    && name.size() >= 1 && name.size() <= 40
+                    && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.displayNameLower == name;
       allow update: if signedIn()
                     && resource.data.uid == request.auth.uid
-                    && request.resource.data.uid == request.auth.uid;
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.keys().hasOnly(['uid', 'createdAt']);
+      // Not the name the profile still shows: freed, it could be taken by
+      // someone else while this profile keeps showing it.
+      // R-11 — deleting a reservation that is not there is a no-op, and it
+      // is what a rename sends for a profile from before the reservations
+      // (changeDisplayName deletes the old slug unread).
       allow delete: if signedIn()
-                    && resource.data.uid == request.auth.uid;
+                    && (resource == null
+                        || (resource.data.uid == request.auth.uid
+                            && (!existsAfter(/databases/$(database)/documents/users/$(request.auth.uid))
+                                || getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.displayNameLower != name)));
     }
 
     match /games/{gameId} {
@@ -131,7 +294,20 @@ service cloud.firestore {
                     && request.resource.data.log.moves is list
                     && request.resource.data.log.moves.size() <= 700
                     && request.resource.data.log.moves.size() >= request.resource.data.moveCount * 2 - 1
-                    && plausiblePoints(request.resource.data.points, request.resource.data.moveCount)
+                    // R-4 — what a save has (a bot game, or one player's copy
+                    // of an online match), and nothing else.
+                    && request.resource.data.keys().hasOnly([
+                         'playerId', 'playerName', 'opponentId', 'opponentName', 'chess960Id', 'seed',
+                         'humanColor', 'log', 'outcome', 'moveCount', 'points', 'matchCode', 'vsAI',
+                         'gameMode', 'createdAt', 'durationMs', 'botLevel'
+                       ])
+                    && request.resource.data.log.keys().hasOnly(['initialTopology', 'moves'])
+                    && (!('durationMs' in request.resource.data)
+                        || (request.resource.data.durationMs is number && request.resource.data.durationMs >= 0))
+                    && plausiblePoints(request.resource.data.points, request.resource.data.moveCount,
+                                       request.resource.data.get('gameMode', 'classic'))
+                    // Server time: strongWinsOk() reads it as "when saved".
+                    && request.resource.data.createdAt == request.time
                     && (!('gameMode' in request.resource.data) || isMode(request.resource.data.gameMode))
                     && (!('botLevel' in request.resource.data) || isBotLevel(request.resource.data.botLevel))
                     // Practice bot levels are never ranked.
@@ -216,6 +392,218 @@ service cloud.firestore {
       allow delete: if isOwner(uid);
     }
 
+    function seated(m, uid) {
+      return uid == m.host.uid || (m.guest != null && uid == m.guest.uid);
+    }
+    function opponentOf(m, uid) {
+      return uid == m.host.uid ? m.guest.uid : m.host.uid;
+    }
+    function loserOf(m, outcome) {
+      return outcome == 'host-resign' ? m.host.uid : m.guest.uid;
+    }
+
+    function whiteOf(m) {
+      return m.host.color == 'white' ? m.host.uid : m.guest.uid;
+    }
+
+    // QA-05 — whose turn it is changes only when the guest takes the seat
+    // (to White) or with an appended move. In classic that move hands the
+    // turn to the opponent; in roulette the mover may keep it (when, is
+    // rouletteOk's: while actions are left).
+    function matchTurnOk() {
+      let before = resource.data;
+      let after = request.resource.data;
+      let classic = before.get('gameMode', 'classic') != 'roulette';
+      return (before.guest == null && after.guest != null)
+        ? after.currentTurn == whiteOf(after)
+        : after.log.moves.size() > before.log.moves.size()
+          ? (after.currentTurn == opponentOf(before, request.auth.uid)
+             || (!classic && after.currentTurn == before.currentTurn))
+          : after.currentTurn == before.currentTurn;
+    }
+
+    // R-7 — when the player on turn started it, by server time: set by the
+    // join and by every appended move, left alone by every other write. The
+    // 90 s of inactivity run from it, not from lastActivity, which every
+    // write moves: a write that changes nothing else no longer holds them
+    // off. A match from before the field falls back to lastActivity until
+    // its next move.
+    // Where the field is, it is a timestamp: a null written into a match
+    // from before the field read as "no turn start" and refused every
+    // forfeit claim. One the bridge rules let in stays (only changes are
+    // checked), so turnStart() reads anything but a timestamp as absent.
+    function turnStartOk() {
+      let before = resource.data;
+      let after = request.resource.data;
+      return ((before.guest == null && after.guest != null)
+              || after.log.moves.size() > before.log.moves.size())
+        ? after.get('turnStartedAt', null) == request.time
+        // unchanged, and not added as a null (equal to an absent field)
+        : after.get('turnStartedAt', null) == before.get('turnStartedAt', null)
+          && (!('turnStartedAt' in after) || 'turnStartedAt' in before);
+    }
+    function turnStart(m) {
+      let t = m.get('turnStartedAt', null);
+      return t is timestamp ? t : m.lastActivity;
+    }
+
+    // QA-05 — who may end the match. 'X-resign' is written by X, or by X's
+    // opponent once X, on turn, has been idle for 90 s by server time (the
+    // inactivity forfeit, and the claim of a flag fall whose own client is
+    // gone; the rules cannot see the clock). Mate and draw come from a
+    // seated player, after at least one move. Known limit (QA-05, R-3):
+    // nothing ties them to a mate or to the move that gave it, so either
+    // player can write either one; the client writes the result apart from
+    // the mating move (writeOutcomeIfFirst), which a tighter rule needs.
+    function matchOutcomeOk() {
+      let before = resource.data;
+      let o = request.resource.data.outcome;
+      return before.outcome != null
+        || o == null
+        || (o in ['host-resign', 'guest-resign']
+            && (request.auth.uid == loserOf(before, o)
+                || (seated(before, request.auth.uid)
+                    && before.currentTurn == loserOf(before, o)
+                    && request.time > turnStart(before) + duration.value(90, 's'))))
+        || (o in ['white-win', 'black-win', 'draw']
+            && seated(before, request.auth.uid)
+            && request.resource.data.log.moves.size() > 0);
+    }
+
+    // R-1 — both clients compute the clock from the move timestamps (the
+    // mover's Date.now()), timeControlSec and timeIncrementSec. The time
+    // control is set once, at create; a new entry is stamped no earlier
+    // than the one before it and within 60 s of server time.
+    // Why 60 s: device clocks drift 20-40 s and a slow write adds seconds;
+    // the honest client stamps max(now, previous stamp) so two players
+    // whose clocks disagree still write in order. What it leaves open: a
+    // mover can back-date (down to the previous stamp) and so charge up to
+    // 60 s of their own thinking per move to the opponent.
+    // The lower end of the window holds only where there is a clock, as
+    // the client sees one: classic with a time control. Without one
+    // (roulette has none) the stamps only count up what each side spent,
+    // on screen, and a device more than 60 s behind can still play. The
+    // upper end holds everywhere: a stamp of 2^53 or more, which only a
+    // REST write can make, comes back to the JS client as a double, and
+    // every later stamp, max(now, that), would be refused as not an int.
+    function matchClockOk() {
+      let before = resource.data;
+      let after = request.resource.data;
+      return after.get('timeControlSec', null) == before.get('timeControlSec', null)
+        && after.get('timeIncrementSec', null) == before.get('timeIncrementSec', null)
+        && (after.log.moves.size() == before.log.moves.size()
+            || moveStampOk(after.log.moves[before.log.moves.size()].get('timestamp', null),
+                           before.log.moves, timedMatch(before)));
+    }
+    function timedMatch(m) {
+      return m.get('gameMode', 'classic') != 'roulette'
+        && m.get('timeControlSec', null) is number
+        && m.timeControlSec > 0;
+    }
+    function moveStampOk(ts, moves, timed) {
+      let skewMs = 60000;
+      return ts is int
+        && ts <= request.time.toMillis() + skewMs
+        && (!timed || ts >= request.time.toMillis() - skewMs)
+        && (moves.size() == 0 || ts >= moves[moves.size() - 1].get('timestamp', 0));
+    }
+    function timeControlOk(d) {
+      return (d.get('timeControlSec', null) == null || intIn(d.timeControlSec, 60, 3600))
+        && (d.get('timeIncrementSec', null) == null || intIn(d.timeIncrementSec, 0, 60));
+    }
+
+    // M6 — the fields a match has; the nested ones too.
+    function matchKeysOk(d) {
+      return d.keys().hasOnly([
+          'code', 'chess960Id', 'seed', 'host', 'guest', 'status', 'currentTurn', 'log',
+          'outcome', 'endReason', 'createdAt', 'lastActivity', 'turnStartedAt', 'gameMode',
+          'timeControlSec', 'timeIncrementSec', 'rouletteSlots', 'rouletteActionsLeft',
+          'usedRouletteSlots', 'rouletteSpinsByPlayer', 'rouletteSpinCount'
+        ])
+        && d.log is map
+        && d.log.keys().hasOnly(['initialTopology', 'moves'])
+        && d.log.moves is list
+        && d.host.keys().hasOnly(['uid', 'displayName', 'color'])
+        && (d.guest == null || d.guest.keys().hasOnly(['uid', 'displayName', 'color']));
+    }
+
+    // R-8 — roulette state changes only for the player on turn, and only
+    // the way the client moves it:
+    //   - a spin, with no move, on an empty bag: 4 piece types, 2 actions,
+    //     no slot used, the spinner's spin count and the total +1;
+    //   - a move or rotate spends one action of a spun bag: the bag stays,
+    //     at most one slot gets used, the turn stays; the last action ends
+    //     the turn and empties the bag;
+    //   - no other write touches it, and in classic nothing does.
+    // Which piece types a spin rolls is the spinner's word: the rules
+    // cannot see the board or the dice.
+    function rouletteOk() {
+      let before = resource.data;
+      let after = request.resource.data;
+      let changed = after.diff(before).affectedKeys().hasAny([
+        'rouletteSlots', 'rouletteActionsLeft', 'usedRouletteSlots',
+        'rouletteSpinsByPlayer', 'rouletteSpinCount'
+      ]);
+      return before.get('gameMode', 'classic') != 'roulette'
+        ? !changed
+        : after.log.moves.size() > before.log.moves.size()
+          ? rouletteActionOk(before, after)
+          : (!changed || rouletteSpinOk(before, after));
+    }
+    function rouletteActionOk(before, after) {
+      let left = before.get('rouletteActionsLeft', 0);
+      let used = before.get('usedRouletteSlots', []);
+      return left is int && left >= 1
+        && before.get('rouletteSlots', null) != null
+        && after.get('rouletteSpinsByPlayer', {}) == before.get('rouletteSpinsByPlayer', {})
+        && after.get('rouletteSpinCount', 0) == before.get('rouletteSpinCount', 0)
+        && (left == 1
+            ? (after.rouletteSlots == null
+               && after.rouletteActionsLeft == 0
+               && after.usedRouletteSlots == []
+               && after.currentTurn == opponentOf(before, request.auth.uid))
+            : (after.rouletteSlots == before.rouletteSlots
+               && after.rouletteActionsLeft == left - 1
+               && after.currentTurn == before.currentTurn
+               // a spin leaves no slot used, so this is the first action
+               && (after.usedRouletteSlots == used
+                   || (used == []
+                       && after.usedRouletteSlots.size() == 1
+                       && after.usedRouletteSlots[0] in [0, 1, 2, 3]))));
+    }
+    function rouletteSpinOk(before, after) {
+      let uid = request.auth.uid;
+      let spins = before.get('rouletteSpinsByPlayer', {});
+      return before.status == 'active'
+        && before.outcome == null
+        && before.currentTurn == uid
+        && before.get('rouletteSlots', null) == null
+        && after.rouletteSlots is list
+        && after.rouletteSlots.size() == 4
+        && after.rouletteSlots.hasOnly(['pawn', 'knight', 'bishop', 'rook', 'queen', 'king'])
+        && after.rouletteActionsLeft == 2
+        && after.usedRouletteSlots == []
+        && after.rouletteSpinsByPlayer is map
+        && after.rouletteSpinsByPlayer.diff(spins).affectedKeys().hasOnly([uid])
+        && after.rouletteSpinsByPlayer[uid] == spins.get(uid, 0) + 1
+        && after.rouletteSpinCount == before.get('rouletteSpinCount', 0) + 1;
+    }
+
+    // QA-04 — why a match ended in 'X-resign', for the end text. Optional
+    // (older clients do not write it), set only with that outcome, then
+    // frozen: 'resign' by X, 'inactive' by the opponent, 'flag' by either.
+    function matchEndReasonOk() {
+      let before = resource.data;
+      let after = request.resource.data;
+      let r = after.get('endReason', null);
+      return r == before.get('endReason', null)
+        || (before.outcome == null
+            && after.outcome in ['host-resign', 'guest-resign']
+            && (r == 'flag'
+                || (r == 'resign' && request.auth.uid == loserOf(before, after.outcome))
+                || (r == 'inactive' && request.auth.uid != loserOf(before, after.outcome))));
+    }
+
     match /matches/{code} {
       allow read: if signedIn();
 
@@ -229,28 +617,63 @@ service cloud.firestore {
                     && request.resource.data.status == 'waiting'
                     && request.resource.data.guest == null
                     && request.resource.data.outcome == null
+                    && !('endReason' in request.resource.data)
+                    && !('turnStartedAt' in request.resource.data)
+                    && matchKeysOk(request.resource.data)
+                    && request.resource.data.log.initialTopology in ['A', 'B']
+                    // R-8 — no bag, no actions until a spin.
+                    && request.resource.data.get('rouletteSlots', null) == null
+                    && request.resource.data.get('rouletteActionsLeft', 0) == 0
+                    && request.resource.data.get('usedRouletteSlots', []) == []
+                    && request.resource.data.get('rouletteSpinsByPlayer', {}) == {}
+                    && request.resource.data.get('rouletteSpinCount', 0) == 0
                     && request.resource.data.log.moves.size() == 0
-                    && (!('gameMode' in request.resource.data) || isMode(request.resource.data.gameMode));
+                    && (!('gameMode' in request.resource.data) || isMode(request.resource.data.gameMode))
+                    && timeControlOk(request.resource.data);
 
       // DEF-8 hardening (still partial: chess legality can't be expressed in
       // rules, so a hand-crafted client can append a legal-looking illegal
       // move on its own turn; a Cloud Function remains the full fix). What
       // IS enforced closes every cheap hole:
-      //   - identity fields (host, chess960Id, seed, code) are immutable;
+      //   - the doc has only the match's own fields (matchKeysOk, M6);
+      //   - identity fields (host, chess960Id, seed, code, the log's
+      //     initial topology) are immutable;
       //   - guest is write-once (null -> value, then frozen);
       //   - outcome is write-once; status only takes known values;
       //   - the move log only ever GROWS by at most one entry per write,
-      //     and only the player whose turn it is may grow it;
-      //   - currentTurn always names a seated player.
+      //     only the player whose turn it is may grow it, and the entries
+      //     already there never change (R-2);
+      //   - currentTurn always names a seated player, and moves only with
+      //     the join or a move (matchTurnOk);
+      //   - lastActivity and turnStartedAt are server time, so the 90 s in
+      //     matchOutcomeOk cannot be shortened by back-dating, and only the
+      //     join or a move restarts them (turnStartOk, R-7);
+      //   - the time control is frozen and a move's timestamp follows the
+      //     previous one, at most 60 s ahead of server time, and no more
+      //     than 60 s behind it where there is a clock (matchClockOk, R-1);
+      //   - roulette state moves only with a spin or an action of the
+      //     player on turn (rouletteOk, R-8);
+      //   - who may write which outcome and endReason (matchOutcomeOk,
+      //     matchEndReasonOk); the mode is frozen, so a classic match
+      //     cannot turn roulette to keep the turn.
       // Legit paths: guest join (no log change), move / rotate append on
       // own turn (+1), spin (no log change), resign / flag / mate outcome
       // writes (no log change) from either seat.
       allow update: if signedIn()
+        && matchKeysOk(request.resource.data)
+        && request.resource.data.log.initialTopology == resource.data.log.initialTopology
         && request.resource.data.host == resource.data.host
         && request.resource.data.chess960Id == resource.data.chess960Id
         && request.resource.data.seed == resource.data.seed
         && request.resource.data.code == resource.data.code
+        && request.resource.data.get('gameMode', 'classic') == resource.data.get('gameMode', 'classic')
+        && request.resource.data.lastActivity == request.time
         && request.resource.data.status in ['waiting', 'active', 'completed']
+        // The status follows the match, so it cannot end one without an
+        // outcome or bring one back: waiting until the guest sits,
+        // completed exactly when there is an outcome.
+        && (request.resource.data.status == 'waiting') == (request.resource.data.guest == null)
+        && (request.resource.data.status == 'completed') == (request.resource.data.outcome != null)
         && (resource.data.guest == null
             || request.resource.data.guest == resource.data.guest)
         && (request.resource.data.guest == null
@@ -262,12 +685,23 @@ service cloud.firestore {
             || request.resource.data.outcome in ['white-win', 'black-win', 'draw', 'host-resign', 'guest-resign'])
         && request.resource.data.log.moves.size() >= resource.data.log.moves.size()
         && request.resource.data.log.moves.size() <= resource.data.log.moves.size() + 1
+        // R-2 — the moves already there stay as they are: a write may only
+        // append, never rewrite the history, on or off turn. (A slice of an
+        // empty list is an index error in rules, hence the size check.)
+        && (resource.data.log.moves.size() == 0
+            || request.resource.data.log.moves[0:resource.data.log.moves.size()] == resource.data.log.moves)
         && (request.resource.data.log.moves.size() == resource.data.log.moves.size()
             || resource.data.currentTurn == request.auth.uid)
         && (request.resource.data.currentTurn == ''
             || request.resource.data.currentTurn == request.resource.data.host.uid
             || (request.resource.data.guest != null
                 && request.resource.data.currentTurn == request.resource.data.guest.uid))
+        && matchTurnOk()
+        && matchClockOk()
+        && turnStartOk()
+        && rouletteOk()
+        && matchOutcomeOk()
+        && matchEndReasonOk()
         && (
           resource.data.host.uid == request.auth.uid
           || (resource.data.guest != null && resource.data.guest.uid == request.auth.uid)
