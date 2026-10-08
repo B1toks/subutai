@@ -1,6 +1,6 @@
-# Subutai — Kinetic Chess
+# Subutai — Auxetic Chess960
 
-A **Chess 960 variant** with dynamically rotating 2×2 board segments and custom castling. Built as the technical implementation for **[Lucid Dreams 2026](https://www.lucid-dreams.at/2026-projekte/projekt-027)** — FH St. Pölten's annual interactive media exhibition.
+A **Chess960 variant** with dynamically rotating 2×2 board segments and custom castling. Built as the technical implementation for **[Lucid Dreams 2026](https://www.lucid-dreams.at/2026-projekte/projekt-027)** — FH St. Pölten's annual interactive media exhibition.
 
 ♟ **Live:** [subutai.honchar.dev](https://subutai.honchar.dev/)
 ✦ **Exhibition:** [Lucid Dreams · Projekt 027](https://www.lucid-dreams.at/2026-projekte/projekt-027)
@@ -10,7 +10,7 @@ A **Chess 960 variant** with dynamically rotating 2×2 board segments and custom
 ## What it does
 
 - Plays a custom chess variant where 2×2 segments of the board rotate mid-game, forcing players to re-read the position on every turn
-- Chess 960 starting layout — back rank shuffled per game
+- Chess960 starting layout — back rank shuffled per game
 - Custom castling rules adapted to the rotation mechanic
 - All standard rules + segment-rotation logic + global state synchronization
 
