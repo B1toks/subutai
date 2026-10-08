@@ -10589,16 +10589,17 @@ html[data-theme-swap] *::after {
 
 /* Support arrows. A 1.8px mid-teal hairline over cream is a scratch;
    thicker, darker and fully opaque, with a soft light halo underneath so
-   it stays legible where it crosses a dark square too. */
-[data-theme="wood-light"] .support-arrow {
+   it stays legible where it crosses a dark square too. The colours sit on
+   the overlay so the arrowhead markers in its <defs> inherit them too. */
+[data-theme="wood-light"] .support-overlay {
   --support-stroke: #14705c;
+  --support-hover-stroke: #b8560c;
+}
+[data-theme="wood-light"] .support-arrow {
   stroke-width: 2.8;
   opacity: 1;
   paint-order: stroke;
   filter: drop-shadow(0 0 1.5px rgba(255, 255, 255, 0.9));
-}
-[data-theme="wood-light"] .support-arrow-hover {
-  --support-hover-stroke: #b8560c;
 }
 
 /* Hint. Teal at 22% is nothing on cream; this keeps the same hue and

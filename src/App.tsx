@@ -6703,7 +6703,7 @@ function App() {
                 <path
                   d="M 0 0 L 3.5 1.25 L 0 2.5"
                   fill="none"
-                  stroke="var(--support-stroke, #14b8a6)"
+                  stroke="var(--support-stroke, var(--accent-teal-bright))"
                   strokeWidth="1.2"
                   strokeLinejoin="round"
                 />
@@ -6719,7 +6719,7 @@ function App() {
                 <path
                   d="M 0 0 L 3.5 1.25 L 0 2.5"
                   fill="none"
-                  stroke="var(--support-hover-stroke, #ea580c)"
+                  stroke="var(--support-hover-stroke, var(--accent-orange))"
                   strokeWidth="1.2"
                   strokeLinejoin="round"
                 />
