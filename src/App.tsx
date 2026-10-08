@@ -5978,16 +5978,21 @@ function App() {
               // LIVE pill's own tooltip, where a hover or a long-press
               // still reaches it, and the header stops being three things
               // fighting over one row.
+              // The seed-derived game tag means nothing to read, so it
+              // lives in the tooltip only; Classic's goal there is the one
+              // Help states (checkmate), not the 50-move survival milestone.
               const label =
                 isMultiplayer && mpSync
                   ? `vs ${mpSync.opponentDisplayName} · ${mpSync.matchState.code}`
-                  : `vs AI · #${Math.abs(seed).toString(36).toUpperCase().slice(-5) || '0'}`;
+                  : 'vs AI';
+              const gameTag = `Game #${Math.abs(seed).toString(36).toUpperCase().slice(-5) || '0'}`;
               const hint =
                 !isMultiplayer && gameMode === 'classic' && opponentMode === 'ai'
-                  ? 'Try to survive 50 moves against the AI'
+                  ? "Checkmate the AI's king to win"
                   : undefined;
+              const title = isMultiplayer && mpSync ? label : hint ? `${hint} · ${gameTag}` : gameTag;
               return (
-                <span className="live-title" title={hint ?? label} data-label={label}>
+                <span className="live-title" title={title} data-label={label}>
                   {isMultiplayer && mpSync ? (
                     <>
                       vs <strong>{mpSync.opponentDisplayName}</strong> · {mpSync.matchState.code}
@@ -7995,7 +8000,7 @@ function App() {
                 </button>
               </div>
               <p className="mp-completion-footnote">
-                PvP games don&apos;t affect leaderboard points.
+                Online games don&apos;t affect leaderboard points.
               </p>
             </div>
           </div>
