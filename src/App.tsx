@@ -158,6 +158,7 @@ import {
 } from './features/game/position';
 import { formatClockFace, matchClocks } from './features/game/clock';
 import { computeBoardSize } from './app/boardSize';
+import { drawOfferTitle } from './features/game/drawOfferTitle';
 import { BOT_LEVEL_KEY, BOT_STRENGTH_HINT, BOT_STRENGTH_SUMMARY, readInitialBotLevel } from './features/game/botLevel';
 import { clearLiveSession, readLiveSession, writeLiveSession } from './memory/liveSession';
 import { deriveMpLastMove, deriveMpLog } from './features/online/matchLog';
@@ -239,24 +240,6 @@ function LocalTurnSlot({ side, toMove }: { side: 'white' | 'black'; toMove: 'whi
       {mine ? 'Your move' : `${toMove === 'white' ? 'White' : 'Black'} to move`}
     </span>
   );
-}
-
-/** What a seat's Offer draw button says. `opponent` names the other seat. */
-function drawOfferTitle(block: DrawOfferBlock | null, opponent: string): string {
-  switch (block) {
-    case null:
-      return 'Offer a draw';
-    case 'no-moves':
-      return 'Offer a draw (after the first move)';
-    case 'offered':
-      return `Draw offered. ${opponent} to answer`;
-    case 'answer':
-      return `${opponent} offers a draw`;
-    case 'move-first':
-      return 'Offer a draw again after your next move';
-    case 'declined':
-      return 'Draw declined. Offer one after the next move';
-  }
 }
 
 /** A draw offer as the player it is made to sees it: in place of that
