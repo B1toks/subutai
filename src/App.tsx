@@ -154,6 +154,7 @@ import {
 } from './features/game/position';
 import { formatClockFace, matchClocks } from './features/game/clock';
 import { computeBoardSize } from './app/boardSize';
+import { glyphForPiece } from './features/game/pieceGlyph';
 import { colorFromMouseEvent, type AnnotationColor, type ArrowAnnotation } from './features/game/annotations';
 import { checkMarks, recentPlies, supportPairsFor, threatCounts } from './features/game/boardMarks';
 import { countMaterial } from './features/game/material';
@@ -7656,24 +7657,6 @@ function EvalBar({
       </span>
     </div>
   );
-}
-
-function glyphForPiece(color: string, type: string): string {
-  const map: Record<string, string> = {
-    'white-pawn': '\u265F\uFE0E',
-    'white-knight': '\u265E',
-    'white-bishop': '\u265D',
-    'white-rook': '\u265C',
-    'white-queen': '\u265B',
-    'white-king': '\u265A',
-    'black-pawn': '\u265F\uFE0E',
-    'black-knight': '\u265E',
-    'black-bishop': '\u265D',
-    'black-rook': '\u265C',
-    'black-queen': '\u265B',
-    'black-king': '\u265A',
-  };
-  return map[`${color}-${type}`] ?? '';
 }
 
 export default App;
