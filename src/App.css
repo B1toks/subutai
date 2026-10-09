@@ -3102,6 +3102,15 @@ body.checkmate-flash::after {
   align-items: center;
 }
 
+/* fix/v1.1.4 — the build's version, small, under the actions. */
+.help-version {
+  margin: var(--space-2) 0 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  user-select: text;
+}
+
 .help-tour-btn {
   margin-top: 8px;
   padding: 8px 20px;

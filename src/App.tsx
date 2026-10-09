@@ -8328,6 +8328,8 @@ function App() {
                 Close
               </button>
             </div>
+            {/* fix/v1.1.4 — which build this is, for bug reports. */}
+            <p className="help-version">Subutai v{__APP_VERSION__}</p>
           </div>
         </div>
       )}
