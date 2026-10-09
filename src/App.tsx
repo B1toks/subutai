@@ -138,6 +138,7 @@ import {
   type DrawOfferBlock,
   type DrawTable,
 } from './utils/drawOffer';
+import { HUMAN_COLOR, type GameMode, type GameStatus } from './shared/game';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -177,28 +178,6 @@ const importEndgameScene = () => import('./components/EndgameScene');
 const EndgameScene = lazy(() =>
   importEndgameScene().then((m) => ({ default: m.EndgameScene })),
 );
-
-type GameStatus =
-  | 'active'
-  | 'checkmate'
-  | 'draw_stalemate'
-  | 'draw_material'
-  | 'draw_repetition'
-  | 'draw_50move'
-  | 'king_captured_white_wins'
-  | 'king_captured_black_wins'
-  // V1 — solo time control: the side that runs out of time loses.
-  | 'timeout_white'
-  | 'timeout_black'
-  // QA-11 — the named side resigned. Its own status, so the banner, the
-  // winner and the endgame cut no longer read a resignation as a mate.
-  | 'resigned_white'
-  | 'resigned_black'
-  // Hot-seat: one side offered a draw and the other accepted. A 'draw_'
-  // status like the rest, so it gets the handshake cut and a draw result.
-  | 'draw_agreement';
-
-type GameMode = 'classic' | 'roulette';
 
 const BOT_LEVEL_KEY = 'subutai_bot_level';
 
@@ -675,8 +654,6 @@ function evalToColors(evalCp: number, topology: TopologyState): { c1: string; c2
   }
   return { c1: '#2a2520', c2: '#1a1612' };
 }
-
-const HUMAN_COLOR: Color = 'white';
 
 /* R5 — encouragement in a losing position. When the human (white) has
  * been meaningfully behind for a couple of moves, drop a supportive nudge
