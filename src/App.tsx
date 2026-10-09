@@ -92,7 +92,6 @@ import {
 import { logGameStart } from './firebase/gameStarts';
 import { startPresenceHeartbeat, stopPresenceHeartbeat } from './firebase/presence';
 import { computeGamePoints, type GameOutcome, type GamePoints } from './analysis/points';
-import { MATE_SCALE_CPL, pawns } from './analysis/lossText';
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
 import {
@@ -160,6 +159,7 @@ import {
 } from './features/game/position';
 import { formatClockFace, matchClocks } from './features/game/clock';
 import { computeBoardSize } from './app/boardSize';
+import { formatNotation } from './features/game/notation';
 import { evalToColors } from './app/roomColors';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
@@ -388,15 +388,6 @@ function clearLiveSession(): void {
 
 /** How long two heavy board effects count as "back to back". */
 const FX_WINDOW_MS = 2600;
-
-const MOVE_CLASS_MARKER: Record<MoveClass, string> = {
-  best: ' ⭐',
-  good: '',
-  mistake: '?',
-  blunder: '??',
-  brilliant: '!!',
-  checkmate: '#',
-};
 
 /* R5 — encouragement in a losing position. When the human (white) has
  * been meaningfully behind for a couple of moves, drop a supportive nudge
@@ -5278,85 +5269,10 @@ function App() {
     }
   }
 
-  /**
-   * The move log, in two versions.
-   *
-   * On screen it carries the coaching marks — ⭐ for the engine's own
-   * choice, ? and ?? for mistakes, and the "← Better: … (−1.2 pawns)" tail.
-   * That is the whole point of the panel and it stays.
-   *
-   * What goes on the clipboard is the bare log. A pasted log is an INPUT:
-   * it gets fed back through the replay importer, mailed to someone,
-   * pasted into a chat. The marks survived none of those trips intact —
-   * a star that has been through a chat client comes back as U+2B50
-   * U+FE0F — and every one of them is noise to whoever reads it. The
-   * parser is now forgiving about them either way, but the honest fix is
-   * not to ship them where they were never wanted.
-   */
-  const buildNotation = useCallback((annotate: boolean) => {
-    const lines: string[] = [
-      `[Chess960 "${positionLabel}"]`,
-      `[Seed "${notationSeed}"]`,
-      '',
-    ];
-    const entries = log.moves;
-    for (let i = 0; i < entries.length; i += 2) {
-      const moveNum = Math.floor(i / 2) + 1;
-      const white = entries[i];
-      const black = entries[i + 1];
-
-      function fmt(entry: typeof white): string {
-        let san = entry.san;
-        if (!san) {
-          if (entry.move.kind === 'topologyToggle') {
-            const from = entry.topology ?? 'A';
-            return `${from}\u2192${from === 'A' ? 'B' : 'A'}`;
-          }
-          if (entry.move.kind === 'castle') {
-            san = entry.move.to && entry.move.to[0] === 'c' ? 'O-O-O' : 'O-O';
-          } else {
-            san = `${entry.move.from}\u2192${entry.move.to}`;
-            if (entry.move.kind === 'promotion' && entry.move.promotion) {
-              const pl: Record<string, string> = { queen: 'Q', rook: 'R', bishop: 'B', knight: 'N' };
-              san += `=${pl[entry.move.promotion] ?? ''}`;
-            }
-          }
-        }
-        if (entry.move.kind !== 'topologyToggle' && entry.topology === 'B') {
-          if (!san.includes('@')) san += '@B';
-        }
-        const a = annotate ? entry.analysis : undefined;
-        if (a) {
-          const marker = MOVE_CLASS_MARKER[a.classification];
-          if (marker) san += marker;
-          if (a.classification === 'blunder') {
-            // Stage O: collapse the PV to a single move \u2014 the chain was hard
-            // to parse mid-list. Prefer bestMoveSan when present (it's the
-            // first PV move with explicit naming).
-            const first = a.bestMoveSan ?? a.bestPvSan?.[0];
-            if (first) {
-              san += ` \u2190 Better: ${first}`;
-            }
-            // Append the loss so the player can gauge how marginal the
-            // suggestion is, in pawns like the review screen says it (a
-            // number of centipawns means nothing to most players). A
-            // mate-scale loss is not a number of pawns, so it gets words.
-            if (a.cpl >= MATE_SCALE_CPL) {
-              san += gameMode === 'roulette' ? ' (hangs the king)' : ' (allows mate)';
-            } else if (a.cpl > 0) {
-              san += ` (\u2212${pawns(a.cpl)} pawns)`;
-            }
-          }
-        }
-        return san;
-      }
-
-      let line = `${moveNum}. ${fmt(white)}`;
-      if (black) line += `  ${fmt(black)}`;
-      lines.push(line);
-    }
-    return lines.join('\n');
-  }, [log.moves, positionLabel, notationSeed, gameMode]);
+  const buildNotation = useCallback(
+    (annotate: boolean) => formatNotation(positionLabel, notationSeed, log.moves, gameMode, annotate),
+    [log.moves, positionLabel, notationSeed, gameMode],
+  );
 
   const notationString = useMemo(() => buildNotation(true), [buildNotation]);
 
