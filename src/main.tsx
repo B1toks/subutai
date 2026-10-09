@@ -1,5 +1,6 @@
 import { StrictMode, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
+import { inject } from '@vercel/analytics'
 import './index.css'
 import App from './App.tsx'
 import { ToastProvider } from './components/Toast'
@@ -40,6 +41,11 @@ for (const link of Array.from(
   if (link.sheet) swap();
   else link.addEventListener('load', swap, { once: true });
 }
+
+// Vercel Web Analytics: cookie-less page-view counts, production only. The
+// script is served from this origin (/_vercel/insights), so the CSP needs no
+// new host. The kiosk view is not counted.
+if (import.meta.env.PROD && !isShowcase) inject();
 
 // Sprint 4.4 — PWA service worker. Production only: in dev it would
 // cache Vite's transformed modules and serve stale code after edits.
