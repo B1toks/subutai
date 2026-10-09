@@ -159,6 +159,7 @@ import {
 } from './features/game/position';
 import { formatClockFace, matchClocks } from './features/game/clock';
 import { computeBoardSize } from './app/boardSize';
+import { deriveMpLastMove, deriveMpLog } from './features/online/matchLog';
 import { formatNotation } from './features/game/notation';
 import { evalToColors } from './app/roomColors';
 
@@ -418,32 +419,6 @@ const EARLY_GAME_TIP =
 const ROTATE_AFTERMATH_TIP =
   'You rotated and the whole board changed with you. Re-check your pieces before moving on.';
 
-/** Reshape a live MatchDoc into the GameLog the single-player render code
- *  already knows how to consume. The stored move shape happens to be a
- *  superset of LoggedMove (analysis is absent in MP). */
-function deriveMpLog(live: MatchDoc): GameLog {
-  return {
-    id: `mp-${live.code}`,
-    createdAt: new Date().toISOString(),
-    randomSeed: live.seed,
-    initialTopology: live.log.initialTopology,
-    initialState: createPositionFromBackRankKey(live.chess960Id),
-    moves: live.log.moves.map((m) => ({
-      san: m.san,
-      move: m.move,
-      topology: m.topology,
-      timestamp: m.timestamp,
-    })),
-  };
-}
-
-function deriveMpLastMove(
-  live: MatchDoc,
-): { from?: SquareId; to?: SquareId } | null {
-  const last = live.log.moves[live.log.moves.length - 1]?.move;
-  if (!last || last.kind === 'topologyToggle') return null;
-  return { from: last.from, to: last.to };
-}
 const WATCH_AUTOPLAY_MS = 1500;
 // Auto-mode tuning. We skip the move classifier (expensive worker round-trip)
 // and use a small inter-move delay so a 60-ply game finishes in ~30s.
