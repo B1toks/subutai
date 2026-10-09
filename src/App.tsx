@@ -154,6 +154,7 @@ import {
 } from './features/game/position';
 import { formatClockFace, matchClocks } from './features/game/clock';
 import { computeBoardSize } from './app/boardSize';
+import { colorFromMouseEvent, type AnnotationColor, type ArrowAnnotation } from './features/game/annotations';
 import { checkMarks, recentPlies, supportPairsFor, threatCounts } from './features/game/boardMarks';
 import { countMaterial } from './features/game/material';
 import { gameOverText, memoryTermination, soloOutcome, winnerOf } from './features/endgame/result';
@@ -359,15 +360,6 @@ interface GameBackup {
   lockedFormationKey: string | null;
 }
 
-// Sprint 3.6 — right-click annotation primitives. Module-level so they
-// can be referenced from helper signatures inside App() without TS
-// scope juggling.
-type AnnotationColor = 'green' | 'red' | 'yellow' | 'blue';
-interface ArrowAnnotation {
-  from: SquareId;
-  to: SquareId;
-  color: AnnotationColor;
-}
 
 function App() {
   // Self-play / training data collection mode: ?auto=1 in the URL puts both
@@ -3926,13 +3918,6 @@ function App() {
   // Sprint 3.6 — right-click annotation handlers. Bound on every tile
    // alongside onClick. Left-click logic is untouched: button !== 2
    // exits these helpers immediately.
-  function colorFromMouseEvent(e: React.MouseEvent): AnnotationColor {
-    if (e.shiftKey) return 'red';
-    if (e.altKey) return 'yellow';
-    if (e.ctrlKey || e.metaKey) return 'blue';
-    return 'green';
-  }
-
   function handleTileContextMenu(e: React.MouseEvent) {
     e.preventDefault();
   }
