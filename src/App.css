@@ -5789,6 +5789,44 @@ body.checkmate-flash::after {
   margin: 0 0 16px;
 }
 
+/* fix/v1.1.4 — "Details" on the error screen: the report for a bug
+   message, scrollable in a box so the buttons stay in reach. */
+.app-error-details {
+  margin: 0 0 16px;
+  font-size: 13px;
+}
+.app-error-details summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  min-height: 24px;
+}
+.app-error-details-text {
+  margin: var(--space-2) 0;
+  max-height: 40vh;
+  overflow: auto;
+  padding: var(--space-2);
+  border: 1px solid var(--btn-border);
+  border-radius: var(--radius-sm);
+  background: var(--btn-bg);
+  color: var(--text);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.app-error-details-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.app-error-details-status {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 /* Dialog headings break into even lines and dialog prose avoids a
    one-word last line; nothing else sets text-wrap, so placement is free. */
 .modal-title,
