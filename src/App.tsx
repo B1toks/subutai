@@ -139,6 +139,17 @@ import {
   type DrawTable,
 } from './utils/drawOffer';
 import { HUMAN_COLOR, type GameMode, type GameStatus } from './shared/game';
+import {
+  AI_ROULETTE_BETWEEN_ACTIONS_MS,
+  AI_ROULETTE_REVEAL_MS,
+  ROULETTE_MAX_ACTIONS,
+  ROULETTE_SLOT_COUNT,
+  consumeSlotIndex,
+  getActivePieceTypes,
+  isPieceMovableInRoulette,
+  pickAiRouletteMove,
+  spinRoulette,
+} from './features/game/roulette';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -220,67 +231,6 @@ const BOT_STRENGTH_SUMMARY: Record<BotStrength, string> = {
   normal: 'Normal: 4 moves ahead, slips 1 move in 10. Not ranked.',
   strong: 'Strong: 6 moves ahead, no slips. Wins and survival count for the leaderboard.',
 };
-
-const ROULETTE_SLOT_COUNT = 4;
-const ROULETTE_MAX_ACTIONS = 2;
-const AI_ROULETTE_REVEAL_MS = 1200;
-const AI_ROULETTE_BETWEEN_ACTIONS_MS = 900;
-
-/**
- * Q.D.5: SINGLE source of truth for "may this piece move under roulette
- * constraints?". Every selection / move / highlight gate goes through this
- * helper so the in-check override is guaranteed to apply uniformly.
- *
- *   - Classic mode → always true (no roulette restriction).
- *   - Pre-spin (allowed === null) → false (board is locked).
- *   - In check → true (player MUST be able to escape, slot restriction is lifted).
- *   - Otherwise → piece type must match an unused slot in the bag.
- *
- * Callers are responsible for the side check (`piece.color === state.sideToMove`).
- */
-function isPieceMovableInRoulette(
-  pieceType: PieceType,
-  _state: BoardState,
-  gameMode: GameMode,
-  allowed: PieceType[] | null,
-  used: number[],
-): boolean {
-  if (gameMode !== 'roulette') return true;
-  if (allowed === null) return false;
-  // Q.D.8: no in-check override — roulette is capture-the-king, so being
-  // in check is just "the king is attacked"; player still plays under
-  // the normal slot restriction. If they ignore the threat, opponent
-  // can capture the king on the next move and win.
-  return allowed.some((t, i) => t === pieceType && !used.includes(i));
-}
-
-/** Only piece types currently alive for `color` — no "dead" slots. */
-function getActivePieceTypes(state: BoardState, color: Color): PieceType[] {
-  const types = new Set<PieceType>();
-  for (const piece of Object.values(state.pieces)) {
-    if (piece && piece.color === color) types.add(piece.type);
-  }
-  return Array.from(types);
-}
-
-function spinRoulette(
-  activeTypes: PieceType[],
-  pawnBoost: boolean = false,
-): PieceType[] {
-  if (activeTypes.length === 0) return [];
-  // Pawn-bias for the first 3 spins of a game (Stage O): we add 'pawn' to the
-  // pool one extra time, lifting its per-slot probability from 1/n to 2/(n+1)
-  // — roughly a +50-65% boost depending on how many piece types remain.
-  const pool: PieceType[] =
-    pawnBoost && activeTypes.includes('pawn')
-      ? [...activeTypes, 'pawn']
-      : activeTypes;
-  const out: PieceType[] = [];
-  for (let i = 0; i < ROULETTE_SLOT_COUNT; i++) {
-    out.push(pool[Math.floor(Math.random() * pool.length)]);
-  }
-  return out;
-}
 
 function backRankString(boardState: BoardState): string {
   const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
@@ -2852,18 +2802,6 @@ function App() {
     });
   }
 
-  // Pick the index of the slot this mover-type consumes. Prefers the first
-  // unused slot of that exact type.
-  function consumeSlotIndex(
-    allowed: PieceType[],
-    used: number[],
-    moverType: PieceType,
-  ): number {
-    return allowed.findIndex(
-      (type, idx) => type === moverType && !used.includes(idx),
-    );
-  }
-
   function handleSpinRoulette() {
     if (gameMode !== 'roulette') return;
     // Q.D.3: MP roulette routes through the hook so the 4-slot bag,
@@ -3750,25 +3688,6 @@ function App() {
   const modeToggleLocked = log.moves.length > 0 || state.fullmoveNumber > 1;
 
   // --- Roulette AI helpers (state-driven; each is ONE atomic state transition).
-
-  // Pick the best AI move from a set of allowed moves.
-  // Priority: (a) king capture, (b) highest-value capture, (c) random fallback.
-  function pickAiRouletteMove(bs: BoardState, playable: Move[]): Move {
-    const enemy: Color = bs.sideToMove === 'white' ? 'black' : 'white';
-    const enemyKingSq = findKing(bs, enemy);
-    if (enemyKingSq) {
-      const kingCap = playable.find((m) => m.to === enemyKingSq);
-      if (kingCap) return kingCap;
-    }
-    const scored = playable
-      .map((m) => {
-        const victim = m.to ? bs.pieces[m.to] : undefined;
-        return { m, score: victim ? PIECE_VALUE[victim.type] : 0 };
-      })
-      .sort((a, b) => b.score - a.score);
-    if (scored[0] && scored[0].score > 0) return scored[0].m;
-    return playable[Math.floor(Math.random() * playable.length)];
-  }
 
   // Apply the AI's spin. Sets allowedPieceTypes, seeds actions / slots, and
   // exits — the main effect picks up Phase 2 on the next render.
