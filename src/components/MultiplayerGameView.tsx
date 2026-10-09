@@ -100,9 +100,11 @@ export async function writeInactivityForfeit(code: string, myUid: string): Promi
     if (!inactivityForfeitApplies(data)) return; // a move started the clock
     if (drawOfferHolds(data)) return; // they wait for my answer to their offer
     const txLast = turnStartedMs(data);
+    // fix/v1.1.4 — turnStartedAt is server time, and so is the rules'
+    // 90 s: compare it with serverNow(), not this device's clock.
     if (
       typeof txLast === 'number' &&
-      Date.now() - txLast < OPPONENT_OFFLINE_FORFEIT_MS
+      serverNow() - txLast < OPPONENT_OFFLINE_FORFEIT_MS
     ) {
       return;
     }
@@ -315,7 +317,8 @@ export function useMultiplayerSync(
     const interval = setInterval(() => {
       const last = turnStartedMs(matchState);
       if (typeof last !== 'number') return;
-      const elapsed = Date.now() - last;
+      // fix/v1.1.4 — server time, as the stamp (see writeInactivityForfeit).
+      const elapsed = serverNow() - last;
       setSelfAfkWarning(elapsed >= OPPONENT_OFFLINE_WARN_MS);
     }, 3000);
     return () => clearInterval(interval);
@@ -334,7 +337,9 @@ export function useMultiplayerSync(
     const interval = setInterval(() => {
       const last = turnStartedMs(matchState);
       if (typeof last !== 'number') return;
-      const elapsed = Date.now() - last;
+      // fix/v1.1.4 — server time: a device clock a minute fast fired the
+      // forfeit every 4 s, each refused by the rules; a slow one, late.
+      const elapsed = serverNow() - last;
       if (elapsed < OPPONENT_OFFLINE_FORFEIT_MS) return;
       void writeInactivityForfeit(matchState.code, myUid).catch((err) =>
         console.error('[mp] forfeit write failed', err),
