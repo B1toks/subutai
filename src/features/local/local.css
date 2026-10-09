@@ -1,0 +1,173 @@
+/* Sprint 4.1 — local 2P hot-seat banner. Renders above the board on
+   each turn so the next-to-play side can pick up the device cleanly. */
+.local-turn-banner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: 0 auto;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  box-shadow: var(--glow-accent);
+  max-width: var(--board-size);
+  width: max-content;
+}
+
+.local-turn-chip {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+  border: 1px solid var(--btn-border);
+}
+
+.local-turn-chip-white {
+  background: var(--piece-white);
+}
+
+.local-turn-chip-black {
+  background: var(--piece-black);
+}
+
+.local-turn-color {
+  color: var(--accent-primary);
+  letter-spacing: 0.04em;
+}
+
+.local-turn-suffix {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* Sprint 4.2 — per-side action rows for local 2P mode. Two identical
+   rows sit above and below the board; the top one is rotated 180° so
+   the opposite-sitting player sees it upright. The aria-hidden bound
+   to !sideToMove on the inactive side dims that row visually so the
+   active player's row reads as the primary control surface. */
+.local-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: var(--space-2) auto;
+  max-width: var(--board-size);
+  width: max-content;
+  transition: opacity 200ms ease;
+}
+
+.local-actions-top {
+  transform: rotate(180deg);
+  transform-origin: center;
+}
+
+.local-actions[aria-hidden='true'] {
+  opacity: 0.45;
+}
+
+.local-actions[aria-hidden='false'] {
+  opacity: 1;
+}
+
+/* A draw-offer prompt is wider than the turn chip it stands in for: on a
+   narrow screen black's row wraps rather than run off the board. */
+.local-actions {
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
+}
+/* On a phone black's row (chip, resign, offer, preview, rotate) is wider
+   than the board with the rotate button's "A → B" label, and would wrap
+   on every turn. The icon alone keeps it on one line; the label stays in
+   white's row and the board shows the topology anyway. */
+@media (max-width: 420px) {
+  .local-actions .rotate-btn-icon {
+    width: 44px;
+  }
+  .local-actions .rotate-label-text {
+    display: none;
+  }
+}
+
+/* Draw offer, as the player it is made to sees it: in that player's own
+   row, in place of the turn chip, the row's height (44px, the rotate
+   button sets it) so the board does not move on a wide screen. In the
+   theme's accent like the "Your move" chip: the question on the table. */
+.draw-offer-prompt {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  height: 44px;
+  max-width: 100%;
+  padding: 4px 6px 4px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--accent-primary);
+  background: var(--bg-card);
+  box-shadow: 0 0 12px -4px var(--accent-primary);
+  color: var(--text);
+}
+.draw-offer-prompt > svg {
+  flex: 0 0 auto;
+  color: var(--accent-primary);
+}
+.draw-offer-text {
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.draw-offer-prompt .mp-btn {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+}
+
+/* Offer draw while the offer waits for its answer: lit in the accent,
+   at full strength although disabled (it says "sent", not "unavailable").
+   Not .active, whose red outside the button group reads as danger. */
+.action-btn.draw-offer-btn.is-pending:disabled {
+  opacity: 1;
+  color: var(--accent-primary);
+  border-color: var(--accent-primary);
+}
+.action-buttons-group .action-btn.draw-offer-btn.is-pending:disabled {
+  box-shadow: inset 0 -2px 0 var(--accent-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .local-actions {
+    transition: none;
+  }
+}
+
+/* Sprint 4.3.1 — local 2P duplicates cleanup. While a local game is in
+   progress the per-side action rows above/below the board own the full
+   set of in-game controls (resign / preview / rotate). The standard
+   .board-actions row below the board would duplicate every one of
+   those buttons + add a stale material-score chip and a second rotate
+   icon, so we hide it wholesale. Reveals again on game-over so the
+   user can hit "New game" / "Lock formation" from the standard row. */
+/* V1 — the standard action row stays visible in local hot-seat too: it is
+   the white seat's row (and the only place with New game / Lock formation).
+   Hiding it used to leave the board with a duplicate, differently-aligned
+   set of buttons before the first move and no way to restart mid-game. */
+
+/* Sprint 4.3.1 — soft-locked opponent tab during an active local game.
+   Uses aria-disabled + class (not the disabled attribute) so the click
+   handler still fires and we can show a confirm dialog rather than
+   silently swallow the click. */
+.opp-tab.is-locked {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.opp-tab.is-locked:hover {
+  box-shadow: none;
+  transform: none;
+}
+

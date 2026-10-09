@@ -1,0 +1,193 @@
+/* Leaderboard */
+
+.leaderboard {
+  width: 100%;
+  /* Sprint 3.7 (rev 2) — leaderboard widened to host comfortable
+     rows; bumped from 720px to 1100px and inner padding from 16 to
+     var(--space-4). */
+  max-width: 1100px;
+  padding: var(--space-4);
+  margin: 0 auto;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.leaderboard-header {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.leaderboard-spacer {
+  display: block;
+}
+
+.leaderboard-back {
+  justify-self: start;
+  padding: 6px 12px;
+  background: var(--btn-bg);
+  color: var(--text);
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.leaderboard-back:hover {
+  background: var(--bg-elevated-hover);
+}
+
+.leaderboard-title {
+  font-size: 22px;
+  margin: 0;
+  justify-self: center;
+  text-align: center;
+}
+
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: 48px 1fr 80px 96px 132px 56px;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: 15px;
+}
+
+.leaderboard-row-head {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  border-bottom: 1px solid var(--btn-border);
+  border-radius: 0;
+  padding-bottom: 6px;
+}
+
+.leaderboard-row.is-me {
+  background: var(--bg-panel);
+  border: 1px solid var(--accent-gold);
+  font-weight: 600;
+}
+
+.leaderboard-row:not(.leaderboard-row-head):hover {
+  background: var(--bg-card-alt);
+}
+
+.lb-rank {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.is-me .lb-rank {
+  color: var(--accent-gold);
+}
+
+.lb-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Sprint 3.2.1 — make the name + badge cluster behave as a flex row
+     so the crown / Bot Slayer pill align to the text baseline instead
+     of sitting half a line above it.
+     Sprint 3.7 (rev 2) — bumped to 16px for the larger row layout. */
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.lb-me-badge {
+  color: var(--accent-gold);
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.lb-points {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--accent-gold);
+  text-align: right;
+}
+
+.lb-survived {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.lb-outcome {
+  font-size: 12px;
+}
+
+.lb-outcome-glyph {
+  margin-right: 4px;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
+.lb-outcome-win .lb-outcome-label {
+  color: var(--success-mint);
+}
+
+.lb-outcome-draw .lb-outcome-label {
+  color: var(--text-muted);
+}
+
+.lb-outcome-loss .lb-outcome-label {
+  color: var(--text-muted);
+}
+
+.lb-action {
+  text-align: right;
+}
+
+.leaderboard-replay-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.leaderboard-replay-btn:hover:not(:disabled) {
+  background: var(--accent-gold);
+  color: var(--bg-card);
+  border-color: var(--accent-gold);
+}
+
+.leaderboard-replay-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.leaderboard-empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--text-muted);
+}
+
+.leaderboard-error {
+  color: var(--danger-light);
+}
+
+.leaderboard-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}
+

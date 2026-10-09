@@ -1,0 +1,212 @@
+/* Header feedback button — same shape as leaderboard button. */
+
+.header-feedback-btn {
+  padding: 4px 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.header-feedback-btn:hover:not(:disabled) {
+  background: var(--bg-elevated-hover);
+  color: var(--text);
+  border-color: var(--accent-gold);
+}
+
+.header-feedback-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Inline feedback block inside GameSummary */
+
+.feedback-prompt {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--btn-border);
+}
+
+.feedback-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: var(--text);
+}
+
+/* General-feedback modal layout */
+
+.feedback-modal-dialog {
+  max-width: 440px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.feedback-field {
+  margin-top: 12px;
+}
+
+.feedback-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.feedback-smileys {
+  display: flex;
+  gap: 8px;
+}
+
+.feedback-smiley {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.feedback-smiley:hover:not(:disabled) {
+  background: var(--bg-elevated-hover);
+  transform: translateY(-1px);
+}
+
+.feedback-smiley:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.feedback-smiley.is-selected {
+  background: var(--bg-panel);
+  border-color: var(--accent-gold);
+}
+
+.feedback-smiley-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  color: var(--text);
+}
+
+.feedback-smiley.is-selected .feedback-smiley-glyph {
+  color: var(--accent-primary);
+}
+
+.feedback-smiley-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.feedback-smiley.is-selected .feedback-smiley-label {
+  color: var(--accent-gold);
+}
+
+/* Per-game prompt animates the textarea in once a rating is picked.
+   The textarea is always rendered so the user can also type without
+   picking a smiley first — we just nudge it open visually. */
+
+.feedback-comment-wrap {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.25s ease, opacity 0.2s ease, margin-top 0.2s ease;
+  margin-top: 0;
+}
+
+.feedback-comment-wrap.is-open {
+  max-height: 40vh;
+  opacity: 1;
+  margin-top: 10px;
+}
+
+.feedback-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  font-size: 14px;
+  font-family: inherit;
+  background: var(--bg-overlay-dark);
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  color: var(--text);
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.feedback-textarea:focus {
+  border-color: var(--accent-gold);
+}
+
+.feedback-textarea:disabled {
+  opacity: 0.6;
+}
+
+.feedback-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.feedback-skip-link {
+  background: transparent;
+  border: none;
+  padding: 4px 2px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-decoration: underline;
+  opacity: 0.6;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.feedback-skip-link:hover:not(:disabled) {
+  opacity: 1;
+}
+
+.feedback-skip-link:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Action row at the bottom of GameSummary — pull away from the feedback
+   block so the primary CTAs read as a separate cluster. */
+.summary-actions {
+  margin-top: 24px;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.summary-action-btn {
+  min-width: 110px;
+}
+
+.summary-row-quality > span:first-child {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.summary-quality-detail {
+  font-size: 11px;
+  opacity: 0.6;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+

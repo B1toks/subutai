@@ -1,0 +1,250 @@
+/* --- Friend lobby (Stage Q.A) ----------------------------------------- */
+
+.friend-lobby {
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: var(--text);
+}
+
+.friend-lobby-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.friend-lobby-back {
+  padding: 6px 12px;
+  font-size: 13px;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--btn-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.friend-lobby-back:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.friend-lobby-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.friend-lobby-spacer {
+  width: 60px;
+}
+
+.friend-lobby-warning {
+  padding: 10px 14px;
+  background: rgba(255, 180, 80, 0.08);
+  border: 1px solid rgba(255, 180, 80, 0.3);
+  border-radius: 8px;
+  color: var(--accent-gold);
+  font-size: 13px;
+  text-align: center;
+}
+
+.friend-lobby-card {
+  padding: 16px 18px;
+  background: var(--bg-card);
+  border: 1px solid var(--btn-border);
+  border-radius: 10px;
+}
+
+.friend-lobby-card h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.friend-lobby-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* Q.D: lobby mode selector (Classic / Roulette radio cards). */
+.friend-lobby-mode-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.friend-lobby-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--btn-border);
+  border-radius: 8px;
+  cursor: pointer;
+  position: relative;
+}
+
+.friend-lobby-mode input[type='radio'] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.friend-lobby-mode.is-selected {
+  border-color: var(--accent-gold);
+  background: rgba(255, 200, 80, 0.08);
+}
+
+.friend-lobby-mode-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.friend-lobby-mode-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+/* Q.D.2: dropped the parallel mp-roulette-spin-btn — MP roulette now
+   renders the solo Spin Roulette button via the shared roulette panel. */
+
+.friend-lobby-primary-btn {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  background: var(--accent-gold);
+  color: var(--piece-text-on-bright);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  letter-spacing: 0.3px;
+}
+
+.friend-lobby-primary-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.friend-lobby-primary-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.friend-lobby-secondary-btn {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--btn-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.friend-lobby-secondary-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.friend-lobby-secondary-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.friend-lobby-join-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.friend-lobby-code-input {
+  flex: 1;
+  padding: 10px 12px;
+  font-size: 18px;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.2em;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  border: 1px solid var(--btn-border);
+  border-radius: 8px;
+  text-transform: uppercase;
+}
+
+.friend-lobby-code-input:disabled {
+  opacity: 0.5;
+}
+
+.friend-lobby-hosted .friend-lobby-code-display {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  margin-bottom: 12px;
+}
+
+.friend-lobby-code-text {
+  flex: 1;
+  padding: 12px 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 0.25em;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px dashed var(--accent-gold);
+  border-radius: 8px;
+  color: var(--accent-gold);
+}
+
+.friend-lobby-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.friend-lobby-status-ready {
+  color: var(--accent-gold);
+  font-weight: 600;
+}
+
+.friend-lobby-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--accent-gold);
+  border-radius: 50%;
+  animation: friend-lobby-spin 0.9s linear infinite;
+}
+
+@keyframes friend-lobby-spin {
+  to { transform: rotate(360deg); }
+}
+
+.friend-lobby-error {
+  padding: 10px 14px;
+  background: rgba(232, 112, 112, 0.1);
+  border: 1px solid rgba(232, 112, 112, 0.3);
+  border-radius: 8px;
+  color: var(--danger-light);
+  font-size: 13px;
+  text-align: center;
+}
+

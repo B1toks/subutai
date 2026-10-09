@@ -1,0 +1,55 @@
+/* Milestone celebration modal */
+
+.milestone-dialog {
+  max-width: 420px;
+  text-align: center;
+}
+
+.milestone-celebration {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-primary);
+  line-height: 1;
+  margin-bottom: 6px;
+  animation: milestone-bounce 3s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px var(--accent-primary));
+}
+
+.milestone-celebration svg {
+  width: 56px;
+  height: 56px;
+}
+
+@keyframes milestone-bounce {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.1); }
+}
+
+.milestone-title {
+  color: var(--accent-gold);
+  margin-bottom: 12px;
+}
+
+.milestone-message {
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 0 0 10px;
+  color: var(--text);
+}
+
+.milestone-message-muted {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.milestone-score {
+  margin: 14px 0 4px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.milestone-score strong {
+  color: var(--accent-gold);
+}
+
