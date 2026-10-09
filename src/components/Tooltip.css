@@ -1,0 +1,72 @@
+/* ─── Tooltip ─────────────────────────────────────────────────── */
+.tooltip-trigger {
+  position: relative;
+  display: inline-flex;
+}
+
+.tooltip {
+  position: absolute;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: var(--shadow-elevated);
+  pointer-events: none;
+  z-index: 9999;
+  animation: tooltip-fade-in 150ms ease-out;
+}
+
+@keyframes tooltip-fade-in {
+  from { opacity: 0; transform: translate(var(--tip-tx, -50%), var(--tip-ty, 2px)); }
+  to   { opacity: 1; transform: translate(var(--tip-tx, -50%), var(--tip-ty, 0)); }
+}
+
+.tooltip-top {
+  --tip-tx: -50%;
+  --tip-ty: 0;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.tooltip-bottom {
+  --tip-tx: -50%;
+  --tip-ty: 0;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.tooltip-left {
+  --tip-tx: 0;
+  --tip-ty: -50%;
+  right: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.tooltip-right {
+  --tip-tx: 0;
+  --tip-ty: -50%;
+  left: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+  .skeleton {
+    animation: none;
+    background: var(--bg-mid);
+  }
+  .tooltip {
+    animation: none;
+  }
+}
+
