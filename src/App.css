@@ -833,6 +833,12 @@
   cursor: not-allowed;
 }
 
+/* The mode a live online match is played in stays readable while the
+   tabs are locked under it. */
+.opp-tab.is-active:disabled {
+  opacity: 1;
+}
+
 /* R8 — tiny corner beta marker on icon-only header buttons (music,
    Twitch). The tabs' inline BETA pills moved here: Friend/Local have
    graduated, the stream layer is the part still cooking. */

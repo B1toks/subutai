@@ -8,6 +8,7 @@ import {
   type Timestamp,
   type Unsubscribe,
 } from 'firebase/firestore';
+import { noteJoinSent } from './serverClock';
 import { db } from './client';
 import { createStartingPosition, type Move, type SquareId } from '../engine';
 import type { PieceType, TopologyState } from '../engine/types';
@@ -213,6 +214,7 @@ export async function joinMatch(
     const currentTurn =
       data.host.color === 'white' ? data.host.uid : guest.uid;
 
+    noteJoinSent(code); // N-10: bounds the server clock (serverClock.ts)
     tx.update(matchRef, {
       guest: guestEntry,
       status: 'active',
@@ -251,14 +253,15 @@ export async function rejoinMatch(code: string, uid: string): Promise<MatchDoc> 
 
 export function subscribeMatch(
   code: string,
-  onChange: (doc: MatchDoc | null) => void,
+  /** `fromCache`: this copy came from the local cache, not the server. */
+  onChange: (doc: MatchDoc | null, fromCache: boolean) => void,
 ): Unsubscribe {
   return onSnapshot(doc(db, 'matches', code), (snap) => {
     if (!snap.exists()) {
-      onChange(null);
+      onChange(null, snap.metadata.fromCache);
       return;
     }
-    onChange(snap.data() as MatchDoc);
+    onChange(snap.data() as MatchDoc, snap.metadata.fromCache);
   });
 }
 

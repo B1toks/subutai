@@ -10,6 +10,7 @@ import {
   type MatchGameMode,
 } from '../firebase/matches';
 import { findQuickMatch, type QuickMatchHandle } from '../firebase/quickMatch';
+import { noteServerStampSeen } from '../firebase/serverClock';
 import { getOnlineCount } from '../firebase/presence';
 
 interface FriendLobbyProps {
@@ -145,9 +146,20 @@ export function FriendLobby({
   // (status flips to active) we hand off to the parent.
   useEffect(() => {
     if (view.kind !== 'hosted') return;
-    const unsub = subscribeMatch(view.code, (doc) => {
+    let first = true;
+    const unsub = subscribeMatch(view.code, (doc, fromCache) => {
+      const seenAt = Date.now();
+      const wasFirst = first;
+      if (!fromCache) first = false;
       if (!doc) return;
       if (doc.status === 'active') {
+        // N-10 — the guest's join just landed: its server stamp says what
+        // time it is now (serverClock.ts). Not from the doc as it stood
+        // when this subscription began, which can be of any age.
+        const joinedAt = doc.lastActivity?.toMillis?.();
+        if (!wasFirst && !fromCache && typeof joinedAt === 'number') {
+          noteServerStampSeen(joinedAt, seenAt);
+        }
         setView((v) =>
           v.kind === 'hosted' ? { ...v, status: 'active' } : v,
         );

@@ -22,6 +22,7 @@ import { applyMove, isInCheck } from '../engine/moves';
 import { applyRotationMove } from '../engine/auxetic';
 import { computeSAN } from '../recording/log';
 import { drawOfferHolds, inactivityForfeitApplies, turnStartedMs } from '../firebase/matchEnd';
+import { noteOwnWriteSeen, noteServerStampSeen, serverNow, takeJoinSent } from '../firebase/serverClock';
 import {
   canAnswerDraw,
   canOfferDraw,
@@ -174,9 +175,12 @@ export interface MultiplayerSyncHandle {
  *  in a match with a clock, at most 60 s behind it; the
  *  previous entry is the opponent's, stamped by their clock, which can be
  *  ahead of mine by more than the time I took to reply. Stamped inside the
- *  transaction, so a retried write is not stamped at the first try. */
+ *  transaction, so a retried write is not stamped at the first try.
+ *  N-10 — in server time as this device estimates it (serverClock.ts), so
+ *  both screens charge the clocks alike; that estimate is within a round
+ *  trip of the server, far inside the 60 s the rules allow. */
 function nextMoveTimestamp(moves: MatchDoc['log']['moves']): number {
-  return Math.max(Date.now(), moves[moves.length - 1]?.timestamp ?? 0);
+  return Math.max(serverNow(), moves[moves.length - 1]?.timestamp ?? 0);
 }
 
 /** Rebuild the canonical board from the log. Topology toggles (Rotate)
@@ -232,13 +236,41 @@ export function useMultiplayerSync(
   const evictedRef = useRef(onMatchEvicted);
   evictedRef.current = onMatchEvicted;
 
+  // N-10 — my move write in flight: the log length it makes and when it
+  // was stamped. The snapshot that brings it back bounds the server clock.
+  const ownWriteRef = useRef<{ len: number; sentAt: number } | null>(null);
+
   // Realtime subscription.
   useEffect(() => {
     if (!code) return;
-    const unsub = subscribeMatch(code, (doc) => {
+    // The first snapshot is the doc as it stands, its stamps of any age;
+    // only the server stamps of later writes say what time it is now.
+    let first = true;
+    let lastActivity: number | undefined;
+    const unsub = subscribeMatch(code, (doc, fromCache) => {
+      const seenAt = Date.now();
       if (!doc) {
         evictedRef.current();
         return;
+      }
+      if (!fromCache) {
+        const activity = doc.lastActivity?.toMillis?.();
+        if (!first && typeof activity === 'number' && activity !== lastActivity) {
+          noteServerStampSeen(activity, seenAt);
+        }
+        // My join is in the first snapshot: its stamp is that write's or later.
+        const joinedAt = first ? takeJoinSent(code) : undefined;
+        if (joinedAt !== undefined && typeof activity === 'number') {
+          noteOwnWriteSeen(activity, joinedAt, seenAt);
+        }
+        const own = ownWriteRef.current;
+        const turnStart = doc.turnStartedAt?.toMillis?.();
+        if (own && doc.log.moves.length >= own.len && typeof turnStart === 'number') {
+          noteOwnWriteSeen(turnStart, own.sentAt, seenAt);
+          ownWriteRef.current = null;
+        }
+        first = false;
+        if (typeof activity === 'number') lastActivity = activity;
       }
       setMatchState(doc);
     });
@@ -389,6 +421,8 @@ export function useMultiplayerSync(
         const data = snap.data() as MatchDoc;
         if (data.currentTurn !== liveMyUid) throw new Error('NOT_YOUR_TURN');
         if (data.status !== 'active') throw new Error('MATCH_NOT_ACTIVE');
+        // This attempt's stamp; a retried transaction overwrites it.
+        ownWriteRef.current = { len: data.log.moves.length + 1, sentAt: Date.now() };
         const patch: Record<string, unknown> = {
           'log.moves': [
             ...data.log.moves,
@@ -426,6 +460,7 @@ export function useMultiplayerSync(
       setDrawLockCode(null); // I have moved: I may offer again
     } catch (err) {
       console.error('[mp] move failed', err);
+      ownWriteRef.current = null;
       const msg = err instanceof Error ? err.message : 'MOVE_FAILED';
       setError(
         msg === 'NOT_YOUR_TURN'
@@ -472,6 +507,8 @@ export function useMultiplayerSync(
         if (data.currentTurn !== liveMyUid) throw new Error('NOT_YOUR_TURN');
         if (data.status !== 'active') throw new Error('MATCH_NOT_ACTIVE');
         const newActions = (data.rouletteActionsLeft ?? 0) - 1;
+        // This attempt's stamp; a retried transaction overwrites it.
+        ownWriteRef.current = { len: data.log.moves.length + 1, sentAt: Date.now() };
         const patch: Record<string, unknown> = {
           'log.moves': [
             ...data.log.moves,
@@ -492,6 +529,7 @@ export function useMultiplayerSync(
       setDrawLockCode(null);
     } catch (err) {
       console.error('[mp] rotate failed', err);
+      ownWriteRef.current = null;
       setError('Rotate failed. Try again.');
     } finally {
       setBusy(false);
