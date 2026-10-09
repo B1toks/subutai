@@ -1,0 +1,10 @@
+/* V1 — the menu button lives on the header's left edge, outside the
+   right-hand group; it only exists on narrow screens. */
+.mobile-panel-btn-menu { display: none; }
+@media (max-width: 720px) {
+  .mobile-panel-btn-menu {
+    display: inline-flex;
+    flex: 0 0 auto;
+    order: -1;
+  }
+}

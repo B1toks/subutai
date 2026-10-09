@@ -1,0 +1,53 @@
+/* ═══════════════════════════════════════════════════════════════════
+   V1 — leaderboard on a phone.
+
+   The row is a six-column grid whose fixed columns alone add up to
+   412px, so on a 375px screen the last one — the replay button, the only
+   thing in the row you can actually press — was pushed off the right
+   edge with nothing to scroll it into view.
+
+   Below 720px the row becomes two lines: rank, name and score on the
+   first, the game's details and its button on the second. Nothing is
+   hidden; it just stops pretending to be a table.
+   ═══════════════════════════════════════════════════════════════════ */
+@media (max-width: 720px) {
+  .leaderboard-row {
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    grid-template-areas:
+      'rank name points'
+      'rank meta action';
+    row-gap: 4px;
+    padding: var(--space-2) var(--space-3);
+    font-size: 14px;
+  }
+  .lb-rank { grid-area: rank; align-self: center; }
+  .lb-name { grid-area: name; min-width: 0; }
+  .lb-points { grid-area: points; justify-self: end; }
+  .lb-action { grid-area: action; justify-self: end; }
+
+  /* The two descriptive columns share the second line. */
+  .lb-survived,
+  .lb-outcome {
+    grid-area: meta;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .lb-survived { justify-self: start; }
+  .lb-outcome {
+    justify-self: start;
+    margin-left: 84px; /* clears the survived column on the same cell */
+  }
+
+  /* The header row has no second line to describe. */
+  .leaderboard-row-head .lb-survived,
+  .leaderboard-row-head .lb-outcome {
+    display: none;
+  }
+
+  .leaderboard-replay-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+}
+

@@ -1,0 +1,21 @@
+/* ═══════════════════════════════════════════════════════════════════
+   V1 — FX loudness. See registerFx() in App.tsx.
+
+   Every heavy effect still plays; --fx-intensity only turns its volume
+   down when effects arrive back to back: 1 for the first, 0.6 for the
+   second, 0.4 after that. The shake scales its travel, the overlays
+   scale their opacity. Set inline on the element that owns each effect.
+   ═══════════════════════════════════════════════════════════════════ */
+@keyframes capture-shake {
+  0%   { transform: translate(0, 0); }
+  20%  { transform: translate(calc(2px * var(--fx-intensity, 1)), calc(-1px * var(--fx-intensity, 1))); }
+  40%  { transform: translate(calc(-2px * var(--fx-intensity, 1)), calc(1px * var(--fx-intensity, 1))); }
+  60%  { transform: translate(calc(1px * var(--fx-intensity, 1)), calc(2px * var(--fx-intensity, 1))); }
+  80%  { transform: translate(calc(-1px * var(--fx-intensity, 1)), calc(-1px * var(--fx-intensity, 1))); }
+  100% { transform: translate(0, 0); }
+}
+.check-vignette,
+.capture-strobe {
+  opacity: var(--fx-intensity, 1);
+}
+

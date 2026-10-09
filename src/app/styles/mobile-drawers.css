@@ -1,0 +1,176 @@
+/* ═══════════════════════════════════════════════════════════════════
+   V1 — MOBILE PANELS
+
+   The phone layout used to fold the desktop chrome into the page: the
+   icon rail became a second row of 40px targets under the title, and
+   GAME SETUP was pushed below the board where nobody scrolled to find
+   it. Neither is a layout — they are a desktop design squeezed until it
+   fits.
+
+   Both become drawers instead. The rail comes in from the left, the
+   setup panel from the right, one at a time, behind a scrim, each opened
+   by a button that is visible in the header. Buttons and not swipes: a
+   horizontal swipe on a web page belongs to the browser's back gesture,
+   and a control nobody can see is a control nobody has.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.mobile-panel-buttons { display: none; }
+.mobile-scrim { display: none; }
+
+@media (max-width: 720px) {
+  .mobile-panel-buttons {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+  }
+  .mobile-panel-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    border: 1px solid var(--btn-border);
+    background: var(--bg-elevated);
+    color: var(--text);
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  .mobile-panel-btn[aria-expanded='true'] {
+    border-color: var(--accent-primary);
+    background: var(--bg-card);
+  }
+
+  .mobile-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 930;
+    background: rgba(4, 3, 8, 0.55);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s ease;
+  }
+  .app-root[data-mobile-panel='menu'] .mobile-scrim,
+  .app-root[data-mobile-panel='setup'] .mobile-scrim {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* ── left drawer: the icon rail ── */
+  .header-controls {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: calc(86px + env(safe-area-inset-left, 0px));
+    z-index: 940;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    align-items: center;
+    gap: var(--space-2);
+    padding: calc(14px + env(safe-area-inset-top, 0px)) 0 calc(14px + env(safe-area-inset-bottom, 0px)) env(safe-area-inset-left, 0px);
+    background: var(--bg-card);
+    border-right: 1px solid var(--border-subtle);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+    transform: translateX(-100%);
+    transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .header-controls::-webkit-scrollbar { display: none; }
+  .app-root[data-mobile-panel='menu'] .header-controls { transform: none; }
+
+  /* ── right drawer: GAME SETUP ── */
+  .right-sidebar {
+    position: fixed;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: min(86vw, 340px);
+    z-index: 940;
+    margin: 0;
+    padding: calc(14px + env(safe-area-inset-top, 0px)) calc(14px + env(safe-area-inset-right, 0px)) calc(14px + env(safe-area-inset-bottom, 0px)) 14px;
+    background: var(--bg);
+    border-left: 1px solid var(--border-subtle);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    transform: translateX(100%);
+    transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .app-root[data-mobile-panel='setup'] .right-sidebar { transform: none; }
+
+  /* With the sidebar out of the flow the board gets the whole width. */
+  .app-body { grid-template-columns: minmax(0, 1fr); }
+
+  /* The drawers are the reason the header fits now, so let it stay on
+     one line: mark, title, pill, then the two buttons. */
+  .app-header { flex-wrap: nowrap; gap: var(--space-2); }
+  .app-brand { min-width: 0; flex: 1; }
+  .live-strip { min-width: 0; }
+}
+
+/* The game label is context, not a control — first thing to go when the
+   header runs out of room. It stays reachable as the element's own
+   tooltip (hover on a desktop that happens to be this narrow, long-press
+   on a phone). */
+@media (max-width: 600px) {
+  .live-title { display: none; }
+}
+
+/* QA-15 — on a 375px phone the header row is a menu button, the mark,
+   the wordmark, the LIVE pill, the setup button, the leaderboard button
+   and the player's name chip; the row is only 359px wide, so the brand
+   shrank under the chip and the wordmark was painted over. The mark
+   stays, the word and the pill's text drop out of sight (still there
+   for screen readers), and a long name is cut with an ellipsis instead
+   of pushing the rest. */
+@media (max-width: 430px) {
+  .app-header h1 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  /* The pill keeps its dot (the colour still says live / ready / over);
+     the word is still in the DOM for screen readers. */
+  .live-pill {
+    font-size: 0;
+    gap: 0;
+    padding-inline: 8px;
+  }
+  .user-menu-name {
+    max-width: 6ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* Under ~380px even the dot has no room; the status bar under the board
+   still says whether the game is live. Hidden the same way as the
+   wordmark, not display:none, so screen readers keep the pill's text. */
+@media (max-width: 380px) {
+  .live-strip {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header-controls,
+  .right-sidebar,
+  .mobile-scrim {
+    transition: none;
+  }
+}
+

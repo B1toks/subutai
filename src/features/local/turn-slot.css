@@ -1,0 +1,35 @@
+/* V1 — hot-seat "whose move" chip, inside each player's own row. */
+.local-turn-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: var(--text-muted);
+  opacity: 0.7;
+  transition: color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+.local-turn-lamp {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.local-turn-slot.is-white .local-turn-lamp { background: var(--piece-white-flat); }
+.local-turn-slot.is-black .local-turn-lamp {
+  background: var(--piece-black-flat);
+  box-shadow: 0 0 0 1px var(--text-muted);
+}
+.local-turn-slot.is-to-move {
+  opacity: 1;
+  color: var(--text);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 12px -4px var(--accent-primary);
+}
+
