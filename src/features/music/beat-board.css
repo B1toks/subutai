@@ -1,0 +1,77 @@
+/* ── M.10: stronger, "throbbing" board beat pulse — scale + brightness
+   flash so the board visibly reacts to every beat. ── */
+.board-with-coords.beat-tick {
+  animation: beat-tick-pulse 240ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+/* M.14 — a touch deeper so the board's "tap" on every beat is clearly
+   felt (the pulse had become easy to miss). */
+@keyframes beat-tick-pulse {
+  0%   { transform: scale(1); filter: brightness(1); }
+  26%  { transform: scale(1.04); filter: brightness(1.2); }
+  100% { transform: scale(1); filter: brightness(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-with-coords.beat-tick { animation: none; }
+}
+
+/* ── M.13: Beat-Mode move snap — a ring on the destination that fills
+   over EXACTLY the wait to the next beat, then snaps with a pop the
+   instant the move lands. Makes it unmistakable the piece moves ON the
+   beat (not lagging). --snap-ms is set inline per tile to the real
+   wait. ── */
+.tile.beat-snap-to::after,
+.tile.beat-snap-from::after {
+  content: '';
+  position: absolute;
+  inset: 8%;
+  border-radius: 14%;
+  pointer-events: none;
+  z-index: 3;
+}
+
+/* Destination: a conic "countdown" ring that sweeps to full over the
+   wait, plus a soft pulsing fill — clearly "charging to the beat". */
+.tile.beat-snap-to::after {
+  border: 2px solid color-mix(in srgb, var(--accent-primary) 55%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent-primary) 30%, transparent) inset,
+    0 0 10px color-mix(in srgb, var(--accent-primary) 45%, transparent);
+  background:
+    conic-gradient(
+      color-mix(in srgb, var(--accent-primary) 38%, transparent) var(--snap-fill, 0%),
+      transparent 0
+    );
+  animation: snap-fill var(--snap-ms, 300ms) linear forwards;
+}
+
+.tile.beat-snap-from::after {
+  border: 2px dashed color-mix(in srgb, var(--accent-primary) 45%, transparent);
+  animation: snap-origin var(--snap-ms, 300ms) ease-out forwards;
+}
+
+@property --snap-fill {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+
+@keyframes snap-fill {
+  0%   { --snap-fill: 0%; transform: scale(0.9); opacity: 0.85; }
+  85%  { --snap-fill: 100%; transform: scale(1); opacity: 1; }
+  /* final 15%: the "landing" pop — bright flash right on the beat */
+  100% { --snap-fill: 100%; transform: scale(1.12); opacity: 0;
+         box-shadow: 0 0 18px var(--accent-primary); }
+}
+
+@keyframes snap-origin {
+  0%   { opacity: 0.9; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.85); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile.beat-snap-to::after,
+  .tile.beat-snap-from::after { animation: none; }
+}
+

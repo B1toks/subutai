@@ -1,0 +1,87 @@
+/* Help dialog */
+
+.help-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.help-dialog {
+  max-width: 480px;
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--btn-border);
+  border-radius: 12px;
+  padding: 24px;
+  color: var(--text);
+}
+
+.help-dialog h2 {
+  font-size: 22px;
+  margin-bottom: 12px;
+}
+
+.help-dialog p {
+  font-size: 14px;
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+
+.help-dialog a {
+  color: var(--accent-gold);
+}
+
+.help-dialog ul {
+  padding-left: 20px;
+  font-size: 14px;
+  line-height: 1.7;
+  margin: 0 0 12px;
+}
+
+.help-close-btn {
+  margin-top: 8px;
+  padding: 8px 20px;
+  border-radius: 6px;
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.help-close-btn:hover {
+  background: var(--bg-elevated-hover);
+}
+
+.help-dialog-actions {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.help-tour-btn {
+  margin-top: 8px;
+  padding: 8px 20px;
+  border-radius: 6px;
+  border: 1px solid var(--accent-primary);
+  background: transparent;
+  color: var(--accent-primary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.help-tour-btn:hover {
+  background: var(--bg-elevated-hover);
+}
+

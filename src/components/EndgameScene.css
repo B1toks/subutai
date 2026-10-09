@@ -1,0 +1,35 @@
+/* R6 — pixel victory cinematic overlay. Full-screen canvas above
+   everything; click anywhere to skip. */
+.victory-scene {
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  cursor: pointer;
+  /* V1 — deliberately NO entrance animation. The scene used to fade in
+     from opacity 0 with fill-mode `both`, which means a stalled animation
+     engine leaves a full-screen overlay that is invisible but still on
+     top of everything. The canvas paints near-black on its very first
+     frame anyway, and it is handed the screen by an iris that has already
+     gone black, so there is nothing for a fade to smooth over. */
+  opacity: 1;
+}
+
+.victory-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+.victory-skip {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
