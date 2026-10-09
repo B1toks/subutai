@@ -24,5 +24,5 @@ program, and they keep their own terms.
 ## Services the app talks to
 
 Firebase (anonymous sign-in and Firestore), Spotify (embedded player and oEmbed),
-Deezer (tempo lookup), Twitch chat (read-only IRC), 7TV (emote images) and Google
-Fonts. They are used under their own terms and are not redistributed here.
+Deezer (tempo lookup), Twitch chat (read-only IRC), 7TV (emote images), Google
+Fonts and Vercel Web Analytics (cookie-less page-view counts). They are used under their own terms and are not redistributed here.
