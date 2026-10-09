@@ -1,0 +1,194 @@
+/* Mode toggle + roulette panel */
+
+.mode-toggle {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 16px;
+  vertical-align: middle;
+}
+
+.mode-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--btn-bg);
+  color: var(--text);
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.mode-btn:hover {
+  background: var(--bg-elevated-hover);
+}
+
+.mode-btn-active {
+  background: var(--accent-gold);
+  color: var(--bg-card);
+  border-color: var(--accent-gold);
+}
+
+/* Sprint 2.7 — moved inside .board-area, so it inherits board centring
+   and width-cap from the parent. Width 100% of board-area (which itself
+   tops out at calc(var(--board-size) + 32px)); no own margin since the
+   board-area gap handles spacing. Wraps on narrow widths so the spin
+   button doesn't push outside the board column. */
+.roulette-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  width: 100%;
+  max-width: var(--board-size);
+  margin: 0 auto;
+  background: var(--bg-card);
+  border: 1px solid var(--btn-border);
+  border-radius: 8px;
+  box-sizing: border-box;
+  flex-wrap: wrap;
+}
+
+
+.roulette-display {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
+}
+
+.roulette-face {
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tile-light);
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+}
+
+/* Override the board's board-size-based sizing so the glyph fits the slot.
+   No color, no text-shadow here — those come from .piece-white / .piece-black. */
+.roulette-face .piece {
+  font-size: 36px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.roulette-face-rolling {
+  background: var(--btn-bg);
+  color: var(--accent-gold);
+  font-size: 28px;
+  font-weight: 700;
+  animation: roulette-roll 0.4s infinite alternate;
+}
+
+.roulette-face.slot-used {
+  opacity: 0.35;
+  filter: grayscale(1);
+}
+
+.roulette-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+  opacity: 0.85;
+}
+
+.roulette-actions-label {
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.roulette-action-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 1px solid var(--btn-border);
+}
+
+.roulette-action-dot.active {
+  background: var(--accent-gold);
+  border-color: var(--accent-gold);
+  box-shadow: 0 0 6px rgba(200, 185, 138, 0.6);
+}
+
+.roulette-action-dot.spent {
+  background: transparent;
+  opacity: 0.5;
+}
+
+@keyframes roulette-roll {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-4px); }
+}
+
+.roulette-label {
+  font-size: 13px;
+  color: var(--text);
+  opacity: 0.75;
+}
+
+.roulette-spin-btn {
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--accent-gold);
+  color: var(--bg-card);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.roulette-spin-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Sprint 2.7.1 — compact spin button that lives inline among the
+   board-action row instead of the full-width banner from 2.7. Pulsing
+   so it still draws attention without taking its own line. */
+.spin-roulette-btn-compact {
+  height: 40px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  border: none;
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-danger));
+  color: var(--piece-text-on-bright);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  box-shadow: var(--glow-accent);
+  animation: spin-pulse 1.8s ease-in-out infinite;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+.spin-roulette-btn-compact:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.spin-roulette-btn-compact:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.spin-roulette-btn-compact:disabled {
+  opacity: 0.45;
+  animation: none;
+  cursor: not-allowed;
+}
+
+@keyframes spin-pulse {
+  0%, 100% { transform: scale(1); box-shadow: var(--glow-accent); }
+  50%      { transform: scale(1.04); box-shadow: var(--glow-accent), 0 0 18px rgba(var(--sacrifice-color, 168, 85, 247), 0.0); }
+}
+

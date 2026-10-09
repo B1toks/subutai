@@ -1,0 +1,67 @@
+/* Watching banner */
+
+.watch-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px auto;
+  padding: 8px 14px;
+  max-width: var(--board-size);
+  background: var(--bg-panel-deep);
+  border: 1px solid var(--accent-gold);
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+
+.watch-banner-label {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.watch-banner-label strong {
+  color: var(--accent-gold);
+}
+
+.watch-banner-controls {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.watch-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--btn-bg);
+  color: var(--text);
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.watch-btn:hover:not(:disabled) {
+  background: var(--bg-elevated-hover);
+}
+
+.watch-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.watch-btn-active {
+  background: var(--accent-gold);
+  color: var(--bg-card);
+  border-color: var(--accent-gold);
+}
+
+.watch-btn-stop {
+  border-color: var(--danger-dark);
+  color: var(--danger-light);
+}
+
+.watch-btn-stop:hover:not(:disabled) {
+  background: var(--bg-danger-tint);
+}
+

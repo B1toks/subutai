@@ -1,0 +1,81 @@
+/* ─── Eval bar ───────────────────────────────────────────────────────── */
+
+/* Positioned-relative wrapper so the bar can sit just outside the board's
+   left edge without consuming layout width — .app-root is fixed at
+   var(--board-size) and we don't want the board to shift right by 20px.
+   Stage T1: flex-center so the board-with-coords (slightly wider than
+   boardSize because of the rank column) doesn't shove the board right. */
+.board-with-eval {
+  position: relative;
+  width: var(--board-size);
+  display: flex;
+  justify-content: center;
+}
+
+.eval-bar {
+  width: 12px;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -20px;
+  background: var(--bg-deeper);
+  border-radius: 4px;
+  /* B2 — was overflow:hidden, which clipped the "−3.5" figure to the
+     12px column. The fill clips itself via border-radius instead, and
+     the label renders as a pill wider than the bar. */
+  overflow: visible;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.eval-bar-white {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--tile-promo-light);
+  border-radius: 3px;
+  transition: height 0.4s ease, opacity 0.2s ease;
+}
+
+/* Static-eval fallback while the worker classifier is still running.
+   Tones the white half down so the user reads it as "preliminary". */
+.eval-bar.is-pending .eval-bar-white {
+  opacity: 0.7;
+}
+
+@keyframes eval-mate-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(255, 200, 80, 0.4); }
+  50%      { box-shadow: 0 0 14px rgba(255, 200, 80, 0.8); }
+}
+
+.eval-bar.is-mate {
+  animation: eval-mate-pulse 1.2s ease-in-out infinite;
+}
+
+.eval-bar-text {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.3px;
+  pointer-events: none;
+  /* B2 — pill wider than the bar so the figure never clips. */
+  white-space: nowrap;
+  padding: 1px 4px;
+  border-radius: var(--radius-full, 999px);
+  background: var(--bg-popup);
+  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  z-index: 1;
+}
+
+.eval-bar-text-top {
+  top: 4px;
+}
+
+.eval-bar-text-bottom {
+  bottom: 4px;
+}
+

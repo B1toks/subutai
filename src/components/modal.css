@@ -1,0 +1,204 @@
+/* Header username + change-name button */
+
+.header-username {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-right: 4px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-username-btn {
+  font-size: 13px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.header-username-btn:hover {
+  background: var(--btn-bg);
+  border-color: var(--btn-border);
+  color: var(--text);
+}
+
+/* Generic modal (NamePicker, future dialogs) */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.modal-dialog {
+  width: 100%;
+  max-width: 380px;
+  background: var(--bg-card);
+  border: 1px solid var(--btn-border);
+  border-radius: 12px;
+  padding: 22px 22px 18px;
+  color: var(--text);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.modal-title {
+  font-size: 20px;
+  margin: 0 0 4px;
+}
+
+.modal-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 0 16px;
+}
+
+/* Dialog headings break into even lines and dialog prose avoids a
+   one-word last line; nothing else sets text-wrap, so placement is free. */
+.modal-title,
+.help-dialog h2,
+.help-dialog h3,
+.mp-completion-title {
+  text-wrap: balance;
+}
+.modal-subtitle,
+.help-dialog p,
+.namepicker-tagline {
+  text-wrap: pretty;
+}
+
+.namepicker-tagline {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text);
+  margin: 4px 0 18px;
+}
+
+.namepicker-tagline strong {
+  color: var(--accent-gold);
+}
+
+.modal-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font-size: 16px;
+  background: var(--bg-overlay-dark);
+  border: 1px solid var(--btn-border);
+  border-radius: 8px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.modal-input:focus {
+  border-color: var(--accent-gold);
+}
+
+.modal-input:disabled {
+  opacity: 0.6;
+}
+
+.modal-status {
+  margin-top: 8px;
+  font-size: 12px;
+  min-height: 16px;
+}
+
+.modal-status-ok {
+  color: var(--success-mint);
+}
+
+.modal-status-warn {
+  color: var(--accent-amber-mid);
+}
+
+.modal-status-neutral {
+  color: var(--text-secondary);
+}
+
+.modal-error {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--danger-light);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.modal-btn {
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid var(--btn-border);
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.modal-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.modal-btn-secondary {
+  background: var(--btn-bg);
+  color: var(--text);
+}
+
+.modal-btn-secondary:hover:not(:disabled) {
+  background: var(--bg-elevated-hover);
+}
+
+.modal-btn-primary {
+  background: var(--accent-gold);
+  color: var(--bg-card);
+  border-color: var(--accent-gold);
+}
+
+.modal-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.modal-btn-danger {
+  background: var(--danger-dark);
+  color: var(--text-white);
+  border-color: var(--danger-dark);
+}
+
+.modal-btn-danger:hover:not(:disabled) {
+  background: var(--danger-mid);
+  border-color: var(--danger-mid);
+}
+
+/* Resign action button — tints the white-flag icon red on hover. */
+
+.resign-btn {
+  color: var(--text-muted-warm);
+}
+
+.resign-btn:hover:not(:disabled) {
+  color: var(--danger-light);
+}
+
+.resign-btn:disabled {
+  opacity: 0.4;
+}
+

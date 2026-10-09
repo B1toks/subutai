@@ -1,0 +1,47 @@
+/* Stage T2: share button in GameSummary modal. */
+
+.summary-share-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 10px 0 4px;
+}
+
+.summary-share-btn {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  background: transparent;
+  color: var(--accent-gold);
+  border: 1px solid var(--accent-gold);
+  border-radius: 999px;
+  cursor: pointer;
+  letter-spacing: 0.2px;
+}
+
+.summary-share-btn:hover {
+  background: rgba(255, 200, 80, 0.08);
+}
+
+.summary-share-feedback {
+  font-size: 12px;
+  color: var(--accent-gold);
+  font-weight: 600;
+}
+
+/* Review trigger button in the main view's action bar */
+.review-trigger-btn {
+  background: var(--btn-bg);
+  color: var(--accent-gold);
+  border: 1px solid var(--btn-border);
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.review-trigger-btn:hover {
+  background: var(--bg-elevated-hover);
+}
+
