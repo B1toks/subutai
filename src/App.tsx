@@ -31,6 +31,8 @@ import { useToast } from './components/Toast';
 import type { EndgameKind, KingOrigin, VictoryTheme } from './components/EndgameScene';
 import { GameSummary } from './components/GameSummary';
 import { ConfirmDialog } from './components/ConfirmDialog';
+import { ClockFace } from './components/ClockFace';
+import { mpClockAt, mpClockHeldFor, mpClockState } from './utils/mpClock';
 import { FeedbackModal } from './components/FeedbackModal';
 import { MilestoneModal } from './components/MilestoneModal';
 import { AutoPlayView } from './components/AutoPlayView';
@@ -537,21 +539,6 @@ function computeBoardSize(uiScale: number, dockLeft: number, dockRight: number):
   // during init, and without the floor boardSize goes NEGATIVE (tile math,
   // dash arrays and overlays all silently break until the next resize).
   return Math.max(240, Math.min(vw - chrome - reserved, cap));
-}
-
-/**
- * V1 — fixed-width MM:SS for the tournament clock face.
- *
- * This used to be a "m:ss" formatter, which is fine in a sentence but
- * wrong on a clock: the digits shift sideways the moment the tens column
- * drops, and the unlit "88:88" ghost behind them stops lining up. Pads to
- * two, and grows past 99 minutes rather than truncating.
- */
-function formatClockFace(ms: number): string {
-  const totalSec = Math.floor(ms / 1000);
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 /** How long two heavy board effects count as "back to back". */
@@ -3120,100 +3107,89 @@ function App() {
       ? mpSync.matchState.status === 'active' && !mpSync.matchState.outcome
       : false;
 
-  const [mpNow, setMpNow] = useState(() => Date.now());
-  useEffect(() => {
-    // V1 — ticks for ANY live match, not only a timed one. Without a time
-    // control the clocks used to sit at 00:00 for the whole game, which
-    // makes the one piece of information both players actually want —
-    // who is burning the time — unavailable exactly when there is no
-    // limit to enforce it.
-    if (!mpMatchLive) return;
-    const id = setInterval(() => setMpNow(Date.now()), 500);
-    return () => clearInterval(id);
-  }, [mpMatchLive]);
-
-  const mpClocks = useMemo(() => {
-    if (!isMultiplayer || !mpSync) return null;
-    const moves = mpSync.matchState.log.moves;
-    // R13 — Fischer increment: every completed move credits its mover.
-    const incMs = (mpSync.matchState.timeIncrementSec ?? 0) * 1000;
-    let usedWhite = 0;
-    let usedBlack = 0;
-    for (let i = 1; i < moves.length; i++) {
-      const dt = Math.max(0, (moves[i].timestamp ?? 0) - (moves[i - 1].timestamp ?? 0));
-      // Mover of entry i: entries alternate starting with white (rotations
-      // consume the turn too, so parity holds in classic).
-      if (i % 2 === 0) usedWhite += dt;
-      else usedBlack += dt;
-    }
-    if (mpMatchLive && moves.length > 0) {
-      const live = Math.max(0, mpNow - (moves[moves.length - 1].timestamp ?? mpNow));
-      if (moves.length % 2 === 0) usedWhite += live;
-      else usedBlack += live;
-    }
-    // No time control: just show what each side has spent. Same numbers,
-    // counted up instead of down, and nothing can flag.
-    if (!mpTimeControl) {
-      return { white: usedWhite, black: usedBlack, countdown: false };
-    }
-    // Completed-move counts: entries alternate W,B,W,B… so white made
-    // ceil(n/2) of them and black the rest.
-    const whiteMoves = Math.ceil(moves.length / 2);
-    const blackMoves = Math.floor(moves.length / 2);
-    const total = mpTimeControl * 1000;
-    return {
-      white: Math.max(0, total + whiteMoves * incMs - usedWhite),
-      black: Math.max(0, total + blackMoves * incMs - usedBlack),
-      countdown: true,
-    };
-  }, [isMultiplayer, mpTimeControl, mpSync, mpNow, mpMatchLive]);
+  // The clocks change only with the match doc; the faces (ClockFace) and
+  // the flag check below tick on their own. A `mpNow` state ticked every
+  // 500 ms used to re-render the whole App twice a second for this, and
+  // stepped the digits on an arbitrary phase (200-1400 ms apart).
+  const mpMatchState = mpSync?.matchState ?? null;
+  const mpClock = useMemo(
+    () => (mpMatchState ? mpClockState(mpMatchState, mpTimeControl, mpMatchLive) : null),
+    [mpMatchState, mpTimeControl, mpMatchLive],
+  );
 
   const flagFiredRef = useRef(false);
   const flagRetryAtRef = useRef(0);
+  // Bumped only when a refused flag claim is to be retried; every other
+  // look at the clocks is a timer inside the effect. Waking through App
+  // state re-rendered the whole App at the moment a clock ran out, which
+  // held the face's 00:00 back by that render (100-300 ms measured).
+  const [mpFlagRetry, setMpFlagRetry] = useState(0);
   useEffect(() => {
     flagFiredRef.current = false;
   }, [mpSync?.matchState.code]);
   useEffect(() => {
-    if (!mpClocks || !mpSync || flagFiredRef.current) return;
+    if (!mpClock || !mpSync) return;
     // Only a COUNTDOWN can run out. Since untimed matches got an elapsed
-    // clock (V1), mpClocks exists in every match — and an elapsed clock
+    // clock (V1), the clock exists in every match — and an elapsed clock
     // starts at 0, which the lines below read as "your flag fell". Every
     // untimed match resigned itself the instant it started.
-    if (!mpClocks.countdown) return;
+    if (!mpClock.countdown) return;
     if (mpSync.matchState.status !== 'active') return;
-    const mine = mpSync.myColor === 'white' ? mpClocks.white : mpClocks.black;
-    if (mine <= 0) {
-      flagFiredRef.current = true;
-      void mpSync.resign('flag');
-      return;
-    }
-    // R13/BUG-3 — the flagging client may be gone (tab closed): if the
-    // OPPONENT's clock hits zero, the waiting peer claims the flag win
-    // itself. Same transaction-guarded write local mate detection uses,
-    // so a simultaneous self-forfeit can't double-settle the match.
-    // QA-05 — the rules cannot see the clock, so they take this claim
-    // only once the opponent's turn has run 90 s by server time (R-7:
-    // from turnStartedAt, which only a move restarts); until
-    // then only their own client can end it. Wait for that, and retry
-    // when the server still says no (clock skew). A draw offer they made
-    // on that turn holds the claim until I answer it (drawOfferHolds).
-    const theirs = mpSync.myColor === 'white' ? mpClocks.black : mpClocks.white;
-    if (theirs <= 0) {
-      if (drawOfferHolds(mpSync.matchState)) return;
-      const last = turnStartedMs(mpSync.matchState);
-      if (typeof last === 'number' && Date.now() - last < OPPONENT_OFFLINE_FORFEIT_MS) return;
-      if (Date.now() < flagRetryAtRef.current) return;
-      flagFiredRef.current = true;
-      const opponentIsHost = mpSync.matchState.host.uid !== mpSync.myUid;
-      void mpSync
-        .writeOutcomeIfFirst(opponentIsHost ? 'host-resign' : 'guest-resign', 'flag')
-        .then((ok) => {
-          if (ok) return;
-          flagRetryAtRef.current = Date.now() + 4000;
-          flagFiredRef.current = false;
-        });
-    }
-  }, [mpClocks, mpSync]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const check = () => {
+      if (flagFiredRef.current) return;
+      const now = Date.now();
+      const mine = mpClockAt(mpClock, mpSync.myColor, now);
+      if (mine <= 0) {
+        flagFiredRef.current = true;
+        void mpSync.resign('flag');
+        return;
+      }
+      // R13/BUG-3 — the flagging client may be gone (tab closed): if the
+      // OPPONENT's clock hits zero, the waiting peer claims the flag win
+      // itself. Same transaction-guarded write local mate detection uses,
+      // so a simultaneous self-forfeit can't double-settle the match.
+      // QA-05 — the rules cannot see the clock, so they take this claim
+      // only once the opponent's turn has run 90 s by server time (R-7:
+      // from turnStartedAt, which only a move restarts); until
+      // then only their own client can end it. Wait for that, and retry
+      // when the server still says no (clock skew). A draw offer they made
+      // on that turn holds the claim until I answer it (drawOfferHolds).
+      const theirs = mpClockAt(mpClock, mpSync.myColor === 'white' ? 'black' : 'white', now);
+      let wake: number;
+      if (theirs > 0) {
+        if (!mpClock.running) return;
+        // Until the running clock reaches 0; a new snapshot re-runs this.
+        wake =
+          mpClockHeldFor(mpClock, mpClock.running, now) + mpClockAt(mpClock, mpClock.running, now);
+      } else {
+        if (drawOfferHolds(mpSync.matchState)) return;
+        const last = turnStartedMs(mpSync.matchState);
+        if (typeof last === 'number' && now - last < OPPONENT_OFFLINE_FORFEIT_MS) {
+          wake = last + OPPONENT_OFFLINE_FORFEIT_MS - now;
+        } else if (now < flagRetryAtRef.current) {
+          wake = flagRetryAtRef.current - now;
+        } else {
+          flagFiredRef.current = true;
+          const opponentIsHost = mpSync.matchState.host.uid !== mpSync.myUid;
+          void mpSync
+            .writeOutcomeIfFirst(opponentIsHost ? 'host-resign' : 'guest-resign', 'flag')
+            .then((ok) => {
+              if (ok) return;
+              flagRetryAtRef.current = Date.now() + 4000;
+              flagFiredRef.current = false;
+              setMpFlagRetry((n) => n + 1);
+            });
+          return;
+        }
+      }
+      // A little after the face's own wake (15 ms): the face paints 00:00
+      // first, then the flag write re-renders App.
+      timer = setTimeout(check, wake + 50);
+    };
+    check();
+    return () => clearTimeout(timer);
+  }, [mpClock, mpSync, mpFlagRetry]);
 
   function toggleHelpTools() {
     setHelpToolsEnabled((v) => {
@@ -6323,18 +6299,7 @@ function App() {
       {gameStatus === 'active' && !watchingGame && (
         <div className="tournament-clock" aria-label="Game clocks">
           {(['white', 'black'] as const).map((side) => {
-            const soloCountdown = mpClocks === null && soloTcSec !== null;
-            const ms = mpClocks
-              ? mpClocks[side]
-              : soloCountdown
-                ? Math.max(0, soloTcSec * 1000 - clockMs[side])
-                : clockMs[side];
-            // Only a real countdown can be "low". An elapsed clock reads
-            // low for its first 30 seconds, which would paint every game
-            // red at the start.
-            const low = (mpClocks?.countdown || soloCountdown) && ms < 30_000;
-            const face = formatClockFace(ms);
-            const running = state.sideToMove === side;
+            const soloCountdown = mpClock === null && soloTcSec !== null;
             // V1 — the running half is lit in the theme accent when it is
             // YOUR clock and in the opponent accent when it is not, so the
             // two are never confusable at a glance. Online it follows the
@@ -6342,24 +6307,19 @@ function App() {
             // so the two seats simply get the two colours.
             const mine = side === (isMultiplayer ? mpSync?.myColor ?? 'white' : 'white');
             return (
-              <div
+              <ClockFace
                 key={side}
-                className={`tc-face tc-face-${side}${running ? ' is-running' : ''}${low ? ' is-low' : ''}${mine ? ' is-mine' : ' is-theirs'}`}
-              >
-                <span className="tc-readout">
-                  {/* Every segment of the display, unlit — the live digits
-                      sit exactly on top, so the glass reads as a real
-                      seven-segment panel instead of floating text. */}
-                  <span className="tc-ghost" aria-hidden>
-                    {face.replace(/\d/g, '8')}
-                  </span>
-                  <span className="tc-digits">{face}</span>
-                </span>
-                <span className="tc-name">
-                  <span className="tc-lamp" aria-hidden />
-                  {side === 'white' ? 'White' : 'Black'}
-                </span>
-              </div>
+                side={side}
+                running={state.sideToMove === side}
+                mine={mine}
+                countdown={mpClock ? mpClock.countdown : soloCountdown}
+                ms={
+                  soloCountdown
+                    ? Math.max(0, soloTcSec * 1000 - clockMs[side])
+                    : clockMs[side]
+                }
+                mp={mpClock ? { clock: mpClock, now: Date.now } : null}
+              />
             );
           })}
         </div>
