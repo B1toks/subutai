@@ -11228,3 +11228,58 @@ html[data-theme-swap] *::after {
 .sidebar-user .user-menu-item:hover {
   border-color: var(--accent-primary);
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   fix/mobile-ui 4 — the right drawer on a phone, a size up.
+   Wider (92vw, capped at 420px), every control at least 44px tall,
+   text one to two pixels larger. The setup card loses its 320px cap
+   here: inside the drawer it scrolled on its own inside a panel that
+   already scrolls, and the bigger controls would have pushed half of
+   it out of sight.
+   ═══════════════════════════════════════════════════════════════════ */
+@media (max-width: 720px) {
+  .right-sidebar {
+    width: min(92vw, 420px);
+  }
+  .right-sidebar .sidebar-panel {
+    max-height: none;
+    overflow: visible;
+  }
+  .right-sidebar .sidebar-panel-title,
+  .right-sidebar .setup-sub-label {
+    font-size: 12px;
+  }
+  .right-sidebar .sidebar-opponent .opp-tab {
+    min-height: 44px;
+    font-size: 13px;
+  }
+  .right-sidebar .mode-card-title {
+    font-size: 15px;
+  }
+  .right-sidebar .mode-card-subtitle {
+    font-size: 12px;
+  }
+  .right-sidebar .tc-pill {
+    min-height: 44px;
+    padding: 0 12px;
+    font-size: 13px;
+  }
+  .right-sidebar .setup-hint,
+  .right-sidebar .setup-inert-note,
+  .right-sidebar .sidebar-moves .move-log-empty,
+  .right-sidebar .sidebar-analysis .analysis-last {
+    font-size: 13px;
+  }
+  .right-sidebar .sidebar-moves .move-log-text {
+    font-size: 13px;
+  }
+  .right-sidebar .sidebar-moves .copy-btn,
+  .right-sidebar .panel-action-btn,
+  .sidebar-user .user-menu-item {
+    min-height: 44px;
+    font-size: 14px;
+  }
+  .sidebar-user .user-menu-name {
+    font-size: 15px;
+  }
+}
