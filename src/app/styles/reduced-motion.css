@@ -3,11 +3,11 @@
    M.23 — used to defeat the eval-gradient entirely here (background:
    var(--bg), flattening it to a static off-white) so the DARK-tuned
    ramp wouldn't look muddy against a light theme. Fixed properly instead:
-   evalToColors() in App.tsx now has its own high-lightness cream ramp
+   evalToColors() (src/app/roomColors.ts) has its own high-lightness cream ramp
    for wood-light, so the win/lose background signal survives on every
    theme — background is the one thing that's meant to stay theme-
    independent. Nothing to override here anymore; the board / pieces /
-   tokens already pick up correct values from the theme block above.
+   tokens already pick up correct values from the theme blocks in tokens.css.
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ═══════════════════════════════════════════════════════════════════

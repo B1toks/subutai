@@ -48,7 +48,8 @@ const ADAPTIVE_BY_TOPOLOGY: Record<Topology, ResolvedTheme> = {
 type Listener = (resolved: ResolvedTheme, choice: ThemeChoice) => void;
 
 /** Total length of the cross-fade, and where in it the swap happens.
- *  Must match the `theme-veil` keyframes in App.css. */
+ *  Must match the `theme-veil` keyframes in
+ *  src/app/styles/themes/theme-veil.css. */
 const VEIL_MS = 440;
 const VEIL_PEAK_MS = 170;
 

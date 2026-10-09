@@ -43,8 +43,9 @@ const ROULETTE_SLOT_COUNT = 4;
 const ROULETTE_MAX_ACTIONS = 2;
 
 /** Roll a 4-element slot bag from the active player's remaining piece
- *  types, mirroring solo App.tsx spinRoulette() including the early-game
- *  pawn bias. Returns null when the player has no pieces (game over). */
+ *  types, mirroring solo spinRoulette() (src/features/game/roulette.ts)
+ *  including the early-game pawn bias. Returns null when the player has no
+ *  pieces (game over). */
 function rollRouletteBag(
   state: BoardState,
   side: 'white' | 'black',

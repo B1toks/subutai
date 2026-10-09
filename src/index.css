@@ -1,6 +1,7 @@
 :root {
-  /* Colour tokens live in App.css (one block per theme); a second palette
-     here was fully overridden by it and only misled readers. */
+  /* Colour tokens live in src/app/styles/tokens.css (one block per theme);
+     a second palette here was fully overridden by it and only misled
+     readers. */
   --board-size: min(100vw - 32px, 520px);
 
   font: 16px/1.45 system-ui, 'Segoe UI', Roboto, sans-serif;

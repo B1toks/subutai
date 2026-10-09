@@ -24,7 +24,7 @@ function readInitial(): boolean {
 
 /**
  * Sprint 3.5.1 — header button that toggles the [data-3d] attribute
- * on <html>. All 3D rules in App.css are scoped to [data-3d="on"]
+ * on <html>. All 3D rules in the stylesheets are scoped to [data-3d="on"]
  * so flipping the attribute to "off" instantly flattens the board,
  * piece lift, and topology flip animation. Persisted in localStorage,
  * but only once the player has pressed the button: the default is not

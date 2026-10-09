@@ -10,7 +10,7 @@
 /* --iris-radius is a real CUSTOM property (not just a keyframe param) —
    @property registration lets the browser interpolate it smoothly frame
    by frame while the radial-gradient below re-reads it every frame,
-   exactly like --eval-c1/--eval-c2 at the top of this file. */
+   exactly like --eval-c1/--eval-c2 at the top of src/app/styles/tokens.css. */
 @property --iris-radius {
   syntax: '<length>';
   inherits: false;

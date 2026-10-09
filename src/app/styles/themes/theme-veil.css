@@ -2,9 +2,9 @@
    A dip, not a blackout: the room dims to its own background colour, the
    theme is swapped at the bottom of the dip, and it comes back up already
    in the new one. Deliberately an animation and not a transition — the
-   [data-theme-swap] rule above cuts transitions, and a stalled animation
-   engine must leave the theme changed and the veil invisible, never the
-   other way round. */
+   [data-theme-swap] rule (theme-swap.css) cuts transitions, and a stalled
+   animation engine must leave the theme changed and the veil invisible,
+   never the other way round. */
 .theme-veil {
   position: fixed;
   inset: 0;
