@@ -1,0 +1,122 @@
+/* ═══════════════════════════════════════════════════════════════════
+   NEON THEME — the Stitch redesign.
+   Tokens live in the [data-theme="neon"] block up top; everything here
+   is additive structure: the gradient room, glowing card borders, the
+   dual-color mode cards and the wordmark treatment.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* The room: indigo base + magenta glow top-right, cyan low-left, faint
+   violet wash. Fixed so it doesn't scroll away. */
+[data-theme="neon"] .app-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(circle at 88% 6%, rgba(255, 79, 216, 0.16), transparent 45%),
+    radial-gradient(circle at 6% 88%, rgba(78, 225, 255, 0.12), transparent 45%),
+    radial-gradient(circle at 50% 130%, rgba(140, 90, 255, 0.14), transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+[data-theme="neon"] .app-root {
+  position: relative;
+  z-index: 1;
+}
+
+/* Board: floating neon slab — cyan hairline + ambient glow */
+[data-theme="neon"] .board {
+  border-radius: 10px;
+  box-shadow:
+    0 14px 40px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(78, 225, 255, 0.28),
+    0 0 24px rgba(78, 225, 255, 0.12),
+    0 0 60px rgba(255, 79, 216, 0.08);
+}
+
+/* Right-column cards: rounded, hairline-bordered, softly lit */
+[data-theme="neon"] .sidebar-panel {
+  background: rgba(26, 22, 54, 0.82);
+  border: 1px solid rgba(78, 225, 255, 0.22);
+  border-radius: 12px;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.45),
+    0 0 14px rgba(78, 225, 255, 0.06);
+  backdrop-filter: blur(6px);
+}
+
+[data-theme="neon"] .sidebar-panel-title {
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Mode cards: Classic wears cyan, Roulette wears magenta — matching the
+   two Stitch cards. Selected card lights up its own color. */
+[data-theme="neon"] .mode-card {
+  border: 1px solid rgba(78, 225, 255, 0.3);
+  border-radius: 12px;
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+[data-theme="neon"] .mode-card:last-child {
+  border-color: rgba(255, 79, 216, 0.35);
+}
+[data-theme="neon"] .mode-card.is-active,
+[data-theme="neon"] .mode-card:hover {
+  border-color: rgba(78, 225, 255, 0.75);
+  box-shadow: 0 0 12px rgba(78, 225, 255, 0.35), inset 0 0 12px rgba(78, 225, 255, 0.08);
+}
+[data-theme="neon"] .mode-card:last-child.is-active,
+[data-theme="neon"] .mode-card:last-child:hover {
+  border-color: rgba(255, 79, 216, 0.8);
+  box-shadow: 0 0 12px rgba(255, 79, 216, 0.35), inset 0 0 12px rgba(255, 79, 216, 0.08);
+}
+
+/* Opponent pills + header action tiles: neon outline on hover/active */
+[data-theme="neon"] .opp-tab,
+[data-theme="neon"] .header-action-btn,
+[data-theme="neon"] .action-btn,
+[data-theme="neon"] .rotate-btn {
+  border-radius: 10px;
+}
+[data-theme="neon"] .opp-tab:hover,
+[data-theme="neon"] .opp-tab.is-active,
+[data-theme="neon"] .header-action-btn:hover,
+[data-theme="neon"] .header-action-btn.is-active,
+[data-theme="neon"] .action-btn:hover,
+[data-theme="neon"] .rotate-btn:hover {
+  box-shadow: var(--glow-accent);
+}
+
+/* Last-move tiles are token-driven now (--last-move-* per theme). */
+
+/* V1 — the wordmark gets a soft halo in every theme, in that theme's own
+   accent; neon keeps its louder dual-color version below. */
+.app-header h1 {
+  text-shadow: 0 0 14px color-mix(in srgb, var(--accent-primary) 35%, transparent);
+}
+
+/* Wordmark: ice core with a dual cyan/magenta halo, like the logo */
+[data-theme="neon"] .app-header h1 {
+  color: #f4f7ff;
+  text-shadow:
+    0 0 10px rgba(78, 225, 255, 0.55),
+    0 0 26px rgba(255, 79, 216, 0.35);
+}
+
+/* Toasts pick up the glass card look */
+[data-theme="neon"] .toast {
+  border: 1px solid rgba(78, 225, 255, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 14px rgba(78, 225, 255, 0.12);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-theme="neon"] .app-header h1 {
+    animation: neon-breathe 4.5s ease-in-out infinite;
+  }
+  @keyframes neon-breathe {
+    0%, 100% { text-shadow: 0 0 10px rgba(78, 225, 255, 0.55), 0 0 26px rgba(255, 79, 216, 0.35); }
+    50% { text-shadow: 0 0 14px rgba(78, 225, 255, 0.75), 0 0 34px rgba(255, 79, 216, 0.5); }
+  }
+}
+

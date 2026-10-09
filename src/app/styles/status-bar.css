@@ -1,0 +1,66 @@
+/* ═══════════════════════════════════════════════════════════════════
+   V1 CHROME PASS — the controls that never got a design pass: the status
+   bar, the 960 / replay row under the board, and the Memory panel. They
+   were the last places still using 4px radii, bare text buttons and
+   transparent backgrounds while the rest of the app moved to pills and
+   cards. All token-driven, so every theme follows.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.app-status-bar {
+  font-size: 12.5px;
+}
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--btn-border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-weight: 600;
+}
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+.status-chip-mine {
+  border-color: var(--accent-primary);
+  color: var(--text-primary);
+}
+.status-chip-mine .status-dot {
+  background: var(--accent-primary);
+  box-shadow: 0 0 8px var(--accent-primary);
+}
+.status-chip-theirs .status-dot {
+  background: var(--accent-secondary);
+  animation: status-thinking 1.4s ease-in-out infinite;
+}
+.status-chip-over {
+  border-color: var(--border-strong);
+}
+@keyframes status-thinking {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .status-chip-theirs .status-dot { animation: none; }
+}
+.status-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-muted);
+}
+.status-meta-item strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+  margin-left: 4px;
+}
+.status-mono {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+

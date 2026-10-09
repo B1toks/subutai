@@ -1,0 +1,273 @@
+/* ─── Brand mark (one logo, not interactive) ─────────────────────── */
+.neon-logo-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 4px;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  cursor: default;
+  flex-shrink: 0;
+  align-self: center;
+  transition: transform 0.15s, filter 0.2s;
+}
+.neon-logo-btn:hover {
+  transform: scale(1.06);
+  /* Theme-driven like the mark itself (was a fixed cyan glow). */
+  filter: drop-shadow(0 0 8px var(--accent-primary));
+}
+.neon-logo-btn svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   STITCH LAYOUT
+   Full Stitch-mock structure: fixed left icon rail (the old header
+   buttons), top bar with LIVE strip, GAME SETUP consolidated in the
+   right sidebar (opponent + mode + time control), clock chips above
+   the board (existing S2.5 strip, now countdown-capable in solo).
+   Uses theme tokens throughout so every theme survives; tuned for
+   neon. Desktop rail — at 720px and below it becomes the left drawer
+   (V1 — MOBILE PANELS).
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Brand: bigger mark, optically centered against the wordmark */
+.app-brand {
+  align-items: center;
+}
+.neon-logo-btn {
+  width: 58px;
+  height: 58px;
+}
+
+/* Top bar reads as a floating pill bar */
+.app-header {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  padding: 8px 16px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+/* NOTE: no backdrop-filter here. A backdrop-filter makes the header the
+   containing block for position:fixed descendants, which would trap the
+   left icon rail (a fixed child of this header on desktop) inside the
+   header box. The rail carries its own blur instead. */
+[data-theme="neon"] .app-header {
+  background: rgba(26, 22, 54, 0.92);
+  border-color: rgba(78, 225, 255, 0.22);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45), 0 0 16px rgba(255, 79, 216, 0.07);
+}
+
+/* LIVE strip */
+.live-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-on-bright-gold);
+  background: var(--accent-secondary);
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.25);
+}
+[data-theme="neon"] .live-pill {
+  background: linear-gradient(90deg, #ff4fd8, #b44fff);
+  color: #fff;
+  box-shadow: 0 0 12px rgba(255, 79, 216, 0.5);
+}
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: live-dot-blink 1.6s ease-in-out infinite;
+}
+@keyframes live-dot-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-dot { animation: none; }
+}
+.live-title {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.live-title strong {
+  color: var(--text);
+}
+
+/* Left icon rail: the header controls become a fixed vertical dock */
+@media (min-width: 721px) {
+  .header-controls {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    /* A phone in landscape is wider than 720px: the rail grows by the
+       notch inset and keeps its icons out of it. */
+    width: calc(68px + env(safe-area-inset-left, 0px));
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: var(--space-2);
+    padding: calc(14px + env(safe-area-inset-top, 0px)) 0 calc(14px + env(safe-area-inset-bottom, 0px)) env(safe-area-inset-left, 0px);
+    background: var(--bg-card);
+    border-right: 1px solid var(--border-subtle);
+    overflow-y: auto;
+    scrollbar-width: none;
+    z-index: 860; /* under docks/popups (880+), over the page */
+  }
+  .header-controls::-webkit-scrollbar { display: none; }
+  [data-theme="neon"] .header-controls {
+    background: rgba(19, 16, 34, 0.88);
+    border-right: 1px solid rgba(78, 225, 255, 0.18);
+    backdrop-filter: blur(8px);
+    box-shadow: 8px 0 24px rgba(0, 0, 0, 0.35);
+  }
+  /* Content steps aside for the rail */
+  .app-root {
+    padding-left: 84px;
+  }
+}
+
+/* GAME SETUP sub-sections in the right sidebar */
+.setup-sub-label {
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+.sidebar-opponent .setup-sub-label:first-of-type {
+  margin-top: 0;
+}
+
+/* Mode cards squeezed into the sidebar: stacked, compact */
+.right-sidebar .game-mode-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  margin: 0;
+}
+.right-sidebar .mode-card {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-2);
+}
+.right-sidebar .mode-card-icon svg {
+  width: 26px;
+  height: 26px;
+}
+.right-sidebar .mode-card-title {
+  font-size: 14px;
+}
+.right-sidebar .mode-card-subtitle {
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+/* Time-control pills */
+.tc-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.tc-pill {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, color 0.15s;
+}
+.tc-pill:hover:not(:disabled) {
+  border-color: var(--accent-primary);
+  color: var(--text);
+}
+.tc-pill.is-active {
+  border-color: var(--accent-primary);
+  color: var(--text);
+  box-shadow: var(--glow-accent);
+}
+.tc-pill:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Clock chips: glassier, mock-sized */
+/* Neon: the housing turns into a smoked-glass panel and the lit face
+   glows cyan, the way the rest of the neon chrome does. */
+[data-theme="neon"] .tournament-clock {
+  background: linear-gradient(180deg, rgba(32, 27, 66, 0.92), rgba(18, 15, 40, 0.92));
+  border-color: rgba(78, 225, 255, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 6px 18px rgba(0, 0, 0, 0.35);
+}
+[data-theme="neon"] .tournament-clock::before {
+  border-left-color: rgba(78, 225, 255, 0.3);
+}
+[data-theme="neon"] .tc-face {
+  border-color: rgba(78, 225, 255, 0.18);
+}
+[data-theme="neon"] .tc-face.is-running {
+  background: rgba(78, 225, 255, 0.07);
+  border-color: rgba(78, 225, 255, 0.6);
+  box-shadow: 0 0 14px -2px rgba(78, 225, 255, 0.5);
+}
+[data-theme="neon"] .tc-face.is-theirs.is-running {
+  background: rgba(255, 79, 216, 0.07);
+  border-color: rgba(255, 79, 216, 0.6);
+  box-shadow: 0 0 14px -2px rgba(255, 79, 216, 0.5);
+}
+[data-theme="neon"] .tc-face.is-running .tc-digits {
+  text-shadow: 0 0 12px rgba(78, 225, 255, 0.85);
+}
+[data-theme="neon"] .tc-face.is-theirs.is-running .tc-digits {
+  text-shadow: 0 0 12px rgba(255, 79, 216, 0.8);
+}
+[data-theme="neon"] .tc-face.is-low.is-running {
+  background: rgba(255, 79, 216, 0.08);
+  border-color: rgba(255, 79, 216, 0.7);
+  box-shadow: 0 0 14px -2px rgba(255, 79, 216, 0.55);
+}
+[data-theme="neon"] .tc-face.is-low.is-running .tc-digits {
+  text-shadow: 0 0 12px rgba(255, 79, 216, 0.8);
+}
+
+/* Stitch layout follow-ups:
+   1. Rail tooltips open to the RIGHT of the icons (the stock side="bottom"
+      geometry points them under the fixed rail edge).
+   2. A left-docked music panel starts AFTER the rail instead of under it. */
+@media (min-width: 721px) {
+  /* The rail-tooltip override that used to live here moved into
+     Tooltip.tsx — the element is portalled to <body> now, so a
+     descendant selector on .header-controls no longer reaches it. */
+  .music-dock.is-docked-left {
+    left: calc(68px + env(safe-area-inset-left, 0px));
+  }
+}
+
