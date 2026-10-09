@@ -11,22 +11,30 @@ import {
 import { db } from './client';
 
 /* R16 — presence heartbeat. One tiny doc per signed-in visitor, refreshed
- * every 30s; "online" = lastSeen within the last 70s (two beats + slack).
+ * every 2 minutes; "online" = lastSeen within the last 270s (two beats + slack).
  * Everything here is best-effort: matchmaking must keep working (in its
  * degraded "player count unknown" form) if the rules for /presence aren't
- * deployed yet or the network drops — hence the swallowed errors. */
+ * deployed yet or the network drops — hence the swallowed errors.
+ *
+ * The beat is the largest single source of Firestore writes, and the free
+ * quota is 20,000 writes a day, so the interval is deliberately long. */
 
-const HEARTBEAT_MS = 30_000;
-const ONLINE_WINDOW_MS = 70_000;
+const HEARTBEAT_MS = 120_000;
+const ONLINE_WINDOW_MS = 270_000;
+// A tab that becomes visible again beats at once, unless it just did.
+const MIN_GAP_MS = 30_000;
 
 let timer: number | null = null;
+let removeVisibilityListener: (() => void) | null = null;
 
 export function startPresenceHeartbeat(uid: string): void {
   stopPresenceHeartbeat();
+  let lastBeat = 0;
   const beat = () => {
     // Skip beats from hidden tabs so an abandoned background tab doesn't
     // count as a live player for hours.
     if (document.visibilityState === 'hidden') return;
+    lastBeat = Date.now();
     setDoc(
       doc(db, 'presence', uid),
       { lastSeen: serverTimestamp() },
@@ -35,11 +43,18 @@ export function startPresenceHeartbeat(uid: string): void {
       /* best-effort — see module comment */
     });
   };
+  const onVisible = () => {
+    if (Date.now() - lastBeat >= MIN_GAP_MS) beat();
+  };
+  document.addEventListener('visibilitychange', onVisible);
+  removeVisibilityListener = () => document.removeEventListener('visibilitychange', onVisible);
   beat();
   timer = window.setInterval(beat, HEARTBEAT_MS);
 }
 
 export function stopPresenceHeartbeat(): void {
+  removeVisibilityListener?.();
+  removeVisibilityListener = null;
   if (timer !== null) {
     clearInterval(timer);
     timer = null;
