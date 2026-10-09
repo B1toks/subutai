@@ -10785,10 +10785,13 @@ html[data-theme-swap] *::after {
 .mobile-scrim { display: none; }
 
 @media (max-width: 720px) {
+  /* fix/mobile-ui 2 — the setup button is the header's right edge, the
+     side its drawer comes in from; the leaderboard sits left of it
+     (.topbar-actions is order 1 and already pushed right). */
   .mobile-panel-buttons {
     display: flex;
     gap: 6px;
-    margin-left: auto;
+    order: 2;
   }
   .mobile-panel-btn {
     display: inline-flex;
