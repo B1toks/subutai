@@ -3287,6 +3287,11 @@ function App() {
   // finish, resign, or explicitly abandon via the dialog.
   function requestOpponentChange(next: 'ai' | 'friend' | 'local') {
     if (next === opponentMode) return;
+    // An online match owns the board until it is left through its own
+    // exits (resign, or the result dialog). Switching underneath it used
+    // to keep the match live and leave opponentMode behind it, so the
+    // board fell into hot-seat the moment the match was dismissed.
+    if (isMultiplayer) return;
     if (gameInProgress && !isMultiplayer && !watchingGame) {
       setPendingOpponentChange(next);
       return;
@@ -7583,6 +7588,13 @@ function App() {
           {(() => {
             const oppLocked = gameInProgress && !isMultiplayer && !watchingGame;
             const lockedTitle = 'Finish or resign the current game first';
+            // An online match (live, or ended with its result still up)
+            // cannot be switched away from here: a hard lock, like the
+            // mode cards, since no dialog could leave the match cleanly.
+            const oppOnlineLock = isMultiplayer;
+            const onlineLockedTitle = mpMatchLive
+              ? 'Finish or resign the online match first'
+              : 'Close the match result first';
             return (
               <div className="opponent-tabs-vertical">
                 <button
@@ -7590,7 +7602,8 @@ function App() {
                   className={`opp-tab${opponentMode === 'ai' ? ' is-active' : ''}${oppLocked ? ' is-locked' : ''}`}
                   onClick={() => requestOpponentChange('ai')}
                   aria-disabled={oppLocked || undefined}
-                  title={oppLocked ? lockedTitle : 'Play vs the engine'}
+                  disabled={oppOnlineLock}
+                  title={oppOnlineLock ? onlineLockedTitle : oppLocked ? lockedTitle : 'Play vs the engine'}
                 >
                   <Icon icon={Bot} size="md" aria-hidden />
                   <span>vs AI</span>
@@ -7604,8 +7617,14 @@ function App() {
                   className={`opp-tab${opponentMode === 'friend' ? ' is-active' : ''}${oppLocked ? ' is-locked' : ''}`}
                   onClick={() => requestOpponentChange('friend')}
                   aria-disabled={oppLocked || undefined}
-                  title={oppLocked ? lockedTitle : 'Play a real opponent: quick match, or a private code'}
-                  disabled={!user || !displayName}
+                  title={
+                    oppOnlineLock
+                      ? onlineLockedTitle
+                      : oppLocked
+                        ? lockedTitle
+                        : 'Play a real opponent: quick match, or a private code'
+                  }
+                  disabled={!user || !displayName || oppOnlineLock}
                 >
                   <Icon icon={Users} size="md" aria-hidden />
                   <span>Online</span>
@@ -7617,7 +7636,8 @@ function App() {
                   type="button"
                   className={`opp-tab${opponentMode === 'local' ? ' is-active' : ''}`}
                   onClick={() => requestOpponentChange('local')}
-                  title="Hot-seat: both players on this device"
+                  disabled={oppOnlineLock}
+                  title={oppOnlineLock ? onlineLockedTitle : 'Hot-seat: both players on this device'}
                 >
                   <Icon icon={UsersRound} size="md" aria-hidden />
                   <span>Local</span>
