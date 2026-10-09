@@ -40,6 +40,7 @@ import { AutoPlayView } from './components/AutoPlayView';
 import { ThemeToggle } from './components/ThemeToggle';
 import { NeonLogo } from './components/NeonLogo';
 import { UserMenu } from './components/UserMenu';
+import { PlayerRow } from './components/PlayerRow';
 import { Effects3DToggle } from './components/Effects3DToggle';
 import { AudioToggle } from './components/AudioToggle';
 import { MusicToggle } from './components/MusicToggle';
@@ -6206,6 +6207,15 @@ function App() {
             <Icon icon={Trophy} size="md" aria-hidden />
             <span className="topbar-btn-label">Leaderboard</span>
           </button>
+          {/* fix/v1.1.4 — the name is back here from 721px, where the
+              header has room; CSS hides it on a phone, where PlayerRow
+              in the setup drawer carries it. */}
+          {displayName && (
+            <UserMenu
+              displayName={displayName}
+              onChangeName={() => setShowNameModal(true)}
+            />
+          )}
         </div>
       </header>
 
@@ -7543,14 +7553,15 @@ function App() {
       </div>
       </div>
       <aside className="right-sidebar">
-        {/* fix/mobile-ui — the player's name and "Change name" live at the
-            top of this panel, not in the header. Outside the setup section
-            so a replay's inert does not lock it (it never did in the
-            header). The phone drawer (z 940) would cover the name modal,
+        {/* fix/mobile-ui — the player's name and "Change name" at the top
+            of this panel. fix/v1.1.4: on a phone only (CSS), where this
+            panel is the setup drawer; wider screens have UserMenu in the
+            header. Outside the setup section so a replay's inert does not
+            lock it. The phone drawer (z 940) would cover the name modal,
             so it closes first. */}
         {displayName && (
           <section className="sidebar-panel sidebar-user" aria-label="Player">
-            <UserMenu
+            <PlayerRow
               displayName={displayName}
               onChangeName={() => {
                 setMobilePanel('none');

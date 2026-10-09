@@ -1,4 +1,5 @@
-import { Pencil, User } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ChevronDown, Pencil, User } from 'lucide-react';
 import { Icon } from './Icon';
 
 export interface UserMenuProps {
@@ -12,23 +13,70 @@ export interface UserMenuProps {
  * are exposed as standalone buttons in the header — putting them in a
  * dropdown buried them.
  * Sprint 3.1: emoji glyphs swapped for Lucide icons.
- * fix/mobile-ui: moved out of the header to the top of the right panel,
- * as a row — the player's name and the one action, no dropdown. A
- * popover inside the panel's scroll box would be clipped by it.
+ * fix/v1.1.4: back in the header from 721px, as in v1.1.2; a phone shows
+ * the name as PlayerRow at the top of the setup drawer instead.
  */
 export function UserMenu({ displayName, onChangeName }: UserMenuProps) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(e: MouseEvent) {
+      if (!rootRef.current) return;
+      if (e.target instanceof Node && !rootRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  function run(action: () => void) {
+    setOpen(false);
+    action();
+  }
+
   return (
-    <div className="user-menu">
-      <span className="user-menu-item-icon">
-        <Icon icon={User} size="md" aria-hidden />
-      </span>
-      <span className="user-menu-name" title={displayName}>{displayName}</span>
-      <button type="button" className="user-menu-item" onClick={onChangeName}>
+    <div className="user-menu" ref={rootRef}>
+      <button
+        type="button"
+        className="user-menu-trigger"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="User menu"
+      >
         <span className="user-menu-item-icon">
-          <Icon icon={Pencil} size="sm" aria-hidden />
+          <Icon icon={User} size="md" aria-hidden />
         </span>
-        Change name
+        <span className="user-menu-name">{displayName}</span>
+        <span className="user-menu-trigger-caret">
+          <Icon icon={ChevronDown} size="sm" aria-hidden />
+        </span>
       </button>
+      {open && (
+        <div className="user-menu-panel" role="menu">
+          <button
+            type="button"
+            className="user-menu-item"
+            role="menuitem"
+            onClick={() => run(onChangeName)}
+          >
+            <span className="user-menu-item-icon">
+              <Icon icon={Pencil} size="sm" aria-hidden />
+            </span>
+            Change name
+          </button>
+        </div>
+      )}
     </div>
   );
 }

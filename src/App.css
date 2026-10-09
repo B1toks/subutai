@@ -9814,6 +9814,48 @@ button:active:not(:disabled) {
   border-color: var(--accent-secondary);
   box-shadow: var(--glow-danger);
 }
+/* fix/v1.1.4 — the name chip is back in the header from 721px. A
+   20-character name is cut rather than pushing the row; on a phone the
+   chip goes and PlayerRow in the setup drawer carries the name. */
+.topbar-actions .user-menu-name {
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 720px) {
+  .topbar-actions .user-menu {
+    display: none;
+  }
+}
+/* With the chip back, the header stays one row from 721px: the game
+   label ("vs …") gives way first, cut with an ellipsis (its full text
+   is the element's tooltip). Between 721 and 960px the leaderboard
+   button keeps only its icon, as below 640px, and the name is shorter. */
+@media (min-width: 721px) {
+  .app-header {
+    flex-wrap: nowrap;
+  }
+  .app-brand {
+    flex: 0 1 auto;
+  }
+  .live-title {
+    min-width: 0;
+  }
+}
+@media (min-width: 721px) and (max-width: 960px) {
+  .topbar-btn-label {
+    display: none;
+  }
+  .topbar-btn {
+    width: 34px;
+    padding: 0;
+    justify-content: center;
+  }
+  .topbar-actions .user-menu-name {
+    max-width: 12ch;
+  }
+}
 @media (max-width: 640px) {
   .topbar-btn-label {
     display: none;
@@ -11207,13 +11249,28 @@ html[data-theme-swap] *::after {
 .sidebar-user {
   padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
 }
-.sidebar-user .user-menu {
+/* fix/v1.1.4 — phone only. From 721px the name is in the header again
+   (UserMenu); between 721 and 960px this panel sits under the board,
+   where a second copy of the name would only repeat the header. */
+@media (min-width: 721px) {
+  .sidebar-user {
+    display: none;
+  }
+}
+.player-row {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
 }
-.sidebar-user .user-menu-name {
+.player-row-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  flex-shrink: 0;
+}
+.player-row-name {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -11223,15 +11280,26 @@ html[data-theme-swap] *::after {
   font-weight: 600;
   color: var(--text);
 }
-.sidebar-user .user-menu-item {
+.player-row-btn {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   min-height: 36px;
+  padding: var(--space-2);
   border: 1px solid var(--btn-border);
+  border-radius: var(--radius-sm);
   background: var(--btn-bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
-.sidebar-user .user-menu-item:hover {
+.player-row-btn:hover {
+  background: var(--bg-elevated-hover);
   border-color: var(--accent-primary);
 }
 
@@ -11281,11 +11349,11 @@ html[data-theme-swap] *::after {
   }
   .right-sidebar .sidebar-moves .copy-btn,
   .right-sidebar .panel-action-btn,
-  .sidebar-user .user-menu-item {
+  .player-row-btn {
     min-height: 44px;
     font-size: 14px;
   }
-  .sidebar-user .user-menu-name {
+  .player-row-name {
     font-size: 15px;
   }
 }
