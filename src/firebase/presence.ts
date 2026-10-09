@@ -25,6 +25,20 @@ const ONLINE_WINDOW_MS = 270_000;
 const MIN_GAP_MS = 30_000;
 
 let timer: number | null = null;
+/** fix/v1.1.4 — counts this tab's presence writes, so a clock probe
+ *  (clockProbe.ts) can tell that a heartbeat wrote between its write and
+ *  its read, and drop the sample. */
+let presenceWrites = 0;
+
+export function presenceWriteCount(): number {
+  return presenceWrites;
+}
+
+/** A presence write of this tab's (counted, see above). */
+export function writePresence(uid: string): Promise<void> {
+  presenceWrites++;
+  return setDoc(doc(db, 'presence', uid), { lastSeen: serverTimestamp() }, { merge: true });
+}
 let removeVisibilityListener: (() => void) | null = null;
 
 export function startPresenceHeartbeat(uid: string): void {
@@ -35,11 +49,7 @@ export function startPresenceHeartbeat(uid: string): void {
     // count as a live player for hours.
     if (document.visibilityState === 'hidden') return;
     lastBeat = Date.now();
-    setDoc(
-      doc(db, 'presence', uid),
-      { lastSeen: serverTimestamp() },
-      { merge: true },
-    ).catch(() => {
+    writePresence(uid).catch(() => {
       /* best-effort — see module comment */
     });
   };

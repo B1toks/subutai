@@ -150,7 +150,11 @@ export function FriendLobby({
     const unsub = subscribeMatch(view.code, (doc, fromCache) => {
       const seenAt = Date.now();
       const wasFirst = first;
-      if (!fromCache) first = false;
+      // fix/v1.1.4 — any first snapshot, cached too. The host's first copy
+      // is the cached one from the create, and no server event follows for
+      // an unchanged doc, so the guest's join used to arrive as "first"
+      // and was dropped: the host started the match with no estimate.
+      first = false;
       if (!doc) return;
       if (doc.status === 'active') {
         // N-10 — the guest's join just landed: its server stamp says what

@@ -23,6 +23,7 @@ import { applyRotationMove } from '../engine/auxetic';
 import { computeSAN } from '../recording/log';
 import { drawOfferHolds, inactivityForfeitApplies, turnStartedMs } from '../firebase/matchEnd';
 import { noteOwnWriteSeen, noteServerStampSeen, serverNow, takeJoinSent } from '../firebase/serverClock';
+import { startClockProbes } from '../firebase/clockProbe';
 import {
   canAnswerDraw,
   canOfferDraw,
@@ -245,7 +246,17 @@ export function useMultiplayerSync(
     if (!code) return;
     // The first snapshot is the doc as it stands, its stamps of any age;
     // only the server stamps of later writes say what time it is now.
+    // fix/v1.1.4 — that first snapshot is often the cached copy (the lobby
+    // was just watching this doc), and the server sends no second event
+    // for a doc that has not changed. "First" used to be cleared only by a
+    // server snapshot, so the next real write (the opponent's first move)
+    // was taken for the old doc and dropped: a host playing black had no
+    // estimate until their own move, and stamped it with the raw device
+    // clock. The first snapshot of either kind now sets the baseline. The
+    // memory cache only holds docs a listener is watching, so a cached
+    // copy is current, not of any age.
     let first = true;
+    let joinChecked = false;
     let lastActivity: number | undefined;
     const unsub = subscribeMatch(code, (doc, fromCache) => {
       const seenAt = Date.now();
@@ -253,13 +264,14 @@ export function useMultiplayerSync(
         evictedRef.current();
         return;
       }
+      const activity = doc.lastActivity?.toMillis?.();
       if (!fromCache) {
-        const activity = doc.lastActivity?.toMillis?.();
         if (!first && typeof activity === 'number' && activity !== lastActivity) {
           noteServerStampSeen(activity, seenAt);
         }
-        // My join is in the first snapshot: its stamp is that write's or later.
-        const joinedAt = first ? takeJoinSent(code) : undefined;
+        // My join is in the first server copy: its stamp is that write's or later.
+        const joinedAt = joinChecked ? undefined : takeJoinSent(code);
+        joinChecked = true;
         if (joinedAt !== undefined && typeof activity === 'number') {
           noteOwnWriteSeen(activity, joinedAt, seenAt);
         }
@@ -269,13 +281,22 @@ export function useMultiplayerSync(
           noteOwnWriteSeen(turnStart, own.sentAt, seenAt);
           ownWriteRef.current = null;
         }
-        first = false;
-        if (typeof activity === 'number') lastActivity = activity;
       }
+      if (typeof activity === 'number' && (first || !fromCache)) lastActivity = activity;
+      first = false;
       setMatchState(doc);
     });
     return unsub;
   }, [code]);
+
+  // fix/v1.1.4 — while the match is live, probe the server clock now and
+  // then (firebase/clockProbe.ts), so both screens agree on the second
+  // from the start, not only after each player's own move.
+  const probing = !!matchState && matchState.status === 'active' && !matchState.outcome && !!myUid;
+  useEffect(() => {
+    if (!probing || !myUid) return;
+    return startClockProbes(myUid);
+  }, [probing, myUid, code]);
 
   // Stage T1: warning shown to the player WHO IS ON THE CLOCK and idle.
   // Helps the active peer notice they need to move; the waiting peer
