@@ -81,7 +81,7 @@ export function FriendLobby({
       });
     };
     refresh();
-    const id = setInterval(refresh, 15_000);
+    const id = setInterval(refresh, 60_000);
     return () => {
       live = false;
       clearInterval(id);
