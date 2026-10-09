@@ -1,0 +1,31 @@
+/* V1 — the veil that covers a theme change. See themeStore.apply().
+   A dip, not a blackout: the room dims to its own background colour, the
+   theme is swapped at the bottom of the dip, and it comes back up already
+   in the new one. Deliberately an animation and not a transition — the
+   [data-theme-swap] rule above cuts transitions, and a stalled animation
+   engine must leave the theme changed and the veil invisible, never the
+   other way round. */
+.theme-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 9300; /* under the endgame freeze (9400) and everything above it */
+  pointer-events: none;
+  opacity: 0;
+  background: var(--bg, #0b0a14);
+}
+
+.theme-veil.is-running {
+  animation: theme-veil 440ms ease-in-out both;
+}
+
+@keyframes theme-veil {
+  0%   { opacity: 0; }
+  38%  { opacity: 0.62; }
+  62%  { opacity: 0.62; }
+  100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-veil.is-running { animation: none; }
+}
+

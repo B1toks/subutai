@@ -1,0 +1,128 @@
+/* ═══════════════════════════════════════════════════════════════════
+   V1 BUTTON SWEEP — every remaining control.
+
+   The redesign had reached the chrome around the board but stopped at
+   the edge of the dialogs, the tour, the lobby, the music dock and the
+   Twitch panel. Those were still carrying four different corner radii
+   (4 / 6 / 8 / --radius-md), no hover feedback on half of them, and no
+   focus ring anywhere, which is what makes a UI feel like two products
+   stitched together.
+
+   This is a system, not fourteen one-off blocks:
+     · 999px  small inline secondary actions (copy, watch, stop, replay)
+     · 10px   standard buttons inside cards and dialogs
+     · 12px   full-width primary actions
+   plus one hover treatment and one keyboard focus ring for all of them.
+   Nothing here touches display, width or layout — only the surface —
+   so no existing arrangement can shift.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── small inline secondary: pills ───────────────────────────────── */
+.copy-btn,
+.watch-btn,
+.watch-btn-stop,
+.auto-stop-btn,
+.leaderboard-replay-btn,
+.memory-refresh-btn,
+.music-dock-tap-btn,
+.music-dock-beat-btn {
+  border-radius: 999px;
+  font-weight: 600;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease,
+    box-shadow 0.2s ease;
+}
+
+.copy-btn:hover,
+.watch-btn:hover,
+.auto-stop-btn:hover,
+.leaderboard-replay-btn:hover,
+.music-dock-tap-btn:hover,
+.music-dock-beat-btn:hover {
+  color: var(--text);
+  border-color: var(--accent-primary);
+}
+
+/* ── standard: buttons that live inside a card or a dialog ───────── */
+.modal-btn,
+.mp-btn,
+.mp-back-btn,
+.summary-action-btn,
+.summary-share-btn,
+.help-tour-btn,
+.help-close-btn,
+.tour-next-btn,
+.tour-back-btn,
+.tour-skip-btn,
+.twitch-connect-btn,
+.twitch-close-btn,
+.friend-lobby-secondary-btn,
+.music-dock-load-btn,
+.music-dock-file-btn,
+.music-dock-pl-analyze-btn,
+.music-dock-pl-newbtn {
+  border-radius: 10px;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    box-shadow 0.2s ease;
+}
+
+/* ── full-width primary actions ──────────────────────────────────── */
+.panel-action-btn,
+.friend-lobby-primary-btn,
+.spin-roulette-btn-compact {
+  border-radius: 12px;
+}
+
+/* A bordered button lights its border under the cursor; a filled one
+   lifts instead, because a border it does not have cannot glow. */
+.modal-btn-secondary:hover,
+.mp-btn-secondary:hover,
+.help-tour-btn:hover,
+.tour-back-btn:hover,
+.tour-skip-btn:hover,
+.friend-lobby-secondary-btn:hover,
+.music-dock-load-btn:hover,
+.music-dock-file-btn:hover {
+  border-color: var(--accent-primary);
+  color: var(--text);
+}
+
+.modal-btn-primary:hover,
+.modal-btn-danger:hover,
+.mp-btn-primary:hover,
+.tour-next-btn:hover,
+.twitch-connect-btn:hover,
+.friend-lobby-primary-btn:hover,
+.panel-action-btn:hover {
+  filter: brightness(1.08);
+}
+
+/* ── one keyboard focus ring for the whole app ───────────────────── */
+/* None of these had one. :focus-visible only fires for keyboard and
+   assistive-tech focus, so pointer users never see it. */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  /* No border-radius here: the outline already follows the element's own
+     corners, and setting one would make a focused button change shape. */
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+/* Neon: the same sweep, with the glow this theme uses everywhere else. */
+[data-theme="neon"] .copy-btn:hover,
+[data-theme="neon"] .watch-btn:hover,
+[data-theme="neon"] .auto-stop-btn:hover,
+[data-theme="neon"] .leaderboard-replay-btn:hover,
+[data-theme="neon"] .modal-btn-secondary:hover,
+[data-theme="neon"] .mp-btn-secondary:hover,
+[data-theme="neon"] .help-tour-btn:hover,
+[data-theme="neon"] .tour-back-btn:hover,
+[data-theme="neon"] .friend-lobby-secondary-btn:hover,
+[data-theme="neon"] .music-dock-load-btn:hover,
+[data-theme="neon"] .music-dock-file-btn:hover {
+  box-shadow: 0 0 10px -2px var(--accent-primary);
+}
+

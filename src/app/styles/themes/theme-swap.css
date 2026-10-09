@@ -1,0 +1,19 @@
+/* ═══════════════════════════════════════════════════════════════════
+   V1 — theme swap: cut every transition for the moment of the change.
+
+   `data-theme` lives on <html>, so changing it invalidates the computed
+   style of every element in the document. If each of those elements then
+   also runs its own colour/border/shadow transition, the browser animates
+   the entire page in one go — which, landing in the same frames as the
+   board's rotation animation, is what made rotating in Adaptive stutter.
+   themeStore.apply() sets this attribute for ~90ms around the swap.
+
+   Only `transition` is cut. Animations are left alone, so a cinematic or
+   a rotation that happens to overlap still plays.
+   ═══════════════════════════════════════════════════════════════════ */
+html[data-theme-swap] *,
+html[data-theme-swap] *::before,
+html[data-theme-swap] *::after {
+  transition: none !important;
+}
+

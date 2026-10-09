@@ -1,0 +1,124 @@
+/* The 960 / replay row reads as one strip of pills. */
+/* V1 rev 3 — the row under the board.
+   It went from three equal 12px pills, to one strip of three slots, to
+   this: two separate things, because they are two separate ideas. On the
+   left, an action you can take. On the right, the fact of which position
+   you are playing — flat, borderless and quiet until you touch it, at
+   which point it grows and becomes the field you type the new code into.
+   The separate "Set position" button is gone; the code is the control. */
+.position-label-wrap {
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
+  gap: 14px;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.position-replay-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.position-replay-btn:hover {
+  color: var(--text);
+  border-color: var(--accent-primary);
+  background: var(--bg-elevated);
+}
+
+/* The code chip: flat by default — no border, no fill, no shadow. */
+.position-code {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  font-family: ui-monospace, 'Menlo', 'Consolas', monospace;
+  font-size: 11.5px;
+  letter-spacing: 1.2px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease,
+    padding 0.18s ease, font-size 0.18s ease;
+}
+.position-code.is-static {
+  cursor: default;
+}
+.position-code:not(.is-static):hover {
+  color: var(--text);
+  border-color: var(--border-subtle);
+  background: var(--bg-card);
+}
+.position-code-value {
+  font-weight: 600;
+}
+/* The pencil only shows the chip is live; it is not a second button. */
+.position-code-pencil {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.position-code:hover .position-code-pencil,
+.position-code:focus-visible .position-code-pencil {
+  opacity: 0.7;
+}
+
+/* Editing: the same chip, grown. This is the whole interaction — you
+   pressed the code and the code got bigger and started taking input. */
+.position-code.is-editing {
+  padding: 6px 12px;
+  /* 16px exactly: anything smaller and iOS zooms the page on focus. */
+  font-size: 16px;
+  letter-spacing: 2px;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border-color: var(--accent-primary);
+  box-shadow: var(--glow-accent);
+  cursor: text;
+}
+.position-code.is-editing .position-label-key {
+  font-size: 9.5px;
+}
+.position-code .position-input {
+  width: 9ch;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  text-transform: uppercase;
+  outline: none;
+}
+.position-code .position-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.55;
+}
+
+.position-label-key {
+  /* The app's sans (index.css), against the mono code beside it. */
+  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  transition: font-size 0.18s ease;
+}
+.position-code.is-editing .position-label-key {
+  background: var(--bg-card);
+}
+

@@ -1,0 +1,38 @@
+/* V1 — busy overlay: covers a transition that does its work in one React
+   commit (leaving a replay, restoring a saved game) so the tab never looks
+   frozen without explanation. */
+.busy-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg-deep) 72%, transparent);
+  backdrop-filter: blur(3px);
+  animation: busy-fade-in 120ms ease-out;
+}
+@keyframes busy-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.busy-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-elevated);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+.busy-label {
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .busy-overlay { animation: none; }
+}
+

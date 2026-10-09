@@ -1,0 +1,108 @@
+/* V1 — first-visit welcome. One mark, one line, one button: everything it
+   could explain, the tour explains better on the real board. Token-driven
+   so it belongs to whichever theme is on. */
+.welcome-root {
+  position: fixed;
+  inset: 0;
+  z-index: 9600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4) var(--space-3);
+  overflow-y: auto;
+  background:
+    radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--accent-primary) 14%, transparent), transparent 62%),
+    radial-gradient(circle at 50% 100%, color-mix(in srgb, var(--accent-secondary) 10%, transparent), transparent 55%),
+    var(--bg-deep);
+  animation: busy-fade-in 260ms ease-out;
+}
+.welcome-stage {
+  margin: auto;
+  width: min(460px, 100%);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* The mark: two squares sharing a centre, the top one easing into the
+   rotation the whole game is built on. */
+.welcome-mark {
+  width: 116px;
+  height: 116px;
+  margin-bottom: var(--space-3);
+}
+.welcome-mark svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--accent-primary) 45%, transparent));
+}
+.welcome-mark-b {
+  transform-origin: center;
+  opacity: 0.85;
+  animation: welcome-turn 6s cubic-bezier(0.65, 0, 0.35, 1) 600ms infinite;
+}
+@keyframes welcome-turn {
+  0%, 18% { transform: rotate(0deg); }
+  32%, 68% { transform: rotate(45deg); }
+  82%, 100% { transform: rotate(0deg); }
+}
+
+.welcome-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(40px, 11vw, 58px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  color: var(--text-primary);
+  text-shadow: 0 0 22px color-mix(in srgb, var(--accent-primary) 45%, transparent);
+}
+.welcome-lede {
+  margin: var(--space-2) 0 var(--space-5);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.welcome-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 15px var(--space-5);
+  border-radius: 999px;
+  border: 1px solid var(--accent-primary);
+  background: var(--accent-primary);
+  color: var(--text-on-bright-gold);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--glow-accent);
+}
+.welcome-cta:hover {
+  filter: brightness(1.08);
+}
+.welcome-skip {
+  margin-top: var(--space-3);
+  padding: 8px 12px;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.welcome-skip:hover {
+  color: var(--text-secondary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-root { animation: none; }
+  .welcome-mark-b { animation: none; transform: rotate(45deg); }
+}
+

@@ -1,0 +1,30 @@
+/* V1 — portalled tooltips. The element now lives on <body> in fixed
+   coordinates measured from its trigger (see Tooltip.tsx), so the
+   side classes only have to say which way to nudge it off the anchor
+   point; `left`/`top` come from the component. */
+.tooltip.tooltip-portal {
+  position: fixed;
+  right: auto;
+  bottom: auto;
+}
+.tooltip.tooltip-portal.tooltip-top {
+  --tip-tx: -50%;
+  --tip-ty: -100%;
+  transform: translate(-50%, -100%);
+}
+.tooltip.tooltip-portal.tooltip-bottom {
+  --tip-tx: -50%;
+  --tip-ty: 0;
+  transform: translate(-50%, 0);
+}
+.tooltip.tooltip-portal.tooltip-left {
+  --tip-tx: -100%;
+  --tip-ty: -50%;
+  transform: translate(-100%, -50%);
+}
+.tooltip.tooltip-portal.tooltip-right {
+  --tip-tx: 0;
+  --tip-ty: -50%;
+  transform: translate(0, -50%);
+}
+
