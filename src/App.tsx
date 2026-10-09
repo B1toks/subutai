@@ -103,7 +103,7 @@ import {
   updateMoveAnalysisAt,
 } from './recording/log';
 import { buildSavedGameFromLog, buildSavedGameSnapshot } from './memory/build';
-import { LIVE_SESSION_KEY, localStorageAdapter } from './memory/storage';
+import { localStorageAdapter } from './memory/storage';
 import { MemoryPanel } from './memory/MemoryPanel';
 import type { SavedGame } from './memory/types';
 import { NotationParseError } from './memory/notation';
@@ -159,6 +159,7 @@ import {
 } from './features/game/position';
 import { formatClockFace, matchClocks } from './features/game/clock';
 import { computeBoardSize } from './app/boardSize';
+import { clearLiveSession, readLiveSession, writeLiveSession } from './memory/liveSession';
 import { deriveMpLastMove, deriveMpLog } from './features/online/matchLog';
 import { formatNotation } from './features/game/notation';
 import { evalToColors } from './app/roomColors';
@@ -334,57 +335,6 @@ interface FinishedGameSave {
   botLevel: BotStrength;
   chess960Id: string;
   seed: number;
-}
-
-/** V1 — pointer to the solo game in progress, for a new tab to resume.
- *  The key lives next to Memory's, whose entry it points at. */
-interface LiveSession {
-  gameId: string;
-  opponentMode: 'ai' | 'local';
-  gameMode: string;
-  timed: boolean;
-  savedAt: number;
-  /** The level the game was started against. The level pills are locked
-   *  mid-game; without this a resume would silently take whatever level
-   *  another tab has written since. Absent in pre-fix pointers. */
-  botLevel?: BotStrength;
-  /** N-1 — the game on the board is not one that may be ranked (it was
-   *  resumed from Memory, or imported). A reload keeps it that way. Absent
-   *  in older pointers, which are then treated as unranked too. */
-  unranked?: boolean;
-}
-function writeLiveSession(s: LiveSession): void {
-  try {
-    localStorage.setItem(LIVE_SESSION_KEY, JSON.stringify(s));
-  } catch {
-    /* private mode — the tab just starts fresh */
-  }
-}
-function readLiveSession(): LiveSession | null {
-  try {
-    const raw = localStorage.getItem(LIVE_SESSION_KEY);
-    if (!raw) return null;
-    const v = JSON.parse(raw) as Partial<LiveSession>;
-    if (typeof v.gameId !== 'string' || typeof v.savedAt !== 'number') return null;
-    return {
-      gameId: v.gameId,
-      opponentMode: v.opponentMode === 'local' ? 'local' : 'ai',
-      gameMode: typeof v.gameMode === 'string' ? v.gameMode : 'classic',
-      timed: v.timed === true,
-      savedAt: v.savedAt,
-      botLevel: isBotStrength(v.botLevel) ? v.botLevel : undefined,
-      unranked: v.unranked === true || v.unranked === undefined,
-    };
-  } catch {
-    return null;
-  }
-}
-function clearLiveSession(): void {
-  try {
-    localStorage.removeItem(LIVE_SESSION_KEY);
-  } catch {
-    /* private mode */
-  }
 }
 
 /** How long two heavy board effects count as "back to back". */
