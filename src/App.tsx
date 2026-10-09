@@ -33,6 +33,7 @@ import { GameSummary } from './components/GameSummary';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { ClockFace } from './components/ClockFace';
 import { mpClockAt, mpClockHeldFor, mpClockState } from './utils/mpClock';
+import { serverNow } from './firebase/serverClock';
 import { FeedbackModal } from './components/FeedbackModal';
 import { MilestoneModal } from './components/MilestoneModal';
 import { AutoPlayView } from './components/AutoPlayView';
@@ -3138,7 +3139,8 @@ function App() {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const check = () => {
       if (flagFiredRef.current) return;
-      const now = Date.now();
+      // N-10 — server time, like the move stamps and turnStartedAt.
+      const now = serverNow();
       const mine = mpClockAt(mpClock, mpSync.myColor, now);
       if (mine <= 0) {
         flagFiredRef.current = true;
@@ -3176,7 +3178,7 @@ function App() {
             .writeOutcomeIfFirst(opponentIsHost ? 'host-resign' : 'guest-resign', 'flag')
             .then((ok) => {
               if (ok) return;
-              flagRetryAtRef.current = Date.now() + 4000;
+              flagRetryAtRef.current = serverNow() + 4000;
               flagFiredRef.current = false;
               setMpFlagRetry((n) => n + 1);
             });
@@ -6318,7 +6320,7 @@ function App() {
                     ? Math.max(0, soloTcSec * 1000 - clockMs[side])
                     : clockMs[side]
                 }
-                mp={mpClock ? { clock: mpClock, now: Date.now } : null}
+                mp={mpClock ? { clock: mpClock, now: serverNow } : null}
               />
             );
           })}
