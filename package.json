@@ -10,6 +10,7 @@
     "build:gh": "vite build",
     "deploy": "npm run build && gh-pages -d dist",
     "lint": "eslint .",
+    "test": "vitest run",
     "test:rules": "firebase emulators:exec --only firestore --project demo-subutai \"node --import ./tests/rules/register.mjs --test --test-isolation=none tests/rules/rules.test.mjs tests/rules/attacks.test.mjs tests/rules/clock.test.mjs tests/rules/v102.test.mjs && node --import ./tests/rules/expect-fixed.mjs --test --test-isolation=none tests/rules/carryover.test.mjs\"",
     "preview": "vite preview"
   },
@@ -36,6 +37,7 @@
     "globals": "^17.4.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.56.1",
-    "vite": "^8.0.0"
+    "vite": "^8.0.0",
+    "vitest": "5.0.3"
   }
 }
