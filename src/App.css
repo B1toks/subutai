@@ -10910,12 +10910,6 @@ html[data-theme-swap] *::after {
     gap: 0;
     padding-inline: 8px;
   }
-  .user-menu-name {
-    max-width: 6ch;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 }
 
 /* Under ~380px even the dot has no room; the status bar under the board
@@ -11192,4 +11186,41 @@ html[data-theme-swap] *::after {
     flex: 0 0 auto;
     order: -1;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   fix/mobile-ui 3 — the player row at the top of the right panel.
+   The name chip left the header; here it is a card like the others
+   (.sidebar-panel carries each theme's card look), holding the name
+   and the one action. A long name is cut, the action never is.
+   ═══════════════════════════════════════════════════════════════════ */
+.sidebar-user {
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+}
+.sidebar-user .user-menu {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.sidebar-user .user-menu-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.sidebar-user .user-menu-item {
+  flex: 0 0 auto;
+  min-height: 36px;
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sidebar-user .user-menu-item:hover {
+  border-color: var(--accent-primary);
 }

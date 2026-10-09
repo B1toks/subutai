@@ -6199,12 +6199,6 @@ function App() {
             <Icon icon={Trophy} size="md" aria-hidden />
             <span className="topbar-btn-label">Leaderboard</span>
           </button>
-          {displayName && (
-            <UserMenu
-              displayName={displayName}
-              onChangeName={() => setShowNameModal(true)}
-            />
-          )}
         </div>
       </header>
 
@@ -7558,6 +7552,22 @@ function App() {
       </div>
       </div>
       <aside className="right-sidebar">
+        {/* fix/mobile-ui — the player's name and "Change name" live at the
+            top of this panel, not in the header. Outside the setup section
+            so a replay's inert does not lock it (it never did in the
+            header). The phone drawer (z 940) would cover the name modal,
+            so it closes first. */}
+        {displayName && (
+          <section className="sidebar-panel sidebar-user" aria-label="Player">
+            <UserMenu
+              displayName={displayName}
+              onChangeName={() => {
+                setMobilePanel('none');
+                setShowNameModal(true);
+              }}
+            />
+          </section>
+        )}
         {/* V1 — while a replay is playing, the whole setup panel is inert.
             Its controls used to stay live, so picking "Local" mid-replay
             mounted the hot-seat UI on top of someone else's game and let
