@@ -1,18 +1,14 @@
 import './App.css';
 import type { BoardState, Color, Move, PieceType, SquareId, TopologyState } from './engine';
 import { createStartingPosition, createPositionFromBackRankKey, isValidChess960Key } from './engine';
-import { allSquares } from './engine/board';
 import {
   applyMove,
   generateLegalMoves,
   isCheckmate,
   checkDrawConditions,
-  isInCheck,
   isSquareAttacked,
-  countAttackers,
   getAttackerSquares,
   findKing,
-  findCheckingPieces,
 } from './engine/moves';
 import { applyRotationMove, applyPassMove, toggleTopology, computeBoardLayout, tilePixelCenter, promoteStrandedPawns, toTileFrame } from './engine/auxetic';
 import {
@@ -158,6 +154,7 @@ import {
 } from './features/game/position';
 import { formatClockFace, matchClocks } from './features/game/clock';
 import { computeBoardSize } from './app/boardSize';
+import { checkMarks, recentPlies, supportPairsFor, threatCounts } from './features/game/boardMarks';
 import { countMaterial } from './features/game/material';
 import { gameOverText, memoryTermination, soloOutcome, winnerOf } from './features/endgame/result';
 import { drawOfferTitle } from './features/game/drawOfferTitle';
@@ -3863,22 +3860,7 @@ function App() {
     return ep;
   }, [legalMoves, selected]);
 
-  const checkSquares = useMemo(() => {
-    const empty = { king: null as string | null, checkers: new Set<string>() };
-    if (previewTopology && previewTopology !== state.topologyState) {
-      const toggled = toggleTopology(state);
-      const viewState: BoardState = { ...toggled, sideToMove: state.sideToMove };
-      const king = findKing(viewState, state.sideToMove);
-      if (!king) return empty;
-      const opp = state.sideToMove === 'white' ? 'black' as const : 'white' as const;
-      if (!isSquareAttacked(viewState, king, opp, viewState.topologyState)) return empty;
-      return { king, checkers: new Set<string>(findCheckingPieces(viewState)) };
-    }
-    if (!isInCheck(state)) return empty;
-    const king = findKing(state, state.sideToMove);
-    const checkers = new Set<string>(findCheckingPieces(state));
-    return { king, checkers };
-  }, [previewTopology, state]);
+  const checkSquares = useMemo(() => checkMarks(state, previewTopology), [previewTopology, state]);
 
   // R17b — pulse the red vignette when a REAL check lands: only on the
   // null→checked transition, and never for the rotation-preview's
@@ -3915,29 +3897,12 @@ function App() {
 
   const threatenedSquares = useMemo(() => {
     if (!showThreats) return new Map<string, number>();
-    const opp: Color = state.sideToMove === 'white' ? 'black' : 'white';
-    const analyzeState: BoardState = { ...state, topologyState: displayTopology };
-    const counts = new Map<string, number>();
-    for (const sq of allSquares) {
-      const c = countAttackers(analyzeState, sq, opp, displayTopology);
-      if (c > 0) counts.set(sq, c);
-    }
-    return counts;
+    return threatCounts(state, displayTopology);
   }, [showThreats, state, displayTopology]);
 
   const supportPairs = useMemo((): [SquareId, SquareId][] => {
     if (!showSupport) return [];
-    const ourColor: Color = 'white';
-    const pairs: [SquareId, SquareId][] = [];
-    for (const to of allSquares) {
-      const piece = state.pieces[to];
-      if (!piece || piece.color !== ourColor) continue;
-      const attackers = getAttackerSquares(state, to, ourColor, displayTopology);
-      for (const from of attackers) {
-        if (from !== to) pairs.push([from, to]);
-      }
-    }
-    return pairs;
+    return supportPairsFor(state, displayTopology);
   }, [showSupport, state, displayTopology]);
 
   const threateningPieceSquares = useMemo(() => {
@@ -4861,24 +4826,7 @@ function App() {
     launchEndgame,
   ]);
 
-  // Highlight the last N piece-plies on the board. Roulette mode plays two
-  // sub-moves per AI turn, so we widen the window to 2; classic stays at 1
-  // and renders identically to the old single-lastMove behaviour.
-  // Indexed 0 = most recent, 1 = previous (used for an 'older' opacity).
-  const recentPlyHighlights = useMemo(() => {
-    const wantCount = gameMode === 'roulette' ? 2 : 1;
-    const from = new Map<string, number>();
-    const to = new Map<string, number>();
-    let found = 0;
-    for (let i = log.moves.length - 1; i >= 0 && found < wantCount; i--) {
-      const m = log.moves[i].move;
-      if (!m.from || !m.to || m.kind === 'topologyToggle') continue;
-      if (!from.has(m.from)) from.set(m.from, found);
-      if (!to.has(m.to)) to.set(m.to, found);
-      found++;
-    }
-    return { from, to };
-  }, [log.moves, gameMode]);
+  const recentPlyHighlights = useMemo(() => recentPlies(log.moves, gameMode), [log.moves, gameMode]);
 
   // QA-09 — online, the position and seed are the MATCH's (log is derived
   // from the match doc); initialState / seed still hold the last solo game,
