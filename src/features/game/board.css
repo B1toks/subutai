@@ -1,0 +1,429 @@
+@keyframes blunder-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 3px rgba(220, 40, 40, 0.9); }
+  50%      { box-shadow: inset 0 0 0 6px rgba(220, 40, 40, 0.4); }
+}
+
+@keyframes brilliant-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 3px rgba(255, 200, 80, 0.9); }
+  50%      { box-shadow: inset 0 0 0 6px rgba(255, 200, 80, 0.4); }
+}
+
+.tile.classified-blunder::before {
+  animation: blunder-pulse 0.6s ease-in-out 4;
+}
+
+.tile.classified-brilliant::before {
+  animation: brilliant-pulse 0.6s ease-in-out 4;
+}
+
+/* Sprint 2.7 — sacrifice burst. Fires alongside the brilliant pulse on
+   moves classified as true sacrifices (piece walked onto attacked
+   square, position still holds). Theme-coloured via --sacrifice-color.
+   The animation hits the ::before pseudo (tile body) for the violet
+   shell, then ::after carries a single sparkle that floats up-right. */
+@keyframes sacrifice-burst {
+  0% {
+    box-shadow:
+      inset 0 0 0 0 rgba(var(--sacrifice-color), 0),
+      0 0 0 0 rgba(var(--sacrifice-color), 0);
+  }
+  18% {
+    box-shadow:
+      inset 0 0 0 4px rgba(var(--sacrifice-color), 1),
+      0 0 24px 6px rgba(var(--sacrifice-color), 0.7);
+  }
+  60% {
+    box-shadow:
+      inset 0 0 0 3px rgba(var(--sacrifice-color), 0.55),
+      0 0 28px 10px rgba(var(--sacrifice-color), 0.32);
+  }
+  100% {
+    box-shadow:
+      inset 0 0 0 0 rgba(var(--sacrifice-color), 0),
+      0 0 0 0 rgba(var(--sacrifice-color), 0);
+  }
+}
+
+@keyframes sacrifice-sparkle {
+  0% {
+    transform: translate(-50%, -50%) scale(0.2);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(calc(-50% + var(--sparkle-dx, 32px)), calc(-50% + var(--sparkle-dy, -32px))) scale(1);
+    opacity: 0;
+  }
+}
+
+.tile.is-sacrifice::before {
+  animation: sacrifice-burst 2.5s ease-out;
+  z-index: 2;
+}
+
+/* Sprint 3.2 — capture burst. Fires a short scale + crimson ring on
+   the destination tile whenever the latest log entry is a capture or
+   en-passant. Theme-coloured via --accent-danger so it doesn't clash
+   with the brilliant gold pulse or the sacrifice violet flash. The
+   ::after sparkle radiates outward as a quick particle burst. */
+@keyframes capture-burst {
+  0% {
+    box-shadow:
+      inset 0 0 0 0 var(--accent-danger),
+      0 0 0 0 var(--accent-danger);
+    transform: scale(1);
+  }
+  28% {
+    box-shadow:
+      inset 0 0 0 3px var(--accent-danger),
+      0 0 24px 6px var(--accent-danger);
+    transform: scale(1.08);
+  }
+  72% {
+    box-shadow:
+      inset 0 0 0 2px var(--accent-danger),
+      0 0 18px 8px var(--accent-danger);
+    transform: scale(1);
+  }
+  100% {
+    box-shadow:
+      inset 0 0 0 0 transparent,
+      0 0 0 0 transparent;
+    transform: scale(1);
+  }
+}
+
+@keyframes capture-particle-pop {
+  0%   { transform: translate(-50%, -50%) scale(0.2); opacity: 0; }
+  20%  { opacity: 1; }
+  100% {
+    transform:
+      translate(calc(-50% + var(--cap-dx, 32px)), calc(-50% + var(--cap-dy, -32px)))
+      scale(0.4);
+    opacity: 0;
+  }
+}
+
+.tile.is-capture::before {
+  animation: capture-burst 600ms ease-out;
+  z-index: 2;
+}
+
+.tile.is-capture::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-danger);
+  box-shadow: 0 0 8px var(--accent-danger);
+  pointer-events: none;
+  animation: capture-particle-pop 550ms ease-out;
+  --cap-dx: 26px;
+  --cap-dy: -22px;
+  z-index: 3;
+}
+
+.tile.is-sacrifice::after {
+  content: '\2726';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 18px;
+  font-weight: 700;
+  color: rgba(var(--sacrifice-color), 0.95);
+  text-shadow: 0 0 6px rgba(var(--sacrifice-color), 0.8);
+  pointer-events: none;
+  animation: sacrifice-sparkle 1.8s ease-out;
+  --sparkle-dx: 36px;
+  --sparkle-dy: -36px;
+  z-index: 3;
+}
+
+/* Board */
+
+.board {
+  position: relative;
+  width: var(--board-size);
+  height: var(--board-size);
+  border-radius: 8px;
+  overflow: visible;
+}
+
+/* Sprint 3.5.1 — 3D pack moved behind [data-3d="on"] so users can
+   opt in via the Effects3DToggle in the header. Default is off
+   until the player turns it on (the toggle initialises the html
+   attribute on first render; only a press is stored).
+   Perspective lives on the board-with-coords wrapper; the 6° tilt
+   + preserve-3d on .board lets descendants register translateZ for
+   the hover lift. */
+[data-3d="on"] .board-with-coords {
+  perspective: 1400px;
+  perspective-origin: center 110%;
+}
+
+[data-3d="on"] .board {
+  transform: rotateX(6deg);
+  transform-style: preserve-3d;
+  transition: transform 600ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* B7 — touch devices get a flat board even with 3D on. preserve-3d +
+   perspective hit-testing is unreliable in mobile browsers (taps land
+   beside the visually-tilted tiles — "криво регає касанія"), and the
+   hover-lift never fires on touch anyway, so the tilt is pure cost. */
+@media (pointer: coarse) {
+  [data-3d="on"] .board-with-coords {
+    perspective: none;
+  }
+  [data-3d="on"] .board {
+    transform: none;
+    transform-style: flat;
+  }
+  [data-3d="on"] .tile {
+    transform-style: flat;
+  }
+  [data-3d="on"] .board.is-rotated {
+    animation: none;
+  }
+}
+
+/* Subutai signature: thin seam lines at 2×2 block boundaries.
+   Renders a faint cross-hatch at 25/50/75% on both axes — a visual
+   hint of the auxetic 2×2 block structure that powers Rotate.
+   Theme-coloured via --seam-color. */
+.board::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(
+      90deg,
+      transparent calc(25% - 0.5px),
+      var(--seam-color) calc(25% - 0.5px),
+      var(--seam-color) calc(25% + 0.5px),
+      transparent calc(25% + 0.5px),
+      transparent calc(50% - 0.5px),
+      var(--seam-color) calc(50% - 0.5px),
+      var(--seam-color) calc(50% + 0.5px),
+      transparent calc(50% + 0.5px),
+      transparent calc(75% - 0.5px),
+      var(--seam-color) calc(75% - 0.5px),
+      var(--seam-color) calc(75% + 0.5px),
+      transparent calc(75% + 0.5px)
+    ),
+    linear-gradient(
+      0deg,
+      transparent calc(25% - 0.5px),
+      var(--seam-color) calc(25% - 0.5px),
+      var(--seam-color) calc(25% + 0.5px),
+      transparent calc(25% + 0.5px),
+      transparent calc(50% - 0.5px),
+      var(--seam-color) calc(50% - 0.5px),
+      var(--seam-color) calc(50% + 0.5px),
+      transparent calc(50% + 0.5px),
+      transparent calc(75% - 0.5px),
+      var(--seam-color) calc(75% - 0.5px),
+      var(--seam-color) calc(75% + 0.5px),
+      transparent calc(75% + 0.5px)
+    );
+  border-radius: inherit;
+  z-index: 1;
+  transition: background-image 0.25s ease;
+}
+
+/* When the board rotates, briefly emphasise the 2×2 blocks. */
+@keyframes block-pulse {
+  0%, 100% {
+    box-shadow: inset 0 0 0 1px var(--seam-color);
+    opacity: 1;
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 1.5px var(--accent-primary),
+      var(--glow-accent);
+    opacity: 1;
+  }
+}
+
+.board.is-rotated::after {
+  animation: block-pulse 0.8s ease-in-out;
+}
+
+/* B7 — topology-change animation, take 2. The Sprint 3.5 full 360°
+   rotateY spin hid the actual block re-wiring ("геть нічьо не
+   понятно"): the board left the screen plane exactly when the player
+   needed to track where squares went. Replaced with a grounded
+   press-and-shake: the board dips, shudders ±2°, and settles while
+   the seam-line block-pulse (::after, above) highlights the 2×2
+   blocks that did the moving. Pieces stay readable the whole time. */
+@keyframes board-rotate-wobble {
+  0%   { transform: rotateX(6deg) scale(1); }
+  20%  { transform: rotateX(11deg) scale(0.965) rotate(1.6deg); }
+  45%  { transform: rotateX(11deg) scale(0.965) rotate(-1.6deg); }
+  70%  { transform: rotateX(8deg) scale(0.985) rotate(0.7deg); }
+  100% { transform: rotateX(6deg) scale(1) rotate(0deg); }
+}
+
+[data-3d="on"] .board.is-rotated {
+  animation: board-rotate-wobble 650ms ease-out;
+}
+
+/* M.15 — flat (2D) rotate now has its own motion (it used to be invisible
+   on the board itself, only the seam pulse fired). A grounded swing:
+   dip + shudder ±2° + settle. The [data-3d] rule above out-specifies this
+   in 3D mode, so they don't both fire. */
+@keyframes board-swing-2d {
+  0%   { transform: scale(1) rotate(0deg); }
+  18%  { transform: scale(0.97) rotate(-2.2deg); }
+  44%  { transform: scale(0.985) rotate(1.8deg); }
+  72%  { transform: scale(0.996) rotate(-0.7deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+.board.is-rotated {
+  animation: board-swing-2d var(--rotate-ms, 560ms) cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* In Beat Mode the swing is one beat long (--rotate-ms = beat period) and
+   springier — it overshoots and settles, so the rotate reads as ON the
+   beat. */
+@keyframes board-swing-beat {
+  0%   { transform: scale(1) rotate(0deg); }
+  26%  { transform: scale(0.94) rotate(-4.2deg); }
+  56%  { transform: scale(1.012) rotate(3.2deg); }
+  82%  { transform: scale(0.995) rotate(-1.1deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+.board.is-rotated.is-rotated-beat {
+  animation-name: board-swing-beat;
+  animation-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .board.is-rotated { animation: none; }
+}
+
+.tile {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center center;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 3px;
+}
+
+/* Sprint 3.5.1 — propagate the 3D context from .board down to the
+   piece host so translateZ on .piece-slide-wrap can lift the piece.
+   Gated under [data-3d="on"] alongside the board's own tilt. */
+[data-3d="on"] .tile {
+  transform-style: preserve-3d;
+}
+
+.tile.light::before,
+.tile.dark::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 3px;
+  background: var(--tile-light);
+}
+
+.tile.dark::before {
+  background: var(--tile-dark);
+}
+
+.tile.selected::before {
+  outline: 3px solid var(--accent-gold);
+  outline-offset: -3px;
+}
+
+.tile.target::before {
+  box-shadow: inset 0 0 0 4px var(--accent-teal);
+}
+
+.tile.last-from::before {
+  background: var(--last-move-fill);
+}
+
+.tile.last-to::before {
+  background: var(--last-move-fill-strong);
+  box-shadow: inset 0 0 0 2px var(--last-move-ring);
+}
+
+/* S2.4 — engine hint pair. Teal so it can't be confused with the
+   last-move pair (each theme's --last-move-*) or the gold selection.
+   Pulses until the next move. */
+@keyframes hint-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 2px rgba(20, 184, 166, 0.5); }
+  50%      { box-shadow: inset 0 0 0 3px rgba(20, 184, 166, 0.95), 0 0 12px rgba(20, 184, 166, 0.5); }
+}
+
+.tile.hint-from::before,
+.tile.hint-to::before {
+  background: rgba(20, 184, 166, 0.22);
+  animation: hint-pulse 1.4s ease-in-out infinite;
+}
+
+.tile.hint-to::before {
+  background: rgba(20, 184, 166, 0.38);
+}
+
+/* The halo is mixed from --danger, the same token as the ring, so neon's
+   magenta ring no longer wears a red glow. */
+/* Sprint 3.2 — pulse the king's tile while it's in check so the warning
+   reads as live rather than a static ring. mated-king keeps the static
+   ring since the checkmate-flash overlay on body handles the punch. */
+@keyframes king-check-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 4px var(--danger), 0 0 16px color-mix(in srgb, var(--danger) 60%, transparent); }
+  50%      { box-shadow: inset 0 0 0 5px var(--danger), 0 0 28px color-mix(in srgb, var(--danger) 90%, transparent); }
+}
+
+.tile.checked-king::before {
+  animation: king-check-pulse 0.9s ease-in-out infinite;
+}
+
+.tile.checking-piece::before {
+  box-shadow: inset 0 0 0 4px var(--success), 0 0 16px rgba(34, 197, 94, 0.5);
+}
+
+.tile.mated-king::before {
+  box-shadow: inset 0 0 0 4px var(--danger), 0 0 24px color-mix(in srgb, var(--danger) 80%, transparent);
+}
+
+.tile.mating-piece::before {
+  box-shadow: inset 0 0 0 4px var(--danger), 0 0 16px color-mix(in srgb, var(--danger) 60%, transparent);
+}
+
+/* Full-screen white-out flash when the game ends in checkmate. Added
+   by App.tsx via a body class with a 1.5s lifetime; auto-removed. */
+@keyframes checkmate-flash {
+  0%   { opacity: 0; }
+  18%  { opacity: 0.55; }
+  100% { opacity: 0; }
+}
+
+body.checkmate-flash::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: radial-gradient(circle at center,
+    rgba(255, 200, 80, 0.5) 0%,
+    rgba(220, 40, 40, 0.18) 60%,
+    transparent 100%);
+  animation: checkmate-flash 1.4s ease-out forwards;
+}
+

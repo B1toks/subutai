@@ -1,0 +1,126 @@
+/* Pieces */
+
+.piece {
+  position: relative;
+  font-size: calc(var(--board-size) / 9);
+  line-height: 1;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.7));
+  pointer-events: none;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Sprint 3.2 — piece slide-in wrapper. The wrapper handles the per-move
+   slide animation; the inner .piece animates its OWN counter-rotation in
+   parallel (piece-rotate-in below) so a move that lands on a differently-
+   angled tile (any move made once topology B is active — see the M.20
+   note) rotates smoothly into place instead of snapping. --slide-dx /
+   --slide-dy are set by App.tsx to the pixel offset of the previous
+   square; the keyframe interpolates back to translate(0,0). Only applied
+   for classic-mode regular moves — see the App.tsx guard. */
+.piece-slide-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Sprint 3.5.1 — pointer-events: none on the wrapper so the hover
+     lift doesn't expand the wrapper's hit area outside the tile and
+     cause the well-known hover-flicker loop (cursor on enlarged
+     piece → outside tile → :hover lost → piece shrinks back → cursor
+     inside tile again → :hover → loop). All hover events bubble up
+     through the wrapper to the .tile button instead. */
+  pointer-events: none;
+  transition:
+    transform 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    filter 180ms ease;
+}
+
+/* M.20 — a small "landing pop": the piece arrives at 78% of the timeline
+   already, sized up ~7%, then settles back to scale 1 over the tail end.
+   Reads as weight/impact ("the piece landed") without ever visually
+   leaving its true destination square — the pop is a pure scale bump
+   centered on the already-correct position, never a positional overshoot. */
+@keyframes piece-slide-in {
+  0%   { transform: translate(var(--slide-dx, 0), var(--slide-dy, 0)) scale(1); }
+  78%  { transform: translate(0, 0) scale(1.07); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+.piece-slide-wrap.is-sliding-in {
+  /* M.14/M.20 — --slide-ms is set by App.tsx, scaled to travel distance
+     (short hops feel snappy, board-spanning glides feel graceful) and
+     clamped to a narrow band so it never reads as sluggish; falls back
+     to the original 260ms (matches BEAT_SLIDE_MS) if unset. Soft
+     decelerating ease-out so the piece "lands" gently; in Beat Mode the
+     glide is timed to finish exactly on the beat. */
+  animation: piece-slide-in var(--slide-ms, 260ms) cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* M.20 — the piece glyph's own counter-rotation, animated in parallel
+   with the wrapper's translate above. Only applied when the move's start
+   and end tiles actually differ in rotation angle (crossing a topology-B
+   boundary within the move, or moving while B is already active) —
+   otherwise the piece keeps its plain static rotate() with no animation
+   class, exactly as before this change. */
+@keyframes piece-rotate-in {
+  from { transform: rotate(var(--slide-rot-from, 0deg)); }
+  to   { transform: rotate(var(--slide-rot-to, 0deg)); }
+}
+
+.piece.is-rotating-in {
+  animation: piece-rotate-in var(--slide-ms, 260ms) cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Hover + selected lift — gated behind [data-3d="on"]. The translateZ
+   alone gets a tiny perspective-driven scale-up (Z=6 against
+   perspective 1400px ≈ 1.004) so there's no explicit scale to chew
+   the bounding box. Hover only fires for actual cursors via the
+   (hover: hover) media query — touch devices skip it. */
+@media (hover: hover) {
+  [data-3d="on"] .tile:hover .piece-slide-wrap:not(.is-sliding-in) {
+    transform: translateZ(6px);
+    filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5));
+  }
+}
+
+[data-3d="on"] .tile.selected .piece-slide-wrap:not(.is-sliding-in) {
+  transform: translateZ(12px);
+  filter: drop-shadow(0 8px 10px rgba(0, 0, 0, 0.6));
+}
+
+/* Sprint 4.2 — old `.tile-coord` helper removed (labels moved to the
+   sibling .board-coords-overlay). The translateZ-only rule below has
+   no remaining selector targets, kept as a comment marker. */
+
+.piece-white {
+  color: var(--piece-white);
+  text-shadow: var(--piece-white-shadow);
+}
+
+.piece-black {
+  color: var(--piece-black);
+  text-shadow: var(--piece-black-shadow);
+}
+
+/* Preview */
+
+.board.previewing {
+  outline: 2px dashed var(--text-muted);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+
+.board.previewing .tile,
+.board.previewing .piece {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Game-over text (below board, not overlay) */
+
+.game-over-banner {
+  width: 100%;
+  text-align: center;
+  padding: 8px 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent-gold);
+}
+

@@ -1,0 +1,106 @@
+/* R1 — variant arrows: live vote round drawn on the board. Dashed while
+   the vote is open (dashes march toward the target — the round feels
+   alive), solid for the revealed winner, faded for the losers. */
+.variant-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 11;
+}
+
+.variant-arrow {
+  stroke-linecap: round;
+  fill: none;
+  opacity: 0.85;
+  animation: variant-dash-march 1.1s linear infinite;
+}
+
+.variant-arrow-winner {
+  opacity: 1;
+  animation: none;
+}
+
+.variant-arrow-loser {
+  opacity: 0.18;
+  animation: none;
+}
+
+.variant-arrow-label {
+  font-weight: 800;
+  font-family: inherit;
+  stroke: rgba(10, 10, 14, 0.65);
+  stroke-width: 3;
+  paint-order: stroke fill;
+}
+
+/* R9 — shift by exactly one dash+gap cycle (set per-line from tileBase);
+   any other distance makes the loop restart visibly jump. */
+@keyframes variant-dash-march {
+  to { stroke-dashoffset: calc(-1 * var(--dash-cycle, 24px)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .variant-arrow { animation: none; }
+}
+
+/* R2/R9 — "guess the streamer" winners burst over the board as a chaotic
+   word-cloud of nicks: random spot / size / tilt per nick (rolled once in
+   the App when the round resolves), pop in staggered, drift up, fade. */
+.guess-cloud {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.guess-cloud-nick {
+  position: absolute;
+  transform: translate(-50%, -50%) rotate(var(--nick-rot, 0deg));
+  font-weight: 800;
+  color: #e5e7eb;
+  white-space: nowrap;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.85),
+    0 0 14px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  animation: guess-nick-float 4.6s ease-out both;
+}
+
+@keyframes guess-nick-float {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(var(--nick-rot, 0deg)) scale(0.3);
+  }
+  8% {
+    opacity: 1;
+    transform: translate(-50%, -50%) rotate(var(--nick-rot, 0deg)) scale(1.15);
+  }
+  14% {
+    transform: translate(-50%, -50%) rotate(var(--nick-rot, 0deg)) scale(1);
+  }
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% - 26px)) rotate(var(--nick-rot, 0deg)) scale(0.96);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .guess-cloud-nick {
+    animation: guess-nick-fade 4.6s ease-out both;
+  }
+  @keyframes guess-nick-fade {
+    0% { opacity: 0; }
+    10% { opacity: 1; }
+    75% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+}
+
+/* Sprint 3.7 (rev 2) — hover-insight ::after overlays removed; the
+   restored Threat / Support toggles drive the existing CSS classes
+   (.threatened, .threatening-piece, .support-overlay arrows). */
+

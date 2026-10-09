@@ -1,0 +1,72 @@
+/* Position label */
+
+.position-label-wrap {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* V1 — `.position-label` and `.position-edit-btn` are gone: the label and
+   the separate edit button collapsed into one control, `.position-code`,
+   styled down in the V1 chrome pass. */
+
+.position-replay-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.position-replay-btn:hover {
+  color: var(--text);
+}
+
+/* Sprint 3.7 (rev 2) — replay dialog modifier; widens past the base
+   help-dialog cap and gives the textarea more height so a long log
+   doesn't scroll inside a tiny window. */
+.help-dialog.replay-dialog {
+  max-width: 720px;
+  width: 90vw;
+}
+
+.replay-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  min-height: 280px;
+  border-radius: 8px;
+  border: 1px solid var(--btn-border);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  font-family: ui-monospace, monospace;
+  font-size: 14px;
+  font-size: 12px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.replay-error {
+  margin-top: 8px;
+  color: var(--danger-pale);
+  font-size: 12px;
+}
+
+.replay-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* The input now lives inside `.position-code.is-editing` and inherits
+   its type and colour from the chip; see the V1 chrome pass. */
+.position-input-error {
+  font-size: 11px;
+  color: var(--danger);
+}
+
