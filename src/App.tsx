@@ -158,6 +158,7 @@ import {
   replayBoardAt,
   samePieces,
 } from './features/game/position';
+import { formatClockFace, matchClocks } from './features/game/clock';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -420,21 +421,6 @@ function computeBoardSize(uiScale: number, dockLeft: number, dockRight: number):
   // during init, and without the floor boardSize goes NEGATIVE (tile math,
   // dash arrays and overlays all silently break until the next resize).
   return Math.max(240, Math.min(vw - chrome - reserved, cap));
-}
-
-/**
- * V1 — fixed-width MM:SS for the tournament clock face.
- *
- * This used to be a "m:ss" formatter, which is fine in a sentence but
- * wrong on a clock: the digits shift sideways the moment the tens column
- * drops, and the unlit "88:88" ghost behind them stops lining up. Pads to
- * two, and grows past 99 minutes rather than truncating.
- */
-function formatClockFace(ms: number): string {
-  const totalSec = Math.floor(ms / 1000);
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 /** How long two heavy board effects count as "back to back". */
@@ -2963,38 +2949,13 @@ function App() {
 
   const mpClocks = useMemo(() => {
     if (!isMultiplayer || !mpSync) return null;
-    const moves = mpSync.matchState.log.moves;
-    // R13 — Fischer increment: every completed move credits its mover.
-    const incMs = (mpSync.matchState.timeIncrementSec ?? 0) * 1000;
-    let usedWhite = 0;
-    let usedBlack = 0;
-    for (let i = 1; i < moves.length; i++) {
-      const dt = Math.max(0, (moves[i].timestamp ?? 0) - (moves[i - 1].timestamp ?? 0));
-      // Mover of entry i: entries alternate starting with white (rotations
-      // consume the turn too, so parity holds in classic).
-      if (i % 2 === 0) usedWhite += dt;
-      else usedBlack += dt;
-    }
-    if (mpMatchLive && moves.length > 0) {
-      const live = Math.max(0, mpNow - (moves[moves.length - 1].timestamp ?? mpNow));
-      if (moves.length % 2 === 0) usedWhite += live;
-      else usedBlack += live;
-    }
-    // No time control: just show what each side has spent. Same numbers,
-    // counted up instead of down, and nothing can flag.
-    if (!mpTimeControl) {
-      return { white: usedWhite, black: usedBlack, countdown: false };
-    }
-    // Completed-move counts: entries alternate W,B,W,B… so white made
-    // ceil(n/2) of them and black the rest.
-    const whiteMoves = Math.ceil(moves.length / 2);
-    const blackMoves = Math.floor(moves.length / 2);
-    const total = mpTimeControl * 1000;
-    return {
-      white: Math.max(0, total + whiteMoves * incMs - usedWhite),
-      black: Math.max(0, total + blackMoves * incMs - usedBlack),
-      countdown: true,
-    };
+    return matchClocks(
+      mpSync.matchState.log.moves,
+      mpTimeControl,
+      mpSync.matchState.timeIncrementSec,
+      mpMatchLive,
+      mpNow,
+    );
   }, [isMultiplayer, mpTimeControl, mpSync, mpNow, mpMatchLive]);
 
   const flagFiredRef = useRef(false);
