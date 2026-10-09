@@ -1,0 +1,35 @@
+/* --- Leaderboard tabs (Stage O: Classic / Roulette switcher) ----------- */
+
+.leaderboard-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin: 4px auto 14px;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 999px;
+  width: fit-content;
+}
+
+.leaderboard-tab {
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  background: transparent;
+  color: var(--text-muted);
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.leaderboard-tab:hover {
+  color: var(--text);
+}
+
+.leaderboard-tab.is-active {
+  background: var(--accent-gold);
+  color: var(--piece-text-on-bright);
+}
+

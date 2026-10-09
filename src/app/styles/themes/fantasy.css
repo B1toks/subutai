@@ -1,0 +1,134 @@
+/* ═══════════════════════════════════════════════════════════════════
+   FANTASY THEME — gothic chess-set enhancements
+   Only loaded when [data-theme="fantasy"] is set on <html>. Adds an
+   ambient bronze/red mist gradient on .app-shell, decorative gold
+   corner accents on the board, a gold-ink shadow on the title,
+   and a per-piece gold/bronze drop-shadow so the set reads as
+   "polished metal" rather than the wood-stained default.
+   ═══════════════════════════════════════════════════════════════════ */
+
+[data-theme="fantasy"] .app-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(circle at 30% 0%, rgba(201, 160, 98, 0.08), transparent 60%),
+    radial-gradient(circle at 70% 100%, rgba(139, 58, 58, 0.06), transparent 60%),
+    radial-gradient(circle at 50% 50%, rgba(20, 15, 8, 0.4), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+[data-theme="fantasy"] .app-root {
+  position: relative;
+  z-index: 1;
+}
+
+/* Engraved-style title — warm gold ink shadow */
+[data-theme="fantasy"] .app-header h1 {
+  /* M.16 — only colour + gold-ink shadow; font / spacing stay on the base
+     rule so the wordmark is identical to every other theme. */
+  color: var(--accent-primary);
+  text-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.8),
+    0 0 8px rgba(201, 160, 98, 0.4);
+}
+
+/* Board — ornate gold frame + deep inset shadow */
+[data-theme="fantasy"] .board-with-coords {
+  border: 1px solid var(--accent-primary);
+  box-shadow:
+    0 0 24px rgba(201, 160, 98, 0.18),
+    inset 0 0 40px rgba(10, 8, 5, 0.7),
+    0 12px 28px rgba(0, 0, 0, 0.55);
+  border-radius: var(--radius-md);
+}
+
+/* Decorative corner accents on the board wrapper */
+[data-theme="fantasy"] .board-with-coords::before,
+[data-theme="fantasy"] .board-with-coords::after {
+  content: '';
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--accent-primary);
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Sprint 3.4.1 — pulled corner accents from -7px to inset positions
+   so the gold L-shapes stay inside the board boundary instead of
+   clipping against the action row / mode cards above and below. */
+[data-theme="fantasy"] .board-with-coords::before {
+  top: -1px;
+  left: -1px;
+  border-right: none;
+  border-bottom: none;
+}
+
+[data-theme="fantasy"] .board-with-coords::after {
+  bottom: -1px;
+  right: -1px;
+  border-left: none;
+  border-top: none;
+}
+
+/* Pieces — per-colour drop-shadow so gold/bronze glow on their own */
+[data-theme="fantasy"] .piece-white {
+  filter:
+    drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7))
+    drop-shadow(0 0 6px rgba(212, 175, 55, 0.55));
+}
+
+[data-theme="fantasy"] .piece-black {
+  filter:
+    drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7))
+    drop-shadow(0 0 4px rgba(232, 213, 160, 0.45));
+}
+
+/* Last-move tile washes — warm gold instead of cool blue */
+[data-theme="fantasy"] .tile.last-from::before {
+  background: rgba(201, 160, 98, 0.18);
+}
+
+[data-theme="fantasy"] .tile.last-to::before {
+  background: rgba(201, 160, 98, 0.32);
+  box-shadow: inset 0 0 0 1px rgba(201, 160, 98, 0.55);
+}
+
+/* Active mode card / pill / hover halo — keep it premium-gold */
+[data-theme="fantasy"] .mode-card.is-active {
+  background: linear-gradient(135deg,
+    var(--bg-elevated) 0%,
+    rgba(201, 160, 98, 0.12) 100%);
+  border-color: var(--accent-primary);
+  box-shadow: var(--glow-accent);
+}
+
+[data-theme="fantasy"] .action-btn:hover:not(:disabled),
+[data-theme="fantasy"] .header-action-btn:hover:not(:disabled),
+[data-theme="fantasy"] .mode-card:hover:not(:disabled) {
+  box-shadow:
+    var(--glow-accent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* 2x2 block pulse when the board rotates */
+[data-theme="fantasy"] .board.is-rotated {
+  box-shadow:
+    0 0 0 2px rgba(201, 160, 98, 0.5),
+    0 0 30px rgba(201, 160, 98, 0.3),
+    inset 0 0 50px rgba(10, 8, 5, 0.6);
+}
+
+/* Sidebar moves panel — warm cream text on a darker gradient */
+[data-theme="fantasy"] .sidebar-moves {
+  background: linear-gradient(180deg,
+    var(--bg-mid) 0%,
+    var(--bg-deep) 100%);
+}
+
+[data-theme="fantasy"] .sidebar-moves .move-log-text {
+  color: var(--text-secondary);
+}
+
