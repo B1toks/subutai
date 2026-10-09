@@ -1,0 +1,570 @@
+/* @property registration — required for CSS to interpolate <color> and
+   <number> values between transitions. Without this, gradients snap.
+   NOTE: @property initial-value MUST be a static value per CSS spec —
+   var() is not permitted here. These two literals are the only hex
+   values that cannot be tokenised. The actual displayed values are
+   set at runtime via JS and follow the active theme through tokens. */
+@property --eval-c1 {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: #2a2520;
+}
+@property --eval-c2 {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: #1a1612;
+}
+@property --flash-opacity {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   DESIGN TOKENS
+   Four palettes: warm-wood (the :root block below), wood-light,
+   fantasy and neon. The resolved theme is written to [data-theme] on
+   <html> by src/ui/themeStore.ts, which also implements the "Adaptive"
+   choice, the default for a new visitor (neon in topology A, wood-light
+   in topology B). Wood reproduces the pre-Sprint-1 palette 1:1 — no
+   visual regression.
+   V1 retired the cyberpunk palette: it sat between neon and wood without
+   committing to either, and saved copies of it migrate to neon.
+
+   NOTE: do NOT run search/replace passes that match raw hex values
+   against this file. The replacement will rewrite hex literals
+   inside these token definitions, producing self-referencing tokens
+   (e.g. --bg-deep: var(--bg-deep)) and silently breaking the theme.
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root,
+[data-theme="wood"] {
+  /* Backgrounds — Sprint 2.6: warm-black with a touch of brown undertone
+     (not pure #000, which reads as cheap on OLED). Previously a bluish
+     gray; this is the "wood-room at night" feel. */
+  --bg: #0e0a06;
+  --bg-deep: #0e0a06;
+  --bg-mid: #1a1612;
+  --bg-elevated: #2a2520;
+  --bg-elevated-hover: #3a3530;
+  --bg-panel: #1f1a14;
+  --bg-panel-deep: #15110b;
+  --bg-card: #1a1612;
+  --bg-card-alt: #1f1a14;
+  --bg-overlay-dark: #0e0a06;
+  --bg-popup: #2a2520;
+  --bg-deeper: #15110b;
+  --bg-danger-tint: #2a1612;
+
+  /* Tiles */
+  --tile-light: #c8b98a;
+  --tile-dark: #5c4033;
+  --tile-light-alt: #e8d8b8;
+  --tile-dark-alt: #8a6a44;
+  --tile-promo-light: #f0f0e8;
+  --tile-promo-dark: #1a1a1a;
+  --tile-promo-light-text: #d4c8a0;
+  --tile-promo-dark-text: #1a1a1a;
+
+  /* Pieces */
+  --piece-white: #f0e8d0;
+  --piece-black: #1a1008;
+  --piece-text-on-bright: #1a1612;
+  --piece-white-flat: #fff;
+  --piece-black-flat: #111;
+  --piece-white-shadow: 0 0 2px rgba(0, 0, 0, 0.6);
+  --piece-black-shadow: 0 0 2px rgba(200, 185, 138, 0.9), 0 0 8px rgba(200, 185, 138, 0.6);
+
+  /* Accents — primary (gold family) */
+  --accent-primary: #d4a843;
+  /* Sprint 4.2 — secondary accent for thematic contrast on
+     auxiliary controls (rotate button etc.); aged-bronze. */
+  --accent-secondary: #c9a062;
+  --accent-gold: #d4a843;
+  --accent-gold-bright: #ffd700;
+  --accent-gold-orange: #ff8c00;
+  --accent-gold-light: #f2d37a;
+  --accent-amber-mid: #e8a64a;
+  --accent-amber-bright: #ffc857;
+  --accent-amber-warm: #f2a23a;
+  --accent-peach: #ffaa66;
+  --text-on-bright-gold: #2a1a00;
+
+  /* Accents — secondary (teal/info/orange) */
+  --accent-teal: #2d8a6e;
+  --accent-teal-bright: #14b8a6;
+  --accent-info: #6ec0ff;
+  --accent-orange: #ea580c;
+
+  /* Status colors */
+  --accent-danger: #dc2626;
+  /* V1 — the OTHER side. Used where two sides must be told apart at a
+     glance (the tournament clock's running half). Distinct from
+     --accent-danger, which means "something is wrong". */
+  --accent-opponent: #c0594f;
+  /* V1 — where a piece may legally land. Was hardcoded --accent-teal,
+     which is a green that belongs to neon and reads as paint from another
+     product on a wooden or cream board. */
+  --move-target: rgba(235, 226, 205, 0.92);
+  --danger: #dc2626;
+  --danger-bright: #ee5050;
+  --danger-coral: #ee5253;
+  --danger-coral-light: #ff6b6b;
+  --danger-mid: #c84a4a;
+  --danger-dark: #b54040;
+  --danger-light: #e87070;
+  --danger-very-light: #ff8888;
+  --danger-pale: #fca5a5;
+  --danger-short: #e88;
+
+  --accent-success: #22c55e;
+  --success: #22c55e;
+  --success-light: #7dd87d;
+  --success-mint: #6ed27a;
+
+  /* Text */
+  --text: #d4c8a0;
+  --text-primary: #d4c8a0;
+  --text-secondary: rgba(212, 200, 160, 0.7);
+  --text-muted: #8a7e60;
+  --text-muted-warm: #c8b8a0;
+  --text-white: #fff;
+  --text-on-light: #111;
+  --text-grey-mid: #555;
+  --text-grey-light: #888;
+  --text-grey-lighter: #aaa;
+
+  /* Buttons */
+  --btn-bg: #2a2a40;
+  --btn-border: rgba(180, 160, 100, 0.3);
+
+  /* Borders */
+  --border-subtle: rgba(245, 230, 200, 0.1);
+  --border-strong: rgba(245, 230, 200, 0.3);
+
+  /* Shadows / glows */
+  --glow-accent: 0 0 12px rgba(212, 168, 67, 0.4);
+  --glow-danger: 0 0 12px rgba(220, 38, 38, 0.4);
+  --glow-success: 0 0 12px rgba(34, 197, 94, 0.4);
+  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.5);
+
+  /* Subutai signature: 2×2 block seam-line color */
+  --seam-color: rgba(212, 175, 55, 0.15);
+
+  /* V1 — last-move highlight. Used to be one hardcoded cornflower blue in
+     every theme, which fought the wood room and the fantasy parchment.
+     Each theme now names its own; the selected-square outline stays gold/
+     accent so the two never read as the same signal. */
+  --last-move-fill: rgba(196, 150, 60, 0.3);
+  --last-move-fill-strong: rgba(214, 170, 74, 0.42);
+  --last-move-ring: rgba(240, 206, 130, 0.55);
+
+  /* Sprint 2.7 — sacrifice highlight tone (R, G, B as bare numbers so
+     animation rules can compose rgba(var(--sacrifice-color), alpha)). */
+  --sacrifice-color: 168, 85, 247;
+
+  /* Typography */
+  --font-display: 'Cinzel', 'Times New Roman', serif;
+  /* System monos only: JetBrains Mono is deliberately not loaded
+     (index.html, Sprint 5.2), so naming it only made the move log
+     differ between machines that happen to have it installed. */
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Spacing scale (4px base) — shared across all themes */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 40px;
+  --space-6: 64px;
+
+  /* Radius — shared across all themes */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 9999px;
+
+  color-scheme: dark;
+}
+
+/* ─── Wood-light: clean lichess-style off-white ─────────────────── */
+[data-theme="wood-light"] {
+  /* Backgrounds */
+  --bg: #f6f1e8;
+  --bg-deep: #f6f1e8;
+  --bg-mid: #ede5d5;
+  --bg-elevated: #ffffff;
+  --bg-elevated-hover: #f0e8d5;
+  --bg-panel: #f8f3e8;
+  --bg-panel-deep: #f0e8d5;
+  --bg-card: #ffffff;
+  --bg-card-alt: #f8f3e8;
+  --bg-overlay-dark: #ede5d5;
+  --bg-popup: #ffffff;
+  --bg-deeper: #ede5d5;
+  --bg-danger-tint: #f5e0dc;
+
+  /* Tiles */
+  --tile-light: #f0e0c0;
+  --tile-dark: #b8865d;
+  --tile-light-alt: #e8d5a8;
+  --tile-dark-alt: #a07748;
+  --tile-promo-light: #ffffff;
+  --tile-promo-dark: #2a1810;
+  --tile-promo-light-text: #2a1810;
+  --tile-promo-dark-text: #f6f1e8;
+
+  /* Pieces */
+  --piece-white: #fdfbf5;
+  --piece-black: #2a1810;
+  --piece-text-on-bright: #2a1810;
+  --piece-white-flat: #fdfbf5;
+  --piece-black-flat: #2a1810;
+  --piece-white-shadow: 0 0 1px rgba(42, 24, 16, 0.5), 0 1px 1px rgba(42, 24, 16, 0.25);
+  --piece-black-shadow: 0 0 1px rgba(255, 255, 255, 0.4);
+
+  /* Accents — warm gold (muted vs wood) */
+  --accent-primary: #8b6f3a;
+  --accent-secondary: #b85450;
+  --accent-gold: #8b6f3a;
+  --accent-gold-bright: #b8902a;
+  --accent-gold-orange: #c47a2a;
+  --accent-gold-light: #a88040;
+  --accent-amber-mid: #b8902a;
+  --accent-amber-bright: #c4a040;
+  --accent-amber-warm: #b88030;
+  --accent-peach: #c98a5a;
+  --text-on-bright-gold: #2a1810;
+
+  /* Secondary */
+  --accent-teal: #2d8a6e;
+  --accent-teal-bright: #2d8a6e;
+  --accent-info: #4080b0;
+  --accent-orange: #c47a2a;
+
+  /* Status — muted */
+  --accent-danger: #b85450;
+  /* V1 — the OTHER side. Used where two sides must be told apart at a
+     glance (the tournament clock's running half). Distinct from
+     --accent-danger, which means "something is wrong". */
+  --accent-opponent: #b85450;
+  /* V1 — where a piece may legally land. Was hardcoded --accent-teal,
+     which is a green that belongs to neon and reads as paint from another
+     product on a wooden or cream board. */
+  --move-target: rgba(90, 58, 40, 0.85);
+  --danger: #b85450;
+  --danger-bright: #c4625e;
+  --danger-coral: #b85450;
+  --danger-coral-light: #d07a76;
+  --danger-mid: #a8483f;
+  --danger-dark: #8a3a32;
+  --danger-light: #b85450;
+  --danger-very-light: #d07a76;
+  --danger-pale: #e8b5b0;
+  --danger-short: #b85450;
+
+  --accent-success: #5a8a4f;
+  --success: #5a8a4f;
+  --success-light: #6a9a5f;
+  --success-mint: #5a8a4f;
+
+  /* Text */
+  --text: #2a1810;
+  --text-primary: #2a1810;
+  --text-secondary: rgba(42, 24, 16, 0.7);
+  --text-muted: rgba(42, 24, 16, 0.5);
+  --text-muted-warm: rgba(42, 24, 16, 0.6);
+  --text-white: #fdfbf5;
+  --text-on-light: #2a1810;
+  --text-grey-mid: rgba(42, 24, 16, 0.4);
+  --text-grey-light: rgba(42, 24, 16, 0.45);
+  --text-grey-lighter: rgba(42, 24, 16, 0.4);
+
+  /* Buttons */
+  --btn-bg: #ffffff;
+  --btn-border: rgba(42, 24, 16, 0.15);
+
+  /* Borders */
+  --border-subtle: rgba(42, 24, 16, 0.08);
+  --border-strong: rgba(42, 24, 16, 0.2);
+
+  /* Glows — gentle */
+  --glow-accent: 0 0 8px rgba(139, 111, 58, 0.25);
+  --glow-danger: 0 0 8px rgba(184, 84, 80, 0.25);
+  --glow-success: 0 0 8px rgba(90, 138, 79, 0.25);
+  --shadow-elevated: 0 4px 18px rgba(42, 24, 16, 0.12);
+
+  /* Seam: faint dark hint */
+  --seam-color: rgba(42, 24, 16, 0.1);
+
+  /* Last move: warm ochre, readable on a bright board */
+  --last-move-fill: rgba(206, 158, 48, 0.36);
+  --last-move-fill-strong: rgba(198, 146, 30, 0.5);
+  --last-move-ring: rgba(150, 105, 20, 0.5);
+
+  /* Sacrifice: deeper violet for contrast on the off-white page. */
+  --sacrifice-color: 124, 58, 237;
+
+  /* Typography */
+  --font-display: 'Cinzel', 'Times New Roman', serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  color-scheme: light;
+}
+
+/* ─── Fantasy: gothic bronze/gold chess set ─────────────────────── */
+[data-theme="fantasy"] {
+  /* Backgrounds — near-black with warm bronze undertone */
+  --bg: #0a0805;
+  --bg-deep: #0a0805;
+  --bg-mid: #1a1408;
+  --bg-elevated: #2a2010;
+  --bg-elevated-hover: #3a2c18;
+  --bg-panel: #221a0c;
+  --bg-panel-deep: #150f06;
+  --bg-card: #1a1408;
+  --bg-card-alt: #221a0c;
+  --bg-overlay-dark: #0a0805;
+  --bg-popup: #2a2010;
+  --bg-deeper: #0a0805;
+  --bg-danger-tint: #2a1410;
+
+  /* Tiles — warm bronze light vs deep black-brown dark */
+  --tile-light: #4a3520;
+  --tile-dark: #1a1208;
+  --tile-light-alt: #5a4530;
+  --tile-dark-alt: #221810;
+  --tile-promo-light: #5a4530;
+  --tile-promo-dark: #1a1208;
+  --tile-promo-light-text: #e8d5a0;
+  --tile-promo-dark-text: #e8d5a0;
+
+  /* Pieces — royal gold vs dark bronze */
+  --piece-white: #d4af37;
+  --piece-black: #2a1f10;
+  --piece-text-on-bright: #0a0805;
+  --piece-white-flat: #d4af37;
+  --piece-black-flat: #2a1f10;
+  --piece-white-shadow:
+    0 0 4px rgba(0, 0, 0, 0.8),
+    0 0 8px rgba(212, 175, 55, 0.5);
+  --piece-black-shadow:
+    0 0 3px rgba(232, 213, 160, 0.6),
+    0 0 6px rgba(232, 213, 160, 0.3);
+
+  /* Accents — aged gold primary */
+  --accent-primary: #c9a062;
+  --accent-secondary: #ffd700;
+  --accent-gold: #c9a062;
+  --accent-gold-bright: #e8c878;
+  --accent-gold-orange: #b8862a;
+  --accent-gold-light: #d4b070;
+  --accent-amber-mid: #c9821f;
+  --accent-amber-bright: #d4a040;
+  --accent-amber-warm: #c9821f;
+  --accent-peach: #c98a5a;
+  --text-on-bright-gold: #0a0805;
+
+  /* Secondary */
+  --accent-teal: #6b8e23;
+  --accent-teal-bright: #7ba037;
+  --accent-info: #b8862a;
+  --accent-orange: #c9821f;
+
+  /* Status — oxblood red, moss green */
+  --accent-danger: #8b3a3a;
+  /* V1 — the OTHER side. Used where two sides must be told apart at a
+     glance (the tournament clock's running half). Distinct from
+     --accent-danger, which means "something is wrong". */
+  --accent-opponent: #c05a52;
+  /* V1 — where a piece may legally land. Was hardcoded --accent-teal,
+     which is a green that belongs to neon and reads as paint from another
+     product on a wooden or cream board. */
+  --move-target: rgba(226, 208, 168, 0.9);
+  --danger: #8b3a3a;
+  --danger-bright: #a04848;
+  --danger-coral: #8b3a3a;
+  --danger-coral-light: #a85a5a;
+  --danger-mid: #7a2f2f;
+  --danger-dark: #5e2424;
+  --danger-light: #a85a5a;
+  --danger-very-light: #c98080;
+  --danger-pale: #d8a8a8;
+  --danger-short: #a85a5a;
+
+  --accent-success: #6b8e23;
+  --success: #6b8e23;
+  --success-light: #8aa840;
+  --success-mint: #7ba037;
+
+  /* Text — warm cream */
+  --text: #e8d5a0;
+  --text-primary: #e8d5a0;
+  --text-secondary: rgba(232, 213, 160, 0.7);
+  --text-muted: rgba(232, 213, 160, 0.4);
+  --text-muted-warm: rgba(232, 213, 160, 0.6);
+  --text-white: #f5e8c0;
+  --text-on-light: #0a0805;
+  --text-grey-mid: rgba(232, 213, 160, 0.35);
+  --text-grey-light: rgba(232, 213, 160, 0.45);
+  --text-grey-lighter: rgba(232, 213, 160, 0.55);
+
+  /* Buttons */
+  --btn-bg: #2a2010;
+  --btn-border: rgba(201, 160, 98, 0.22);
+
+  /* Borders */
+  --border-subtle: rgba(201, 160, 98, 0.15);
+  --border-strong: rgba(201, 160, 98, 0.45);
+
+  /* Glows — heavier than wood, single-coloured gold */
+  --glow-accent: 0 0 16px rgba(201, 160, 98, 0.5), 0 0 4px rgba(201, 160, 98, 0.8);
+  --glow-danger: 0 0 16px rgba(139, 58, 58, 0.5);
+  --glow-success: 0 0 12px rgba(107, 142, 35, 0.4);
+  --shadow-elevated:
+    0 8px 24px rgba(0, 0, 0, 0.7),
+    0 0 1px rgba(201, 160, 98, 0.4);
+
+  /* Seam: warm gold */
+  --seam-color: rgba(201, 160, 98, 0.2);
+
+  /* Last move: arcane violet, the theme's secondary voice */
+  --last-move-fill: rgba(150, 110, 210, 0.3);
+  --last-move-fill-strong: rgba(160, 120, 224, 0.42);
+  --last-move-ring: rgba(196, 164, 250, 0.55);
+
+  /* Sacrifice: royal gold */
+  --sacrifice-color: 218, 165, 32;
+
+  /* Typography — gothic display */
+  --font-display: 'Cinzel Decorative', 'Cinzel', 'Times New Roman', serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  color-scheme: dark;
+}
+
+/* ─── Neon: the default room — vivid indigo + cyan/magenta glow.
+   Gradient room, dual-color glowing borders, rose vs ice pieces. */
+[data-theme="neon"] {
+  /* Backgrounds — deep indigo, never true black */
+  --bg: #131022;
+  --bg-deep: #100d1d;
+  --bg-mid: #191532;
+  --bg-elevated: #201c3c;
+  --bg-elevated-hover: #292450;
+  --bg-panel: #1a1636;
+  --bg-panel-deep: #151129;
+  --bg-card: #1a1636;
+  --bg-card-alt: #201c3c;
+  --bg-overlay-dark: #0e0b1a;
+  --bg-popup: #1e1a3a;
+  --bg-deeper: #100d1d;
+  --bg-danger-tint: #241030;
+
+  /* Tiles — muted violet-navy, low contrast like the mock */
+  --tile-light: #292544;
+  --tile-dark: #181528;
+  --tile-light-alt: #35305c;
+  --tile-dark-alt: #211d38;
+  --tile-promo-light: #35305c;
+  --tile-promo-dark: #181528;
+  --tile-promo-light-text: #e9edff;
+  --tile-promo-dark-text: #e9edff;
+
+  /* Pieces — ice white vs rose pink, both softly lit */
+  --piece-white: #e9edff;
+  --piece-black: #f3a8d2;
+  --piece-text-on-bright: #131022;
+  --piece-white-flat: #e9edff;
+  --piece-black-flat: #f3a8d2;
+  --piece-white-shadow: 0 0 3px rgba(78, 225, 255, 0.55), 0 0 10px rgba(78, 225, 255, 0.25);
+  --piece-black-shadow: 0 0 3px rgba(255, 79, 216, 0.55), 0 0 10px rgba(255, 79, 216, 0.25);
+
+  /* Accents — electric cyan primary, hot magenta secondary */
+  --accent-primary: #4ee1ff;
+  --accent-secondary: #ff4fd8;
+  --accent-gold: #4ee1ff;
+  --accent-gold-bright: #7deeff;
+  --accent-gold-orange: #ff9de8;
+  --accent-gold-light: #7deeff;
+  --accent-amber-mid: #b48cff;
+  --accent-amber-bright: #c9a8ff;
+  --accent-amber-warm: #ff9de8;
+  --accent-peach: #ff9de8;
+  --text-on-bright-gold: #0e0b1a;
+
+  /* Secondary */
+  --accent-teal: #52f5c3;
+  --accent-teal-bright: #4ee1ff;
+  --accent-info: #4ee1ff;
+  --accent-orange: #ffb04f;
+
+  /* Status — hot magenta danger, mint success */
+  --accent-danger: #ff4f8f;
+  /* V1 — the OTHER side. Used where two sides must be told apart at a
+     glance (the tournament clock's running half). Distinct from
+     --accent-danger, which means "something is wrong". */
+  --accent-opponent: #ff4fd8;
+  /* V1 — where a piece may legally land. Was hardcoded --accent-teal,
+     which is a green that belongs to neon and reads as paint from another
+     product on a wooden or cream board. */
+  --move-target: #52f5c3;
+  --danger: #ff4f8f;
+  --danger-bright: #ff6ba1;
+  --danger-coral: #ff4f8f;
+  --danger-coral-light: #ff8ab8;
+  --danger-mid: #d63a75;
+  --danger-dark: #b02e60;
+  --danger-light: #ff8ab8;
+  --danger-very-light: #ffa8c9;
+  --danger-pale: #ffc4da;
+  --danger-short: #ff6ba1;
+
+  --accent-success: #52f5c3;
+  --success: #52f5c3;
+  --success-light: #7df8d3;
+  --success-mint: #52f5c3;
+
+  /* Text */
+  --text: #e9edff;
+  --text-primary: #e9edff;
+  --text-secondary: rgba(233, 237, 255, 0.68);
+  --text-muted: rgba(233, 237, 255, 0.42);
+  --text-muted-warm: rgba(233, 237, 255, 0.55);
+  --text-white: #ffffff;
+  --text-on-light: #0e0b1a;
+  --text-grey-mid: rgba(233, 237, 255, 0.35);
+  --text-grey-light: rgba(233, 237, 255, 0.45);
+  --text-grey-lighter: rgba(233, 237, 255, 0.6);
+
+  /* Buttons */
+  --btn-bg: #221d42;
+  --btn-border: rgba(78, 225, 255, 0.35);
+
+  /* Borders — visible neon hairlines */
+  --border-subtle: rgba(78, 225, 255, 0.18);
+  --border-strong: rgba(78, 225, 255, 0.5);
+
+  /* Glows — the point of the theme */
+  --glow-accent: 0 0 10px rgba(78, 225, 255, 0.5), 0 0 22px rgba(78, 225, 255, 0.2);
+  --glow-danger: 0 0 10px rgba(255, 79, 216, 0.45), 0 0 22px rgba(255, 79, 216, 0.18);
+  --glow-success: 0 0 10px rgba(82, 245, 195, 0.45);
+  --shadow-elevated: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(78, 225, 255, 0.15);
+
+  /* Seam: cyan */
+  --seam-color: rgba(78, 225, 255, 0.3);
+
+  /* Last move: electric cyan (replaces the old per-theme override block) */
+  --last-move-fill: rgba(78, 225, 255, 0.16);
+  --last-move-fill-strong: rgba(78, 225, 255, 0.24);
+  --last-move-ring: rgba(78, 225, 255, 0.55);
+
+  /* Sacrifice: hot magenta */
+  --sacrifice-color: 255, 79, 216;
+
+  --font-display: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  color-scheme: dark;
+}
+

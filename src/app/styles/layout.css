@@ -1,0 +1,360 @@
+/* ═══════════════════════════════════════════════════════════════════
+   SPRINT 2 LAYOUT — Lichess-style grid scaffolding.
+   The actual game logic and styling lives in earlier sections; this
+   block only provides the new structural skeleton (subheader tabs,
+   2-column body, sidebar panels, status bar). Existing in-game
+   buttons (Rotate, Resign, etc.) stay where they are under the board.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Sprint 2.6 — header action buttons: square icon tiles that surface
+   key actions (Leaderboard / Feedback / Help) directly in the header
+   instead of hiding them in a dropdown. Sized to align with
+   .theme-toggle (30px) so the row reads as a single cluster. */
+.header-action-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.2s ease, transform 0.15s ease;
+}
+
+.header-action-btn:hover:not(:disabled) {
+  background: var(--bg-elevated-hover);
+  border-color: var(--accent-primary);
+  box-shadow: var(--glow-accent);
+  transform: translateY(-1px);
+}
+
+.header-action-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.header-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Sprint 2.6 — game-mode hero cards above the board.
+   Sprint 2.7.1: cards now live inside .board-area so they centre with
+   the board column instead of with the full app-root. No own max-width
+   or auto margin — the parent (.board-area) already caps to the board
+   width and centres its children. */
+.game-mode-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.mode-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-mid);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  text-align: left;
+  position: relative;
+  overflow: hidden;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+  color: var(--text);
+  font-family: inherit;
+}
+
+.mode-card:hover:not(:disabled) {
+  border-color: var(--accent-primary);
+  box-shadow: var(--glow-accent);
+  transform: translateY(-2px);
+}
+
+.mode-card.is-active {
+  border-color: var(--accent-primary);
+  background: linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-mid) 100%);
+  box-shadow: var(--glow-accent);
+}
+
+.mode-card:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.mode-card-icon {
+  /* Sprint 3.1 — was a 30px emoji; the wrapper now hosts a Lucide SVG.
+     The SVG strokes pick up `color: var(--accent-primary)` via
+     currentColor so the icon matches the surrounding glow. */
+  color: var(--accent-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  line-height: 1;
+  filter: drop-shadow(0 0 6px var(--accent-primary));
+}
+
+.mode-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mode-card-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.mode-card-subtitle {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+/* Sprint 2.6 — Opponent selector lives in the right sidebar above the
+   Moves panel, stacked as two full-width pills. Mirrors the visual
+   weight of the in-sidebar action panels. */
+.sidebar-opponent .opponent-tabs-vertical {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.opp-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-mid);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.2s ease;
+}
+
+.opp-tab:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-elevated-hover);
+}
+
+.opp-tab.is-active {
+  border-color: var(--accent-primary);
+  background: var(--bg-elevated);
+  box-shadow: var(--glow-accent);
+}
+
+.opp-tab:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* R8 — tiny corner beta marker on icon-only header buttons (music,
+   Twitch). The tabs' inline BETA pills moved here: Friend/Local have
+   graduated, the stream layer is the part still cooking. */
+.beta-corner {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  padding: 0 3px;
+  background: linear-gradient(135deg, var(--danger-coral-light), var(--danger-coral));
+  color: var(--text-white);
+  border-radius: 4px;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1.3;
+  pointer-events: none;
+}
+
+.header-action-btn { position: relative; }
+
+.opp-tab .beta-tag-small {
+  margin-left: auto;
+  padding: 1px 6px;
+  background: linear-gradient(135deg, var(--danger-coral-light), var(--danger-coral));
+  color: var(--text-white);
+  border-radius: var(--radius-sm);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+/* 2-column body: board (centered) | sidebar */
+.app-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  /* Sprint 2.7.3 — wider column gap matches the new app-root gap. */
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.board-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Sprint 2.7.3 — bumped from space-2 to space-4 so mode cards /
+     board / action row read as separately-paced sections instead of
+     stacked-flush. */
+  gap: var(--space-4);
+  min-width: 0;
+  /* Sprint 2.7.2: cap exactly to the board width — children
+     (mode-cards, roulette-panel, board-with-eval, board-actions,
+     position-label-wrap) all set width:100% and so all share the
+     same left/right edges as the board itself. The eval bar still
+     overflows to the left via its own absolute positioning. */
+  max-width: var(--board-size);
+  width: 100%;
+  margin: 0 auto;
+}
+
+.right-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.sidebar-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--btn-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.sidebar-panel-title {
+  margin: 0 0 var(--space-1);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  /* Sprint 4.5 — was --text-muted, which fails WCAG 4.5:1 on the panel
+     background at this size. Secondary keeps the de-emphasis. */
+  color: var(--text-secondary);
+}
+
+.sidebar-moves .move-log-text {
+  margin: 0;
+  padding: var(--space-2);
+  max-height: 280px;
+  overflow-y: auto;
+  font-size: 12px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.6;
+}
+
+.sidebar-moves .move-log-empty {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: var(--space-2);
+}
+
+.sidebar-moves .copy-btn {
+  align-self: flex-start;
+  margin-top: 0;
+}
+
+.sidebar-analysis .analysis-eval {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.sidebar-analysis .analysis-eval.positive { color: var(--success-light); }
+.sidebar-analysis .analysis-eval.negative { color: var(--danger-light); }
+
+.sidebar-analysis .analysis-last {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Sprint 3.4.1 — CTA inside a sidebar panel; full-width pill that
+   inverts on hover to the accent colour. Used for "Review last game"
+   under the Analysis eval. */
+.panel-action-btn {
+  width: 100%;
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.2s ease, transform 0.15s ease;
+}
+
+.panel-action-btn:hover:not(:disabled) {
+  background: var(--accent-primary);
+  color: var(--piece-text-on-bright);
+  box-shadow: var(--glow-accent);
+  transform: translateY(-1px);
+}
+
+.panel-action-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.panel-action-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Status bar — pinned at bottom of app-root, simple flex strip */
+.app-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--btn-border);
+  border-radius: var(--radius-md);
+  flex-wrap: wrap;
+}
+
+.app-status-bar .status-turn {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.app-status-bar .status-turn-mine {
+  color: var(--accent-primary);
+}
+
+.app-status-bar .status-last-move {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+

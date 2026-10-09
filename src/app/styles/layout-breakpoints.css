@@ -1,0 +1,176 @@
+/* Sprint 2.5 — AFK attention banner. Fixed-position pulsing pill that
+   appears when the player has been idle on their own turn for >20s.
+   Renders inside the .app-shell but as position:fixed it doesn't
+   affect layout. */
+/* Sprint 5.0 — the AFK nudge used to be a fixed red "Your move!" pill
+   pinned over the header; it read as an error and kept covering the
+   header buttons. Replaced with a slow ambient breathing glow on the
+   board frame itself — visible from the corner of the eye, blocks
+   nothing, no text. */
+.board-with-coords.is-afk-nudge {
+  border-radius: var(--radius-md);
+  animation: afk-breathe 3s ease-in-out infinite;
+}
+
+@keyframes afk-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 200, 80, 0); }
+  50%      { box-shadow: 0 0 0 3px rgba(255, 200, 80, 0.35), 0 0 28px rgba(255, 200, 80, 0.25); }
+}
+
+/* R14 — big monitors: widen the shell so the board column can host the
+   raised cap (820px board + 320px sidebar + gaps). Below this the old
+   1100px max keeps the familiar density. */
+@media (min-width: 1400px) {
+  .app-root {
+    max-width: 1240px;
+  }
+}
+
+/* V1 SIDEBAR_STEPS — the right column used to stop growing at 320px, so on
+   a 1440p/4K screen the board kept scaling while the panels stayed a thin
+   strip. Both step up together; the board-size effect in App.tsx mirrors
+   these exact numbers (sidebar 320 / 400 / 460, cap 820 / 900 / 1000). */
+@media (min-width: 1700px) {
+  .app-root {
+    max-width: 1500px;
+  }
+  .app-body {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
+  }
+  .sidebar-panel {
+    padding: var(--space-4);
+  }
+  .sidebar-moves .move-log-text {
+    max-height: 340px;
+    font-size: 13px;
+  }
+}
+
+@media (min-width: 2100px) {
+  .app-root {
+    max-width: 1760px;
+  }
+  .app-body {
+    grid-template-columns: minmax(0, 1fr) minmax(380px, 460px);
+  }
+  .sidebar-panel-title {
+    font-size: 12px;
+  }
+  .sidebar-analysis .analysis-eval {
+    font-size: 26px;
+  }
+  .sidebar-moves .move-log-text {
+    max-height: 420px;
+    font-size: 14px;
+  }
+}
+
+/* R14 — display-scale row in the help dialog. */
+.help-scale-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--btn-border);
+}
+
+.help-scale-row label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.help-scale-val {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary, #cbd5e1);
+  font-weight: 700;
+}
+
+.help-scale-row input[type='range'] {
+  flex: 1;
+  min-width: 120px;
+  accent-color: var(--accent-primary, #eab308);
+}
+
+.help-scale-reset {
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--text);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+/* Mobile: stack sidebar below board and collapse mode-card grid */
+@media (max-width: 880px) {
+  .app-root {
+    padding: var(--space-2) var(--space-2) var(--space-3);
+    gap: var(--space-2);
+  }
+  .app-body {
+    grid-template-columns: 1fr;
+    gap: var(--space-2);
+  }
+  .game-mode-cards {
+    grid-template-columns: 1fr;
+    gap: var(--space-2);
+  }
+  .mode-card {
+    padding: var(--space-2) var(--space-3);
+  }
+  .mode-card-icon svg {
+    width: 24px;
+    height: 24px;
+  }
+  .mode-card-title {
+    font-size: 16px;
+  }
+  .right-sidebar {
+    order: 2;
+    width: 100%;
+  }
+  .board-area {
+    order: 1;
+  }
+  /* Cap panel heights so the move log can't dominate the viewport;
+     the panel becomes internally scrollable instead. */
+  .sidebar-moves {
+    max-height: 240px;
+  }
+  .sidebar-moves .move-log-text {
+    max-height: 160px;
+  }
+}
+
+/* Tight mobile: shrink header, hide eval bar (board needs the room) */
+@media (max-width: 640px) {
+  .app-header h1 {
+    /* Sprint 4.0 — proportional shrink; weight + letter-spacing
+       inherited from the desktop base rule. */
+    font-size: 24px;
+  }
+  .board-area {
+    max-width: 100%;
+    overflow: hidden;
+  }
+  /* The eval-bar lives absolutely inside .board-with-eval; hiding it
+     reclaims a few pixels of horizontal space on very narrow screens.
+     The numeric eval is still shown in the Analysis sidebar panel. */
+  .eval-bar {
+    display: none;
+  }
+  .app-status-bar {
+    font-size: 12px;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+  }
+  .app-status-bar .status-last-move {
+    font-size: 11px;
+  }
+}
+

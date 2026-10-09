@@ -1,0 +1,100 @@
+/* Header */
+
+.app-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.app-header h1 {
+  /* Sprint 4.0 — single canonical title style. Per-theme overrides
+     below only touch colour / text-shadow / font-family; size, weight
+     and letter-spacing are pinned here so the wordmark reads
+     identically across every view + theme. */
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.app-brand {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 16px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.app-tagline {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+  margin: 0;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .app-tagline {
+    display: none;
+  }
+}
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+@media (max-width: 900px) {
+  .app-tagline {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .header-action-btn,
+  .theme-toggle {
+    width: 28px;
+    height: 28px;
+  }
+  .user-menu-trigger {
+    height: 28px;
+    padding: 0 var(--space-2);
+    font-size: 12px;
+  }
+  .header-controls {
+    gap: 2px;
+  }
+}
+
+.header-help-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.header-help-btn:hover {
+  background: var(--bg-elevated-hover);
+  color: var(--text);
+}
+

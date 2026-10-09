@@ -1,0 +1,99 @@
+.app-shell {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  /* M.15 — decorative bits (perimeter equalizer, halos) extend past the
+     board edge; clip them horizontally so they can never add a phantom
+     horizontal scrollbar on narrow screens. Vertical stays visible.
+     Portalled panels (dock/Twitch) live outside .app-shell, unaffected. */
+  overflow-x: clip;
+  /* Sprint 3.9 — dynamic viewport unit handles iOS Safari's address-
+     bar resize so the bottom of the layout doesn't get cropped when
+     the bar collapses. Falls back to 100vh on older browsers. */
+  min-height: 100dvh;
+  /* Notch / home-indicator safe-area padding. env() resolves to 0 on
+     non-notched devices so this is a no-op there. */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: linear-gradient(135deg, var(--eval-c1) 0%, var(--eval-c2) 100%);
+  transition:
+    --eval-c1 0.6s ease,
+    --eval-c2 0.6s ease;
+  /* Sprint 3.2 — soft enter fade on view switch / first load. Fires
+     on mount; React may reuse the .app-shell DOM across view changes
+     (game / review / leaderboard / friend-lobby) so this is at least
+     a first-impression polish. */
+  animation: view-enter 280ms ease-out;
+}
+
+@keyframes view-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* R3 — when a side panel is docked INTO the layout, reserve its column
+   so the centred content slides clear instead of hiding behind it.
+   Desktop only: below the breakpoint the panels are full-width bottom
+   bars (the --dock-* vars still carry px but we ignore them here, and
+   the board sizing zeroes them too). The transition on .app-shell
+   padding above gives the "interface nudges over" feel. */
+@media (min-width: 721px) {
+  .app-shell {
+    /* Plain var(), NOT calc(env() + var()): desktop has no safe-area
+       insets, and transitioning a calc()+env()+var() expression fails to
+       interpolate (the padding stuck at 0). A bare var animates cleanly. */
+    padding-left: var(--dock-left, 0px);
+    padding-right: var(--dock-right, 0px);
+  }
+}
+
+.app-shell::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: var(--flash-color, white);
+  opacity: var(--flash-opacity, 0);
+  pointer-events: none;
+  transition: --flash-opacity var(--flash-duration, 0.4s) ease-out;
+  mix-blend-mode: screen;
+  z-index: 9000;
+}
+
+/* M.15 — full-screen sound-grid: a fixed canvas above the app-shell
+   gradient but below the UI (.app-root is lifted to z-index:1). */
+.bg-wave-grid {
+  position: fixed;
+  inset: 0;
+  /* Sized to match the backing store BackgroundWaveGrid draws at
+     (innerWidth x innerHeight): vw includes the scrollbar like innerWidth,
+     and dvh follows the mobile URL bar like innerHeight, so the grid is
+     never stretched. A canvas needs both: inset alone does not size it. */
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.app-root {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  /* Sprint 2.7.3 — bumped from space-3 to space-4 so header / mode
+     cards / body / status bar feel less crowded. Inner gaps
+     (sidebar, cards, action row) stay at space-3 / space-2 to keep
+     local groupings tight. Mobile rule below clamps this back down. */
+  gap: var(--space-4);
+}
+
