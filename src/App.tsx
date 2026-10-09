@@ -158,6 +158,7 @@ import {
 } from './features/game/position';
 import { formatClockFace, matchClocks } from './features/game/clock';
 import { computeBoardSize } from './app/boardSize';
+import { gameOverText, memoryTermination, soloOutcome, winnerOf } from './features/endgame/result';
 import { drawOfferTitle } from './features/game/drawOfferTitle';
 import { BOT_LEVEL_KEY, BOT_STRENGTH_HINT, BOT_STRENGTH_SUMMARY, readInitialBotLevel } from './features/game/botLevel';
 import { clearLiveSession, readLiveSession, writeLiveSession } from './memory/liveSession';
@@ -1184,17 +1185,7 @@ function App() {
 
     const sourceId = liveSavedGameIdRef.current;
     const resigned = gameStatus === 'resigned_white' || gameStatus === 'resigned_black';
-    const termination: 'checkmate' | 'stalemate' | 'resignation' | 'agreement' = resigned
-      ? 'resignation'
-      : gameStatus === 'draw_agreement'
-        ? 'agreement'
-        : gameStatus === 'checkmate'
-          || gameStatus === 'king_captured_white_wins'
-          || gameStatus === 'king_captured_black_wins'
-          || gameStatus === 'timeout_white'
-          || gameStatus === 'timeout_black'
-          ? 'checkmate'
-          : 'stalemate';
+    const termination = memoryTermination(gameStatus);
     const saved = buildSavedGameFromLog(
       log,
       state,
@@ -1277,23 +1268,7 @@ function App() {
     if (completedLogIdRef.current === log.id) return;
     completedLogIdRef.current = log.id;
 
-    let outcome: GameOutcome;
-    if (gameStatus === 'checkmate') {
-      outcome = state.sideToMove === HUMAN_COLOR ? 'ai-win' : 'human-win';
-    } else if (gameStatus === 'king_captured_black_wins') {
-      // Black wins => human (white) lost.
-      outcome = 'ai-win';
-    } else if (gameStatus === 'king_captured_white_wins') {
-      outcome = 'human-win';
-    } else if (gameStatus === 'timeout_white') {
-      // V1 — human (white) flagged.
-      outcome = 'ai-win';
-    } else if (gameStatus === 'timeout_black') {
-      outcome = 'human-win';
-    } else {
-      outcome = 'draw';
-    }
-    void finishGame(outcome);
+    void finishGame(soloOutcome(gameStatus, state.sideToMove));
     // finishGame closes over current state/log/user/displayName; we want this
     // to fire once per terminal transition, hence the ref-guard above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4627,21 +4602,10 @@ function App() {
    * padding, so its rect origin and the board's own coordinate origin are
    * the same point.
    */
-  /**
-   * V1 — who won a decisive game, or null if it is not decided or drawn.
-   * On a checkmate the mated side is the one to move, so the winner is
-   * the other one.
-   */
-  const decisiveWinner: Color | null = useMemo(() => {
-    if (gameStatus === 'checkmate') return state.sideToMove === 'white' ? 'black' : 'white';
-    if (gameStatus === 'king_captured_white_wins') return 'white';
-    if (gameStatus === 'king_captured_black_wins') return 'black';
-    if (gameStatus === 'timeout_white') return 'black';
-    if (gameStatus === 'timeout_black') return 'white';
-    if (gameStatus === 'resigned_white') return 'black';
-    if (gameStatus === 'resigned_black') return 'white';
-    return null;
-  }, [gameStatus, state.sideToMove]);
+  const decisiveWinner: Color | null = useMemo(
+    () => winnerOf(gameStatus, state.sideToMove),
+    [gameStatus, state.sideToMove],
+  );
 
   /**
    * V1 — WHOSE king the endgame cut is about.
@@ -5169,46 +5133,10 @@ function App() {
     [log, gameMode],
   );
 
-  const gameOverMessage = useMemo(() => {
-    if (gameStatus === 'checkmate') {
-      const winner = state.sideToMove === 'white' ? 'Black' : 'White';
-      return `Checkmate! ${winner} wins`;
-    }
-    if (gameStatus === 'draw_stalemate') {
-      return 'Draw: stalemate';
-    }
-    if (gameStatus === 'draw_material') {
-      return 'Draw: insufficient material';
-    }
-    if (gameStatus === 'draw_repetition') {
-      return 'Draw: threefold repetition';
-    }
-    if (gameStatus === 'draw_50move') {
-      return 'Draw: 50-move rule';
-    }
-    if (gameStatus === 'draw_agreement') {
-      return 'Draw by agreement';
-    }
-    if (gameStatus === 'king_captured_white_wins') {
-      return 'King captured! White wins';
-    }
-    if (gameStatus === 'king_captured_black_wins') {
-      return 'King captured! Black wins';
-    }
-    if (gameStatus === 'timeout_white') {
-      return 'White ran out of time. Black wins';
-    }
-    if (gameStatus === 'timeout_black') {
-      return 'Black ran out of time. White wins';
-    }
-    if (gameStatus === 'resigned_white') {
-      return 'White resigned. Black wins';
-    }
-    if (gameStatus === 'resigned_black') {
-      return 'Black resigned. White wins';
-    }
-    return null;
-  }, [gameStatus, state.sideToMove]);
+  const gameOverMessage = useMemo(
+    () => gameOverText(gameStatus, state.sideToMove),
+    [gameStatus, state.sideToMove],
+  );
 
   if (isStatsMode) {
     return (
