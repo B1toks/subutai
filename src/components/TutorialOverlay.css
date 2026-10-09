@@ -1,0 +1,143 @@
+/* ── S2.2: first-launch tour ──────────────────────────────────────────
+   Spotlight = a transparent box whose enormous box-shadow dims the rest
+   of the viewport; the highlighted element stays fully interactive-
+   looking (though the overlay blocks clicks until the tour ends). */
+
+.tour-root {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+}
+
+.tour-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.tour-spotlight {
+  position: absolute;
+  border-radius: var(--radius-md);
+  box-shadow:
+    0 0 0 9999px rgba(0, 0, 0, 0.65),
+    0 0 0 2px var(--accent-primary),
+    0 0 24px rgba(212, 168, 67, 0.4);
+  transition: top 0.3s ease, left 0.3s ease, width 0.3s ease, height 0.3s ease;
+  pointer-events: none;
+}
+
+.tour-card {
+  position: absolute;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  background: var(--bg-popup);
+  border: 1px solid var(--btn-border);
+  border-radius: var(--radius-lg, 12px);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-elevated, 0 12px 40px rgba(0, 0, 0, 0.5));
+  animation: tour-card-in 0.25s ease-out;
+}
+
+@keyframes tour-card-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.tour-card[style*="translate(-50%"] {
+  /* centered variant — the entry animation transform would fight the
+     centering translate, so skip it */
+  animation: none;
+}
+
+.tour-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.tour-card-icon {
+  display: inline-flex;
+  color: var(--accent-primary);
+}
+
+.tour-card-title {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.tour-card-body {
+  margin: 0 0 var(--space-4);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.tour-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.tour-skip-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 6px 8px;
+}
+
+.tour-skip-btn:hover {
+  color: var(--text);
+}
+
+.tour-dots {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.tour-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--bg-elevated-hover);
+}
+
+.tour-dot.is-active {
+  background: var(--accent-primary);
+}
+
+.tour-nav {
+  display: inline-flex;
+  gap: var(--space-2);
+}
+
+.tour-back-btn {
+  border: 1px solid var(--btn-border);
+  background: transparent;
+  color: var(--text);
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tour-next-btn {
+  border: none;
+  background: var(--accent-primary);
+  color: var(--text-on-bright-gold);
+  border-radius: 6px;
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tour-next-btn:hover {
+  filter: brightness(1.1);
+}
+
