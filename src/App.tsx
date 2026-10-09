@@ -21,7 +21,7 @@ import {
   BOT_STRENGTH_LABEL,
   type BotStrength,
 } from './ai/agents';
-import { evaluate, PIECE_VALUE } from './ai/evaluate';
+import { evaluate } from './ai/evaluate';
 import { searchPosition, ttClear } from './ai/search';
 import { type MoveClass, type MoveAnalysis } from './analysis/classify';
 import { classifyAsync } from './analysis/classifyClient';
@@ -158,6 +158,7 @@ import {
 } from './features/game/position';
 import { formatClockFace, matchClocks } from './features/game/clock';
 import { computeBoardSize } from './app/boardSize';
+import { countMaterial } from './features/game/material';
 import { gameOverText, memoryTermination, soloOutcome, winnerOf } from './features/endgame/result';
 import { drawOfferTitle } from './features/game/drawOfferTitle';
 import { BOT_LEVEL_KEY, BOT_STRENGTH_HINT, BOT_STRENGTH_SUMMARY, readInitialBotLevel } from './features/game/botLevel';
@@ -3555,58 +3556,7 @@ function App() {
     log.moves.length > 0 &&
     log.moves[log.moves.length - 1]?.move.kind === 'topologyToggle';
 
-  const materialBreakdown = useMemo(() => {
-    const pieceOrder: PieceType[] = ['queen', 'rook', 'bishop', 'knight', 'pawn'];
-    const white: Record<PieceType, number> = {
-      queen: 0, rook: 0, bishop: 0, knight: 0, pawn: 0, king: 0,
-    };
-    const black: Record<PieceType, number> = {
-      queen: 0, rook: 0, bishop: 0, knight: 0, pawn: 0, king: 0,
-    };
-    let whiteTotal = 0;
-    let blackTotal = 0;
-    for (const piece of Object.values(state.pieces)) {
-      if (!piece) continue;
-      const v = PIECE_VALUE[piece.type];
-      if (piece.color === 'white') {
-        white[piece.type]++;
-        whiteTotal += v;
-      } else {
-        black[piece.type]++;
-        blackTotal += v;
-      }
-    }
-    const startCount: Record<PieceType, number> = {
-      queen: 1, rook: 2, bishop: 2, knight: 2, pawn: 8, king: 1,
-    };
-    const capturedByWhite: { type: PieceType; count: number; value: number }[] = [];
-    const capturedByBlack: { type: PieceType; count: number; value: number }[] = [];
-    let capturedByWhiteTotal = 0;
-    let capturedByBlackTotal = 0;
-    for (const type of pieceOrder) {
-      const goneFromBlack = Math.max(0, startCount[type] - black[type]);
-      if (goneFromBlack > 0) {
-        const value = goneFromBlack * PIECE_VALUE[type];
-        capturedByWhite.push({ type, count: goneFromBlack, value });
-        capturedByWhiteTotal += value;
-      }
-      const goneFromWhite = Math.max(0, startCount[type] - white[type]);
-      if (goneFromWhite > 0) {
-        const value = goneFromWhite * PIECE_VALUE[type];
-        capturedByBlack.push({ type, count: goneFromWhite, value });
-        capturedByBlackTotal += value;
-      }
-    }
-    return {
-      score: whiteTotal - blackTotal,
-      capturedByWhite,
-      capturedByBlack,
-      capturedByWhiteTotal,
-      capturedByBlackTotal,
-      whiteTotal,
-      blackTotal,
-    };
-  }, [state.pieces]);
+  const materialBreakdown = useMemo(() => countMaterial(state.pieces), [state.pieces]);
 
   // materialBreakdown.score is white-perspective (whiteTotal - blackTotal).
   // T5.1: flip for the black seat in PvP so the counter follows the same
