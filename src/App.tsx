@@ -921,6 +921,7 @@ function App() {
       setMpEndOutcome(null);
       mpSavedGameIdRef.current = null;
       mpWroteOutcomeRef.current = null;
+      setMobilePanel('none');
       setView('friend-lobby');
     },
   );
@@ -960,6 +961,7 @@ function App() {
         startNewGame(); // R15-bug — same solo-world reset as onMatchReady
         setActiveMatch(match);
         setOpponentMode('friend');
+        setMobilePanel('none'); // fix/v1.1.4 — show the board, as onMatchReady
         setMpEndOutcome(null);
         mpSavedGameIdRef.current = null;
         mpWroteOutcomeRef.current = null;
@@ -3271,6 +3273,10 @@ function App() {
     // board fell into hot-seat the moment the match was dismissed.
     if (isMultiplayer) return;
     if (gameInProgress && !isMultiplayer && !watchingGame) {
+      // fix/v1.1.4 — the confirm renders inside .app-root under the
+      // phone drawer (z 940 over the dialog's 300); it was hidden behind
+      // the very panel the tab was tapped in.
+      setMobilePanel('none');
       setPendingOpponentChange(next);
       return;
     }
@@ -3278,6 +3284,11 @@ function App() {
   }
 
   function applyOpponentChange(next: 'ai' | 'friend' | 'local') {
+    // fix/v1.1.4 — picking an opponent is what starts the next game (or
+    // opens the lobby), so the phone drawer it was picked in steps aside
+    // and the board is in view. Settings inside the drawer (mode, bot,
+    // clock) leave it open; the player is still choosing.
+    setMobilePanel('none');
     if (next === 'friend') {
       busy.navigate('Opening the lobby', () => {
         setOpponentMode(next);
@@ -5943,6 +5954,10 @@ function App() {
             // the clock strip, which is gated on gameStatus==='active').
             startNewGame();
             setActiveMatch(match);
+            // fix/v1.1.4 — the drawer state outlives the lobby screen, so
+            // a drawer left open when the lobby was entered came back
+            // over the board of the new match. Close it on the way in.
+            setMobilePanel('none');
             setView('game');
             // Reset any stale completion state from a previous match.
             setMpEndOutcome(null);
@@ -6132,6 +6147,9 @@ function App() {
             </button>
           </Tooltip>
           <span className="rail-sep" aria-hidden />
+          {/* fix/v1.1.4 — on a phone these two sit in the left drawer, and
+              their dialogs render under it (and its scrim): close it first,
+              as Change name does. */}
           <Tooltip
             text={user && displayName ? 'Send feedback' : 'Sign in to send feedback'}
             side="bottom"
@@ -6140,7 +6158,10 @@ function App() {
             <button
               type="button"
               className="header-action-btn"
-              onClick={() => setShowFeedbackModal(true)}
+              onClick={() => {
+                setMobilePanel('none');
+                setShowFeedbackModal(true);
+              }}
               disabled={!user || !displayName}
               aria-label="Send feedback"
             >
@@ -6151,7 +6172,10 @@ function App() {
             <button
               type="button"
               className="header-action-btn"
-              onClick={() => setShowHelp(true)}
+              onClick={() => {
+                setMobilePanel('none');
+                setShowHelp(true);
+              }}
               aria-label="Rules & info"
             >
               <Icon icon={HelpCircle} size="md" aria-hidden />
@@ -7804,7 +7828,13 @@ function App() {
           <button
             type="button"
             className="panel-action-btn"
-            onClick={() => busy.navigate('Opening review', () => setView('review'))}
+            onClick={() =>
+              busy.navigate('Opening review', () => {
+                // fix/v1.1.4 — the drawer would still be open on the way back.
+                setMobilePanel('none');
+                setView('review');
+              })
+            }
             disabled={log.moves.length === 0 || isMultiplayer}
             title={isMultiplayer ? 'Review opens from the end-of-match screen' : undefined}
           >
@@ -8050,6 +8080,7 @@ function App() {
         }
         function backToLobby() {
           busy.navigate('Opening the lobby', () => {
+            setMobilePanel('none');
             setMpEndOutcome(null);
             setActiveMatch(null);
             mpSavedGameIdRef.current = null;
