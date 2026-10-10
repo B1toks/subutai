@@ -332,8 +332,11 @@ export function EndgameScene({ kind, theme, king, prelude, onDone }: Props) {
       const h = SPRITE_H * px;
       bctx.save();
       bctx.globalAlpha = alpha;
-      // pivot: bottom centre
-      bctx.translate(cx, cy + h / 2);
+      // pivot: bottom centre. A toppled king lies off to one side of its pivot,
+      // which a narrow (portrait) screen has no room for: there it stays
+      // centred on x instead. Wide screens keep the original pose.
+      const lean = bw < bh ? -(h / 2) * Math.sin(tilt) : 0;
+      bctx.translate(cx + lean, cy + h / 2);
       if (tilt) bctx.rotate(tilt);
       bctx.translate(-w / 2, -h);
 
@@ -435,6 +438,10 @@ export function EndgameScene({ kind, theme, king, prelude, onDone }: Props) {
       alpha: number,
       color: string,
     ) => {
+      // A portrait phone makes the buffer narrow (BUFFER_H high, as wide as
+      // the screen's ratio allows), so a word at the desktop size is wider
+      // than the picture. Shrink it to fit; wide screens are not affected.
+      px = Math.max(1, Math.min(px, Math.floor((bw * 0.9) / (word.length * 6 - 1))));
       const gw = 5 * px + px; // glyph + gap
       const totalW = word.length * gw - px;
       let x0 = cx - totalW / 2;
