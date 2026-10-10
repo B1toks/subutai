@@ -32,6 +32,7 @@ import type { EndgameKind, KingOrigin, VictoryTheme } from './components/Endgame
 import { GameSummary } from './components/GameSummary';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { ClockFace } from './components/ClockFace';
+import { STREAMING_UI } from './featureFlags';
 import { mpClockAt, mpClockHeldFor, mpClockState } from './utils/mpClock';
 import { serverNow } from './firebase/serverClock';
 import { FeedbackModal } from './components/FeedbackModal';
@@ -6121,6 +6122,8 @@ function App() {
           </button>
         </div>
         <div className="header-controls" data-tour="header">
+          {STREAMING_UI && (
+            <>
           <Tooltip text={showMusicDock ? 'Hide music dock' : 'Spotify + beat sync (beta)'} side="bottom">
             <button
               type="button"
@@ -6148,6 +6151,8 @@ function App() {
             </button>
           </Tooltip>
           <span className="rail-sep" aria-hidden />
+            </>
+          )}
           {/* fix/v1.1.4 — on a phone these two sit in the left drawer, and
               their dialogs render under it (and its scrim): close it first,
               as Change name does. */}
@@ -8355,7 +8360,7 @@ function App() {
           leaves 'active'. */}
       {/* SP — Spotify dock: embed player + tap-tempo beat sync + mic
           equalizer controls. */}
-      {showMusicDock && (
+      {STREAMING_UI && showMusicDock && (
         <Suspense fallback={null}>
           <MusicDock onClose={() => setShowMusicDock(false)} />
         </Suspense>
@@ -8381,7 +8386,7 @@ function App() {
         </Suspense>
       )}
 
-      {showTwitch && (
+      {STREAMING_UI && showTwitch && (
         <Suspense fallback={null}>
           <TwitchPanel
             gameKey={logLocal.id}
