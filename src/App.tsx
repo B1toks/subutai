@@ -178,6 +178,7 @@ import { useRoomGradient } from './app/useRoomGradient';
 import { useClassifyGuards } from './features/game/useClassifyGuards';
 import { useWatchAutoplay } from './features/review/useWatchAutoplay';
 import { useAdaptiveTheme } from './app/useAdaptiveTheme';
+import { useMoveMilestones } from './features/game/useMoveMilestones';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -220,14 +221,6 @@ const EndgameScene = lazy(() =>
 
 /** V1 — seed of the very first game of a page load (see the `seed` state). */
 const FIRST_SEED = Date.now();
-
-/** V1 — survival milestones below the 50-move modal. Percentages come from
- *  the R15 solo funnel (docs/R15-DATA-FINDINGS.md §1). */
-const MOVE_MILESTONES: readonly { moves: number; text: string }[] = [
-  { moves: 10, text: '10 moves. You are past the point where 40% of games end.' },
-  { moves: 20, text: '20 moves. Longer than 72% of games. Keep it up.' },
-  { moves: 30, text: '30 moves. Only 1 game in 10 gets this far.' },
-];
 
 // M.14 — beat-mode glide length. MUST match the .piece-slide-in CSS
 // animation duration so the slide lands exactly on the beat.
@@ -1194,46 +1187,18 @@ function App() {
     return () => clearTimeout(t);
   }, [state.topologyState]);
 
-  // 50-move milestone celebration. Fires exactly once per game the first
-  // time the human has played 50 full chess moves. Skipped during replay
-  // and after the game ends.
-  useEffect(() => {
-    if (watchingGame) return;
-    if (gameStatus !== 'active') return;
-    if (milestoneShown) return;
-    const fullMoves = Math.floor(log.moves.length / 2);
-    if (fullMoves >= 50) {
-      setMilestoneShown(true);
-      setShowMilestoneModal(true);
-    }
-  }, [log.moves.length, gameStatus, milestoneShown, watchingGame]);
-
-  // V1 — nearer milestones (data plan §4.2). R15 funnel: 40% of solo games
-  // are over by move 10, 72% by move 20, 90% by move 30; 50 is reached by
-  // 2%. The modal above stays the epic one; these are quiet toasts that
-  // tell the player where they stand, once per tier per game. Solo vs the
-  // bot only: hot-seat and PvP have no "survival" framing.
-  const milestoneTiersRef = useRef<{ logId: string | null; fired: number[] }>({
-    logId: null,
-    fired: [],
+  useMoveMilestones({
+    isAutoMode,
+    milestoneShown,
+    setMilestoneShown,
+    setShowMilestoneModal,
+    opponentMode,
+    isMultiplayer,
+    watchingGame,
+    gameStatus,
+    log,
+    toast,
   });
-  useEffect(() => {
-    // opponentMode (not isLocalMode): the latter is declared further down
-    // the component and would be a TDZ read from this effect.
-    if (watchingGame || isMultiplayer || opponentMode === 'local' || isAutoMode) return;
-    if (gameStatus !== 'active') return;
-    const tracker = milestoneTiersRef.current;
-    if (tracker.logId !== log.id) {
-      tracker.logId = log.id;
-      tracker.fired = [];
-    }
-    const fullMoves = Math.floor(log.moves.length / 2);
-    for (const tier of MOVE_MILESTONES) {
-      if (fullMoves < tier.moves || tracker.fired.includes(tier.moves)) continue;
-      tracker.fired.push(tier.moves);
-      toast.show(tier.text, 'success', 3800);
-    }
-  }, [log.moves.length, log.id, gameStatus, watchingGame, isMultiplayer, opponentMode, isAutoMode, toast]);
 
   // Square to pulse-highlight after a blunder/brilliant. Cleared after the
   // animation duration (4 cycles × 600ms = 2.4s, rounded to 2500).
