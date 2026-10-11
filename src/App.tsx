@@ -133,7 +133,6 @@ import type { GameBackup, WatchingGame } from './features/review/watching';
 import { glyphForPiece } from './features/game/pieceGlyph';
 import { colorFromMouseEvent, type AnnotationColor, type ArrowAnnotation } from './features/game/annotations';
 import { recentPlies } from './features/game/boardMarks';
-import { countMaterial } from './features/game/material';
 import { soloOutcome } from './features/endgame/result';
 import { drawOfferTitle } from './features/game/drawOfferTitle';
 import { BOT_STRENGTH_HINT, BOT_STRENGTH_SUMMARY } from './features/game/botLevel';
@@ -182,6 +181,7 @@ import { useGameStartPing } from './features/game/useGameStartPing';
 import { useResumeGame } from './memory/useResumeGame';
 import { useNotation } from './features/game/useNotation';
 import { useGameSaveQueue, type FinishedGameSave } from './features/endgame/useGameSaveQueue';
+import { useMaterial } from './features/game/useMaterial';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -1806,14 +1806,7 @@ function App() {
     log.moves.length > 0 &&
     log.moves[log.moves.length - 1]?.move.kind === 'topologyToggle';
 
-  const materialBreakdown = useMemo(() => countMaterial(state.pieces), [state.pieces]);
-
-  // materialBreakdown.score is white-perspective (whiteTotal - blackTotal).
-  // T5.1: flip for the black seat in PvP so the counter follows the same
-  // viewer-perspective convention as the eval bar and gradient — green
-  // when I'm up material, red when down.
-  const materialScore =
-    myColor === 'black' ? -materialBreakdown.score : materialBreakdown.score;
+  const { materialBreakdown, materialScore } = useMaterial({ state, myColor });
 
   useBotTurn({
     isAutoMode,
