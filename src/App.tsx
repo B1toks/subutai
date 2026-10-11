@@ -101,7 +101,7 @@ import {
   unclassifiedMoveIndexes,
   updateMoveAnalysisAt,
 } from './recording/log';
-import { buildSavedGameFromLog, buildSavedGameSnapshot } from './memory/build';
+import { buildSavedGameSnapshot } from './memory/build';
 import { localStorageAdapter } from './memory/storage';
 import { MemoryPanel } from './memory/MemoryPanel';
 import type { SavedGame } from './memory/types';
@@ -156,10 +156,10 @@ import { glyphForPiece } from './features/game/pieceGlyph';
 import { colorFromMouseEvent, type AnnotationColor, type ArrowAnnotation } from './features/game/annotations';
 import { checkMarks, recentPlies, supportPairsFor, threatCounts } from './features/game/boardMarks';
 import { countMaterial } from './features/game/material';
-import { gameOverText, memoryTermination, soloOutcome, winnerOf } from './features/endgame/result';
+import { gameOverText, soloOutcome, winnerOf } from './features/endgame/result';
 import { drawOfferTitle } from './features/game/drawOfferTitle';
 import { BOT_STRENGTH_HINT, BOT_STRENGTH_SUMMARY } from './features/game/botLevel';
-import { clearLiveSession, readLiveSession, writeLiveSession } from './memory/liveSession';
+import { clearLiveSession, readLiveSession } from './memory/liveSession';
 import { deriveMpLastMove, deriveMpLog } from './features/online/matchLog';
 import { formatNotation } from './features/game/notation';
 import { evalToColors } from './app/roomColors';
@@ -176,6 +176,7 @@ import { useEval } from './features/game/useEval';
 import { useBoardSize } from './app/useBoardSize';
 import { usePresenceHeartbeat } from './features/online/usePresenceHeartbeat';
 import { useConsoleSeams } from './features/game/useConsoleSeams';
+import { useMemoryAutosave } from './memory/useMemoryAutosave';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -741,75 +742,20 @@ function App() {
     if (formationInputMode) formationInputRef.current?.focus();
   }, [formationInputMode]);
 
-  useEffect(() => {
-    if (isMultiplayer) return; // PvP games persist via /games, not local Memory
-    if (gameStatus === 'active') return;
-    if (log.moves.length === 0) return;
-    if (savedForLogIdRef.current === log.id) return;
-
-    const sourceId = liveSavedGameIdRef.current;
-    const resigned = gameStatus === 'resigned_white' || gameStatus === 'resigned_black';
-    const termination = memoryTermination(gameStatus);
-    const saved = buildSavedGameFromLog(
-      log,
-      state,
-      termination,
-      sourceId,
-      resigned ? (gameStatus === 'resigned_white' ? 'black' : 'white') : undefined,
-      importedLogIdRef.current === log.id,
-    );
-    if (localStorageAdapter.saveOrUpdateGame) {
-      localStorageAdapter.saveOrUpdateGame(saved);
-    } else {
-      localStorageAdapter.saveGame(saved);
-    }
-
-    // Clean up the live snapshot so Memory shows one final entry.
-    if (sourceId) {
-      localStorageAdapter.deleteGame?.(sourceId);
-    }
-
-    savedForLogIdRef.current = log.id;
-  }, [gameStatus, log, state]);
-
-  useEffect(() => {
-    if (isMultiplayer) return; // no local Memory snapshots during PvP
-    if (gameStatus !== 'active') return;
-    if (log.moves.length === 0) return;
-    const liveId = liveSavedGameIdRef.current;
-    if (!liveId) return;
-    const snapshot = buildSavedGameSnapshot(log, liveId, importedLogIdRef.current === log.id);
-    if (localStorageAdapter.saveOrUpdateGame) {
-      localStorageAdapter.saveOrUpdateGame(snapshot);
-    } else {
-      localStorageAdapter.saveGame(snapshot);
-    }
-    // V1 — and a pointer saying "this is the game in progress", with the
-    // settings a Memory entry does not carry. Resuming a hot-seat game as
-    // a bot game would hand black's moves to the engine.
-    writeLiveSession({
-      gameId: liveId,
-      opponentMode: opponentMode === 'local' ? 'local' : 'ai',
-      gameMode,
-      timed: soloTcSec !== null,
-      savedAt: Date.now(),
-      botLevel,
-      unranked: resumedLogIdRef.current === log.id || importedLogIdRef.current === log.id,
-    });
-  }, [gameStatus, log, isMultiplayer, opponentMode, gameMode, soloTcSec, botLevel]);
-
-  // The pointer only means anything while that game is still going. It
-  // goes when the game ends — and when a FRESH board replaces it (new game,
-  // new position, a replay), or a reload would bring back the game that was
-  // just abandoned. Not on the first render, though: that is the empty board
-  // every page load starts with, and the resume below has not read the
-  // pointer yet.
-  const mountLogIdRef = useRef(log.id);
-  useEffect(() => {
-    if (isMultiplayer) return;
-    const freshBoardReplacedIt = log.moves.length === 0 && log.id !== mountLogIdRef.current;
-    if (gameStatus !== 'active' || freshBoardReplacedIt) clearLiveSession();
-  }, [gameStatus, log.id, log.moves.length, isMultiplayer]);
+  useMemoryAutosave({
+    importedLogIdRef,
+    resumedLogIdRef,
+    opponentMode,
+    isMultiplayer,
+    gameStatus,
+    soloTcSec,
+    botLevel,
+    gameMode,
+    state,
+    log,
+    savedForLogIdRef,
+    liveSavedGameIdRef,
+  });
 
   // Game-completion pipeline: detects terminal gameStatus transitions, computes
   // points, opens the GameSummary modal, and kicks the async Firestore save.
