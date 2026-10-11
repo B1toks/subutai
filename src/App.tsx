@@ -149,7 +149,6 @@ import {
 import {
   backRankString,
   bumpEvalForMove,
-  evaluateFromWhite,
   gameEnding,
   replayBoardAt,
   samePieces,
@@ -175,6 +174,7 @@ import { useTwitchState } from './features/twitch/useTwitchState';
 import { useMusicState } from './features/music/useMusicState';
 import { useBotLevel } from './features/game/useBotLevel';
 import { useBoardFxState } from './features/game/useBoardFxState';
+import { useEval } from './features/game/useEval';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -699,35 +699,16 @@ function App() {
     `live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   );
 
-  // --- Dynamic evaluation + background --------------------------------------
-  // Search-backed eval (White-perspective, centipawns) gets pushed in by the
-  // classifier after every move. While null (start-of-game / fresh reset)
-  // we fall back to the static evaluator so the bar isn't blank.
-  const [searchEvalFromWhite, setSearchEvalFromWhite] = useState<number | null>(null);
-  // Set when the search found a forced mate from the post-move position.
-  const [searchMateInPlies, setSearchMateInPlies] = useState<number | null>(null);
-  // currentEval is the canonical WHITE-perspective centipawn score. The
-  // engine, classifier, prev-eval delta tracking and any future
-  // server-side persistence all want this monotonic shape.
-  const currentEval = useMemo(() => {
-    if (isMultiplayer) return evaluateFromWhite(state);
-    if (searchEvalFromWhite !== null) return searchEvalFromWhite;
-    return evaluateFromWhite(state);
-  }, [isMultiplayer, searchEvalFromWhite, state]);
-
-  // T5: viewer-perspective eval — positive = "I'm winning". Drives the
-  // background gradient AND the eval-bar fill so the player who's behind
-  // sees a cool/crimson room and a near-empty bar, while their opponent
-  // simultaneously sees gold + a near-full bar. Single-player path is
-  // myColor='white' so this is a no-op there.
-  const myColor: 'white' | 'black' =
-    isMultiplayer && mpSync ? mpSync.myColor : 'white';
-  const myPerspectiveEval = useMemo(
-    () => (myColor === 'black' ? -currentEval : currentEval),
-    [currentEval, myColor],
-  );
-  // Previous eval — kept for delta comparisons used by the classifier.
-  const prevEvalRef = useRef<number>(currentEval);
+  const {
+    searchEvalFromWhite,
+    setSearchEvalFromWhite,
+    searchMateInPlies,
+    setSearchMateInPlies,
+    currentEval,
+    myColor,
+    myPerspectiveEval,
+    prevEvalRef,
+  } = useEval({ isMultiplayer, mpSync, state });
   // The element whose CSS variables drive the gradient. Setting via ref
   // (rather than inline style) so React doesn't churn the style object every
   // render and break the @property transition.
@@ -1578,7 +1559,15 @@ function App() {
     shell.style.setProperty('--eval-c1', c1);
     shell.style.setProperty('--eval-c2', c2);
     prevEvalRef.current = currentEval;
-  }, [myPerspectiveEval, currentEval, view, activeMatch, state.topologyState, themeTick]);
+  }, [
+    myPerspectiveEval,
+    currentEval,
+    view,
+    activeMatch,
+    state.topologyState,
+    themeTick,
+    prevEvalRef,
+  ]);
 
   // Keep logLengthRef in sync with committed log state — used by classify
   // .then handlers to decide if their analysis is still the latest.
@@ -1820,7 +1809,7 @@ function App() {
   const pushSearchEval = useCallback((analysis: MoveAnalysis) => {
     setSearchEvalFromWhite(analysis.searchScoreFromWhite);
     setSearchMateInPlies(analysis.isMate ? analysis.mateInPlies ?? 0 : null);
-  }, []);
+  }, [setSearchEvalFromWhite, setSearchMateInPlies]);
 
   const flagClassifiedSquare = useCallback(
     (square: SquareId, classification: 'blunder' | 'brilliant') => {
@@ -3227,7 +3216,7 @@ function App() {
         checkGameOver(next, move.kind === 'topologyToggle');
       }, 650);
     },
-    [commitAnalysis, isMultiplayerRef, botLevelRef],
+    [commitAnalysis, isMultiplayerRef, botLevelRef, setSearchEvalFromWhite, setSearchMateInPlies],
   );
 
   // Slim AI step for auto mode: no classifier round-trip, tighter delay.
