@@ -175,6 +175,7 @@ import { usePresenceHeartbeat } from './features/online/usePresenceHeartbeat';
 import { useConsoleSeams } from './features/game/useConsoleSeams';
 import { useMemoryAutosave } from './memory/useMemoryAutosave';
 import { useOnlineMatchEnd } from './features/online/useOnlineMatchEnd';
+import { useDrawDeclinedToast } from './features/online/useDrawDeclinedToast';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -793,32 +794,7 @@ function App() {
     toast,
   });
 
-  // Online: tell me when my draw offer is declined. A decline marks the
-  // offer `declined` with the log as it was; a move retires the offer too,
-  // but then the log has grown, and an accept ends the match.
-  const mpMyDrawOfferRef = useRef<{ code: string; atPly: number } | null>(null);
-  useEffect(() => {
-    if (!isMultiplayer || !mpSync) return;
-    const m = mpSync.matchState;
-    const standing = standingDrawOffer(m.drawOffer, m.log.moves.length);
-    if (standing?.by === mpSync.myUid) {
-      mpMyDrawOfferRef.current = { code: m.code, atPly: standing.atPly };
-      return;
-    }
-    const mine = mpMyDrawOfferRef.current;
-    mpMyDrawOfferRef.current = null;
-    if (
-      mine &&
-      mine.code === m.code &&
-      m.status === 'active' &&
-      !m.outcome &&
-      m.drawOffer?.declined &&
-      m.drawOffer.atPly === mine.atPly &&
-      m.log.moves.length === mine.atPly
-    ) {
-      toast.show(`${mpSync.opponentDisplayName} declined the draw.`, 'info', 2400);
-    }
-  }, [isMultiplayer, mpSync, toast]);
+  useDrawDeclinedToast({ isMultiplayer, mpSync, toast });
 
   // T2: load a shared game on mount when ?game=<id> is in the URL. Bypasses
   // every game/match flow — drops directly into the Review screen with
