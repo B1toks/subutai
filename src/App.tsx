@@ -43,8 +43,8 @@ import { MusicToggle } from './components/MusicToggle';
 import { audio } from './audio/AudioController';
 import { Icon } from './components/Icon';
 import { Tooltip } from './components/Tooltip';
-import { TutorialOverlay, TUTORIAL_DONE_KEY } from './components/TutorialOverlay';
-import { WelcomeScreen, WELCOME_SEEN_KEY } from './components/WelcomeScreen';
+import { TutorialOverlay } from './components/TutorialOverlay';
+import { WelcomeScreen } from './components/WelcomeScreen';
 import {
   AlarmClock,
   AlertTriangle,
@@ -173,6 +173,7 @@ import { evalToColors } from './app/roomColors';
 import { useUrlModes } from './app/useUrlModes';
 import { useOnlineMatch } from './features/online/useOnlineMatch';
 import { useMobileDrawers } from './app/useMobileDrawers';
+import { useOnboarding } from './app/useOnboarding';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -499,35 +500,13 @@ function App() {
   const { mobilePanel, setMobilePanel, closeMobilePanel } = useMobileDrawers();
 
   const [showHelp, setShowHelp] = useState(false);
-  // S2.2 — first-launch tour. Defaults to open until the user finishes
-  // or skips it once; replayable from the Help dialog.
-  /* V1 — the tour no longer ambushes a first-time visitor. The welcome
-   * screen below runs first and the tour starts only if they ask for it
-   * (or from Rules & info). Returning players who never finished it are
-   * left alone. */
-  const [showTutorial, setShowTutorial] = useState<boolean>(false);
-  const [showWelcome, setShowWelcome] = useState<boolean>(() => {
-    try {
-      // Anyone who already finished the old tour is not a first-timer.
-      if (localStorage.getItem(TUTORIAL_DONE_KEY) === '1') return false;
-      return localStorage.getItem(WELCOME_SEEN_KEY) !== '1';
-    } catch {
-      return false;
-    }
-  });
-  const dismissWelcome = useCallback((startTour: boolean) => {
-    try {
-      localStorage.setItem(WELCOME_SEEN_KEY, '1');
-    } catch { /* private mode — it will greet them again next visit */ }
-    setShowWelcome(false);
-    if (startTour) setShowTutorial(true);
-  }, []);
-  const closeTutorial = useCallback(() => {
-    try {
-      localStorage.setItem(TUTORIAL_DONE_KEY, '1');
-    } catch { /* private mode — show it again next visit */ }
-    setShowTutorial(false);
-  }, []);
+  const {
+    showTutorial,
+    setShowTutorial,
+    showWelcome,
+    dismissWelcome,
+    closeTutorial,
+  } = useOnboarding();
   /* V1 — busy overlay. Some transitions (leaving a replay, loading a saved
    * game) do their work inside one React commit, so the tab simply stops
    * repainting for a moment and reads as a hang. beginBusy paints a labelled
