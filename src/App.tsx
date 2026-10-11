@@ -157,7 +157,6 @@ import { BOT_STRENGTH_HINT, BOT_STRENGTH_SUMMARY } from './features/game/botLeve
 import { clearLiveSession, readLiveSession } from './memory/liveSession';
 import { deriveMpLastMove, deriveMpLog } from './features/online/matchLog';
 import { formatNotation } from './features/game/notation';
-import { evalToColors } from './app/roomColors';
 import { useUrlModes } from './app/useUrlModes';
 import { useOnlineMatch } from './features/online/useOnlineMatch';
 import { useMobileDrawers } from './app/useMobileDrawers';
@@ -176,6 +175,7 @@ import { useOnlineMatchEnd } from './features/online/useOnlineMatchEnd';
 import { useDrawDeclinedToast } from './features/online/useDrawDeclinedToast';
 import { useSharedGame } from './features/review/useSharedGame';
 import { useAutoPlay } from './features/autoplay/useAutoPlay';
+import { useRoomGradient } from './app/useRoomGradient';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -1164,53 +1164,15 @@ function App() {
     );
   }
 
-  // M.23 — evalToColors reads document.documentElement's data-theme
-  // attribute imperatively (see the wood-light branch), but ThemeToggle
-  // lives in a separate component and writes that attribute directly to
-  // the DOM, not through any state this component subscribes to. Without
-  // this, switching themes wouldn't repaint the eval-gradient until the
-  // NEXT eval/topology change happened to fire the effect below for an
-  // unrelated reason — a switch to/from wood-light would visibly lag.
-  // themeTick just forces that effect to re-run the instant the attribute
-  // actually changes.
-  const [themeTick, setThemeTick] = useState(0);
-  useEffect(() => {
-    const observer = new MutationObserver(() => setThemeTick((n) => n + 1));
-    observer.observe(document.documentElement, { attributeFilter: ['data-theme'] });
-    return () => observer.disconnect();
-  }, []);
-
-  // Drive the gradient via CSS custom properties. setProperty (rather than
-  // inline style) lets the @property-registered transition interpolate
-  // colour-to-colour smoothly. prevEvalRef tracks the white-POV value
-  // (classifier delta still expects white-POV).
-  //
-  // T5: paint from the viewer's perspective so each peer in a PvP match
-  // sees their OWN winning/losing state — the player who's ahead gets
-  // gold/warm, the player who's behind gets crimson/cool, simultaneously.
-  //
-  // "Rotation changes the room" — keyed off state.topologyState (the
-  // COMMITTED board), never previewTopology. A hover-preview of the
-  // rotate button is exploratory and reversible; repainting the whole
-  // page's mood off a mere hover would feel unstable. The room only
-  // shifts once a rotation actually lands, same rule R17c's dust-wave FX
-  // already follows.
-  useEffect(() => {
-    const shell = shellRef.current;
-    if (!shell) return;
-    const { c1, c2 } = evalToColors(myPerspectiveEval, state.topologyState);
-    shell.style.setProperty('--eval-c1', c1);
-    shell.style.setProperty('--eval-c2', c2);
-    prevEvalRef.current = currentEval;
-  }, [
-    myPerspectiveEval,
-    currentEval,
+  useRoomGradient({
     view,
     activeMatch,
-    state.topologyState,
-    themeTick,
+    state,
+    myPerspectiveEval,
     prevEvalRef,
-  ]);
+    currentEval,
+    shellRef,
+  });
 
   // Keep logLengthRef in sync with committed log state — used by classify
   // .then handlers to decide if their analysis is still the latest.
