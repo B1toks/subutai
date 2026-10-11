@@ -20,7 +20,7 @@ interface ToastMessage {
   text: string;
 }
 
-interface ToastContextValue {
+export interface ToastContextValue {
   show: (text: string, type?: ToastType, durationMs?: number) => void;
 }
 
