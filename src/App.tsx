@@ -15,7 +15,6 @@ import {
   BOT_STRENGTH_LABEL,
   type BotStrength,
 } from './ai/agents';
-import { evaluate } from './ai/evaluate';
 import { searchPosition, ttClear } from './ai/search';
 import { type MoveClass, type MoveAnalysis } from './analysis/classify';
 import { classifyAsync } from './analysis/classifyClient';
@@ -78,7 +77,6 @@ import type { MatchDoc, MatchOutcome } from './firebase/matches';
 import {
   translateOutcomeForPlayer,
 } from './firebase/multiplayerGames';
-import { saveTrainingGame } from './firebase/trainingGames';
 import { useAuth } from './firebase/useAuth';
 import {
   saveCompletedGame,
@@ -177,6 +175,7 @@ import { useMemoryAutosave } from './memory/useMemoryAutosave';
 import { useOnlineMatchEnd } from './features/online/useOnlineMatchEnd';
 import { useDrawDeclinedToast } from './features/online/useDrawDeclinedToast';
 import { useSharedGame } from './features/review/useSharedGame';
+import { useAutoPlay } from './features/autoplay/useAutoPlay';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -306,15 +305,10 @@ const WATCH_AUTOPLAY_MS = 1500;
 // Auto-mode tuning. We skip the move classifier (expensive worker round-trip)
 // and use a small inter-move delay so a 60-ply game finishes in ~30s.
 const AUTO_MOVE_DELAY_MS = 50;
-const AUTO_BETWEEN_GAMES_MS = 600;
-const AUTO_WATCHDOG_MS = 60_000;
 // Shallow search used to label each auto-mode position for training data.
 // ~100ms × ~80 plies ≈ +8s per game on top of the move-generation cost.
 const AUTO_SEARCH_LABEL_BUDGET_MS = 100;
 const AUTO_SEARCH_LABEL_DEPTH = 4;
-// Bumped per release so /training_games docs can be filtered by engine
-// version when we later use them for training data.
-const AI_VERSION = 'stage-j';
 
 function App() {
   const { isAutoMode, maxGames, isStatsMode, sharedGameId } = useUrlModes();
@@ -933,109 +927,28 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user, displayName]);
 
-  // Auto-mode completion: when a self-play game ends, save to
-  // /training_games (separate collection from the human leaderboard) and
-  // queue the next game. Bypasses the regular finishGame path entirely.
-  useEffect(() => {
-    if (!isAutoMode) return;
-    if (autoStopped) return;
-    if (gameStatus === 'active') return;
-    if (log.moves.length === 0) return;
-    if (autoSavedLogIdRef.current === log.id) return;
-    autoSavedLogIdRef.current = log.id;
-
-    let outcome: GameOutcome;
-    if (gameStatus === 'checkmate') {
-      // The side now to move was just checkmated. White=human alias gives us
-      // a "human-win"/"ai-win" mapping consistent with the rest of the codebase.
-      outcome = state.sideToMove === HUMAN_COLOR ? 'ai-win' : 'human-win';
-    } else if (gameStatus === 'king_captured_black_wins') {
-      outcome = 'ai-win';
-    } else if (gameStatus === 'king_captured_white_wins') {
-      outcome = 'human-win';
-    } else {
-      outcome = 'draw';
-    }
-    const moveCount = Math.floor(log.moves.length / 2);
-    const finalEvalFromWhite =
-      state.sideToMove === 'white' ? evaluate(state) : -evaluate(state);
-
-    setAutoLastOutcome(outcome);
-    setAutoGamesCompleted((n) => n + 1);
-    setAutoMoveHistory((prev) => {
-      const next = [...prev, moveCount];
-      // Keep the rolling average bounded.
-      return next.length > 50 ? next.slice(-50) : next;
-    });
-
-    void saveTrainingGame({
-      log,
-      chess960Id: backRankString(initialState),
-      seed,
-      outcome,
-      moveCount,
-      finalEvalFromWhite,
-      aiVersion: AI_VERSION,
-      durationMs: Date.now() - gameStartedAtRef.current,
-    }).catch((err) => {
-      console.error('[autoplay] saveTrainingGame failed', err);
-    });
-
-    if (autoNextGameTimerRef.current) clearTimeout(autoNextGameTimerRef.current);
-    autoNextGameTimerRef.current = setTimeout(() => {
-      startNewGame();
-    }, AUTO_BETWEEN_GAMES_MS);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAutoMode, autoStopped, gameStatus, log.id, log.moves.length]);
-
-  // Capped-run stop: once the requested number of games is reached, stop
-  // queuing new ones. The current game finishes saving but the loop ends.
-  useEffect(() => {
-    if (!isAutoMode || maxGames <= 0 || autoStopped) return;
-    if (autoGamesCompleted >= maxGames) {
-      setAutoStopped(true);
-      setAutoStoppedReason(`Done. ${autoGamesCompleted} games completed.`);
-      if (autoNextGameTimerRef.current) clearTimeout(autoNextGameTimerRef.current);
-      if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
-    }
-  }, [autoGamesCompleted, maxGames, isAutoMode, autoStopped]);
-
-  // Watchdog: if no move has been made in 60s, the AI has hung (rare). Reset.
-  useEffect(() => {
-    if (!isAutoMode || autoStopped) return;
-    const id = setInterval(() => {
-      if (Date.now() - autoLastMoveAtRef.current > AUTO_WATCHDOG_MS) {
-        console.warn('[autoplay] watchdog: no move in 60s, forcing new game');
-        autoLastMoveAtRef.current = Date.now();
-        autoSavedLogIdRef.current = null;
-        startNewGame();
-      }
-    }, 10_000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAutoMode, autoStopped]);
-
-  // Clear auto timers on unmount.
-  useEffect(() => {
-    return () => {
-      if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
-      if (autoNextGameTimerRef.current) clearTimeout(autoNextGameTimerRef.current);
-    };
-  }, []);
-
-  function stopAuto() {
-    setAutoStopped(true);
-    setAutoStoppedReason('Stopped by user.');
-    if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
-    if (autoNextGameTimerRef.current) clearTimeout(autoNextGameTimerRef.current);
-    // Navigate back to the clean URL so a reload exits auto mode entirely.
-    setTimeout(() => {
-      const url = new URL(window.location.href);
-      url.searchParams.delete('auto');
-      url.searchParams.delete('max');
-      window.location.href = url.toString();
-    }, 400);
-  }
+  const { stopAuto } = useAutoPlay({
+    isAutoMode,
+    maxGames,
+    setAutoGamesCompleted,
+    autoGamesCompleted,
+    setAutoLastOutcome,
+    setAutoMoveHistory,
+    autoStopped,
+    setAutoStopped,
+    setAutoStoppedReason,
+    autoTimerRef,
+    autoNextGameTimerRef,
+    autoLastMoveAtRef,
+    autoSavedLogIdRef,
+    seed,
+    initialState,
+    gameStatus,
+    state,
+    log,
+    gameStartedAtRef,
+    startNewGame,
+  });
 
   async function startWatching(gameId: string, playerName: string) {
     // S2.1 — while a multiplayer match is live, the board is driven by
