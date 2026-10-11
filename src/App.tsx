@@ -176,6 +176,7 @@ import { useDrawDeclinedToast } from './features/online/useDrawDeclinedToast';
 import { useSharedGame } from './features/review/useSharedGame';
 import { useAutoPlay } from './features/autoplay/useAutoPlay';
 import { useRoomGradient } from './app/useRoomGradient';
+import { useClassifyGuards } from './features/game/useClassifyGuards';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -1174,20 +1175,7 @@ function App() {
     shellRef,
   });
 
-  // Keep logLengthRef in sync with committed log state — used by classify
-  // .then handlers to decide if their analysis is still the latest.
-  useEffect(() => {
-    logLengthRef.current = log.moves.length;
-  }, [log.moves.length]);
-  // F7 — the id of the game on the board, so the background classification
-  // of a loaded log can tell it has been replaced and stop.
-  const logIdRef = useRef<string>('');
-  useEffect(() => {
-    logIdRef.current = log.id;
-  }, [log.id]);
-  // F7 — only the newest background classification run may go on (a Game
-  // Review closing starts a catch-up run; the one it replaces stops).
-  const classifyRunRef = useRef(0);
+  const { logIdRef, classifyRunRef } = useClassifyGuards({ log, logLengthRef });
 
   // Watching-mode autoplay: when enabled, advances one move every
   // WATCH_AUTOPLAY_MS until we hit the end of the replay.
@@ -1621,7 +1609,7 @@ function App() {
         if (lastAnalysis && classifyRunRef.current === run) pushSearchEval(lastAnalysis);
       })();
     },
-    [pushSearchEval],
+    [pushSearchEval, classifyRunRef, logIdRef],
   );
 
   function applyFormationCode() {
