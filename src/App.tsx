@@ -181,6 +181,7 @@ import { useAdaptiveTheme } from './app/useAdaptiveTheme';
 import { useMoveMilestones } from './features/game/useMoveMilestones';
 import { useAdaptiveMusic } from './features/music/useAdaptiveMusic';
 import { useMoveLogScroll } from './features/game/useMoveLogScroll';
+import { useRotateHint } from './features/game/useRotateHint';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -1228,32 +1229,7 @@ function App() {
   });
   const { moveLogScrollRef } = useMoveLogScroll({ log });
 
-  // Sprint 4.2 — rotate hint now fires immediately on game start (was
-  // move 5 in 4.1; new players need to discover rotate from move 1).
-  // Hint auto-dismisses after 10s of inactivity so it doesn't linger
-  // forever; localStorage still gates so it never reappears after the
-  // first dismissal or first rotation.
-  const [rotateHintShown, setRotateHintShown] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return true;
-    return window.localStorage.getItem('subutai_rotate_hint_seen') === '1';
-  });
-  const showRotateHint = !rotateHintShown && gameStatus === 'active';
-  function dismissRotateHint() {
-    setRotateHintShown(true);
-    try {
-      window.localStorage.setItem('subutai_rotate_hint_seen', '1');
-    } catch {
-      /* private mode / quota — no-op */
-    }
-  }
-  // Sprint 4.2 — auto-dismiss the rotate hint after 10s if the user
-  // hasn't interacted with it. Prevents the pulse + tooltip from
-  // becoming permanent visual noise.
-  useEffect(() => {
-    if (!showRotateHint) return;
-    const id = setTimeout(() => dismissRotateHint(), 10_000);
-    return () => clearTimeout(id);
-  }, [showRotateHint]);
+  const { rotateHintShown, showRotateHint, dismissRotateHint } = useRotateHint({ gameStatus });
 
   // Sprint 3.4.1 — captures no longer trigger their own visual burst.
   // The per-take flash from Sprint 3.2 fired too often and read as
