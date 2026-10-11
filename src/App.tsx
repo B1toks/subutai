@@ -137,11 +137,10 @@ import { glyphForPiece } from './features/game/pieceGlyph';
 import { colorFromMouseEvent, type AnnotationColor, type ArrowAnnotation } from './features/game/annotations';
 import { recentPlies } from './features/game/boardMarks';
 import { countMaterial } from './features/game/material';
-import { gameOverText, soloOutcome } from './features/endgame/result';
+import { soloOutcome } from './features/endgame/result';
 import { drawOfferTitle } from './features/game/drawOfferTitle';
 import { BOT_STRENGTH_HINT, BOT_STRENGTH_SUMMARY } from './features/game/botLevel';
 import { deriveMpLastMove, deriveMpLog } from './features/online/matchLog';
-import { formatNotation } from './features/game/notation';
 import { useUrlModes } from './app/useUrlModes';
 import { useOnlineMatch } from './features/online/useOnlineMatch';
 import { useMobileDrawers } from './app/useMobileDrawers';
@@ -184,6 +183,7 @@ import { useCoachNudges } from './features/game/useCoachNudges';
 import { useEndgame, importEndgameScene } from './features/endgame/useEndgame';
 import { useGameStartPing } from './features/game/useGameStartPing';
 import { useResumeGame } from './memory/useResumeGame';
+import { useNotation } from './features/game/useNotation';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -2570,33 +2570,15 @@ function App() {
     }
   }
 
-  const buildNotation = useCallback(
-    (annotate: boolean) => formatNotation(positionLabel, notationSeed, log.moves, gameMode, annotate),
-    [log.moves, positionLabel, notationSeed, gameMode],
-  );
-
-  const notationString = useMemo(() => buildNotation(true), [buildNotation]);
-
-  function copyNotation() {
-    navigator.clipboard.writeText(buildNotation(false)).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  }
-
-  // V1 — the live log never carried gameMode (only saved games do), so a
-  // roulette game reviewed straight from the board was analysed under
-  // classic rules (no self-check) and worded as classic. Stamp it here;
-  // memoised so GameReview's [log] effects don't re-run every render.
-  const liveReviewLog = useMemo<GameLog>(
-    () => (log.gameMode ? log : { ...log, gameMode }),
-    [log, gameMode],
-  );
-
-  const gameOverMessage = useMemo(
-    () => gameOverText(gameStatus, state.sideToMove),
-    [gameStatus, state.sideToMove],
-  );
+  const { notationString, copyNotation, liveReviewLog, gameOverMessage } = useNotation({
+    gameStatus,
+    setCopied,
+    gameMode,
+    state,
+    log,
+    positionLabel,
+    notationSeed,
+  });
 
   if (isStatsMode) {
     return (
