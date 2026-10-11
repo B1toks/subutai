@@ -5,7 +5,6 @@ import {
   applyMove,
   generateLegalMoves,
   isSquareAttacked,
-  getAttackerSquares,
   findKing,
 } from './engine/moves';
 import { applyRotationMove, applyPassMove, toggleTopology, computeBoardLayout, tilePixelCenter, toTileFrame } from './engine/auxetic';
@@ -138,7 +137,7 @@ import {
 import type { GameBackup, WatchingGame } from './features/review/watching';
 import { glyphForPiece } from './features/game/pieceGlyph';
 import { colorFromMouseEvent, type AnnotationColor, type ArrowAnnotation } from './features/game/annotations';
-import { checkMarks, recentPlies, supportPairsFor, threatCounts } from './features/game/boardMarks';
+import { recentPlies } from './features/game/boardMarks';
 import { countMaterial } from './features/game/material';
 import { gameOverText, soloOutcome, winnerOf } from './features/endgame/result';
 import { drawOfferTitle } from './features/game/drawOfferTitle';
@@ -184,6 +183,7 @@ import { useBotTurn } from './features/game/useBotTurn';
 import { useChatVsBot } from './features/twitch/useChatVsBot';
 import { useGuessTheStreamer } from './features/twitch/useGuessTheStreamer';
 import { useCaptureFx } from './features/game/useCaptureFx';
+import { useBoardMarks } from './features/game/useBoardMarks';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -1971,90 +1971,29 @@ function App() {
     toast,
   });
 
-  const highlightedTargets = useMemo(() => {
-    if (!selected) return new Set<string>();
-    const targets = new Set<string>();
-    for (const move of legalMoves) {
-      if (move.from !== selected) continue;
-      if (move.to) targets.add(move.to);
-      // Chess960: clicking the own rook also triggers castling, so the rook
-      // square is a valid interaction target for a selected king.
-      if (move.kind === 'castle' && move.castleRookFrom) {
-        targets.add(move.castleRookFrom);
-      }
-    }
-    return targets;
-  }, [legalMoves, selected]);
-
-
-  // Stage T1: en-passant target squares get a distinct pulse so the player
-  // notices the rare opportunity. Disjoint from the regular green dots.
-  const enPassantTargets = useMemo(() => {
-    if (!selected) return new Set<string>();
-    const ep = new Set<string>();
-    for (const move of legalMoves) {
-      if (move.from !== selected) continue;
-      if (move.kind === 'enPassant' && move.to) ep.add(move.to);
-    }
-    return ep;
-  }, [legalMoves, selected]);
-
-  const checkSquares = useMemo(() => checkMarks(state, previewTopology), [previewTopology, state]);
-
-  // R17b — pulse the red vignette when a REAL check lands: only on the
-  // null→checked transition, and never for the rotation-preview's
-  // hypothetical checks (checkSquares computes those too).
-  const prevCheckKingRef = useRef<string | null>(null);
-  useEffect(() => {
-    const king = previewTopology ? null : checkSquares.king;
-    const was = prevCheckKingRef.current;
-    prevCheckKingRef.current = king;
-    if (!king || was) return;
-    registerFx();
-    setCheckVignette(true);
-    const t = setTimeout(() => setCheckVignette(false), 900);
-    return () => clearTimeout(t);
-  }, [checkSquares.king, previewTopology, registerFx, setCheckVignette]);
-
-  // Motion scaffold — soft tactile sound the instant a piece is picked up.
-  // Central effect (not scattered at every setSelected call site) so it
-  // fires exactly once per null -> square transition, same shape as the
-  // check-vignette effect above. Skipped while replaying/watching a game —
-  // the viewer isn't the one touching pieces.
-  const prevSelectedRef = useRef<string | null>(null);
-  useEffect(() => {
-    const was = prevSelectedRef.current;
-    prevSelectedRef.current = selected;
-    if (!selected || was || watchingGame) return;
-    audio.play('pieceTouch');
-  }, [selected, watchingGame]);
-
-  const displayTopology =
-    previewLocked && lockedPreviewTopology
-      ? lockedPreviewTopology
-      : (previewTopology ?? state.topologyState);
-
-  const threatenedSquares = useMemo(() => {
-    if (!showThreats) return new Map<string, number>();
-    return threatCounts(state, displayTopology);
-  }, [showThreats, state, displayTopology]);
-
-  const supportPairs = useMemo((): [SquareId, SquareId][] => {
-    if (!showSupport) return [];
-    return supportPairsFor(state, displayTopology);
-  }, [showSupport, state, displayTopology]);
-
-  const threateningPieceSquares = useMemo(() => {
-    if (!showThreats || !hoveredSquare || !threatenedSquares.has(hoveredSquare)) return new Set<string>();
-    const opp: Color = state.sideToMove === 'white' ? 'black' : 'white';
-    const attackers = getAttackerSquares(state, hoveredSquare as SquareId, opp, displayTopology);
-    return new Set(attackers);
-  }, [showThreats, hoveredSquare, threatenedSquares, state, displayTopology]);
-
-  const hoverSupporters = useMemo((): SquareId[] => {
-    if (!showSupport || !selected || !hoveredSquare) return [];
-    return getAttackerSquares(state, hoveredSquare as SquareId, 'white', displayTopology);
-  }, [showSupport, selected, hoveredSquare, state, displayTopology]);
+  const {
+    highlightedTargets,
+    enPassantTargets,
+    checkSquares,
+    displayTopology,
+    threatenedSquares,
+    supportPairs,
+    threateningPieceSquares,
+    hoverSupporters,
+  } = useBoardMarks({
+    watchingGame,
+    selected,
+    previewTopology,
+    showThreats,
+    showSupport,
+    previewLocked,
+    lockedPreviewTopology,
+    hoveredSquare,
+    registerFx,
+    setCheckVignette,
+    state,
+    legalMoves,
+  });
 
   // Sprint 3.7 (rev 2) — Sprint 3.6's hoverInsights useMemo and the
   // .attacker-of-hovered / .defender-of-hovered tile classes are
