@@ -90,7 +90,6 @@ import {
   deserializeGameLog,
 } from './firebase/games';
 import { logGameStart } from './firebase/gameStarts';
-import { startPresenceHeartbeat, stopPresenceHeartbeat } from './firebase/presence';
 import { computeGamePoints, type GameOutcome, type GamePoints } from './analysis/points';
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
@@ -174,6 +173,7 @@ import { useBotLevel } from './features/game/useBotLevel';
 import { useBoardFxState } from './features/game/useBoardFxState';
 import { useEval } from './features/game/useEval';
 import { useBoardSize } from './app/useBoardSize';
+import { usePresenceHeartbeat } from './features/online/usePresenceHeartbeat';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -722,13 +722,7 @@ function App() {
   // R5 — encouragement in a losing position.
   const toast = useToast();
 
-  // R16 — presence heartbeat feeds the quick-match "online now" counter.
-  // Signed-in users only (same gate as everything matchmaking touches).
-  useEffect(() => {
-    if (!user || !displayName) return;
-    startPresenceHeartbeat(user.uid);
-    return () => stopPresenceHeartbeat();
-  }, [user, displayName]);
+  usePresenceHeartbeat({ user, displayName });
 
   // V1 — the solo time-control flag-fall effect lives further down, right
   // after `isLocalMode` is declared (TDZ: hooks here can't read it yet).
