@@ -91,7 +91,6 @@ import {
 import { buildSavedGameSnapshot } from './memory/build';
 import { localStorageAdapter } from './memory/storage';
 import { MemoryPanel } from './memory/MemoryPanel';
-import type { SavedGame } from './memory/types';
 import { NotationParseError } from './memory/notation';
 // rotateIsLegal (R10) decides whether chat rounds accept "rotate"; it lives
 // with the replay importer, which checks rotations the same way (QA-02).
@@ -141,7 +140,6 @@ import { countMaterial } from './features/game/material';
 import { gameOverText, soloOutcome } from './features/endgame/result';
 import { drawOfferTitle } from './features/game/drawOfferTitle';
 import { BOT_STRENGTH_HINT, BOT_STRENGTH_SUMMARY } from './features/game/botLevel';
-import { clearLiveSession, readLiveSession } from './memory/liveSession';
 import { deriveMpLastMove, deriveMpLog } from './features/online/matchLog';
 import { formatNotation } from './features/game/notation';
 import { useUrlModes } from './app/useUrlModes';
@@ -185,6 +183,7 @@ import { useBoardMarks } from './features/game/useBoardMarks';
 import { useCoachNudges } from './features/game/useCoachNudges';
 import { useEndgame, importEndgameScene } from './features/endgame/useEndgame';
 import { useGameStartPing } from './features/game/useGameStartPing';
+import { useResumeGame } from './memory/useResumeGame';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -2488,105 +2487,34 @@ function App() {
     positionLabel,
   });
 
-  // Stable callback for <MemoryPanel onGameActivate>. The wrapped function
-  // closes over a ref that always points at the latest `resumeGame`, so the
-  // prop reference itself never changes and React.memo on MemoryPanel can
-  // skip the 300-card subtree on every App re-render.
-  const resumeGameRef = useRef<(game: SavedGame, opts?: { keepRank?: boolean }) => void>(() => {});
-  const onMemoryGameActivate = useCallback((g: SavedGame) => {
-    if (g.status === 'incomplete') resumeGameRef.current(g);
-  }, []);
-
-  /**
-   * `keepRank` is for the one resume that is the same game carried across a
-   * reload or into a new tab: a solo game against the bot, at the level it
-   * was started at, that was not itself resumed or imported (the live
-   * session pointer records all three). Everything else — the Memory panel
-   * above all — is never ranked (N-1).
-   */
-  function resumeGame(game: SavedGame, opts?: { keepRank?: boolean }) {
-    const initial = createPositionFromBackRankKey(game.config960);
-    let current: BoardState = initial;
-    let nextLog: GameLog = createGameLog(`resume-${Date.now()}`, initial, Date.now());
-
-    for (const entry of game.moves) {
-      const mv = entry.move;
-      // V1 — SAN is computed from the position BEFORE the move, exactly as
-      // a live move records it. Without it a resumed game's move list lost
-      // its piece letters ("Na8→b6" came back as "a8→b6").
-      const san = computeSAN(current, mv);
-      if (mv.kind === 'topologyToggle') {
-        current = applyRotationMove(current);
-        nextLog = appendMove(nextLog, mv, san, entry.topology);
-        continue;
-      }
-      if (!mv.from || !mv.to) continue;
-      current = applyMove(current, mv);
-      nextLog = appendMove(nextLog, mv, san, entry.topology);
-    }
-
-    if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
-    setState(current);
-    setInitialState(initial);
-    setSelected(null);
-    setLegalMoves(getLegalMoves(current));
-    setLog(nextLog);
-    setGameStatus('active');
-    setPreviewTopology(null);
-    setLastMove(null);
-    setFormationLocked(true);
-    setLockedFormationKey(game.config960);
-    savedForLogIdRef.current = null;
-    liveSavedGameIdRef.current = game.id;
-    setSearchEvalFromWhite(null);
-    setSearchMateInPlies(null);
-    resetGameEndState();
-    importedLogIdRef.current = game.imported ? nextLog.id : null;
-    resumedLogIdRef.current = opts?.keepRank ? null : nextLog.id;
-    classifyImportedLog(nextLog);
-  }
-  // Keep the ref pointing at the latest resumeGame closure so the stable
-  // onMemoryGameActivate callback always invokes the fresh state-bound copy.
-  resumeGameRef.current = resumeGame;
-
-  /**
-   * V1 — a new tab opens on the game you are already playing.
-   *
-   * Online this already worked (R13b re-seats you from subutai_mp_active).
-   * Solo, every tab started a fresh board, although the game in progress
-   * was sitting in Memory, snapshotted on every move. Now the tab picks it
-   * up — only if it was touched in the last day, and only a CLASSIC game
-   * WITHOUT a clock:
-   *   · roulette carries turn state a move list cannot rebuild (the spun
-   *     slots, the actions left), so it waits in Memory instead;
-   *   · a timed game would come back with both clocks at zero — in a
-   *     ranked game against Strong that is "refresh for more time".
-   */
-  const liveResumeTriedRef = useRef(false);
-  useEffect(() => {
-    if (liveResumeTriedRef.current) return;
-    liveResumeTriedRef.current = true;
-    if (isAutoMode || sharedGameId || mpResumeCodeRef.current) return;
-    const session = readLiveSession();
-    if (!session) return;
-    if (session.gameMode !== 'classic' || session.timed) return;
-    if (Date.now() - session.savedAt > 24 * 60 * 60 * 1000) {
-      clearLiveSession();
-      return;
-    }
-    void localStorageAdapter.loadGames().then((games) => {
-      const game = games.find((g) => g.id === session.gameId && g.status === 'incomplete');
-      if (!game || game.moves.length === 0) return;
-      beginBusy('Picking up your game');
-      setOpponentMode(session.opponentMode);
-      if (session.botLevel) setBotLevel(session.botLevel);
-      resumeGameRef.current(game, {
-        keepRank: session.opponentMode === 'ai' && !!session.botLevel && !session.unranked,
-      });
-    });
-    // Once, on the first render that has everything it needs.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const { onMemoryGameActivate } = useResumeGame({
+    isAutoMode,
+    sharedGameId,
+    importedLogIdRef,
+    resumedLogIdRef,
+    setOpponentMode,
+    mpResumeCodeRef,
+    setState,
+    setInitialState,
+    setSelected,
+    setLegalMoves,
+    setLog,
+    setGameStatus,
+    setPreviewTopology,
+    setLastMove,
+    beginBusy,
+    setBotLevel,
+    setFormationLocked,
+    setLockedFormationKey,
+    getLegalMoves,
+    aiTimerRef,
+    savedForLogIdRef,
+    liveSavedGameIdRef,
+    setSearchEvalFromWhite,
+    setSearchMateInPlies,
+    classifyImportedLog,
+    resetGameEndState,
+  });
 
   function importReplayFromNotation() {
     try {
