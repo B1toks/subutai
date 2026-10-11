@@ -182,6 +182,7 @@ import { useResumeGame } from './memory/useResumeGame';
 import { useNotation } from './features/game/useNotation';
 import { useGameSaveQueue, type FinishedGameSave } from './features/endgame/useGameSaveQueue';
 import { useMaterial } from './features/game/useMaterial';
+import { useCanRotate } from './features/game/useCanRotate';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -2314,27 +2315,14 @@ function App() {
     );
   }, []);
 
-  const canRotate = useMemo(() => {
-    // V1 — a replay is a recording, not a game: nothing on the board may be
-    // acted on while watching (the rotate button used to stay live and the
-    // roulette Spin button leaked in from the mode the viewer left).
-    if (watchingGame) return false;
-    if (currentPlayer !== 'human') return false;
-    if (state.lastMoveWasRotation) return false; // back-to-back guard
-
-    if (gameMode === 'roulette') {
-      // Rotation costs 1 action point — needs an active spin AND >= 1 action.
-      // King-safety check is intentionally bypassed (kill-the-king rules).
-      return allowedPieceTypes !== null && rouletteActionsLeft >= 1;
-    }
-
-    // Classic: standard king-safety self-check.
-    const toggled = toggleTopology(state);
-    const king = findKing(toggled, state.sideToMove);
-    if (!king) return false;
-    const opp = state.sideToMove === 'white' ? 'black' : 'white';
-    return !isSquareAttacked(toggled, king, opp as 'white' | 'black', toggled.topologyState);
-  }, [currentPlayer, state, gameMode, allowedPieceTypes, rouletteActionsLeft, watchingGame]);
+  const { canRotate } = useCanRotate({
+    watchingGame,
+    gameMode,
+    state,
+    allowedPieceTypes,
+    rouletteActionsLeft,
+    currentPlayer,
+  });
 
   useCoachNudges({
     isMultiplayer,
