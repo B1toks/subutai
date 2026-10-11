@@ -158,6 +158,7 @@ import {
   samePieces,
 } from './features/game/position';
 import { computeBoardSize } from './app/boardSize';
+import type { GameBackup, WatchingGame } from './features/review/watching';
 import { glyphForPiece } from './features/game/pieceGlyph';
 import { colorFromMouseEvent, type AnnotationColor, type ArrowAnnotation } from './features/game/annotations';
 import { checkMarks, recentPlies, supportPairsFor, threatCounts } from './features/game/boardMarks';
@@ -339,32 +340,6 @@ const AUTO_SEARCH_LABEL_DEPTH = 4;
 // Bumped per release so /training_games docs can be filtered by engine
 // version when we later use them for training data.
 const AI_VERSION = 'stage-j';
-
-interface WatchingGame {
-  log: GameLog;
-  playerName: string;
-  gameId: string;
-  currentMoveIdx: number;
-  autoplay: boolean;
-}
-
-interface GameBackup {
-  seed: number;
-  state: BoardState;
-  initialState: BoardState;
-  legalMoves: Move[];
-  log: GameLog;
-  gameStatus: GameStatus;
-  lastMove: { from?: SquareId; to?: SquareId } | null;
-  liveSavedGameId: string;
-  savedForLogId: string | null;
-  completedLogId: string | null;
-  searchEvalFromWhite: number | null;
-  searchMateInPlies: number | null;
-  formationLocked: boolean;
-  lockedFormationKey: string | null;
-}
-
 
 function App() {
   // Self-play / training data collection mode: ?auto=1 in the URL puts both
