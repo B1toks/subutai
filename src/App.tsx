@@ -153,7 +153,6 @@ import { useTwitchState } from './features/twitch/useTwitchState';
 import { useMusicState } from './features/music/useMusicState';
 import { useBotLevel } from './features/game/useBotLevel';
 import { useBoardFxState } from './features/game/useBoardFxState';
-import { EARLY_GAME_TIP, ENCOURAGE_GENERIC, ENCOURAGE_ROTATE, ROTATE_AFTERMATH_TIP } from './features/game/coachTexts';
 import { useEval } from './features/game/useEval';
 import { useBoardSize } from './app/useBoardSize';
 import { usePresenceHeartbeat } from './features/online/usePresenceHeartbeat';
@@ -184,6 +183,7 @@ import { useChatVsBot } from './features/twitch/useChatVsBot';
 import { useGuessTheStreamer } from './features/twitch/useGuessTheStreamer';
 import { useCaptureFx } from './features/game/useCaptureFx';
 import { useBoardMarks } from './features/game/useBoardMarks';
+import { useCoachNudges } from './features/game/useCoachNudges';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -2427,111 +2427,25 @@ function App() {
     return !isSquareAttacked(toggled, king, opp as 'white' | 'black', toggled.topologyState);
   }, [currentPlayer, state, gameMode, allowedPieceTypes, rouletteActionsLeft, watchingGame]);
 
-  // R5 — nudge the player when they've been clearly behind for a couple of
-  // moves, so a hard position reads as "keep fighting" rather than "resign".
-  // Checked once per human turn (eval is from white's = the human's side);
-  // rate-limited, gated on the coaching-tools switch, solo classic only.
-  useEffect(() => {
-    if (isMultiplayer || isLocalMode || watchingGame) return;
-    if (gameMode !== 'classic' || gameStatus !== 'active') return;
-    if (!helpToolsEnabled) return;
-    if (currentPlayer !== 'human') return;
-    const moveIdx = log.moves.length;
-    if (moveIdx === 0) {
-      // fresh game — clear the streak/cooldown so nudges don't carry over
-      encourageBadStreakRef.current = 0;
-      encourageLastMoveRef.current = -99;
-      encourageCheckedMoveRef.current = -1;
-      return;
-    }
-    if (moveIdx === encourageCheckedMoveRef.current) return; // one check per turn
-    const ev = searchEvalFromWhite;
-    if (ev === null) return; // eval still pending — re-runs when it lands
-    encourageCheckedMoveRef.current = moveIdx;
-    const HARD = -2.5; // pawns: the human is down ~a piece or worse
-    if (ev > HARD) {
-      encourageBadStreakRef.current = 0;
-      return;
-    }
-    encourageBadStreakRef.current += 1;
-    if (encourageBadStreakRef.current < 2) return; // must be sustained
-    if (moveIdx - encourageLastMoveRef.current < 6) return; // cooldown
-    encourageLastMoveRef.current = moveIdx;
-    const useRotate = canRotate && Math.random() < 0.6;
-    const pool = useRotate ? ENCOURAGE_ROTATE : ENCOURAGE_GENERIC;
-    toast.show(pool[Math.floor(Math.random() * pool.length)], 'info', 5200);
-    if (useRotate) {
-      setEncourageRotate(true);
-      window.setTimeout(() => setEncourageRotate(false), 5200);
-    }
-  }, [
-    searchEvalFromWhite,
-    currentPlayer,
-    gameStatus,
-    gameMode,
+  useCoachNudges({
     isMultiplayer,
-    isLocalMode,
     watchingGame,
+    gameStatus,
     helpToolsEnabled,
+    gameMode,
+    log,
+    searchEvalFromWhite,
+    toast,
+    encourageBadStreakRef,
+    encourageLastMoveRef,
+    encourageCheckedMoveRef,
+    setEncourageRotate,
+    earlyTipLogIdRef,
+    rotateTipLogIdRef,
+    isLocalMode,
+    currentPlayer,
     canRotate,
-    log.moves.length,
-    toast,
-  ]);
-
-  // R15 4-lite (a) — early-danger window. Median first blunder is move 4, so
-  // the moment the eval first dips in moves 2-10 gets a single "slow down"
-  // beat. Fires BEFORE the -2.5 R5 nudge territory (-1.5..-2.5) so the two
-  // never stack on the same turn; once per game.
-  useEffect(() => {
-    if (isMultiplayer || isLocalMode || watchingGame) return;
-    if (gameMode !== 'classic' || gameStatus !== 'active') return;
-    if (!helpToolsEnabled) return;
-    if (currentPlayer !== 'human') return;
-    if (earlyTipLogIdRef.current === log.id) return;
-    const plies = log.moves.length;
-    if (plies < 3 || plies > 20) return; // full moves ~2-10
-    const ev = searchEvalFromWhite;
-    if (ev === null || ev > -1.5 || ev <= -2.5) return;
-    earlyTipLogIdRef.current = log.id;
-    toast.show(EARLY_GAME_TIP, 'info', 5200);
-  }, [
-    searchEvalFromWhite,
-    currentPlayer,
-    gameStatus,
-    gameMode,
-    isMultiplayer,
-    isLocalMode,
-    watchingGame,
-    helpToolsEnabled,
-    log,
-    toast,
-  ]);
-
-  // R15 4-lite (b) — rotation aftermath. 25 of 98 first blunders happen right
-  // after the player's OWN rotation ("rotated and didn't re-read the board").
-  // Classic only: the parity check (even ply = white = human) doesn't hold
-  // under roulette's 2-actions-per-turn economy. Once per game.
-  useEffect(() => {
-    if (isMultiplayer || isLocalMode || watchingGame) return;
-    if (gameMode !== 'classic' || gameStatus !== 'active') return;
-    if (!helpToolsEnabled) return;
-    if (rotateTipLogIdRef.current === log.id) return;
-    const idx = log.moves.length - 1;
-    if (idx < 0 || idx > 40) return; // the habit matters in the danger window
-    const last = log.moves[idx];
-    if (last.move.kind !== 'topologyToggle' || idx % 2 !== 0) return;
-    rotateTipLogIdRef.current = log.id;
-    toast.show(ROTATE_AFTERMATH_TIP, 'info', 5200);
-  }, [
-    gameStatus,
-    gameMode,
-    isMultiplayer,
-    isLocalMode,
-    watchingGame,
-    helpToolsEnabled,
-    log,
-    toast,
-  ]);
+  });
 
   const layout = useMemo(
     () => computeBoardLayout(displayTopology, boardSize),
