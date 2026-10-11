@@ -174,6 +174,7 @@ import { useOnboarding } from './app/useOnboarding';
 import { useTwitchState } from './features/twitch/useTwitchState';
 import { useMusicState } from './features/music/useMusicState';
 import { useBotLevel } from './features/game/useBotLevel';
+import { useBoardFxState } from './features/game/useBoardFxState';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -298,9 +299,6 @@ interface FinishedGameSave {
   chess960Id: string;
   seed: number;
 }
-
-/** How long two heavy board effects count as "back to back". */
-const FX_WINDOW_MS = 2600;
 
 /* R5 — encouragement in a losing position. When the human (white) has
  * been meaningfully behind for a couple of moves, drop a supportive nudge
@@ -604,57 +602,25 @@ function App() {
   // First 3 spins of a game weight pawn slightly higher so beginners ease in
   // with familiar piece moves instead of front-loaded knight chaos.
   const [rouletteSpinCountLocal, setRouletteSpinCount] = useState(0);
-  // Stage T1: square that just had a pawn taken via en passant — paints a
-  // brief explosion overlay so the off-target capture is visually obvious.
-  // R17a — cinema micro-FX: spark burst on the capture square + a brief
-  // board jitter. Driven off the shared log (same pattern as the EP
-  // explosion below) so human, AI, chat and PvP captures all fire it.
-  const [captureFxSquare, setCaptureFxSquare] = useState<SquareId | null>(null);
-  const [captureShake, setCaptureShake] = useState(false);
-  // R17c — storyboard "big capture" strobe: two flash frames when a QUEEN
-  // or ROOK is taken (plain captures only). Color codes the loss —
-  // queen reads red, rook reads electric blue. Kept under 3 flashes/sec
-  // for photosensitivity; reduced-motion hides it entirely.
-  const [captureStrobe, setCaptureStrobe] = useState<
-    'queen' | 'rook' | 'bishop' | 'knight' | null
-  >(null);
-  // R17c — rotation dust wave: an expanding shockwave ring when a topology
-  // rotation commits (human, AI, chat or PvP — all come through the log).
-  const [rotationDust, setRotationDust] = useState(false);
-  // R17b — red vignette pulse when a REAL check lands (preview-induced
-  // "checks" from the rotation eye are ignored).
-  const [checkVignette, setCheckVignette] = useState(false);
-  /**
-   * V1 — the loudness governor.
-   *
-   * Every heavy move still gets its full vocabulary — the shake, the
-   * strobe on a big capture, the red vignette on a check — because that
-   * is how the board says "that one hurt". What changes is the volume
-   * when they arrive back to back: an exchange, a check, a recapture used
-   * to stack three full-strength effects into a board nobody could read.
-   *
-   * So each effect registers here first and gets a level: the first in a
-   * window plays at 100%, the next at 60%, and anything after that at
-   * 40%. Quieter, never silent — the player still feels each one. The
-   * window resets once the board has been calm for FX_WINDOW_MS.
-   */
-  const fxRecentRef = useRef<number[]>([]);
-  const [fxIntensity, setFxIntensity] = useState(1);
-  const registerFx = useCallback((): number => {
-    const now = Date.now();
-    const recent = fxRecentRef.current.filter((t) => now - t < FX_WINDOW_MS);
-    recent.push(now);
-    fxRecentRef.current = recent;
-    const level = recent.length <= 1 ? 1 : recent.length === 2 ? 0.6 : 0.4;
-    setFxIntensity(level);
-    return level;
-  }, []);
-  // R17b — the storyboard's "зрив темпу": a dim freeze-frame beat before
-  // the victory cinematic slams in.
-  const [victoryFreeze, setVictoryFreeze] = useState(false);
-  const victoryFreezeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [enPassantExplosionSquare, setEnPassantExplosionSquare] =
-    useState<SquareId | null>(null);
+  const {
+    captureFxSquare,
+    setCaptureFxSquare,
+    captureShake,
+    setCaptureShake,
+    captureStrobe,
+    setCaptureStrobe,
+    rotationDust,
+    setRotationDust,
+    checkVignette,
+    setCheckVignette,
+    fxIntensity,
+    registerFx,
+    victoryFreeze,
+    setVictoryFreeze,
+    victoryFreezeTimer,
+    enPassantExplosionSquare,
+    setEnPassantExplosionSquare,
+  } = useBoardFxState();
 
   // -------- Q.B.2: read-side aliases for multiplayer mode -----------------
   // When isMultiplayer the board / log / legal-moves come from the live
@@ -908,7 +874,7 @@ function App() {
     };
     w.subutaiEncourage = encourage;
     w.subutaiFX = fx;
-  }, [toast]);
+  }, [toast, setCaptureStrobe, setCheckVignette, setRotationDust]);
 
   useEffect(() => {
     if (formationInputMode) formationInputRef.current?.focus();
@@ -3516,7 +3482,7 @@ function App() {
     setEnPassantExplosionSquare(captureSq);
     const t = setTimeout(() => setEnPassantExplosionSquare(null), 700);
     return () => clearTimeout(t);
-  }, [log.moves.length]);
+  }, [log.moves.length, setEnPassantExplosionSquare]);
 
   // R17c — the board as it stood BEFORE the latest log entry. The snapshot
   // effect below is declared AFTER the capture/rotation effects, so within
@@ -3643,7 +3609,7 @@ function App() {
     setCheckVignette(true);
     const t = setTimeout(() => setCheckVignette(false), 900);
     return () => clearTimeout(t);
-  }, [checkSquares.king, previewTopology, registerFx]);
+  }, [checkSquares.king, previewTopology, registerFx, setCheckVignette]);
 
   // Motion scaffold — soft tactile sound the instant a piece is picked up.
   // Central effect (not scattered at every setSelected call site) so it
@@ -4361,7 +4327,7 @@ function App() {
         setEndgameCut({ kind, theme, king, prelude: 300 });
       }, 650);
     },
-    [kingOriginFor, cutSubjectColor],
+    [kingOriginFor, cutSubjectColor, setVictoryFreeze, victoryFreezeTimer],
   );
 
   /**
