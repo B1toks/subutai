@@ -10,37 +10,100 @@ Firestore rules are the only trust boundary (see `FIRESTORE-RULES.md`).
 | `src/engine`, `src/ai`, `src/analysis`, `src/recording` | Rules of the variant, the bot, scoring, the game log. No React. `scripts/` and `qa/engine` import these by path. |
 | `src/firebase` | Every Firestore read and write. The document shapes here are what the rules check; `npm run test:rules` runs this code against the emulator. |
 | `src/audio`, `src/music`, `src/twitch`, `src/spotify` | Browser integrations with no UI of their own. |
-| `src/memory` | Saved games: storage, notation, replay import, and the Memory panel. |
-| `src/components` | Components that several parts of the app use (Toast, Tooltip, modals, NamePicker), and the screens that predate the feature folders (GameReview, MusicDock, Leaderboard, FriendLobby, TwitchPanel, StatsPage, ShowcaseView). |
-| `src/app` | The shell: `App.tsx`, which view is on screen, and the styles of the whole page in `src/app/styles`. |
-| `src/features/<name>` | What `App.tsx` used to hold, one folder per feature: components, hooks and CSS together. |
+| `src/memory` | Saved games: storage, notation, replay import, the Memory panel, and the hooks that autosave a game and resume one. |
+| `src/components` | Components that several parts of the app use (Toast, Tooltip, modals, NamePicker, ClockFace, PlayerRow), and the screens that predate the feature folders (GameReview, MusicDock, Leaderboard, FriendLobby, TwitchPanel, StatsPage, ShowcaseView). |
+| `src/app` | The shell: `App.tsx` lives in `src/`, its app-wide hooks here (URL modes, board size and UI scale, phone drawers, welcome and tour, the guards on leaving a game, the room's colours, the adaptive theme), and the styles of the whole page in `src/app/styles`. |
+| `src/features/<name>` | What `App.tsx` used to hold, one folder per feature: hooks, pure helpers with their tests, and CSS. |
 | `src/shared` | Types and helpers that two or more features use. |
 
-Features: `game` (board, move input, bot, roulette, clocks, draw offers, eval,
-board effects, coach), `local` (hot-seat), `online` (matches, lobby, quick
-match), `review`, `leaderboard`, `memory` (saved games, resuming a live game),
-`music`, `twitch`, `endgame` (saving, summary, the mate cinematic),
-`tutorial` (welcome, tour), `autoplay` (self-play), `showcase` (exhibition).
+Features: `game` (board marks, move feedback, bot, roulette, clocks, eval,
+board effects, coach, notation), `online` (the live match, its end,
+presence), `local` (hot-seat styles), `review` (watching a saved game, shared
+games), `endgame` (results, the save queue, the end-of-game sequence),
+`music`, `twitch`, `autoplay` (self-play).
 
 ## The shell
 
-`App.tsx` calls the feature hooks and picks a view: stats, autoplay, review,
-leaderboard, lobby or the game. Every hook is called before that choice, so
-they all stay mounted whatever is on screen: the bot, the clocks and presence
-keep running while the leaderboard is open. Game state never goes into a
-component that unmounts with its view.
+`App.tsx` calls the hooks, keeps the game's state, and picks a view: stats,
+autoplay, review, leaderboard, lobby or the game. Every hook is called
+before that choice, so they all stay mounted whatever is on screen: the bot,
+the clocks and presence keep running while the leaderboard is open. Game
+state never goes into a component that unmounts with its view.
 
-Hooks are called in a fixed order because React runs effects in that order.
-Three things depend on it:
+Each hook is a block that stood in App, moved as it was and called where it
+stood, so React still runs the effects in the same order. Four things depend
+on that order:
 
-- `useBoardFx`: the capture and rotation effects read `prevBoardRef` before
-  the snapshot effect overwrites it.
-- `useBoardFx` creates `window.subutaiFX` before `useEndgame` adds `mate` to it.
-- `useMultiplayer` clears the resume code before `useLiveSession` reads it.
+- `useCaptureFx`: the capture and rotation effects read `prevBoardRef`
+  before the snapshot effect at its end moves it on.
+- `useConsoleSeams` creates `window.subutaiFX` before `useEndgame` adds
+  `mate` to it.
+- `useOnlineMatch`, which reseats a reloaded online match and clears its
+  resume code, runs before `useResumeGame` checks that code.
+- `useGameClocks` resets the flag for a new match before the flag check.
 
-Functions that an earlier hook needs from a later one (`startNewGame`,
-`finishGame`) are passed as refs and updated in a layout effect, which runs
-before any `useEffect` in the same commit.
+A hook receives what it reads as one object of arguments and returns what
+the rest of App reads. Setters and refs it returns never change, so App lists
+them in deps arrays where the linter asks; it changes nothing at run time.
+Something App declares further down reaches a hook either as a hoisted
+function declaration (`startNewGame`) or, for a state setter declared later
+(`setMobilePanel`), as a small wrapper that is only called from callbacks.
+
+## How data flows
+
+```
+ Firestore (/matches, /games, /users)        localStorage (Memory, subutai_*)
+        │  snapshot          ▲ writes               ▲              │
+        ▼                    │                      │              ▼
+ useOnlineMatch ──┐   useOnlineMatchEnd     useMemoryAutosave   useResumeGame
+                  │   useGameSaveQueue
+                  ▼
+ App.tsx: game state (useState) + read-side aliases (state, log, legalMoves)
+        │                        ▲
+        ▼                        │ setters, callbacks
+ feature hooks (bot, clocks, classifier, effects, coach, endgame …)
+        │
+        ▼
+ the view on screen (board, panels, dialogs) ── a click calls an App handler
+```
+
+Where the game lives: a solo or hot-seat game is App's own state (`stateLocal`,
+`logLocal`, `gameStatus` and the roulette fields). An online game lives in
+its match document; `useOnlineMatch` subscribes to it and App reads it
+through the same names (`state`, `log`, `legalMoves`, `lastMove`), so the
+board and the hooks do not care which kind of game it is.
+
+A move, from the click to the record. A click on a square calls
+`onSquareClick` in App, which finds the move among the legal ones. Solo, it
+applies it (`applyMove`) and appends it to the log (`appendMove`); the new
+state re-renders the board, and the effects follow: `useBotTurn` schedules
+the bot's reply through `useBotScheduler`, `commitAnalysis` from
+`useClassifier` records the classifier's verdict, `useMemoryAutosave`
+snapshots the game, `useCaptureFx` and `useMoveFeedback` play the effects
+and sounds. When the board ends the game, App's completion effect calls
+`finishGame`, which scores it and hands the save to `useGameSaveQueue`;
+`saveCompletedGame` in `src/firebase/games.ts` writes the game to `/games`
+and updates the player's `/users` profile in a transaction. Online, the
+click goes to `mpSync.sendMove`, which appends the move to
+`/matches/{code}` in a transaction stamped with server time; the rules
+check whose turn it is, and the opponent receives the new document through
+the same subscription.
+`useOnlineMatchEnd` writes the outcome and each player saves their own
+`/games` record.
+
+## Where to add things
+
+- A new feature: a folder `src/features/<name>` with its hook, helpers and
+  tests. Call the hook from App after everything it reads is declared, and
+  return only what the rest of App needs. Its stylesheet goes into the
+  `src/App.css` index at the place in the cascade its rules need.
+- A new screen: a component, behind `lazy()` if it is heavy, chosen in
+  App's view switch. Anything that must outlive the screen stays in a hook
+  called before the switch. A failed chunk load is handled by
+  `AppErrorBoundary`.
+- A new Firestore record: its reads and writes in `src/firebase/<name>.ts`,
+  its rules in `firestore.rules` with tests in `tests/rules`, and rules that
+  allow it deployed before any client writes it.
 
 ## Styles
 
