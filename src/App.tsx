@@ -122,8 +122,6 @@ import {
 } from './utils/drawOffer';
 import { HUMAN_COLOR, type GameMode, type GameStatus } from './shared/game';
 import {
-  AI_ROULETTE_BETWEEN_ACTIONS_MS,
-  AI_ROULETTE_REVEAL_MS,
   ROULETTE_MAX_ACTIONS,
   ROULETTE_SLOT_COUNT,
   consumeSlotIndex,
@@ -183,6 +181,7 @@ import { useAfkNudge } from './features/game/useAfkNudge';
 import { useMoveFeedback } from './features/game/useMoveFeedback';
 import { useRouletteAutoSpin } from './features/game/useRouletteAutoSpin';
 import { useBotScheduler } from './features/game/useBotScheduler';
+import { useBotTurn } from './features/game/useBotTurn';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -1898,91 +1897,27 @@ function App() {
   const materialScore =
     myColor === 'black' ? -materialBreakdown.score : materialBreakdown.score;
 
-  useEffect(() => {
-    if (isMultiplayer) return; // PvP: no engine drives the opponent
-    if (gameStatus !== 'active') return;
-    if (watchingGame) return; // replay mode — never let the AI move.
-    if (isAutoMode) {
-      if (autoStopped) return;
-      scheduleAutoMove(state, legalMoves, lastMoveWasRotation);
-      return () => {
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- a timer id set by scheduleAutoMove, not a DOM node: clear the one pending now
-        if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
-      };
-    }
-    if (currentPlayer !== 'ai') return;
-
-    // Classic: the old path handles its own setTimeout + minimax.
-    if (gameMode !== 'roulette') {
-      scheduleAiMove(state, legalMoves, lastMoveWasRotation);
-      return () => {
-        if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
-      };
-    }
-
-    // --- Roulette (state-driven, one phase per render) -------------------
-    //
-    // Each branch schedules exactly ONE timer and performs ONE atomic state
-    // transition. No chained timers, no closures over stale state: after the
-    // timer fires and state updates, React re-runs this effect with fresh
-    // state and selects the next phase.
-    //
-    // Phase 1 — AI spins (no roll yet).
-    // Phase 2a — AI has rolled; execute action 1 after REVEAL pause.
-    // Phase 2b — AI has acted once; execute action 2 after THINK pause.
-    // (2a and 2b are the same branch; the delay is longer on the first one
-    //  so the human can see the fresh roll.)
-
-    if (allowedPieceTypes === null) {
-      // Phase 1 — AI spin. Always runs after a short pause; the first-spin
-      // gate only applies to human turns (auto-spin effect there waits for
-      // the player's first manual click).
-      const t = setTimeout(() => {
-        applyAiSpin(state);
-      }, 500);
-      aiTimerRef.current = t;
-      return () => clearTimeout(t);
-    }
-
-    if (rouletteActionsLeft > 0) {
-      // Phase 2a/2b — one action, then exit. State change re-triggers effect.
-      const delay =
-        usedRouletteSlots.length === 0
-          ? AI_ROULETTE_REVEAL_MS
-          : AI_ROULETTE_BETWEEN_ACTIONS_MS;
-      const t = setTimeout(() => {
-        executeAiRouletteAction(
-          state,
-          allowedPieceTypes,
-          usedRouletteSlots,
-          rouletteActionsLeft,
-        );
-      }, delay);
-      aiTimerRef.current = t;
-      return () => clearTimeout(t);
-    }
-  // The helpers (applyAiSpin, executeAiRouletteAction) are re-created each
-  // render and close over the current setState setters (stable refs). We
-  // intentionally depend on the roulette fields so each phase transition
-  // re-fires the effect with the latest state.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    currentPlayer,
-    state,
+  useBotTurn({
+    isAutoMode,
+    autoStopped,
+    autoTimerRef,
+    isMultiplayer,
+    watchingGame,
     gameStatus,
     gameMode,
+    state,
+    legalMoves,
     allowedPieceTypes,
     rouletteActionsLeft,
     usedRouletteSlots,
-    legalMoves,
-    scheduleAiMove,
+    aiTimerRef,
+    currentPlayer,
     scheduleAutoMove,
+    scheduleAiMove,
+    applyAiSpin,
+    executeAiRouletteAction,
     lastMoveWasRotation,
-    watchingGame,
-    isAutoMode,
-    autoStopped,
-    isMultiplayer,
-  ]);
+  });
 
   // T6 — "chat vs bot": chat plays the human (white) side by majority.
   // Mirrors the AI vote gate but on the HUMAN turn: open a free-form
