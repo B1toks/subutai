@@ -177,6 +177,7 @@ import { useSharedGame } from './features/review/useSharedGame';
 import { useAutoPlay } from './features/autoplay/useAutoPlay';
 import { useRoomGradient } from './app/useRoomGradient';
 import { useClassifyGuards } from './features/game/useClassifyGuards';
+import { useWatchAutoplay } from './features/review/useWatchAutoplay';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -302,7 +303,6 @@ interface FinishedGameSave {
   seed: number;
 }
 
-const WATCH_AUTOPLAY_MS = 1500;
 // Auto-mode tuning. We skip the move classifier (expensive worker round-trip)
 // and use a small inter-move delay so a 60-ply game finishes in ~30s.
 const AUTO_MOVE_DELAY_MS = 50;
@@ -1177,29 +1177,7 @@ function App() {
 
   const { logIdRef, classifyRunRef } = useClassifyGuards({ log, logLengthRef });
 
-  // Watching-mode autoplay: when enabled, advances one move every
-  // WATCH_AUTOPLAY_MS until we hit the end of the replay.
-  useEffect(() => {
-    if (!watchingGame || !watchingGame.autoplay) return;
-    if (watchingGame.currentMoveIdx >= watchingGame.log.moves.length) {
-      // Hit the end — flip autoplay off so the play button resets to ▶.
-      setWatchingGame((cur) => (cur ? { ...cur, autoplay: false } : cur));
-      return;
-    }
-    watchAutoplayRef.current = setTimeout(() => {
-      seekWatchTo(watchingGame.currentMoveIdx + 1);
-    }, WATCH_AUTOPLAY_MS);
-    return () => {
-      if (watchAutoplayRef.current) {
-        clearTimeout(watchAutoplayRef.current);
-        watchAutoplayRef.current = null;
-      }
-    };
-    // seekWatchTo is stable-ish (defined in the component body but captures
-    // setState which is stable); we intentionally drive this effect off the
-    // watchingGame snapshot only.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [watchingGame?.autoplay, watchingGame?.currentMoveIdx]);
+  useWatchAutoplay({ watchingGame, setWatchingGame, watchAutoplayRef, seekWatchTo });
 
   // V1 — Adaptive theme: the room follows the COMMITTED topology (never the
   // rotate button's hover preview, same rule the dust-wave FX follows), so
