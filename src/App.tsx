@@ -97,7 +97,7 @@ import type { SavedGame } from './memory/types';
 import { NotationParseError } from './memory/notation';
 // rotateIsLegal (R10) decides whether chat rounds accept "rotate"; it lives
 // with the replay importer, which checks rotations the same way (QA-02).
-import { replayFromNotation, rotateIsLegal } from './memory/replayImport';
+import { replayFromNotation } from './memory/replayImport';
 import { moveVoting } from './twitch/moveVoting';
 import { busy } from './ui/busy';
 import { PerimeterEqualizer } from './components/PerimeterEqualizer';
@@ -183,6 +183,7 @@ import { useRouletteAutoSpin } from './features/game/useRouletteAutoSpin';
 import { useBotScheduler } from './features/game/useBotScheduler';
 import { useBotTurn } from './features/game/useBotTurn';
 import { useChatVsBot } from './features/twitch/useChatVsBot';
+import { useGuessTheStreamer } from './features/twitch/useGuessTheStreamer';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -1945,31 +1946,18 @@ function App() {
     currentPlayer,
   });
 
-  // R2 — "guess the streamer": while it's the human's turn, an open-ended
-  // free-form round collects chat's guesses. Nothing awaits it — the
-  // resolution happens inside the human commit paths (resolveGuessRound),
-  // and the cleanup cancels a still-unrevealed round when the position
-  // changes some other way (undo, reset, mode flip). A revealed round is
-  // left alone; its banner clears itself.
-  useEffect(() => {
-    if (twitchVoteMode !== 'guess') return;
-    if (isMultiplayer || isLocalMode || isAutoMode || watchingGame) return;
-    if (gameMode !== 'classic' || gameStatus !== 'active') return;
-    if (currentPlayer !== 'human') return;
-    moveVoting.openGuessRound(state, legalMoves, rotateIsLegal(state));
-    return () => moveVoting.cancelRound();
-  }, [
-    twitchVoteMode,
-    isMultiplayer,
-    isLocalMode,
+  useGuessTheStreamer({
     isAutoMode,
+    isMultiplayer,
     watchingGame,
-    gameMode,
     gameStatus,
-    currentPlayer,
+    twitchVoteMode,
+    gameMode,
     state,
     legalMoves,
-  ]);
+    isLocalMode,
+    currentPlayer,
+  });
 
   // Stage T1: trigger the en-passant explosion overlay whenever a new
   // EP move lands in the log — works for both solo + MP because the log
