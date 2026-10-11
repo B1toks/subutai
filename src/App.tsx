@@ -171,6 +171,7 @@ import { useTwitchState } from './features/twitch/useTwitchState';
 import { useMusicState } from './features/music/useMusicState';
 import { useBotLevel } from './features/game/useBotLevel';
 import { useBoardFxState } from './features/game/useBoardFxState';
+import { EARLY_GAME_TIP, ENCOURAGE_GENERIC, ENCOURAGE_ROTATE, ROTATE_AFTERMATH_TIP } from './features/game/coachTexts';
 import { useEval } from './features/game/useEval';
 import { useBoardSize } from './app/useBoardSize';
 import { usePresenceHeartbeat } from './features/online/usePresenceHeartbeat';
@@ -298,35 +299,6 @@ interface FinishedGameSave {
   chess960Id: string;
   seed: number;
 }
-
-/* R5 — encouragement in a losing position. When the human (white) has
- * been meaningfully behind for a couple of moves, drop a supportive nudge
- * instead of letting them spiral into a resign. Rotate-flavoured lines
- * fire only when a board rotate is actually available and also pulse the
- * Rotate button — in this variant a single rotate can swing the eval hard.
- * Gated behind the coaching-tools switch and rate-limited. */
-const ENCOURAGE_GENERIC = [
-  "Don't resign, keep playing. One slip from the bot and you're right back in it.",
-  'Hang in there: a single strong move can turn this whole game around.',
-  "You're behind, not beaten. Make the bot earn every square.",
-];
-const ENCOURAGE_ROTATE = [
-  // R15 data: a rotate swings the eval hard but usually AGAINST the rotator
-  // (mean -277cp for the rotating side). Sell it as honest chaos, and always
-  // pair it with the re-check habit.
-  'Tough spot? A rotate shakes up the whole position. Just re-check your pieces right after.',
-  'Feeling stuck? Rotate scrambles the game for both sides. Chaos favours the prepared.',
-];
-
-/* R15 step 4-lite — two data-driven coaching beats.
- * The labelled human games say: median FIRST blunder lands on move 4 (92 of
- * 98 inside moves 1-10), and 25 of 98 first blunders come immediately after
- * the player's OWN rotation. Two one-shot-per-game nudges target exactly
- * those windows. Both ride the coaching-tools gate like the R5 nudges. */
-const EARLY_GAME_TIP =
-  'Heads up: most games here are decided in the first 10 moves. Slow down and check captures.';
-const ROTATE_AFTERMATH_TIP =
-  'You rotated and the whole board changed with you. Re-check your pieces before moving on.';
 
 const WATCH_AUTOPLAY_MS = 1500;
 // Auto-mode tuning. We skip the move classifier (expensive worker round-trip)
