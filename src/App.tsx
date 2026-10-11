@@ -182,6 +182,7 @@ import { useMoveFeedback } from './features/game/useMoveFeedback';
 import { useRouletteAutoSpin } from './features/game/useRouletteAutoSpin';
 import { useBotScheduler } from './features/game/useBotScheduler';
 import { useBotTurn } from './features/game/useBotTurn';
+import { useChatVsBot } from './features/twitch/useChatVsBot';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -1919,68 +1920,30 @@ function App() {
     lastMoveWasRotation,
   });
 
-  // T6 — "chat vs bot": chat plays the human (white) side by majority.
-  // Mirrors the AI vote gate but on the HUMAN turn: open a free-form
-  // round (chat types SAN / coordinates), then commit the elected move
-  // through the same classic-mode path a click would take. The cleanup
-  // cancels the round whenever the position changes under it — which is
-  // exactly what happens when the streamer overrides by moving manually.
-  useEffect(() => {
-    if (twitchVoteMode !== 'chatvsbot') return;
-    if (isMultiplayer || isLocalMode || isAutoMode || watchingGame) return;
-    if (gameMode !== 'classic' || gameStatus !== 'active') return;
-    if (currentPlayer !== 'human') return;
-    let stale = false;
-    void moveVoting.gateHumanMove(state, legalMoves, rotateIsLegal(state)).then((move) => {
-      if (stale || !move) return;
-      // R10 — chat elected to rotate the board as its move. handleRotate
-      // re-checks legality itself; the round only offered "rotate" while
-      // it was legal, and this effect re-fires on any position change.
-      if (move.kind === 'topologyToggle') {
-        handleRotate();
-        return;
-      }
-      if (!move.from || !move.to) return;
-      const san = computeSAN(state, move);
-      const afterMove = applyMove(state, move);
-      setLog((prev) => appendMove(prev, move, san, state.topologyState));
-      setLastMove({ from: move.from, to: move.to });
-      beatBridge.reportMove();
-      setSearchEvalFromWhite((prev) => bumpEvalForMove(prev, state, move));
-      setSearchMateInPlies(null);
-      const moveIdx = logLengthRef.current;
-      void classifyAsync(state, move, afterMove, {
-        budgetMs: scaleBudgetMs(1000),
-        maxDepth: 7,
-        allowSelfCheck: false,
-      }).then((analysis) => {
-        commitAnalysis(moveIdx, analysis, move.to);
-      });
-      setState(afterMove);
-      setLegalMoves(getLegalMoves(afterMove));
-      setSelected(null);
-      checkGameOver(afterMove);
-    });
-    return () => {
-      stale = true;
-      moveVoting.cancelRound();
-    };
-  // Commit helpers close over this render's state; the effect re-fires on
-  // any position change, so the captures stay fresh (same contract as the
-  // AI scheduler above).
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    twitchVoteMode,
-    isMultiplayer,
-    isLocalMode,
+  useChatVsBot({
     isAutoMode,
+    isMultiplayer,
     watchingGame,
-    gameMode,
+    setState,
+    setSelected,
+    setLegalMoves,
+    setLog,
     gameStatus,
-    currentPlayer,
+    setLastMove,
+    twitchVoteMode,
+    gameMode,
+    getLegalMoves,
     state,
     legalMoves,
-  ]);
+    setSearchEvalFromWhite,
+    setSearchMateInPlies,
+    logLengthRef,
+    commitAnalysis,
+    checkGameOver,
+    handleRotate,
+    isLocalMode,
+    currentPlayer,
+  });
 
   // R2 — "guess the streamer": while it's the human's turn, an open-ended
   // free-form round collects chat's guesses. Nothing awaits it — the
