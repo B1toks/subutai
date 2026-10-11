@@ -181,6 +181,7 @@ import { useRotateHint } from './features/game/useRotateHint';
 import { useClassifier } from './features/game/useClassifier';
 import { useGameClocks } from './features/game/useGameClocks';
 import { useNavigationGuards } from './app/useNavigationGuards';
+import { useSoloFlagFall } from './features/game/useSoloFlagFall';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -1774,33 +1775,21 @@ function App() {
         }
       : null;
 
-  // V1 — solo time control flag-fall. When a side's remaining time hits
-  // zero the game ends as a loss on time for that side, exactly like a
-  // timed PvP match. Vs the bot the completion effect turns the terminal
-  // status into ai-win / human-win and saves as usual; in local hot-seat
-  // the banner is the ending (same as resign there). The clock only arms
-  // after the first move (see the tick effect), so nobody flags while the
-  // board is still untouched.
-  const soloFlagLogIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (soloTcSec === null || isMultiplayer || isAutoMode || watchingGame) return;
-    if (gameStatus !== 'active' || log.moves.length === 0) return;
-    if (soloFlagLogIdRef.current === log.id) return;
-    const flagged = (['white', 'black'] as const).find(
-      (side) => soloTcSec * 1000 - clockMs[side] <= 0,
-    );
-    if (!flagged) return;
-    soloFlagLogIdRef.current = log.id;
-    if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
-    setSelected(null);
-    setGameStatus(flagged === 'white' ? 'timeout_white' : 'timeout_black');
-    if (isLocalMode) completedLogIdRef.current = log.id;
-    toast.show(
-      `${flagged === 'white' ? 'White' : 'Black'} ran out of time.`,
-      'info',
-      3200,
-    );
-  }, [clockMs, soloTcSec, isMultiplayer, isAutoMode, watchingGame, gameStatus, log.id, log.moves.length, isLocalMode, toast]);
+  useSoloFlagFall({
+    isAutoMode,
+    completedLogIdRef,
+    isMultiplayer,
+    watchingGame,
+    setSelected,
+    gameStatus,
+    setGameStatus,
+    clockMs,
+    soloTcSec,
+    log,
+    aiTimerRef,
+    toast,
+    isLocalMode,
+  });
   // Local hot-seat's own "game over" modal dismiss flag (see the render
   // site near the MP completion dialog). Reset per game via the effect
   // below, keyed on log.id like the other one-shot-per-game flags in
