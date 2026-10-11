@@ -182,6 +182,7 @@ import { useClassifier } from './features/game/useClassifier';
 import { useGameClocks } from './features/game/useGameClocks';
 import { useNavigationGuards } from './app/useNavigationGuards';
 import { useSoloFlagFall } from './features/game/useSoloFlagFall';
+import { useAfkNudge } from './features/game/useAfkNudge';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -1834,44 +1835,7 @@ function App() {
   const botThinking =
     !isMultiplayer && !isLocalMode && gameStatus === 'active' && currentPlayer === 'ai';
 
-  // Sprint 2.5 — local AFK nag. Pointer / keyboard activity refreshes
-  // the timestamp and clears any existing alert; if we're idle for 20s
-  // on our own turn while the game is still active, surface a pulsing
-  // attention banner. Distinct from mpSync.selfAfkWarning which is the
-  // server-driven 30s forfeit timer.
-  useEffect(() => {
-    function bump() {
-      lastActivityRef.current = Date.now();
-      setShowAfkAlert(false);
-    }
-    document.addEventListener('pointerdown', bump, { passive: true });
-    document.addEventListener('pointermove', bump, { passive: true });
-    document.addEventListener('keydown', bump, { passive: true });
-    return () => {
-      document.removeEventListener('pointerdown', bump);
-      document.removeEventListener('pointermove', bump);
-      document.removeEventListener('keydown', bump);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (currentPlayer !== 'human' || gameStatus !== 'active') {
-      setShowAfkAlert(false);
-      return;
-    }
-    // Reset the timestamp whenever it becomes our turn — we don't want to
-    // count idle time from before the opponent moved.
-    lastActivityRef.current = Date.now();
-    setShowAfkAlert(false);
-    const t = setInterval(() => {
-      // Sprint 2.7: bumped from 20s → 40s after a round of playtesting —
-      // the original threshold tripped during normal thinking pauses.
-      if (Date.now() - lastActivityRef.current > 40_000) {
-        setShowAfkAlert(true);
-      }
-    }, 5_000);
-    return () => clearInterval(t);
-  }, [currentPlayer, gameStatus]);
+  useAfkNudge({ setShowAfkAlert, lastActivityRef, gameStatus, currentPlayer });
 
   // Sprint 3.2 — checkmate flash: brief radial whiteout via a body
   // class. Triggers whenever gameStatus transitions to 'checkmate'.
