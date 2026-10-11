@@ -74,9 +74,9 @@ import {
   UsersRound,
 } from 'lucide-react';
 import type { GameReviewMeta } from './components/GameReview';
-import { OPPONENT_OFFLINE_FORFEIT_MS, useMultiplayerSync } from './components/MultiplayerGameView';
+import { OPPONENT_OFFLINE_FORFEIT_MS } from './components/MultiplayerGameView';
 import { drawOfferHolds, mpResignCause, turnStartedMs } from './firebase/matchEnd';
-import { rejoinMatch, type MatchDoc, type MatchOutcome } from './firebase/matches';
+import type { MatchDoc, MatchOutcome } from './firebase/matches';
 import {
   saveMultiplayerGameToGames,
   translateOutcomeForPlayer,
@@ -171,6 +171,7 @@ import { deriveMpLastMove, deriveMpLog } from './features/online/matchLog';
 import { formatNotation } from './features/game/notation';
 import { evalToColors } from './app/roomColors';
 import { useUrlModes } from './app/useUrlModes';
+import { useOnlineMatch } from './features/online/useOnlineMatch';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -453,73 +454,22 @@ function App() {
   const [activeReviewMeta, setActiveReviewMeta] =
     useState<GameReviewMeta | null>(null);
   const [sharedGameError, setSharedGameError] = useState<string | null>(null);
-  // Q.B.2: PvP sync. Hook is always called (with null match before any
-  // game starts) so React's hook-order rules are respected. Returns null
-  // when no match — every consumer guards on isMultiplayer below.
-  const mpSync = useMultiplayerSync(
+  const { mpSync, isMultiplayer, isMultiplayerRef } = useOnlineMatch({
+    user,
+    setView,
+    setOpponentMode,
     activeMatch,
-    user?.uid ?? null,
-    () => {
-      // Doc was deleted out from under us — drop back to lobby.
-      setActiveMatch(null);
-      setMpEndOutcome(null);
-      mpSavedGameIdRef.current = null;
-      mpWroteOutcomeRef.current = null;
-      setMobilePanel('none');
-      setView('friend-lobby');
-    },
-  );
-  const isMultiplayer = mpSync !== null;
-  // R15-bug — mirror for async continuations (AI think can outlive the
-  // solo game it started in when a PvP match begins mid-search).
-  const isMultiplayerRef = useRef(isMultiplayer);
-  useEffect(() => {
-    isMultiplayerRef.current = isMultiplayer;
-  }, [isMultiplayer]);
-
-  // R13b — persist the live match code so a refresh can resume it. The
-  // key exists only while a match is genuinely live: it clears when the
-  // match ends (outcome modal) or when there's no active match at all.
-  useEffect(() => {
-    try {
-      if (activeMatch && !mpEndOutcome) {
-        localStorage.setItem('subutai_mp_active', activeMatch.code);
-      } else {
-        localStorage.removeItem('subutai_mp_active');
-      }
-    } catch {
-      /* private mode */
-    }
-  }, [activeMatch, mpEndOutcome]);
-
-  // R13b — one-shot resume: once auth lands, try to re-seat into the
-  // match recorded before the refresh. rejoinMatch verifies the seat and
-  // liveness; on any failure the key is just dropped (the AFK watchdog
-  // may have forfeited us long ago — nothing to resume into).
-  useEffect(() => {
-    const code = mpResumeCodeRef.current;
-    if (!code || !user || activeMatch) return;
-    mpResumeCodeRef.current = null;
-    void rejoinMatch(code, user.uid)
-      .then((match) => {
-        startNewGame(); // R15-bug — same solo-world reset as onMatchReady
-        setActiveMatch(match);
-        setOpponentMode('friend');
-        setMobilePanel('none'); // fix/v1.1.4 — show the board, as onMatchReady
-        setMpEndOutcome(null);
-        mpSavedGameIdRef.current = null;
-        mpWroteOutcomeRef.current = null;
-        setView('game');
-      })
-      .catch(() => {
-        try {
-          localStorage.removeItem('subutai_mp_active');
-        } catch {
-          /* private mode */
-        }
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+    setActiveMatch,
+    setMpEndOutcome,
+    mpEndOutcome,
+    mpResumeCodeRef,
+    mpSavedGameIdRef,
+    mpWroteOutcomeRef,
+    // Declared further down; the hook only calls it from callbacks, which
+    // run after this render, so a wrapper is enough to reach it.
+    setMobilePanel: (v) => setMobilePanel(v),
+    startNewGame,
+  });
 
   const [watchingGame, setWatchingGame] = useState<WatchingGame | null>(null);
   const watchAutoplayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -3469,7 +3419,7 @@ function App() {
         checkGameOver(next, move.kind === 'topologyToggle');
       }, 650);
     },
-    [commitAnalysis],
+    [commitAnalysis, isMultiplayerRef],
   );
 
   // Slim AI step for auto mode: no classifier round-trip, tighter delay.
