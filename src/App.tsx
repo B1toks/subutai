@@ -180,6 +180,7 @@ import { useWatchAutoplay } from './features/review/useWatchAutoplay';
 import { useAdaptiveTheme } from './app/useAdaptiveTheme';
 import { useMoveMilestones } from './features/game/useMoveMilestones';
 import { useAdaptiveMusic } from './features/music/useAdaptiveMusic';
+import { useMoveLogScroll } from './features/game/useMoveLogScroll';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -1225,16 +1226,7 @@ function App() {
     myPerspectiveEval,
     sacrificeSquare,
   });
-  // Sprint 4.1 — auto-scroll the sidebar move log so the latest ply
-  // is always visible without manual scrolling. Anchored to the
-  // <pre className="move-log-text"> element which already has the
-  // max-height + overflow-y: auto from the sidebar-moves CSS.
-  const moveLogScrollRef = useRef<HTMLPreElement | null>(null);
-  useEffect(() => {
-    const el = moveLogScrollRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [log.moves.length]);
+  const { moveLogScrollRef } = useMoveLogScroll({ log });
 
   // Sprint 4.2 — rotate hint now fires immediately on game start (was
   // move 5 in 4.1; new players need to discover rotate from move 1).
