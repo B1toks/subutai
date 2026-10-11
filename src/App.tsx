@@ -162,7 +162,7 @@ import { checkMarks, recentPlies, supportPairsFor, threatCounts } from './featur
 import { countMaterial } from './features/game/material';
 import { gameOverText, memoryTermination, soloOutcome, winnerOf } from './features/endgame/result';
 import { drawOfferTitle } from './features/game/drawOfferTitle';
-import { BOT_LEVEL_KEY, BOT_STRENGTH_HINT, BOT_STRENGTH_SUMMARY, readInitialBotLevel } from './features/game/botLevel';
+import { BOT_STRENGTH_HINT, BOT_STRENGTH_SUMMARY } from './features/game/botLevel';
 import { clearLiveSession, readLiveSession, writeLiveSession } from './memory/liveSession';
 import { deriveMpLastMove, deriveMpLog } from './features/online/matchLog';
 import { formatNotation } from './features/game/notation';
@@ -173,6 +173,7 @@ import { useMobileDrawers } from './app/useMobileDrawers';
 import { useOnboarding } from './app/useOnboarding';
 import { useTwitchState } from './features/twitch/useTwitchState';
 import { useMusicState } from './features/music/useMusicState';
+import { useBotLevel } from './features/game/useBotLevel';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -559,21 +560,7 @@ function App() {
   // null = free play (chips keep showing elapsed). With a value the chips
   // show remaining = tc - elapsed, floored at 0. Display-only in solo.
   const [soloTcSec, setSoloTcSec] = useState<number | null>(null);
-  // V1 — bot strength. Persisted; mirrored in a ref because the AI
-  // scheduler is a memoised callback that must read the live value.
-  const [botLevel, setBotLevelState] = useState<BotStrength>(readInitialBotLevel);
-  const botLevelRef = useRef<BotStrength>(botLevel);
-  useEffect(() => {
-    botLevelRef.current = botLevel;
-  }, [botLevel]);
-  function setBotLevel(next: BotStrength) {
-    setBotLevelState(next);
-    try {
-      localStorage.setItem(BOT_LEVEL_KEY, next);
-    } catch {
-      /* private mode */
-    }
-  }
+  const { botLevel, botLevelRef, setBotLevel } = useBotLevel();
   const [previewLocked, setPreviewLocked] = useState(false);
   const [lockedPreviewTopology, setLockedPreviewTopology] = useState<TopologyState | null>(null);
   const [hoveredSquare, setHoveredSquare] = useState<string | null>(null);
@@ -3274,7 +3261,7 @@ function App() {
         checkGameOver(next, move.kind === 'topologyToggle');
       }, 650);
     },
-    [commitAnalysis, isMultiplayerRef],
+    [commitAnalysis, isMultiplayerRef, botLevelRef],
   );
 
   // Slim AI step for auto mode: no classifier round-trip, tighter delay.
