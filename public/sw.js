@@ -31,6 +31,7 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return; // Firebase/fonts pass through
+  if (url.pathname.startsWith('/_vercel/')) return; // analytics script: never pinned in the cache
 
   if (req.mode === 'navigate') {
     event.respondWith(

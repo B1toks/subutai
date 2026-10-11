@@ -26,12 +26,17 @@ import { useToast } from './components/Toast';
 import type { EndgameKind, KingOrigin, VictoryTheme } from './components/EndgameScene';
 import { GameSummary } from './components/GameSummary';
 import { ConfirmDialog } from './components/ConfirmDialog';
+import { ClockFace } from './components/ClockFace';
+import { STREAMING_UI } from './featureFlags';
+import { mpClockAt, mpClockHeldFor, mpClockState } from './utils/mpClock';
+import { serverNow } from './firebase/serverClock';
 import { FeedbackModal } from './components/FeedbackModal';
 import { MilestoneModal } from './components/MilestoneModal';
 import { AutoPlayView } from './components/AutoPlayView';
 import { ThemeToggle } from './components/ThemeToggle';
 import { NeonLogo } from './components/NeonLogo';
 import { UserMenu } from './components/UserMenu';
+import { PlayerRow } from './components/PlayerRow';
 import { Effects3DToggle } from './components/Effects3DToggle';
 import { AudioToggle } from './components/AudioToggle';
 import { MusicToggle } from './components/MusicToggle';
@@ -152,7 +157,6 @@ import {
   replayBoardAt,
   samePieces,
 } from './features/game/position';
-import { formatClockFace, matchClocks } from './features/game/clock';
 import { computeBoardSize } from './app/boardSize';
 import { glyphForPiece } from './features/game/pieceGlyph';
 import { colorFromMouseEvent, type AnnotationColor, type ArrowAnnotation } from './features/game/annotations';
@@ -513,6 +517,7 @@ function App() {
       setMpEndOutcome(null);
       mpSavedGameIdRef.current = null;
       mpWroteOutcomeRef.current = null;
+      setMobilePanel('none');
       setView('friend-lobby');
     },
   );
@@ -552,6 +557,7 @@ function App() {
         startNewGame(); // R15-bug — same solo-world reset as onMatchReady
         setActiveMatch(match);
         setOpponentMode('friend');
+        setMobilePanel('none'); // fix/v1.1.4 — show the board, as onMatchReady
         setMpEndOutcome(null);
         mpSavedGameIdRef.current = null;
         mpWroteOutcomeRef.current = null;
@@ -2629,75 +2635,90 @@ function App() {
       ? mpSync.matchState.status === 'active' && !mpSync.matchState.outcome
       : false;
 
-  const [mpNow, setMpNow] = useState(() => Date.now());
-  useEffect(() => {
-    // V1 — ticks for ANY live match, not only a timed one. Without a time
-    // control the clocks used to sit at 00:00 for the whole game, which
-    // makes the one piece of information both players actually want —
-    // who is burning the time — unavailable exactly when there is no
-    // limit to enforce it.
-    if (!mpMatchLive) return;
-    const id = setInterval(() => setMpNow(Date.now()), 500);
-    return () => clearInterval(id);
-  }, [mpMatchLive]);
-
-  const mpClocks = useMemo(() => {
-    if (!isMultiplayer || !mpSync) return null;
-    return matchClocks(
-      mpSync.matchState.log.moves,
-      mpTimeControl,
-      mpSync.matchState.timeIncrementSec,
-      mpMatchLive,
-      mpNow,
-    );
-  }, [isMultiplayer, mpTimeControl, mpSync, mpNow, mpMatchLive]);
+  // The clocks change only with the match doc; the faces (ClockFace) and
+  // the flag check below tick on their own. A `mpNow` state ticked every
+  // 500 ms used to re-render the whole App twice a second for this, and
+  // stepped the digits on an arbitrary phase (200-1400 ms apart).
+  const mpMatchState = mpSync?.matchState ?? null;
+  const mpClock = useMemo(
+    () => (mpMatchState ? mpClockState(mpMatchState, mpTimeControl, mpMatchLive) : null),
+    [mpMatchState, mpTimeControl, mpMatchLive],
+  );
 
   const flagFiredRef = useRef(false);
   const flagRetryAtRef = useRef(0);
+  // Bumped only when a refused flag claim is to be retried; every other
+  // look at the clocks is a timer inside the effect. Waking through App
+  // state re-rendered the whole App at the moment a clock ran out, which
+  // held the face's 00:00 back by that render (100-300 ms measured).
+  const [mpFlagRetry, setMpFlagRetry] = useState(0);
   useEffect(() => {
     flagFiredRef.current = false;
   }, [mpSync?.matchState.code]);
   useEffect(() => {
-    if (!mpClocks || !mpSync || flagFiredRef.current) return;
+    if (!mpClock || !mpSync) return;
     // Only a COUNTDOWN can run out. Since untimed matches got an elapsed
-    // clock (V1), mpClocks exists in every match — and an elapsed clock
+    // clock (V1), the clock exists in every match — and an elapsed clock
     // starts at 0, which the lines below read as "your flag fell". Every
     // untimed match resigned itself the instant it started.
-    if (!mpClocks.countdown) return;
+    if (!mpClock.countdown) return;
     if (mpSync.matchState.status !== 'active') return;
-    const mine = mpSync.myColor === 'white' ? mpClocks.white : mpClocks.black;
-    if (mine <= 0) {
-      flagFiredRef.current = true;
-      void mpSync.resign('flag');
-      return;
-    }
-    // R13/BUG-3 — the flagging client may be gone (tab closed): if the
-    // OPPONENT's clock hits zero, the waiting peer claims the flag win
-    // itself. Same transaction-guarded write local mate detection uses,
-    // so a simultaneous self-forfeit can't double-settle the match.
-    // QA-05 — the rules cannot see the clock, so they take this claim
-    // only once the opponent's turn has run 90 s by server time (R-7:
-    // from turnStartedAt, which only a move restarts); until
-    // then only their own client can end it. Wait for that, and retry
-    // when the server still says no (clock skew). A draw offer they made
-    // on that turn holds the claim until I answer it (drawOfferHolds).
-    const theirs = mpSync.myColor === 'white' ? mpClocks.black : mpClocks.white;
-    if (theirs <= 0) {
-      if (drawOfferHolds(mpSync.matchState)) return;
-      const last = turnStartedMs(mpSync.matchState);
-      if (typeof last === 'number' && Date.now() - last < OPPONENT_OFFLINE_FORFEIT_MS) return;
-      if (Date.now() < flagRetryAtRef.current) return;
-      flagFiredRef.current = true;
-      const opponentIsHost = mpSync.matchState.host.uid !== mpSync.myUid;
-      void mpSync
-        .writeOutcomeIfFirst(opponentIsHost ? 'host-resign' : 'guest-resign', 'flag')
-        .then((ok) => {
-          if (ok) return;
-          flagRetryAtRef.current = Date.now() + 4000;
-          flagFiredRef.current = false;
-        });
-    }
-  }, [mpClocks, mpSync]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const check = () => {
+      if (flagFiredRef.current) return;
+      // N-10 — server time, like the move stamps and turnStartedAt.
+      const now = serverNow();
+      const mine = mpClockAt(mpClock, mpSync.myColor, now);
+      if (mine <= 0) {
+        flagFiredRef.current = true;
+        void mpSync.resign('flag');
+        return;
+      }
+      // R13/BUG-3 — the flagging client may be gone (tab closed): if the
+      // OPPONENT's clock hits zero, the waiting peer claims the flag win
+      // itself. Same transaction-guarded write local mate detection uses,
+      // so a simultaneous self-forfeit can't double-settle the match.
+      // QA-05 — the rules cannot see the clock, so they take this claim
+      // only once the opponent's turn has run 90 s by server time (R-7:
+      // from turnStartedAt, which only a move restarts); until
+      // then only their own client can end it. Wait for that, and retry
+      // when the server still says no (clock skew). A draw offer they made
+      // on that turn holds the claim until I answer it (drawOfferHolds).
+      const theirs = mpClockAt(mpClock, mpSync.myColor === 'white' ? 'black' : 'white', now);
+      let wake: number;
+      if (theirs > 0) {
+        if (!mpClock.running) return;
+        // Until the running clock reaches 0; a new snapshot re-runs this.
+        wake =
+          mpClockHeldFor(mpClock, mpClock.running, now) + mpClockAt(mpClock, mpClock.running, now);
+      } else {
+        if (drawOfferHolds(mpSync.matchState)) return;
+        const last = turnStartedMs(mpSync.matchState);
+        if (typeof last === 'number' && now - last < OPPONENT_OFFLINE_FORFEIT_MS) {
+          wake = last + OPPONENT_OFFLINE_FORFEIT_MS - now;
+        } else if (now < flagRetryAtRef.current) {
+          wake = flagRetryAtRef.current - now;
+        } else {
+          flagFiredRef.current = true;
+          const opponentIsHost = mpSync.matchState.host.uid !== mpSync.myUid;
+          void mpSync
+            .writeOutcomeIfFirst(opponentIsHost ? 'host-resign' : 'guest-resign', 'flag')
+            .then((ok) => {
+              if (ok) return;
+              flagRetryAtRef.current = serverNow() + 4000;
+              flagFiredRef.current = false;
+              setMpFlagRetry((n) => n + 1);
+            });
+          return;
+        }
+      }
+      // A little after the face's own wake (15 ms): the face paints 00:00
+      // first, then the flag write re-renders App.
+      timer = setTimeout(check, wake + 50);
+    };
+    check();
+    return () => clearTimeout(timer);
+  }, [mpClock, mpSync, mpFlagRetry]);
 
   function toggleHelpTools() {
     setHelpToolsEnabled((v) => {
@@ -2771,7 +2792,16 @@ function App() {
   // finish, resign, or explicitly abandon via the dialog.
   function requestOpponentChange(next: 'ai' | 'friend' | 'local') {
     if (next === opponentMode) return;
+    // An online match owns the board until it is left through its own
+    // exits (resign, or the result dialog). Switching underneath it used
+    // to keep the match live and leave opponentMode behind it, so the
+    // board fell into hot-seat the moment the match was dismissed.
+    if (isMultiplayer) return;
     if (gameInProgress && !isMultiplayer && !watchingGame) {
+      // fix/v1.1.4 — the confirm renders inside .app-root under the
+      // phone drawer (z 940 over the dialog's 300); it was hidden behind
+      // the very panel the tab was tapped in.
+      setMobilePanel('none');
       setPendingOpponentChange(next);
       return;
     }
@@ -2779,6 +2809,11 @@ function App() {
   }
 
   function applyOpponentChange(next: 'ai' | 'friend' | 'local') {
+    // fix/v1.1.4 — picking an opponent is what starts the next game (or
+    // opens the lobby), so the phone drawer it was picked in steps aside
+    // and the board is in view. Settings inside the drawer (mode, bot,
+    // clock) leave it open; the player is still choosing.
+    setMobilePanel('none');
     if (next === 'friend') {
       busy.navigate('Opening the lobby', () => {
         setOpponentMode(next);
@@ -5196,6 +5231,10 @@ function App() {
             // the clock strip, which is gated on gameStatus==='active').
             startNewGame();
             setActiveMatch(match);
+            // fix/v1.1.4 — the drawer state outlives the lobby screen, so
+            // a drawer left open when the lobby was entered came back
+            // over the board of the new match. Close it on the way in.
+            setMobilePanel('none');
             setView('game');
             // Reset any stale completion state from a previous match.
             setMpEndOutcome(null);
@@ -5358,6 +5397,8 @@ function App() {
           </button>
         </div>
         <div className="header-controls" data-tour="header">
+          {STREAMING_UI && (
+            <>
           <Tooltip text={showMusicDock ? 'Hide music dock' : 'Spotify + beat sync (beta)'} side="bottom">
             <button
               type="button"
@@ -5385,6 +5426,11 @@ function App() {
             </button>
           </Tooltip>
           <span className="rail-sep" aria-hidden />
+            </>
+          )}
+          {/* fix/v1.1.4 — on a phone these two sit in the left drawer, and
+              their dialogs render under it (and its scrim): close it first,
+              as Change name does. */}
           <Tooltip
             text={user && displayName ? 'Send feedback' : 'Sign in to send feedback'}
             side="bottom"
@@ -5393,7 +5439,10 @@ function App() {
             <button
               type="button"
               className="header-action-btn"
-              onClick={() => setShowFeedbackModal(true)}
+              onClick={() => {
+                setMobilePanel('none');
+                setShowFeedbackModal(true);
+              }}
               disabled={!user || !displayName}
               aria-label="Send feedback"
             >
@@ -5404,7 +5453,10 @@ function App() {
             <button
               type="button"
               className="header-action-btn"
-              onClick={() => setShowHelp(true)}
+              onClick={() => {
+                setMobilePanel('none');
+                setShowHelp(true);
+              }}
               aria-label="Rules & info"
             >
               <Icon icon={HelpCircle} size="md" aria-hidden />
@@ -5435,6 +5487,9 @@ function App() {
             <Icon icon={Trophy} size="md" aria-hidden />
             <span className="topbar-btn-label">Leaderboard</span>
           </button>
+          {/* fix/v1.1.4 — the name is back here from 721px, where the
+              header has room; CSS hides it on a phone, where PlayerRow
+              in the setup drawer carries it. */}
           {displayName && (
             <UserMenu
               displayName={displayName}
@@ -5554,18 +5609,7 @@ function App() {
       {gameStatus === 'active' && !watchingGame && (
         <div className="tournament-clock" aria-label="Game clocks">
           {(['white', 'black'] as const).map((side) => {
-            const soloCountdown = mpClocks === null && soloTcSec !== null;
-            const ms = mpClocks
-              ? mpClocks[side]
-              : soloCountdown
-                ? Math.max(0, soloTcSec * 1000 - clockMs[side])
-                : clockMs[side];
-            // Only a real countdown can be "low". An elapsed clock reads
-            // low for its first 30 seconds, which would paint every game
-            // red at the start.
-            const low = (mpClocks?.countdown || soloCountdown) && ms < 30_000;
-            const face = formatClockFace(ms);
-            const running = state.sideToMove === side;
+            const soloCountdown = mpClock === null && soloTcSec !== null;
             // V1 — the running half is lit in the theme accent when it is
             // YOUR clock and in the opponent accent when it is not, so the
             // two are never confusable at a glance. Online it follows the
@@ -5573,24 +5617,19 @@ function App() {
             // so the two seats simply get the two colours.
             const mine = side === (isMultiplayer ? mpSync?.myColor ?? 'white' : 'white');
             return (
-              <div
+              <ClockFace
                 key={side}
-                className={`tc-face tc-face-${side}${running ? ' is-running' : ''}${low ? ' is-low' : ''}${mine ? ' is-mine' : ' is-theirs'}`}
-              >
-                <span className="tc-readout">
-                  {/* Every segment of the display, unlit — the live digits
-                      sit exactly on top, so the glass reads as a real
-                      seven-segment panel instead of floating text. */}
-                  <span className="tc-ghost" aria-hidden>
-                    {face.replace(/\d/g, '8')}
-                  </span>
-                  <span className="tc-digits">{face}</span>
-                </span>
-                <span className="tc-name">
-                  <span className="tc-lamp" aria-hidden />
-                  {side === 'white' ? 'White' : 'Black'}
-                </span>
-              </div>
+                side={side}
+                running={state.sideToMove === side}
+                mine={mine}
+                countdown={mpClock ? mpClock.countdown : soloCountdown}
+                ms={
+                  soloCountdown
+                    ? Math.max(0, soloTcSec * 1000 - clockMs[side])
+                    : clockMs[side]
+                }
+                mp={mpClock ? { clock: mpClock, now: serverNow } : null}
+              />
             );
           })}
         </div>
@@ -6794,6 +6833,23 @@ function App() {
       </div>
       </div>
       <aside className="right-sidebar">
+        {/* fix/mobile-ui — the player's name and "Change name" at the top
+            of this panel. fix/v1.1.4: on a phone only (CSS), where this
+            panel is the setup drawer; wider screens have UserMenu in the
+            header. Outside the setup section so a replay's inert does not
+            lock it. The phone drawer (z 940) would cover the name modal,
+            so it closes first. */}
+        {displayName && (
+          <section className="sidebar-panel sidebar-user" aria-label="Player">
+            <PlayerRow
+              displayName={displayName}
+              onChangeName={() => {
+                setMobilePanel('none');
+                setShowNameModal(true);
+              }}
+            />
+          </section>
+        )}
         {/* V1 — while a replay is playing, the whole setup panel is inert.
             Its controls used to stay live, so picking "Local" mid-replay
             mounted the hot-seat UI on top of someone else's game and let
@@ -6819,6 +6875,13 @@ function App() {
           {(() => {
             const oppLocked = gameInProgress && !isMultiplayer && !watchingGame;
             const lockedTitle = 'Finish or resign the current game first';
+            // An online match (live, or ended with its result still up)
+            // cannot be switched away from here: a hard lock, like the
+            // mode cards, since no dialog could leave the match cleanly.
+            const oppOnlineLock = isMultiplayer;
+            const onlineLockedTitle = mpMatchLive
+              ? 'Finish or resign the online match first'
+              : 'Close the match result first';
             return (
               <div className="opponent-tabs-vertical">
                 <button
@@ -6826,7 +6889,8 @@ function App() {
                   className={`opp-tab${opponentMode === 'ai' ? ' is-active' : ''}${oppLocked ? ' is-locked' : ''}`}
                   onClick={() => requestOpponentChange('ai')}
                   aria-disabled={oppLocked || undefined}
-                  title={oppLocked ? lockedTitle : 'Play vs the engine'}
+                  disabled={oppOnlineLock}
+                  title={oppOnlineLock ? onlineLockedTitle : oppLocked ? lockedTitle : 'Play vs the engine'}
                 >
                   <Icon icon={Bot} size="md" aria-hidden />
                   <span>vs AI</span>
@@ -6840,8 +6904,14 @@ function App() {
                   className={`opp-tab${opponentMode === 'friend' ? ' is-active' : ''}${oppLocked ? ' is-locked' : ''}`}
                   onClick={() => requestOpponentChange('friend')}
                   aria-disabled={oppLocked || undefined}
-                  title={oppLocked ? lockedTitle : 'Play a real opponent: quick match, or a private code'}
-                  disabled={!user || !displayName}
+                  title={
+                    oppOnlineLock
+                      ? onlineLockedTitle
+                      : oppLocked
+                        ? lockedTitle
+                        : 'Play a real opponent: quick match, or a private code'
+                  }
+                  disabled={!user || !displayName || oppOnlineLock}
                 >
                   <Icon icon={Users} size="md" aria-hidden />
                   <span>Online</span>
@@ -6853,7 +6923,8 @@ function App() {
                   type="button"
                   className={`opp-tab${opponentMode === 'local' ? ' is-active' : ''}`}
                   onClick={() => requestOpponentChange('local')}
-                  title="Hot-seat: both players on this device"
+                  disabled={oppOnlineLock}
+                  title={oppOnlineLock ? onlineLockedTitle : 'Hot-seat: both players on this device'}
                 >
                   <Icon icon={UsersRound} size="md" aria-hidden />
                   <span>Local</span>
@@ -7048,7 +7119,13 @@ function App() {
           <button
             type="button"
             className="panel-action-btn"
-            onClick={() => busy.navigate('Opening review', () => setView('review'))}
+            onClick={() =>
+              busy.navigate('Opening review', () => {
+                // fix/v1.1.4 — the drawer would still be open on the way back.
+                setMobilePanel('none');
+                setView('review');
+              })
+            }
             disabled={log.moves.length === 0 || isMultiplayer}
             title={isMultiplayer ? 'Review opens from the end-of-match screen' : undefined}
           >
@@ -7294,6 +7371,7 @@ function App() {
         }
         function backToLobby() {
           busy.navigate('Opening the lobby', () => {
+            setMobilePanel('none');
             setMpEndOutcome(null);
             setActiveMatch(null);
             mpSavedGameIdRef.current = null;
@@ -7530,6 +7608,8 @@ function App() {
                 Close
               </button>
             </div>
+            {/* fix/v1.1.4 — which build this is, for bug reports. */}
+            <p className="help-version">Subutai v{__APP_VERSION__}</p>
           </div>
         </div>
       )}
@@ -7555,7 +7635,7 @@ function App() {
           leaves 'active'. */}
       {/* SP — Spotify dock: embed player + tap-tempo beat sync + mic
           equalizer controls. */}
-      {showMusicDock && (
+      {STREAMING_UI && showMusicDock && (
         <Suspense fallback={null}>
           <MusicDock onClose={() => setShowMusicDock(false)} />
         </Suspense>
@@ -7581,7 +7661,7 @@ function App() {
         </Suspense>
       )}
 
-      {showTwitch && (
+      {STREAMING_UI && showTwitch && (
         <Suspense fallback={null}>
           <TwitchPanel
             gameKey={logLocal.id}

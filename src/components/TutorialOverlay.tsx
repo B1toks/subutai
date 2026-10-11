@@ -21,6 +21,8 @@ import { Icon } from './Icon';
  * in App.tsx; a step whose target is missing (e.g. roulette panel not
  * mounted) falls back to a centered card so the tour never breaks. */
 
+import { STREAMING_UI } from '../featureFlags';
+
 export const TUTORIAL_DONE_KEY = 'subutai_tutorial_done';
 
 interface TourStep {
@@ -126,6 +128,31 @@ const STEPS: TourStep[] = [
   },
 ];
 
+/** The music dock and Twitch chat are hidden for now (featureFlags.ts): no
+ *  tour stop for them, and the copy does not mention them. */
+function withoutStreaming(steps: TourStep[]): TourStep[] {
+  if (STREAMING_UI) return steps;
+  return steps
+    .filter((s) => s.target !== 'music' && s.target !== 'twitch')
+    .map((s) => {
+      if (s.target === 'header') {
+        return {
+          ...s,
+          body:
+            'Everything else lives up here: theme switcher, sound, the leaderboard, ' +
+            'your stats and a feedback button.',
+        };
+      }
+      if (s.target === 'mobile-menu') {
+        return {
+          ...s,
+          body: 'The theme, sound and the rules live in the drawer behind this button, on the left.',
+        };
+      }
+      return s;
+    });
+}
+
 /**
  * V1 — the tour on a phone.
  *
@@ -200,7 +227,7 @@ export function TutorialOverlay({ onClose }: TutorialOverlayProps) {
   // Chosen once, when the tour opens: switching step lists mid-tour
   // because a phone was rotated would renumber the steps under the user.
   const [steps] = useState<TourStep[]>(() =>
-    typeof window !== 'undefined' && window.innerWidth <= 720 ? STEPS_MOBILE : STEPS,
+    typeof window !== 'undefined' && window.innerWidth <= 720 ? withoutStreaming(STEPS_MOBILE) : withoutStreaming(STEPS),
   );
 
   const step = steps[stepIdx];

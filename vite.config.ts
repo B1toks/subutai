@@ -1,5 +1,12 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+
+/* The app version from package.json, shown in Help and on the error
+ * screen so a bug report says which build it came from. */
+const { version } = JSON.parse(
+  readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
+) as { version: string };
 
 /* V1 launch hardening — Content-Security-Policy.
  *
@@ -80,4 +87,7 @@ if (!/^\/(?!\/)(.*\/)?$/.test(base)) {
 export default defineConfig({
   plugins: [react(), cspPlugin()],
   base,
+  define: {
+    __APP_VERSION__: JSON.stringify(version),
+  },
 });

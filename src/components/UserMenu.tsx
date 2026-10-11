@@ -13,6 +13,8 @@ export interface UserMenuProps {
  * are exposed as standalone buttons in the header — putting them in a
  * dropdown buried them.
  * Sprint 3.1: emoji glyphs swapped for Lucide icons.
+ * fix/v1.1.4: back in the header from 721px, as in v1.1.2; a phone shows
+ * the name as PlayerRow at the top of the setup drawer instead.
  */
 export function UserMenu({ displayName, onChangeName }: UserMenuProps) {
   const [open, setOpen] = useState(false);

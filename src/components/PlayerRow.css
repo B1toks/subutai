@@ -1,0 +1,62 @@
+/* ═══════════════════════════════════════════════════════════════════
+   fix/mobile-ui 3 — the player row at the top of the right panel.
+   The name chip left the header; here it is a card like the others
+   (.sidebar-panel carries each theme's card look), holding the name
+   and the one action. A long name is cut, the action never is.
+   ═══════════════════════════════════════════════════════════════════ */
+.sidebar-user {
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+}
+/* fix/v1.1.4 — phone only. From 721px the name is in the header again
+   (UserMenu); between 721 and 960px this panel sits under the board,
+   where a second copy of the name would only repeat the header. */
+@media (min-width: 721px) {
+  .sidebar-user {
+    display: none;
+  }
+}
+.player-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.player-row-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  flex-shrink: 0;
+}
+.player-row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.player-row-btn {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: var(--space-2);
+  border: 1px solid var(--btn-border);
+  border-radius: var(--radius-sm);
+  background: var(--btn-bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.player-row-btn:hover {
+  background: var(--bg-elevated-hover);
+  border-color: var(--accent-primary);
+}

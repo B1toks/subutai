@@ -57,6 +57,48 @@
   border-color: var(--accent-secondary);
   box-shadow: var(--glow-danger);
 }
+/* fix/v1.1.4 — the name chip is back in the header from 721px. A
+   20-character name is cut rather than pushing the row; on a phone the
+   chip goes and PlayerRow in the setup drawer carries the name. */
+.topbar-actions .user-menu-name {
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 720px) {
+  .topbar-actions .user-menu {
+    display: none;
+  }
+}
+/* With the chip back, the header stays one row from 721px: the game
+   label ("vs …") gives way first, cut with an ellipsis (its full text
+   is the element's tooltip). Between 721 and 960px the leaderboard
+   button keeps only its icon, as below 640px, and the name is shorter. */
+@media (min-width: 721px) {
+  .app-header {
+    flex-wrap: nowrap;
+  }
+  .app-brand {
+    flex: 0 1 auto;
+  }
+  .live-title {
+    min-width: 0;
+  }
+}
+@media (min-width: 721px) and (max-width: 960px) {
+  .topbar-btn-label {
+    display: none;
+  }
+  .topbar-btn {
+    width: 34px;
+    padding: 0;
+    justify-content: center;
+  }
+  .topbar-actions .user-menu-name {
+    max-width: 12ch;
+  }
+}
 @media (max-width: 640px) {
   .topbar-btn-label {
     display: none;
