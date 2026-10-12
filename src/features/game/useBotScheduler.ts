@@ -1,21 +1,9 @@
 import { useCallback, type RefObject, type Dispatch, type SetStateAction } from 'react';
 import type { MoveAnalysis } from '../../analysis/classify';
 import type { BoardState, PieceType, Move, SquareId } from '../../engine';
-import {
-  getActivePieceTypes,
-  spinRoulette,
-  ROULETTE_MAX_ACTIONS,
-  pickAiRouletteMove,
-  consumeSlotIndex,
-} from './roulette';
-import { applyRotationMove, toggleTopology, applyPassMove } from '../../engine/auxetic';
-import {
-  computeSAN,
-  appendMove,
-  attachSearchScoreToLastMove,
-  type GameLog,
-} from '../../recording/log';
-import { applyMove, findKing } from '../../engine/moves';
+import { pickAiRouletteMove } from './roulette';
+import { applyRotationMove, toggleTopology } from '../../engine/auxetic';
+import { applyMove } from '../../engine/moves';
 import { SubutaiAgent, type BotStrength } from '../../ai/agents';
 import { moveVoting } from '../../twitch/moveVoting';
 import { bumpEvalForMove } from './position';
@@ -23,6 +11,8 @@ import { classifyAsync } from '../../analysis/classifyClient';
 import { scaleBudgetMs } from '../../utils/deviceTier';
 import { searchPosition } from '../../ai/search';
 import type { GameMode } from '../../shared/game';
+import { session } from '../../session/session';
+import { playableRouletteMoves } from '../../session/rules';
 
 // Auto-mode tuning. We skip the move classifier (expensive worker round-trip)
 // and use a small inter-move delay so a 60-ply game finishes in ~30s.
@@ -37,26 +27,14 @@ interface UseBotSchedulerArgs {
   autoTimerRef: RefObject<number | null>;
   autoLastMoveAtRef: RefObject<number>;
   isMultiplayerRef: RefObject<boolean>;
-  setState: Dispatch<SetStateAction<BoardState>>;
   setSelected: Dispatch<SetStateAction<string | null>>;
-  setLegalMoves: Dispatch<SetStateAction<Move[]>>;
-  setLog: Dispatch<SetStateAction<GameLog>>;
-  setLastMove: Dispatch<SetStateAction<{ from?: SquareId; to?: SquareId } | null>>;
   botLevelRef: RefObject<BotStrength>;
   gameMode: GameMode;
-  getLegalMoves: (s: BoardState) => Move[];
-  setAllowedPieceTypes: Dispatch<SetStateAction<PieceType[] | null>>;
-  setRouletteActionsLeft: Dispatch<SetStateAction<number>>;
-  setUsedRouletteSlots: Dispatch<SetStateAction<number[]>>;
-  setRouletteSpinCount: Dispatch<SetStateAction<number>>;
-  rouletteSpinCount: number;
   aiTimerRef: RefObject<number | null>;
   setSearchEvalFromWhite: Dispatch<SetStateAction<number | null>>;
   setSearchMateInPlies: Dispatch<SetStateAction<number | null>>;
   logLengthRef: RefObject<number>;
   commitAnalysis: (moveIdx: number, analysis: MoveAnalysis, moveTo: SquareId | undefined) => void;
-  playableRouletteMoves: (boardState: BoardState, allowed: PieceType[], used: number[]) => Move[];
-  checkGameOver: (nextState: BoardState, lastMoveWasRotation?: boolean) => void;
 }
 
 /**
@@ -64,124 +42,46 @@ interface UseBotSchedulerArgs {
  * move (and hands it to the classifier), the roulette helpers spin and
  * play one action at a time, and scheduleAutoMove is the quick step of a
  * self-play run. The effect in App that decides when the bot moves calls
- * these. scheduleAiMove and scheduleAutoMove keep one identity for the
- * session, so they read the first render's checkGameOver, gameMode and
- * getLegalMoves, exactly as they did in App.
+ * these. They choose; the session applies (session.dispatch, step.ts).
+ * scheduleAiMove and scheduleAutoMove keep one identity for the session,
+ * so they read the first render's gameMode, exactly as they did in App.
  */
 export function useBotScheduler({
   autoTimerRef,
   autoLastMoveAtRef,
   isMultiplayerRef,
-  setState,
   setSelected,
-  setLegalMoves,
-  setLog,
-  setLastMove,
   botLevelRef,
   gameMode,
-  getLegalMoves,
-  setAllowedPieceTypes,
-  setRouletteActionsLeft,
-  setUsedRouletteSlots,
-  setRouletteSpinCount,
-  rouletteSpinCount,
   aiTimerRef,
   setSearchEvalFromWhite,
   setSearchMateInPlies,
   logLengthRef,
   commitAnalysis,
-  playableRouletteMoves,
-  checkGameOver,
 }: UseBotSchedulerArgs) {
-  // --- Roulette AI helpers (state-driven; each is ONE atomic state transition).
+  // --- Roulette AI helpers: each is ONE action of the session.
 
-  // Apply the AI's spin. Sets allowedPieceTypes, seeds actions / slots, and
-  // exits — the main effect picks up Phase 2 on the next render.
-  function applyAiSpin(bs: BoardState) {
-    const activeTypes = getActivePieceTypes(bs, bs.sideToMove);
-    const pawnBoost = rouletteSpinCount < 3;
-    const rolled = spinRoulette(activeTypes, pawnBoost);
-    setRouletteSpinCount((n) => n + 1);
-    setAllowedPieceTypes(rolled);
-    setUsedRouletteSlots([]);
-    setRouletteActionsLeft(ROULETTE_MAX_ACTIONS);
-    setLegalMoves(playableRouletteMoves(bs, rolled, []));
+  // The AI's spin: its bag, drawn at once (no wheel), kept even if it
+  // allows nothing — the next action decides what to do then.
+  function applyAiSpin() {
+    session.dispatch({ type: 'botSpin' });
   }
 
-  // Apply an AI rotation as one action. Same semantics as handleRotate's
-  // roulette branch, but self-contained for the AI driver.
-  function executeAiRouletteRotation(
-    bs: BoardState,
-    rolled: PieceType[],
-    used: number[],
-    actionsLeft: number,
-  ) {
-    const rotated = applyRotationMove(bs);
-    const toggleMove: Move = { kind: 'topologyToggle' };
-    const san = computeSAN(bs, toggleMove);
-    setLog((prev) => appendMove(prev, toggleMove, san, bs.topologyState));
-    setLastMove(null);
-
-    const actionsAfter = actionsLeft - 1;
-
-    if (actionsAfter === 0) {
-      setState(rotated);
-      setAllowedPieceTypes(null);
-      setUsedRouletteSlots([]);
-      setRouletteActionsLeft(0);
-      setLegalMoves(getLegalMoves(rotated));
-      return;
-    }
-
-    // Stay on turn. Clamp side back; no further rotation allowed this turn.
-    const clamped: BoardState = { ...rotated, sideToMove: bs.sideToMove };
-    const nextPlayable = playableRouletteMoves(clamped, rolled, used);
-    if (nextPlayable.length === 0) {
-      // Nothing useful left — end the turn.
-      setState(rotated);
-      setAllowedPieceTypes(null);
-      setUsedRouletteSlots([]);
-      setRouletteActionsLeft(0);
-      setLegalMoves(getLegalMoves(rotated));
-      return;
-    }
-
-    setState(clamped);
-    setRouletteActionsLeft(actionsAfter);
-    setLegalMoves(nextPlayable);
-    // allowedPieceTypes and usedRouletteSlots unchanged.
-  }
-
-  // Execute ONE AI sub-move and update React state. Never schedules another
-  // timer — the effect re-fires on the resulting state change.
-  function executeAiRouletteAction(
-    bs: BoardState,
-    rolled: PieceType[],
-    used: number[],
-    actionsLeft: number,
-  ) {
+  // ONE AI action. Never schedules another timer — the effect re-fires on
+  // the resulting state change.
+  function executeAiRouletteAction(bs: BoardState, rolled: PieceType[], used: number[]) {
     const playable = playableRouletteMoves(bs, rolled, used);
 
     if (playable.length === 0) {
       // No piece move for the remaining slots. Try rotation as a fallback:
       // only worthwhile if the rotated topology opens up playable moves.
       const canRotate = !bs.lastMoveWasRotation;
-      if (canRotate) {
-        const rotatedPreview = toggleTopology(bs);
-        const postRotPlayable = playableRouletteMoves(rotatedPreview, rolled, used);
-        if (postRotPlayable.length > 0) {
-          executeAiRouletteRotation(bs, rolled, used, actionsLeft);
-          return;
-        }
+      if (canRotate && playableRouletteMoves(toggleTopology(bs), rolled, used).length > 0) {
+        session.dispatch({ type: 'rotate', now: Date.now() });
+        return;
       }
       // Truly stuck — pass the turn.
-      const passed = applyPassMove(bs);
-      setState(passed);
-      setAllowedPieceTypes(null);
-      setUsedRouletteSlots([]);
-      setRouletteActionsLeft(0);
-      setLegalMoves(getLegalMoves(passed));
-      setLastMove(null);
+      session.dispatch({ type: 'pass' });
       return;
     }
 
@@ -190,56 +90,9 @@ export function useBotScheduler({
       choice.kind === 'promotion' && !choice.promotion
         ? { ...choice, promotion: 'queen' }
         : choice;
-    const moverType = bs.pieces[mv.from!]!.type;
-    const slotIdx = consumeSlotIndex(rolled, used, moverType);
-    const newUsed = slotIdx >= 0 ? [...used, slotIdx] : used;
-    const newActions = actionsLeft - 1;
-
-    const san = computeSAN(bs, mv);
-    const afterMove = applyMove(bs, mv);
-
-    setLog((prev) => appendMove(prev, mv, san, bs.topologyState));
-    setLastMove({ from: mv.from, to: mv.to });
-
-    const kingCaptured =
-      !findKing(afterMove, 'white') || !findKing(afterMove, 'black');
-
-    if (kingCaptured) {
-      setState(afterMove);
-      setAllowedPieceTypes(null);
-      setUsedRouletteSlots([]);
-      setRouletteActionsLeft(0);
-      checkGameOver(afterMove);
-      return;
-    }
-
-    const noMoreActions = newActions <= 0;
-    const clampedNext: BoardState = { ...afterMove, sideToMove: bs.sideToMove };
-    const nextPlayable = noMoreActions
-      ? []
-      : playableRouletteMoves(clampedNext, rolled, newUsed);
-    // Can the AI still do *something* next action? Either a piece move exists,
-    // or rotation is available (and potentially useful — checked by the next
-    // executeAiRouletteAction call).
-    const canContinue =
-      nextPlayable.length > 0 || !clampedNext.lastMoveWasRotation;
-    const endTurn = noMoreActions || !canContinue;
-
-    if (endTurn) {
-      // Accept the side flip from applyMove — opponent's spin phase next.
-      setState(afterMove);
-      setAllowedPieceTypes(null);
-      setUsedRouletteSlots([]);
-      setRouletteActionsLeft(0);
-      setLegalMoves(getLegalMoves(afterMove));
-      return;
-    }
-
-    // Keep AI on the turn — clamp sideToMove back to 'bs.sideToMove'.
-    setState(clampedNext);
-    setUsedRouletteSlots(newUsed);
-    setRouletteActionsLeft(newActions);
-    setLegalMoves(nextPlayable);
+    // The turn goes on while the bag has actions and something to do with
+    // them; a captured king ends the game (step.ts rouletteMove).
+    session.dispatch({ type: 'move', move: mv, now: Date.now() });
   }
 
   const scheduleAiMove = useCallback(
@@ -288,17 +141,10 @@ export function useBotScheduler({
             ? applyRotationMove(boardState)
             : applyMove(boardState, move);
 
-        setState(next);
-        const nextMoves = getLegalMoves(next);
-        setLegalMoves(nextMoves);
+        // The board changes now; whether the game is over is asked after
+        // the classification below (settle), as it always was.
+        session.dispatch({ type: 'move', move, now: Date.now(), settle: false });
         setSelected(null);
-        const aiSan = computeSAN(boardState, move);
-        setLog((prev) => appendMove(prev, move, aiSan, boardState.topologyState));
-        setLastMove(
-          move.kind === 'topologyToggle'
-            ? null
-            : { from: move.from, to: move.to },
-        );
 
         // Worker-backed classify: takes ~1 s of background work for depth 7
         // but doesn't block the main thread. logLengthRef gives us AI's
@@ -320,7 +166,7 @@ export function useBotScheduler({
           commitAnalysis(moveIdx, aiAnalysis, move.to);
         }
 
-        checkGameOver(next, move.kind === 'topologyToggle');
+        session.dispatch({ type: 'settle', board: next, lastWasRotation: move.kind === 'topologyToggle' });
       }, 650);
     },
     [
@@ -331,11 +177,7 @@ export function useBotScheduler({
       setSearchMateInPlies,
       aiTimerRef,
       logLengthRef,
-      setLastMove,
-      setLegalMoves,
-      setLog,
       setSelected,
-      setState,
     ],
   );
 
@@ -357,18 +199,9 @@ export function useBotScheduler({
             ? applyRotationMove(boardState)
             : applyMove(boardState, move);
 
-        const san = computeSAN(boardState, move);
-        setState(next);
-        setLegalMoves(getLegalMoves(next));
+        session.dispatch({ type: 'move', move, now: Date.now() });
         setSelected(null);
-        setLog((prev) => appendMove(prev, move, san, boardState.topologyState));
-        setLastMove(
-          move.kind === 'topologyToggle'
-            ? null
-            : { from: move.from, to: move.to },
-        );
         autoLastMoveAtRef.current = Date.now();
-        checkGameOver(next, move.kind === 'topologyToggle');
 
         // Label the resulting position with a shallow search score. Synchronous
         // (worker-free) so we don't add a second round-trip per move. Wrapped
@@ -380,14 +213,13 @@ export function useBotScheduler({
           });
           const scoreFromWhite =
             next.sideToMove === 'white' ? labelled.score : -labelled.score;
-          setLog((prev) => attachSearchScoreToLastMove(prev, scoreFromWhite));
+          session.dispatch({ type: 'searchScore', scoreFromWhite });
         } catch (err) {
           console.warn('[autoplay] label search failed', err);
         }
       }, AUTO_MOVE_DELAY_MS);
     },
-    // checkGameOver is captured from the enclosing scope; identical pattern to
-    // scheduleAiMove which also does not list it in deps.
+    // gameMode is the first render's, like scheduleAiMove's.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );

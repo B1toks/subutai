@@ -21,8 +21,8 @@ interface UseBotTurnArgs {
   currentPlayer: 'human' | 'ai';
   scheduleAutoMove: (boardState: BoardState, moves: Move[], wasRotation: boolean) => void;
   scheduleAiMove: (boardState: BoardState, moves: Move[], lastMoveWasRotation: boolean) => void;
-  applyAiSpin: (bs: BoardState) => void;
-  executeAiRouletteAction: (bs: BoardState, rolled: PieceType[], used: number[], actionsLeft: number) => void;
+  applyAiSpin: () => void;
+  executeAiRouletteAction: (bs: BoardState, rolled: PieceType[], used: number[]) => void;
   lastMoveWasRotation: boolean;
 }
 
@@ -93,7 +93,7 @@ export function useBotTurn({
       // gate only applies to human turns (auto-spin effect there waits for
       // the player's first manual click).
       const t = setTimeout(() => {
-        applyAiSpin(state);
+        applyAiSpin();
       }, 500);
       aiTimerRef.current = t;
       return () => clearTimeout(t);
@@ -106,12 +106,7 @@ export function useBotTurn({
           ? AI_ROULETTE_REVEAL_MS
           : AI_ROULETTE_BETWEEN_ACTIONS_MS;
       const t = setTimeout(() => {
-        executeAiRouletteAction(
-          state,
-          allowedPieceTypes,
-          usedRouletteSlots,
-          rouletteActionsLeft,
-        );
+        executeAiRouletteAction(state, allowedPieceTypes, usedRouletteSlots);
       }, delay);
       aiTimerRef.current = t;
       return () => clearTimeout(t);

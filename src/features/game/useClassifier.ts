@@ -10,14 +10,14 @@ import {
 import type { MoveAnalysis, MoveClass } from '../../analysis/classify';
 import type { SquareId, BoardState } from '../../engine';
 import { audio } from '../../audio/AudioController';
-import { updateMoveAnalysisAt, type GameLog } from '../../recording/log';
+import type { GameLog } from '../../recording/log';
+import { session } from '../../session/session';
 import { applyRotationMove } from '../../engine/auxetic';
 import { applyMove } from '../../engine/moves';
 import { classifyAsync } from '../../analysis/classifyClient';
 import { scaleBudgetMs } from '../../utils/deviceTier';
 
 interface UseClassifierArgs {
-  setLog: Dispatch<SetStateAction<GameLog>>;
   setSearchEvalFromWhite: Dispatch<SetStateAction<number | null>>;
   setSearchMateInPlies: Dispatch<SetStateAction<number | null>>;
   shellRef: RefObject<HTMLDivElement | null>;
@@ -41,7 +41,6 @@ interface UseClassifierArgs {
  * which the bot's scheduler relies on.
  */
 export function useClassifier({
-  setLog,
   setSearchEvalFromWhite,
   setSearchMateInPlies,
   shellRef,
@@ -144,9 +143,13 @@ export function useClassifier({
   const sparklePositions = useMemo(() => {
     if (flashEffect !== 'brilliant') return [] as Array<{ x: number; y: number; delay: number; rot: number }>;
     return Array.from({ length: 6 }, () => ({
+      // eslint-disable-next-line react-hooks/purity -- each brilliant flash gets fresh sparkle positions on purpose; the memo is keyed on the flash
       x: 15 + Math.random() * 70,
+      // eslint-disable-next-line react-hooks/purity -- each brilliant flash gets fresh sparkle positions on purpose; the memo is keyed on the flash
       y: 15 + Math.random() * 70,
+      // eslint-disable-next-line react-hooks/purity -- each brilliant flash gets fresh sparkle positions on purpose; the memo is keyed on the flash
       delay: Math.floor(Math.random() * 200),
+      // eslint-disable-next-line react-hooks/purity -- each brilliant flash gets fresh sparkle positions on purpose; the memo is keyed on the flash
       rot: Math.floor(Math.random() * 360),
     }));
   }, [flashEffect]);
@@ -199,10 +202,10 @@ export function useClassifier({
   const commitAnalysis = useCallback(
     (moveIdx: number, analysis: MoveAnalysis, moveTo: SquareId | undefined) => {
       if (analysis.superseded) return;
-      setLog((prev) => updateMoveAnalysisAt(prev, moveIdx, analysis));
+      session.dispatch({ type: 'analysis', index: moveIdx, analysis });
       applyClassifyVisuals(moveIdx, analysis, moveTo);
     },
-    [applyClassifyVisuals, setLog],
+    [applyClassifyVisuals],
   );
 
   /**
@@ -271,15 +274,13 @@ export function useClassifier({
           // DEF-6: dropped by a newer batch, five times. The catch-up run
           // when a Game Review closes picks it up again.
           if (!a) continue;
-          setLog((prev) =>
-            prev.id === capturedId ? updateMoveAnalysisAt(prev, i, a) : prev,
-          );
+          session.dispatch({ type: 'analysis', index: i, analysis: a, logId: capturedId });
           if (i === lastRealIndex) lastAnalysis = a;
         }
         if (lastAnalysis && classifyRunRef.current === run) pushSearchEval(lastAnalysis);
       })();
     },
-    [pushSearchEval, classifyRunRef, logIdRef, setLog],
+    [pushSearchEval, classifyRunRef, logIdRef],
   );
   return { flashEffect, sparklePositions, commitAnalysis, classifyImportedLog };
 }

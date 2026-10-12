@@ -10,17 +10,15 @@ import type { SavedGame } from './types';
 import {
   createPositionFromBackRankKey,
   type BoardState,
-  type Move,
   type TopologyState,
-  type SquareId,
 } from '../engine';
 import { createGameLog, computeSAN, appendMove, type GameLog } from '../recording/log';
 import { applyRotationMove } from '../engine/auxetic';
 import { applyMove } from '../engine/moves';
 import { readLiveSession, clearLiveSession } from './liveSession';
 import { localStorageAdapter } from './storage';
-import type { GameStatus } from '../shared/game';
 import type { BotStrength } from '../ai/agents';
+import { session } from '../session/session';
 
 interface UseResumeGameArgs {
   isAutoMode: boolean;
@@ -29,19 +27,12 @@ interface UseResumeGameArgs {
   resumedLogIdRef: RefObject<string | null>;
   setOpponentMode: Dispatch<SetStateAction<'ai' | 'friend' | 'local'>>;
   mpResumeCodeRef: RefObject<string | null>;
-  setState: Dispatch<SetStateAction<BoardState>>;
-  setInitialState: Dispatch<SetStateAction<BoardState>>;
   setSelected: Dispatch<SetStateAction<string | null>>;
-  setLegalMoves: Dispatch<SetStateAction<Move[]>>;
-  setLog: Dispatch<SetStateAction<GameLog>>;
-  setGameStatus: Dispatch<SetStateAction<GameStatus>>;
   setPreviewTopology: Dispatch<SetStateAction<TopologyState | null>>;
-  setLastMove: Dispatch<SetStateAction<{ from?: SquareId; to?: SquareId } | null>>;
   beginBusy: (label: string) => void;
   setBotLevel: (next: BotStrength) => void;
   setFormationLocked: Dispatch<SetStateAction<boolean>>;
   setLockedFormationKey: Dispatch<SetStateAction<string | null>>;
-  getLegalMoves: (s: BoardState) => Move[];
   aiTimerRef: RefObject<number | null>;
   savedForLogIdRef: RefObject<string | null>;
   liveSavedGameIdRef: RefObject<string>;
@@ -65,19 +56,12 @@ export function useResumeGame({
   resumedLogIdRef,
   setOpponentMode,
   mpResumeCodeRef,
-  setState,
-  setInitialState,
   setSelected,
-  setLegalMoves,
-  setLog,
-  setGameStatus,
   setPreviewTopology,
-  setLastMove,
   beginBusy,
   setBotLevel,
   setFormationLocked,
   setLockedFormationKey,
-  getLegalMoves,
   aiTimerRef,
   savedForLogIdRef,
   liveSavedGameIdRef,
@@ -124,14 +108,13 @@ export function useResumeGame({
     }
 
     if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
-    setState(current);
-    setInitialState(initial);
+    session.dispatch({
+      type: 'load',
+      game: { initial, board: current, log: nextLog, lastMove: null },
+      fresh: true,
+    });
     setSelected(null);
-    setLegalMoves(getLegalMoves(current));
-    setLog(nextLog);
-    setGameStatus('active');
     setPreviewTopology(null);
-    setLastMove(null);
     setFormationLocked(true);
     setLockedFormationKey(game.config960);
     savedForLogIdRef.current = null;

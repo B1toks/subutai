@@ -1,7 +1,6 @@
 import { useEffect, type Dispatch, type SetStateAction, type RefObject } from 'react';
 import { moveVoting, type VoteMode } from '../../twitch/moveVoting';
 import { rotateIsLegal } from '../../memory/replayImport';
-import { computeSAN, appendMove, type GameLog } from '../../recording/log';
 import { applyMove } from '../../engine/moves';
 import { beatBridge } from '../../music/beatBridge';
 import { bumpEvalForMove } from '../game/position';
@@ -11,27 +10,22 @@ import type { WatchingGame } from '../review/watching';
 import type { BoardState, Move, SquareId } from '../../engine';
 import type { GameStatus, GameMode } from '../../shared/game';
 import type { MoveAnalysis } from '../../analysis/classify';
+import { session } from '../../session/session';
 
 interface UseChatVsBotArgs {
   isAutoMode: boolean;
   isMultiplayer: boolean;
   watchingGame: WatchingGame | null;
-  setState: Dispatch<SetStateAction<BoardState>>;
   setSelected: Dispatch<SetStateAction<string | null>>;
-  setLegalMoves: Dispatch<SetStateAction<Move[]>>;
-  setLog: Dispatch<SetStateAction<GameLog>>;
   gameStatus: GameStatus;
-  setLastMove: Dispatch<SetStateAction<{ from?: SquareId; to?: SquareId } | null>>;
   twitchVoteMode: VoteMode;
   gameMode: GameMode;
-  getLegalMoves: (s: BoardState) => Move[];
   state: BoardState;
   legalMoves: Move[];
   setSearchEvalFromWhite: Dispatch<SetStateAction<number | null>>;
   setSearchMateInPlies: Dispatch<SetStateAction<number | null>>;
   logLengthRef: RefObject<number>;
   commitAnalysis: (moveIdx: number, analysis: MoveAnalysis, moveTo: SquareId | undefined) => void;
-  checkGameOver: (nextState: BoardState, lastMoveWasRotation?: boolean) => void;
   handleRotate: () => void;
   isLocalMode: boolean;
   currentPlayer: 'ai' | 'human';
@@ -46,22 +40,16 @@ export function useChatVsBot({
   isAutoMode,
   isMultiplayer,
   watchingGame,
-  setState,
   setSelected,
-  setLegalMoves,
-  setLog,
   gameStatus,
-  setLastMove,
   twitchVoteMode,
   gameMode,
-  getLegalMoves,
   state,
   legalMoves,
   setSearchEvalFromWhite,
   setSearchMateInPlies,
   logLengthRef,
   commitAnalysis,
-  checkGameOver,
   handleRotate,
   isLocalMode,
   currentPlayer,
@@ -88,10 +76,8 @@ export function useChatVsBot({
         return;
       }
       if (!move.from || !move.to) return;
-      const san = computeSAN(state, move);
       const afterMove = applyMove(state, move);
-      setLog((prev) => appendMove(prev, move, san, state.topologyState));
-      setLastMove({ from: move.from, to: move.to });
+      session.dispatch({ type: 'move', move, now: Date.now() });
       beatBridge.reportMove();
       setSearchEvalFromWhite((prev) => bumpEvalForMove(prev, state, move));
       setSearchMateInPlies(null);
@@ -103,10 +89,7 @@ export function useChatVsBot({
       }).then((analysis) => {
         commitAnalysis(moveIdx, analysis, move.to);
       });
-      setState(afterMove);
-      setLegalMoves(getLegalMoves(afterMove));
       setSelected(null);
-      checkGameOver(afterMove);
     });
     return () => {
       stale = true;

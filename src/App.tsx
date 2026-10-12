@@ -7,7 +7,7 @@ import {
   isSquareAttacked,
   findKing,
 } from './engine/moves';
-import { applyRotationMove, applyPassMove, toggleTopology, tilePixelCenter, toTileFrame } from './engine/auxetic';
+import { applyRotationMove, toggleTopology, tilePixelCenter, toTileFrame } from './engine/auxetic';
 import {
   BOT_STRENGTHS,
   BOT_STRENGTH_LABEL,
@@ -79,12 +79,7 @@ import {
 import { computeGamePoints, type GameOutcome, type GamePoints } from './analysis/points';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
-import {
-  appendMove,
-  computeSAN,
-  createGameLog,
-  unclassifiedMoveIndexes,
-} from './recording/log';
+import { computeSAN, unclassifiedMoveIndexes } from './recording/log';
 import { buildSavedGameSnapshot } from './memory/build';
 import { localStorageAdapter } from './memory/storage';
 import { MemoryPanel } from './memory/MemoryPanel';
@@ -103,13 +98,9 @@ import { BeatCombo } from './components/BeatCombo';
 import { MusicScorePanel } from './components/MusicScorePanel';
 import { scaleBudgetMs } from './utils/deviceTier';
 import {
-  NO_DRAW_OFFERS,
   canAnswerDraw,
   canOfferDraw,
-  declineDraw,
   drawOfferBlock,
-  drawTableAfterMove,
-  offerDraw,
   standingDrawOffer,
   type DrawOfferBlock,
   type DrawTable,
@@ -118,10 +109,7 @@ import { HUMAN_COLOR, type GameMode, type GameStatus } from './shared/game';
 import {
   ROULETTE_MAX_ACTIONS,
   ROULETTE_SLOT_COUNT,
-  consumeSlotIndex,
-  getActivePieceTypes,
   isPieceMovableInRoulette,
-  spinRoulette,
 } from './features/game/roulette';
 import {
   backRankString,
@@ -185,6 +173,7 @@ import { useMaterial } from './features/game/useMaterial';
 import { useCanRotate } from './features/game/useCanRotate';
 import { session } from './session/session';
 import { useSession } from './session/useSession';
+import { drawTableOf, statusOf } from './session/step';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -217,8 +206,9 @@ const EndgameScene = lazy(() =>
   importEndgameScene().then((m) => ({ default: m.EndgameScene })),
 );
 
-/** V1 — seed of the very first game of a page load (see the `seed` state). */
-const FIRST_SEED = Date.now();
+/** The roulette turn's used slots when no bag is spun: one array, so a
+ *  hook that depends on it sees no change while nothing changes. */
+const NO_SLOTS: number[] = [];
 
 // M.14 — beat-mode glide length. MUST match the .piece-slide-in CSS
 // animation duration so the slide lands exactly on the beat.
@@ -311,13 +301,13 @@ function App() {
   // QA-11 — WHO is resigning while the confirmation is up. In hot-seat
   // either seat has a Resign button, so it is not always the side to move.
   const [confirmingResign, setConfirmingResign] = useState<Color | null>(null);
-  // Hot-seat draw offers (src/utils/drawOffer.ts), keyed by the game they
-  // belong to, so a new game starts with none and nothing has to reset it.
-  // Never saved: hot-seat stores nothing beyond the Memory entry.
-  const [localDraw, setLocalDraw] = useState<{ logId: string; table: DrawTable<Color> }>({
-    logId: '',
-    table: NO_DRAW_OFFERS,
-  });
+  // The game on the board (src/session): the position, the log, the
+  // status, the roulette turn, the pending promotion and the hot-seat
+  // draw offers. Solo and hot-seat play change it only through
+  // session.dispatch; online play reads its match instead (the aliases
+  // below). The draw offers are never saved: hot-seat stores nothing
+  // beyond the Memory entry.
+  const sess = useSession((s) => s);
   // Sprint 4.3.1 — pending opponent switch during an active local game.
   // When non-null the ConfirmDialog mounts; on confirm we discard the
   // local game state and start fresh in the requested mode.
@@ -413,27 +403,20 @@ function App() {
   const [watchingGame, setWatchingGame] = useState<WatchingGame | null>(null);
   const watchAutoplayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gameBackupRef = useRef<GameBackup | null>(null);
-  // V1 — every visit starts from a fresh chess960 position. The old fixed
-  // seed 1 meant everyone's first game was the same RQKRNBBN board until
-  // they pressed New game.
-  const [seed, setSeed] = useState<number>(() => FIRST_SEED);
+  // V1 — every visit starts from a fresh chess960 position (FIRST_SEED in
+  // src/session/session.ts).
+  const seed = sess.seed;
   // Local single-player engine state. In multiplayer (Q.B.2) the rest of
   // App reads through the `state` / `legalMoves` / `log` / `lastMove`
-  // const aliases below, which swap to mpSync-derived values; the local
-  // setters keep firing for safety but their writes are visually inert
-  // because the aliases ignore them.
-  const [stateLocal, setState] = useState<BoardState>(() => createStartingPosition(FIRST_SEED));
-  const [initialState, setInitialState] = useState<BoardState>(() => createStartingPosition(FIRST_SEED));
+  // const aliases below, which swap to mpSync-derived values.
+  const stateLocal = sess.board;
+  const initialState = sess.initial;
   const [selected, setSelected] = useState<string | null>(null);
-  const [legalMovesLocal, setLegalMoves] = useState<Move[]>(() =>
-    generateLegalMoves(createStartingPosition(FIRST_SEED)),
-  );
-  const [logLocal, setLog] = useState<GameLog>(() =>
-    createGameLog(`game-${FIRST_SEED}`, createStartingPosition(FIRST_SEED), FIRST_SEED),
-  );
-  const [gameStatus, setGameStatus] = useState<GameStatus>('active');
+  const legalMovesLocal = sess.legal as Move[];
+  const logLocal = sess.log;
+  const gameStatus = statusOf(sess);
   const [previewTopology, setPreviewTopology] = useState<TopologyState | null>(null);
-  const [lastMoveLocal, setLastMove] = useState<{ from?: SquareId; to?: SquareId } | null>(null);
+  const lastMoveLocal = sess.lastMove;
   const { mobilePanel, setMobilePanel, closeMobilePanel } = useMobileDrawers();
 
   const [showHelp, setShowHelp] = useState(false);
@@ -508,10 +491,16 @@ function App() {
   const [showReplayDialog, setShowReplayDialog] = useState(false);
   const [replayText, setReplayText] = useState('');
   const [replayError, setReplayError] = useState<string | null>(null);
-  const [pendingPromotion, setPendingPromotion] = useState<{
+  // Online the picker belongs to the match, not to the solo session.
+  const [mpPendingPromotion, setMpPendingPromotion] = useState<{
     from: SquareId;
     to: SquareId;
   } | null>(null);
+  const pendingPromotion: { from: SquareId; to: SquareId } | null = isMultiplayer
+    ? mpPendingPromotion
+    : sess.phase.tag === 'promotion'
+      ? sess.phase
+      : null;
   const gameModeLocal = useSession((s) => s.mode);
   // PvP gameMode flows from the match doc — host picks it at create time.
   // Q.D.2: reuse the SAME solo roulette UI/logic by aliasing gameMode,
@@ -529,18 +518,17 @@ function App() {
   function getLegalMoves(s: BoardState): Move[] {
     return generateLegalMoves(s, { allowSelfCheck: gameMode === 'roulette' });
   }
-  const [allowedPieceTypesLocal, setAllowedPieceTypes] = useState<PieceType[] | null>(null);
-  const [isRouletteSpinning, setIsRouletteSpinning] = useState<boolean>(false);
-  const [rouletteActionsLeftLocal, setRouletteActionsLeft] = useState<number>(0);
-  const [usedRouletteSlotsLocal, setUsedRouletteSlots] = useState<number[]>([]);
+  // The roulette turn (src/session/types.ts RouletteState): the spun bag
+  // and what is left of it, and whether the wheel is turning.
+  const rouletteBag = sess.roulette.bag;
+  const allowedPieceTypesLocal = (rouletteBag?.slots ?? null) as PieceType[] | null;
+  const isRouletteSpinning = sess.phase.tag === 'rouletteSpin';
+  const rouletteActionsLeftLocal = rouletteBag?.actionsLeft ?? 0;
+  const usedRouletteSlotsLocal = (rouletteBag?.used ?? NO_SLOTS) as number[];
   // First roulette spin per game requires a manual click on the Spin
   // Roulette button. Subsequent spins auto-fire via a useEffect after a
-  // short delay. Tracking just the boolean is enough — no pending-callback
-  // state, no banner: the existing button stays the single spin UI.
-  const [firstRouletteSpinDoneLocal, setFirstRouletteSpinDone] = useState(false);
-  // First 3 spins of a game weight pawn slightly higher so beginners ease in
-  // with familiar piece moves instead of front-loaded knight chaos.
-  const [rouletteSpinCountLocal, setRouletteSpinCount] = useState(0);
+  // short delay.
+  const firstRouletteSpinDoneLocal = sess.roulette.firstSpinDone;
   const {
     captureFxSquare,
     setCaptureFxSquare,
@@ -617,10 +605,6 @@ function App() {
     isMultiplayer && mpSync && user
       ? (mpSync.matchState.rouletteSpinsByPlayer?.[user.uid] ?? 0) > 0
       : firstRouletteSpinDoneLocal;
-  const rouletteSpinCount: number =
-    isMultiplayer && mpSync?.isRouletteMode
-      ? mpSync.matchState.rouletteSpinCount ?? 0
-      : rouletteSpinCountLocal;
   const formationInputRef = useRef<HTMLInputElement>(null);
   const aiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // SP-3 — true while a Beat-Mode move is queued to land on the next
@@ -898,14 +882,18 @@ function App() {
 
       // Project frame 0 of the replay.
       const projected = replayBoardAt(replayLog, 0);
-      setState(projected);
-      setInitialState(replayLog.initialState);
-      setSeed(replayLog.randomSeed);
-      setLegalMoves(getLegalMoves(projected));
-      setLog({ ...replayLog, moves: [] });
+      session.dispatch({
+        type: 'load',
+        game: {
+          board: projected,
+          initial: replayLog.initialState,
+          seed: replayLog.randomSeed,
+          log: { ...replayLog, moves: [] },
+          status: 'active',
+          lastMove: null,
+        },
+      });
       setSelected(null);
-      setGameStatus('active');
-      setLastMove(null);
       setPreviewTopology(null);
       setSearchEvalFromWhite(null);
       setSearchMateInPlies(null);
@@ -925,23 +913,27 @@ function App() {
     }
   }
 
+  // Called from the transport buttons and the autoplay timer, both with
+  // the watched game of their render.
   function seekWatchTo(idx: number) {
-    setWatchingGame((cur) => {
-      if (!cur) return cur;
-      const clamped = Math.max(0, Math.min(idx, cur.log.moves.length));
-      const projected = replayBoardAt(cur.log, clamped);
-      setState(projected);
-      setLog({ ...cur.log, moves: cur.log.moves.slice(0, clamped) });
-      setLegalMoves(getLegalMoves(projected));
-      setSelected(null);
-      const lastEntry = clamped > 0 ? cur.log.moves[clamped - 1] : null;
-      if (lastEntry && lastEntry.move.from && lastEntry.move.to) {
-        setLastMove({ from: lastEntry.move.from, to: lastEntry.move.to });
-      } else {
-        setLastMove(null);
-      }
-      return { ...cur, currentMoveIdx: clamped };
+    const cur = watchingGame;
+    if (!cur) return;
+    const clamped = Math.max(0, Math.min(idx, cur.log.moves.length));
+    const projected = replayBoardAt(cur.log, clamped);
+    const lastEntry = clamped > 0 ? cur.log.moves[clamped - 1] : null;
+    session.dispatch({
+      type: 'load',
+      game: {
+        board: projected,
+        log: { ...cur.log, moves: cur.log.moves.slice(0, clamped) },
+        lastMove:
+          lastEntry && lastEntry.move.from && lastEntry.move.to
+            ? { from: lastEntry.move.from, to: lastEntry.move.to }
+            : null,
+      },
     });
+    setSelected(null);
+    setWatchingGame((w) => (w ? { ...w, currentMoveIdx: clamped } : w));
   }
 
   function toggleWatchAutoplay() {
@@ -961,13 +953,18 @@ function App() {
     setWatchingGame(null);
     if (!backup) return;
 
-    setSeed(backup.seed);
-    setState(backup.state);
-    setInitialState(backup.initialState);
-    setLegalMoves(backup.legalMoves);
-    setLog(backup.log);
-    setGameStatus(backup.gameStatus);
-    setLastMove(backup.lastMove);
+    session.dispatch({
+      type: 'load',
+      game: {
+        seed: backup.seed,
+        board: backup.state,
+        initial: backup.initialState,
+        legal: backup.legalMoves,
+        log: backup.log,
+        status: backup.gameStatus,
+        lastMove: backup.lastMove,
+      },
+    });
     setFormationLocked(backup.formationLocked);
     setLockedFormationKey(backup.lockedFormationKey);
     setSearchEvalFromWhite(backup.searchEvalFromWhite);
@@ -1017,7 +1014,7 @@ function App() {
     if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
     // Stamped before the status flips, so the completion effect skips it.
     completedLogIdRef.current = log.id;
-    setGameStatus(side === 'white' ? 'resigned_white' : 'resigned_black');
+    session.dispatch({ type: 'resign', side });
     // R13/BUG-5 — hot-seat resign: either seat may press it, so a solo
     // "human-resign" record would blame the wrong player half the time.
     // Just end the game; the banner is the ending, nothing is saved.
@@ -1028,7 +1025,7 @@ function App() {
 
   /** Hot-seat: the draw offers of the game on the board. */
   function localDrawTable(): DrawTable<Color> {
-    return localDraw.logId === log.id ? localDraw.table : NO_DRAW_OFFERS;
+    return drawTableOf(sess);
   }
 
   /** Hot-seat: `side` offers a draw; the other seat sees it on its side. */
@@ -1042,7 +1039,7 @@ function App() {
       toast.show('A move is landing on the beat. Offer the draw once it has.', 'info', 2400);
       return;
     }
-    setLocalDraw({ logId: log.id, table: offerDraw(table, side, log.moves.length) });
+    session.dispatch({ type: 'offerDraw', side });
   }
 
   /** Hot-seat: `side` answers the offer standing against it. */
@@ -1057,21 +1054,14 @@ function App() {
       return;
     }
     if (!accept) {
-      setLocalDraw({ logId: log.id, table: declineDraw(table, side, log.moves.length) });
+      session.dispatch({ type: 'answerDraw', side, accept: false });
       toast.show(`${side === 'white' ? 'White' : 'Black'} declined the draw.`, 'info', 2400);
       return;
     }
     // Stamped before the status flips, like a resignation (nothing saves).
     completedLogIdRef.current = log.id;
     setSelected(null);
-    setGameStatus('draw_agreement');
-  }
-
-  /** Any move retires a standing offer; the mover may offer again. */
-  function noteDrawMove(mover: Color) {
-    setLocalDraw((prev) =>
-      prev.logId === log.id ? { ...prev, table: drawTableAfterMove(prev.table, mover) } : prev,
-    );
+    session.dispatch({ type: 'answerDraw', side, accept: true });
   }
 
   useRoomGradient({
@@ -1163,7 +1153,6 @@ function App() {
   const [arrowAnnotations, setArrowAnnotations] = useState<ArrowAnnotation[]>([]);
   const annotationStartRef = useRef<SquareId | null>(null);
   const { flashEffect, sparklePositions, commitAnalysis, classifyImportedLog } = useClassifier({
-    setLog,
     setSearchEvalFromWhite,
     setSearchMateInPlies,
     shellRef,
@@ -1189,14 +1178,10 @@ function App() {
     }
     if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
     const initial = createPositionFromBackRankKey(raw);
-    setState(initial);
-    setInitialState(initial);
+    // A new log, named after now; the seed stays (the code names the board).
+    session.dispatch({ type: 'newGame', initial, now: Date.now() });
     setSelected(null);
-    setLegalMoves(getLegalMoves(initial));
-    setLog(createGameLog(`game-${Date.now()}`, initial, Date.now()));
-    setGameStatus('active');
     setPreviewTopology(null);
-    setLastMove(null);
     setFormationLocked(true);
     setLockedFormationKey(raw);
     setFormationInputMode(false);
@@ -1248,28 +1233,6 @@ function App() {
     return { from: last.castleRookFrom, to: last.castleRookTo };
   }, [log.moves, lastMove]);
 
-  /** An ending found on the board never overwrites one already set: a
-   *  bot move can still be settling (its classification is awaited) when
-   *  the player resigns (QA-11). */
-  function endGameWith(status: Exclude<GameStatus, 'active'>) {
-    setGameStatus((prev) => (prev === 'active' ? status : prev));
-  }
-
-  // Moves playable given a spin + already-used slots. Q.D.5: delegates to
-  // isPieceMovableInRoulette so the in-check override is automatic.
-  function playableRouletteMoves(
-    boardState: BoardState,
-    allowed: PieceType[],
-    used: number[],
-  ): Move[] {
-    return getLegalMoves(boardState).filter((m) => {
-      if (!m.from) return false;
-      const p = boardState.pieces[m.from];
-      if (!p) return false;
-      return isPieceMovableInRoulette(p.type, boardState, 'roulette', allowed, used);
-    });
-  }
-
   function handleSpinRoulette() {
     if (gameMode !== 'roulette') return;
     // Q.D.3: MP roulette routes through the hook so the 4-slot bag,
@@ -1284,14 +1247,12 @@ function App() {
     }
     if (gameStatus !== 'active') return;
     if (allowedPieceTypes !== null) return;
-    // First click of the game flips the gate so the auto-spin effect can
-    // take over on subsequent turns.
-    if (!firstRouletteSpinDone) setFirstRouletteSpinDone(true);
-    doSpinRouletteNow();
+    // The first click of the game is the manual spin: after it the
+    // auto-spin effect takes over on subsequent turns.
+    doSpinRouletteNow(true);
   }
 
-  function doSpinRouletteNow() {
-    setIsRouletteSpinning(true);
+  function doSpinRouletteNow(manual = false) {
     // Sprint 3.8 — fire the roulette spin SFX at the same moment the
     // visual roll starts; the synth's decelerating clicks + final
     // chime line up with the spin animation.
@@ -1302,39 +1263,13 @@ function App() {
     // after the 2.5s felt sluggish in repeated play; still reads as
     // a deliberate deceleration rather than a quick blip.
     audio.play('rouletteSpin');
+    session.dispatch({ type: 'spinStart', now: Date.now(), manual });
     setTimeout(() => {
-      // Roll only from pieces the current player actually has on the board.
-      const activeTypes = getActivePieceTypes(state, state.sideToMove);
-      const pawnBoost = rouletteSpinCount < 3;
-      const rolled = spinRoulette(activeTypes, pawnBoost);
-      setRouletteSpinCount((n) => n + 1);
-      // Q.D.5: route through the central gate so in-check override applies.
-      // Note: usedRouletteSlots is [] here — we just spun, nothing consumed.
-      const playable = playableRouletteMoves(state, rolled, []);
-
-      // Auto-pass only if the player has NO way to act — no piece move AND
-      // rotation is blocked (back-to-back guard). If they can rotate they
-      // should get a chance to spend their action on the rotation.
-      const canRotate = !state.lastMoveWasRotation;
-      if (playable.length === 0 && !canRotate) {
-        const next = applyPassMove(state);
-        setState(next);
-        setAllowedPieceTypes(null);
-        setSelected(null);
-        setIsRouletteSpinning(false);
-        setLastMove(null);
-        setLegalMoves(getLegalMoves(next));
-        setRouletteActionsLeft(0);
-        setUsedRouletteSlots([]);
-      } else {
-        setAllowedPieceTypes(rolled);
-        setIsRouletteSpinning(false);
-        setRouletteActionsLeft(ROULETTE_MAX_ACTIONS);
-        setUsedRouletteSlots([]);
-        // Board highlights expect `legalMoves`; swap in the roulette-filtered
-        // set so target squares (teal) show up for the allowed pieces.
-        setLegalMoves(playable);
-      }
+      // Rolls only from pieces the player actually has on the board, and
+      // passes the turn if nothing at all can be done with the bag
+      // (step.ts spinLand).
+      const events = session.dispatch({ type: 'spinLand' });
+      if (events.some((e) => e.type === 'rouletteSpin' && e.slots === null)) setSelected(null);
     }, 2300);
   }
 
@@ -1344,11 +1279,6 @@ function App() {
     lastMoveWasRotation: boolean = false,
   ): Exclude<GameStatus, 'active'> | null {
     return gameEnding(gameMode, nextState, lastMoveWasRotation);
-  }
-
-  function checkGameOver(nextState: BoardState, lastMoveWasRotation: boolean = false) {
-    const ending = boardEnding(nextState, lastMoveWasRotation);
-    if (ending) endGameWith(ending);
   }
 
   function startNewGame() {
@@ -1361,16 +1291,10 @@ function App() {
       formationLocked && lockedFormationKey
         ? createPositionFromBackRankKey(lockedFormationKey)
         : createStartingPosition(newSeed);
-    setSeed(newSeed);
-    setState(initial);
-    setInitialState(initial);
+    session.dispatch({ type: 'newGame', initial, now: newSeed, seed: newSeed });
     setSelected(null);
-    setLegalMoves(getLegalMoves(initial));
-    setLog(createGameLog(`game-${newSeed}`, initial, newSeed));
     savedForLogIdRef.current = null;
-    setGameStatus('active');
     setPreviewTopology(null);
-    setLastMove(null);
     setSearchEvalFromWhite(null);
     setSearchMateInPlies(null);
     resetGameEndState();
@@ -1392,15 +1316,10 @@ function App() {
    * N-3 — that includes Roulette's turn state (the spun pieces, the
    * actions left, whether the first spin was done). A 960 code or a Load
    * replay used to keep the last game's spin on a fresh board, with no
-   * Spin button and nothing the spun pieces could move.
+   * Spin button and nothing the spun pieces could move. That state is the
+   * session's now: a new game and a fresh load clear it (step.ts).
    */
   function resetGameEndState() {
-    setAllowedPieceTypes(null);
-    setIsRouletteSpinning(false);
-    setRouletteActionsLeft(0);
-    setUsedRouletteSlots([]);
-    setFirstRouletteSpinDone(false);
-    setRouletteSpinCount(0);
     worstHumanEvalRef.current = 0; // R6 — reset the tense-win detector
     setEndgameCut(null);
     if (victoryFreezeTimer.current) clearTimeout(victoryFreezeTimer.current);
@@ -1541,89 +1460,15 @@ function App() {
     }
 
     if (gameStatus !== 'active') return;
-
-    const toggled = toggleTopology(state);
-
-    // Classic mode: king-safety check; rotation consumes the whole turn.
-    if (gameMode !== 'roulette') {
-      const ourKing = findKing(toggled, state.sideToMove);
-      if (!ourKing) return;
-      const opponent = state.sideToMove === 'white' ? 'black' : 'white';
-      if (isSquareAttacked(toggled, ourKing, opponent as 'white' | 'black', toggled.topologyState)) return;
-
-      const next = applyRotationMove(state);
-      setState(next);
-      setLegalMoves(getLegalMoves(next));
-      setSelected(null);
-      setPreviewTopology(null);
-
-      const toggleMove: Move = { kind: 'topologyToggle' };
-      const toggleSan = computeSAN(state, toggleMove);
-      setLog((prev) => appendMove(prev, toggleMove, toggleSan, state.topologyState));
-      noteDrawMove(state.sideToMove);
-      setLastMove(null);
-      // R10 — the streamer rotated: settle the chat's guess round.
-      announceGuessWinners(moveVoting.resolveGuessRotate());
-      checkGameOver(next, true);
-      return;
-    }
-
-    // Roulette mode: rotation costs exactly 1 Action Point.
-    // - Must have spun (allowedPieceTypes !== null) and have at least 1 action.
-    // - usedRouletteSlots is NOT modified (rotation doesn't consume a slot).
-    if (allowedPieceTypes === null || rouletteActionsLeft < 1) return;
-
-    const rotated = applyRotationMove(state); // sideToMove flipped, lastMoveWasRotation=true
-    const toggleMove: Move = { kind: 'topologyToggle' };
-    const toggleSan = computeSAN(state, toggleMove);
-    setLog((prev) => appendMove(prev, toggleMove, toggleSan, state.topologyState));
-    noteDrawMove(state.sideToMove);
-    setLastMove(null);
+    // Classic: the king must stay safe and the rotation is the whole turn.
+    // Roulette: it costs one action of the spun bag and spends no slot.
+    // The rules are step()'s (src/session/step.ts rotate).
+    const events = session.dispatch({ type: 'rotate', now: Date.now() });
+    if (events.length === 0) return;
     setSelected(null);
     setPreviewTopology(null);
-
-    const actionsAfter = rouletteActionsLeft - 1;
-
-    if (actionsAfter === 0) {
-      // Last action: accept the side flip, end the turn.
-      setState(rotated);
-      setAllowedPieceTypes(null);
-      setIsRouletteSpinning(false);
-      setRouletteActionsLeft(0);
-      setUsedRouletteSlots([]);
-      setLegalMoves(getLegalMoves(rotated));
-      checkGameOver(rotated, true);
-      return;
-    }
-
-    // First action: keep the turn. Clamp sideToMove back to the current player
-    // and refresh legalMoves for the new topology (usedRouletteSlots intact).
-    const clamped: BoardState = { ...rotated, sideToMove: state.sideToMove };
-    const nextPlayable = playableRouletteMoves(
-      clamped,
-      allowedPieceTypes,
-      usedRouletteSlots,
-    );
-    // We cannot rotate again this turn (lastMoveWasRotation=true). If there's
-    // also no piece move available, the remaining action can't be used — end
-    // the turn to keep the game flowing.
-    if (nextPlayable.length === 0) {
-      setState(rotated);
-      setAllowedPieceTypes(null);
-      setIsRouletteSpinning(false);
-      setRouletteActionsLeft(0);
-      setUsedRouletteSlots([]);
-      setLegalMoves(getLegalMoves(rotated));
-      checkGameOver(rotated, true);
-      return;
-    }
-
-    setState(clamped);
-    setRouletteActionsLeft(actionsAfter);
-    setLegalMoves(nextPlayable);
-    // allowedPieceTypes and usedRouletteSlots unchanged — rotation doesn't
-    // consume a specific slot.
-    checkGameOver(clamped, true);
+    // R10 — the streamer rotated: settle the chat's guess round.
+    if (gameMode !== 'roulette') announceGuessWinners(moveVoting.resolveGuessRotate());
   }
 
   // In MP currentPlayer reflects whose turn it is from MY seat: 'human' when
@@ -1695,7 +1540,6 @@ function App() {
     watchingGame,
     setSelected,
     gameStatus,
-    setGameStatus,
     clockMs,
     soloTcSec,
     log,
@@ -1783,26 +1627,14 @@ function App() {
     autoTimerRef,
     autoLastMoveAtRef,
     isMultiplayerRef,
-    setState,
     setSelected,
-    setLegalMoves,
-    setLog,
-    setLastMove,
     botLevelRef,
     gameMode,
-    getLegalMoves,
-    setAllowedPieceTypes,
-    setRouletteActionsLeft,
-    setUsedRouletteSlots,
-    setRouletteSpinCount,
-    rouletteSpinCount,
     aiTimerRef,
     setSearchEvalFromWhite,
     setSearchMateInPlies,
     logLengthRef,
     commitAnalysis,
-    playableRouletteMoves,
-    checkGameOver,
   });
 
   const lastMoveWasRotation =
@@ -1837,22 +1669,16 @@ function App() {
     isAutoMode,
     isMultiplayer,
     watchingGame,
-    setState,
     setSelected,
-    setLegalMoves,
-    setLog,
     gameStatus,
-    setLastMove,
     twitchVoteMode,
     gameMode,
-    getLegalMoves,
     state,
     legalMoves,
     setSearchEvalFromWhite,
     setSearchMateInPlies,
     logLengthRef,
     commitAnalysis,
-    checkGameOver,
     handleRotate,
     isLocalMode,
     currentPlayer,
@@ -2022,7 +1848,7 @@ function App() {
         move.to &&
         mpSync.matchState.gameMode !== 'roulette'
       ) {
-        setPendingPromotion({ from: move.from, to: move.to });
+        setMpPendingPromotion({ from: move.from, to: move.to });
         return;
       }
       const resolved: Move =
@@ -2106,7 +1932,7 @@ function App() {
     // Promotion picker (classic only — in roulette we auto-queen to keep the
     // multi-action flow uninterrupted).
     if (move.kind === 'promotion' && move.from && move.to && gameMode !== 'roulette') {
-      setPendingPromotion({ from: move.from, to: move.to });
+      session.dispatch({ type: 'requestPromotion', from: move.from, to: move.to });
       return;
     }
     const resolvedMove: Move =
@@ -2180,11 +2006,10 @@ function App() {
     const san = computeSAN(state, resolvedMove);
     // R2 — settle the chat's "guess the streamer" round on the actual move.
     announceGuessWinners(moveVoting.resolveGuessRound(resolvedMove, san));
-    const moverType = state.pieces[resolvedMove.from!]!.type;
     const afterMove = applyMove(state, resolvedMove);
-    setLog((prev) => appendMove(prev, resolvedMove, san, state.topologyState));
-    noteDrawMove(state.sideToMove);
-    setLastMove({ from: resolvedMove.from, to: resolvedMove.to });
+    // The move itself (the board, the log, the roulette turn, the end of
+    // the game) is step()'s: src/session/step.ts.
+    session.dispatch({ type: 'move', move: resolvedMove, now: Date.now() });
     // SP-2 — score the move against the beat grid (no-op when music
     // sync is off). Display-only combo; leaderboard points untouched.
     beatBridge.reportMove();
@@ -2215,52 +2040,7 @@ function App() {
         });
     }
 
-    if (gameMode !== 'roulette') {
-      setState(afterMove);
-      setLegalMoves(getLegalMoves(afterMove));
-      setSelected(null);
-      checkGameOver(afterMove);
-      return;
-    }
-
-    // --- Roulette mode: decide whether the turn continues or ends.
-    const slotIdx = consumeSlotIndex(allowedPieceTypes!, usedRouletteSlots, moverType);
-    const newUsed = slotIdx >= 0 ? [...usedRouletteSlots, slotIdx] : usedRouletteSlots;
-    const actionsAfter = rouletteActionsLeft - 1;
-
-    // If a king was just captured, end the game regardless of remaining actions.
-    const kingCaptured =
-      !findKing(afterMove, 'white') || !findKing(afterMove, 'black');
-
-    let stayOnTurn = false;
-    let nextPlayable: Move[] = [];
-    if (!kingCaptured && actionsAfter > 0) {
-      // Clamp sideToMove back so the same player continues — we still evaluate
-      // remaining-slot playability against that clamped state.
-      const clamped: BoardState = { ...afterMove, sideToMove: state.sideToMove };
-      nextPlayable = playableRouletteMoves(clamped, allowedPieceTypes!, newUsed);
-      // Stay on turn if piece moves exist OR rotation is still available
-      // (the human may want to spend the remaining action on rotating).
-      stayOnTurn = nextPlayable.length > 0 || !clamped.lastMoveWasRotation;
-    }
-
-    if (stayOnTurn) {
-      const clamped: BoardState = { ...afterMove, sideToMove: state.sideToMove };
-      setState(clamped);
-      setUsedRouletteSlots(newUsed);
-      setRouletteActionsLeft(actionsAfter);
-      setLegalMoves(nextPlayable);
-      setSelected(null);
-    } else {
-      // End of turn: accept the side-flip from applyMove, clear roulette state.
-      setState(afterMove);
-      setUsedRouletteSlots([]);
-      setRouletteActionsLeft(0);
-      setAllowedPieceTypes(null);
-      setLegalMoves(getLegalMoves(afterMove));
-      setSelected(null);
-    }
-    checkGameOver(afterMove);
+    setSelected(null);
     } // end commitMove
   }
 
@@ -2278,7 +2058,7 @@ function App() {
     // below is solo-only (the MP board re-derives from the shared log).
     if (isMultiplayer && mpSync) {
       setSelected(null);
-      setPendingPromotion(null);
+      setMpPendingPromotion(null);
       void mpSync.sendMove(move);
       return;
     }
@@ -2286,14 +2066,8 @@ function App() {
     // R2 — promotion commits bypass commitMove; settle the guess round here too.
     announceGuessWinners(moveVoting.resolveGuessRound(move, san));
     const next = applyMove(state, move);
-    setState(next);
-    const nextMoves = getLegalMoves(next);
-    setLegalMoves(nextMoves);
+    session.dispatch({ type: 'promote', piece: pieceType, now: Date.now() });
     setSelected(null);
-    setPendingPromotion(null);
-    setLog((prev) => appendMove(prev, move, san, state.topologyState));
-    noteDrawMove(state.sideToMove);
-    setLastMove({ from: move.from, to: move.to });
     beatBridge.reportMove(); // SP-2 — promotion path counts too
     // B3 — material-delta bump instead of static-fallback flicker.
     setSearchEvalFromWhite((prev) => bumpEvalForMove(prev, state, move));
@@ -2306,7 +2080,11 @@ function App() {
     }).then((analysis) => {
       commitAnalysis(moveIdx, analysis, move.to);
     });
-    checkGameOver(next);
+  }
+
+  function cancelPromotion() {
+    if (isMultiplayer) setMpPendingPromotion(null);
+    else session.dispatch({ type: 'cancelPromotion' });
   }
 
   const squares = useMemo(() => {
@@ -2401,19 +2179,12 @@ function App() {
     resumedLogIdRef,
     setOpponentMode,
     mpResumeCodeRef,
-    setState,
-    setInitialState,
     setSelected,
-    setLegalMoves,
-    setLog,
-    setGameStatus,
     setPreviewTopology,
-    setLastMove,
     beginBusy,
     setBotLevel,
     setFormationLocked,
     setLockedFormationKey,
-    getLegalMoves,
     aiTimerRef,
     savedForLogIdRef,
     liveSavedGameIdRef,
@@ -2443,14 +2214,15 @@ function App() {
       liveSavedGameIdRef.current = id;
       setFormationLocked(true);
       setLockedFormationKey(replay.config960);
-      setInitialState(initial);
-      setState(current);
+      // A log that already ends the game loads as over (settle).
+      session.dispatch({
+        type: 'load',
+        game: { initial, board: current, log: replayLog, lastMove: null },
+        fresh: true,
+        settle: { lastWasRotation: replay.lastWasRotation },
+      });
       setSelected(null);
-      setLegalMoves(getLegalMoves(current));
-      setLog(replayLog);
-      setGameStatus('active');
       setPreviewTopology(null);
-      setLastMove(null);
       savedForLogIdRef.current = null;
       setSearchEvalFromWhite(null);
       setSearchMateInPlies(null);
@@ -2462,7 +2234,6 @@ function App() {
       // A log that already ends the game loads as over. That ending is not
       // one the player just reached, so it gets no summary and no save.
       if (boardEnding(current, replay.lastWasRotation)) completedLogIdRef.current = replayLog.id;
-      checkGameOver(current, replay.lastWasRotation);
       classifyImportedLog(replayLog);
 
       setReplayError(null);
@@ -3854,7 +3625,7 @@ function App() {
           the layout past the board's frame. */}
 
       {pendingPromotion && (
-        <div className="promotion-backdrop" onClick={() => setPendingPromotion(null)}>
+        <div className="promotion-backdrop" onClick={cancelPromotion}>
           <div className="promotion-dialog" onClick={(e) => e.stopPropagation()}>
             <div className="promotion-title">Promote pawn to:</div>
             <div className="promotion-options">
@@ -4375,11 +4146,8 @@ function App() {
               title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Classic chess rules'}
               onClick={() => {
                 if (gameMode === 'classic') return;
+                // Also drops a spun bag and stops the wheel (step.ts setMode).
                 session.dispatch({ type: 'setMode', mode: 'classic' });
-                setAllowedPieceTypes(null);
-                setIsRouletteSpinning(false);
-                setRouletteActionsLeft(0);
-                setUsedRouletteSlots([]);
               }}
             >
               <span className="mode-card-icon" aria-hidden>
@@ -4400,10 +4168,6 @@ function App() {
               onClick={() => {
                 if (gameMode === 'roulette') return;
                 session.dispatch({ type: 'setMode', mode: 'roulette' });
-                setAllowedPieceTypes(null);
-                setIsRouletteSpinning(false);
-                setRouletteActionsLeft(0);
-                setUsedRouletteSlots([]);
               }}
             >
               <span className="mode-card-icon" aria-hidden>

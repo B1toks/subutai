@@ -3,6 +3,7 @@ import type { WatchingGame } from '../review/watching';
 import type { GameStatus } from '../../shared/game';
 import type { GameLog } from '../../recording/log';
 import type { ToastContextValue } from '../../components/Toast';
+import { session } from '../../session/session';
 
 interface UseSoloFlagFallArgs {
   isAutoMode: boolean;
@@ -11,7 +12,6 @@ interface UseSoloFlagFallArgs {
   watchingGame: WatchingGame | null;
   setSelected: Dispatch<SetStateAction<string | null>>;
   gameStatus: GameStatus;
-  setGameStatus: Dispatch<SetStateAction<GameStatus>>;
   clockMs: { white: number; black: number };
   soloTcSec: number | null;
   log: GameLog;
@@ -32,7 +32,6 @@ export function useSoloFlagFall({
   watchingGame,
   setSelected,
   gameStatus,
-  setGameStatus,
   clockMs,
   soloTcSec,
   log,
@@ -59,7 +58,7 @@ export function useSoloFlagFall({
     soloFlagLogIdRef.current = log.id;
     if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
     setSelected(null);
-    setGameStatus(flagged === 'white' ? 'timeout_white' : 'timeout_black');
+    session.dispatch({ type: 'flag', side: flagged });
     if (isLocalMode) completedLogIdRef.current = log.id;
     toast.show(
       `${flagged === 'white' ? 'White' : 'Black'} ran out of time.`,
@@ -79,7 +78,6 @@ export function useSoloFlagFall({
     toast,
     aiTimerRef,
     completedLogIdRef,
-    setGameStatus,
     setSelected,
   ]);
 }
