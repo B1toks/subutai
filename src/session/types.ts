@@ -1,0 +1,159 @@
+import type { BoardState, Color, Move, PieceType, SquareId } from '../engine';
+import type { GameLog } from '../recording/log';
+import type { MoveAnalysis } from '../analysis/classify';
+import type { DrawTable } from '../utils/drawOffer';
+import type { GameMode, GameStatus } from '../shared/game';
+
+// The game on the board as one value. Everything a solo or hot-seat game
+// knows about itself lives here; who is clicking, what is lit up and what
+// is animating does not. step() is the only thing that makes a new one.
+
+export type TerminalStatus = Exclude<GameStatus, 'active'>;
+
+export interface LastMove {
+  readonly from?: SquareId;
+  readonly to?: SquareId;
+}
+
+/** Roulette: the spun bag of the side to move and what is left of it. */
+export interface RouletteBag {
+  readonly slots: readonly PieceType[];
+  /** Indexes into `slots` already spent this turn. */
+  readonly used: readonly number[];
+  readonly actionsLeft: number;
+}
+
+export interface RouletteState {
+  /** null until the side to move has spun this turn. */
+  readonly bag: RouletteBag | null;
+  /** Spins this game, both sides: the first three favour pawns. */
+  readonly spins: number;
+  /** The first spin of a game is a click; after it the spins run by themselves. */
+  readonly firstSpinDone: boolean;
+}
+
+/**
+ * Where the game stands. One tag at a time, so a promotion cannot be
+ * pending in a game that has ended, and a wheel cannot be turning while
+ * a pawn waits for its piece.
+ *
+ * A standing draw offer is not a phase: while it stands the other side
+ * may still move (which retires it), spin, or pick a promotion piece, so
+ * it sits beside the phase in `draw`.
+ */
+export type Phase =
+  /** A fresh board: nothing played, nothing spun. */
+  | { readonly tag: 'setup' }
+  | { readonly tag: 'playing' }
+  /** A pawn reached the far row; the mover is choosing its piece. */
+  | { readonly tag: 'promotion'; readonly from: SquareId; readonly to: SquareId }
+  /** Roulette: the side to move's wheel is turning. */
+  | { readonly tag: 'rouletteSpin'; readonly since: number }
+  | { readonly tag: 'ended'; readonly status: TerminalStatus };
+
+export interface SessionState {
+  readonly mode: GameMode;
+  /** The Chess960 seed of the position (also the log's randomSeed). */
+  readonly seed: number;
+  readonly initial: BoardState;
+  readonly board: BoardState;
+  /**
+   * The moves the side to move may make, as the board highlights them:
+   * every legal move, or in Roulette after a spin only those the bag
+   * allows. Kept, not derived, because the game updates it at exactly the
+   * moments it always has (a mode switch, for one, leaves it alone).
+   */
+  readonly legal: readonly Move[];
+  readonly log: GameLog;
+  readonly lastMove: LastMove | null;
+  readonly phase: Phase;
+  readonly roulette: RouletteState;
+  /**
+   * Hot-seat draw offers (src/utils/drawOffer.ts), keyed by the game they
+   * belong to: a table for another log id reads as no offers at all (see
+   * drawTableOf), and comes back if that game is put back on the board.
+   */
+  readonly draw: { readonly logId: string; readonly table: DrawTable<Color> };
+  /** Thinking time each side has used, in ms. Starts with the first move. */
+  readonly clock: { readonly white: number; readonly black: number };
+  /** Solo time control in seconds, or null for free play. */
+  readonly timeControlSec: number | null;
+  /** The chance stream (see rng.ts). */
+  readonly rng: number;
+}
+
+/** A board and the history that leads to it, put on the table whole. */
+export interface LoadedGame {
+  readonly board: BoardState;
+  readonly log: GameLog;
+  /** Defaults to the current one (a replay seek keeps the start). */
+  readonly initial?: BoardState;
+  readonly seed?: number;
+  /** Defaults to 'active'. */
+  readonly status?: GameStatus;
+  readonly lastMove?: LastMove | null;
+  /** Defaults to every legal move of `board` under the current mode. */
+  readonly legal?: readonly Move[];
+}
+
+export type Action =
+  /** New game (New game, a 960 code). `seed` names the position and the
+   *  log; without it the log is named after `now` and the seed is kept. */
+  | { readonly type: 'newGame'; readonly initial: BoardState; readonly now: number; readonly seed?: number }
+  /** Put a game on the board: a replay frame, a restored backup, an
+   *  imported log, a Memory resume. `fresh` also clears the last game's
+   *  Roulette turn, as starting a new game does; `settle` then checks
+   *  whether the loaded board is already over. */
+  | {
+      readonly type: 'load';
+      readonly game: LoadedGame;
+      readonly fresh?: boolean;
+      readonly settle?: { readonly lastWasRotation: boolean };
+    }
+  | { readonly type: 'setMode'; readonly mode: GameMode }
+  | { readonly type: 'setTimeControl'; readonly sec: number | null }
+  /** `dt` ms of thinking time for the side to move. */
+  | { readonly type: 'clockTick'; readonly dt: number }
+  | { readonly type: 'flag'; readonly side: Color }
+  /** A move from the legal list. `settle: false` leaves the end-of-game
+   *  check to a later 'settle' (the bot checks after its move is
+   *  classified, as it always has). */
+  | { readonly type: 'move'; readonly move: Move; readonly now: number; readonly settle?: boolean }
+  | { readonly type: 'rotate'; readonly now: number }
+  /** Roulette: the bot found nothing to do with its bag. */
+  | { readonly type: 'pass' }
+  /** Is `board` (the one a move produced) over? Only ends an active game. */
+  | { readonly type: 'settle'; readonly board: BoardState; readonly lastWasRotation: boolean }
+  | { readonly type: 'requestPromotion'; readonly from: SquareId; readonly to: SquareId }
+  | { readonly type: 'cancelPromotion' }
+  | { readonly type: 'promote'; readonly piece: PieceType; readonly now: number }
+  /** Roulette: the wheel starts. `manual` is the Spin button (first spin). */
+  | { readonly type: 'spinStart'; readonly now: number; readonly manual: boolean }
+  /** Roulette: the wheel stops and the bag is drawn. */
+  | { readonly type: 'spinLand' }
+  /** Roulette: the bot's spin, drawn at once. */
+  | { readonly type: 'botSpin' }
+  | { readonly type: 'resign'; readonly side: Color }
+  | { readonly type: 'offerDraw'; readonly side: Color }
+  | { readonly type: 'answerDraw'; readonly side: Color; readonly accept: boolean }
+  /** The classifier's verdict on move `index` (of game `logId`, if given). */
+  | { readonly type: 'analysis'; readonly index: number; readonly analysis: MoveAnalysis; readonly logId?: string }
+  /** Self-play: a search score for the last move. */
+  | { readonly type: 'searchScore'; readonly scoreFromWhite: number };
+
+/** What happened, for whoever wants to react to it (sound, effects, saves). */
+export type SessionEvent =
+  | { readonly type: 'move'; readonly move: Move; readonly san: string; readonly by: Color; readonly index: number }
+  | { readonly type: 'capture'; readonly square: SquareId; readonly piece: PieceType; readonly enPassant: boolean }
+  | { readonly type: 'check'; readonly side: Color }
+  | { readonly type: 'rotation'; readonly by: Color; readonly promoted: readonly SquareId[] }
+  | { readonly type: 'promotion'; readonly square: SquareId; readonly piece: PieceType }
+  | { readonly type: 'rouletteSpin'; readonly by: Color; readonly slots: readonly PieceType[] | null }
+  | { readonly type: 'drawOffer'; readonly by: Color; readonly answer?: 'accepted' | 'declined' }
+  | { readonly type: 'gameEnd'; readonly status: TerminalStatus }
+  | { readonly type: 'flagFall'; readonly side: Color };
+
+export interface StepResult {
+  readonly state: SessionState;
+  readonly events: readonly SessionEvent[];
+}
