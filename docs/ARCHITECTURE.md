@@ -8,6 +8,7 @@ Firestore rules are the only trust boundary (see `FIRESTORE-RULES.md`).
 | Folder | What lives there |
 |---|---|
 | `src/engine`, `src/ai`, `src/analysis`, `src/recording` | Rules of the variant, the bot, scoring, the game log. No React. `scripts/` and `qa/engine` import these by path. |
+| `src/session` | The game on the board as one value: `SessionState`, the pure `step(state, action)` that makes the next one and says what happened, and the store App and the hooks read it from (`session`, `useSession`). No React in `step.ts`; time comes in the action, chance from a seed in the state. |
 | `src/firebase` | Every Firestore read and write. The document shapes here are what the rules check; `npm run test:rules` runs this code against the emulator. |
 | `src/audio`, `src/music`, `src/twitch`, `src/spotify` | Browser integrations with no UI of their own. |
 | `src/memory` | Saved games: storage, notation, replay import, the Memory panel, and the hooks that autosave a game and resume one. |
@@ -24,7 +25,8 @@ games), `endgame` (results, the save queue, the end-of-game sequence),
 
 ## The shell
 
-`App.tsx` calls the hooks, keeps the game's state, and picks a view: stats,
+`App.tsx` calls the hooks, reads the game from the session (and an online
+game from its match), keeps the screen's own state, and picks a view: stats,
 autoplay, review, leaderboard, lobby or the game. Every hook is called
 before that choice, so they all stay mounted whatever is on screen: the bot,
 the clocks and presence keep running while the leaderboard is open. Game
@@ -58,25 +60,31 @@ function declaration (`startNewGame`) or, for a state setter declared later
  useOnlineMatch ──┐   useOnlineMatchEnd     useMemoryAutosave   useResumeGame
                   │   useGameSaveQueue
                   ▼
- App.tsx: game state (useState) + read-side aliases (state, log, legalMoves)
-        │                        ▲
-        ▼                        │ setters, callbacks
- feature hooks (bot, clocks, classifier, effects, coach, endgame …)
-        │
-        ▼
- the view on screen (board, panels, dialogs) ── a click calls an App handler
+ session (src/session): step(state, action) ◄── session.dispatch(action)
+        │ useSession                                        ▲
+        ▼                                                   │
+ App.tsx: read-side aliases (state, log, legalMoves)        │
+        │                                                   │
+        ▼                                                   │
+ feature hooks (bot, clocks, classifier, effects, coach …) ─┤
+        │                                                   │
+        ▼                                                   │
+ the view on screen (board, panels, dialogs) ── a click ────┘
 ```
 
-Where the game lives: a solo or hot-seat game is App's own state (`stateLocal`,
-`logLocal`, `gameStatus` and the roulette fields). An online game lives in
-its match document; `useOnlineMatch` subscribes to it and App reads it
-through the same names (`state`, `log`, `legalMoves`, `lastMove`), so the
-board and the hooks do not care which kind of game it is.
+Where the game lives: a solo or hot-seat game is the session (the board, the
+log, the status, the roulette turn, the pending promotion, the draw offers,
+the clocks); App reads it with `useSession` and changes it only by
+dispatching an action. An online game lives in its match document;
+`useOnlineMatch` subscribes to it and App reads it through the same names
+(`state`, `log`, `legalMoves`, `lastMove`), so the board and the hooks do
+not care which kind of game it is.
 
 A move, from the click to the record. A click on a square calls
 `onSquareClick` in App, which finds the move among the legal ones. Solo, it
-applies it (`applyMove`) and appends it to the log (`appendMove`); the new
-state re-renders the board, and the effects follow: `useBotTurn` schedules
+dispatches `{ type: 'move' }`: `step()` applies it, appends it to the log,
+runs the roulette turn and asks whether the game is over. The new session
+re-renders the board, and the effects follow: `useBotTurn` schedules
 the bot's reply through `useBotScheduler`, `commitAnalysis` from
 `useClassifier` records the classifier's verdict, `useMemoryAutosave`
 snapshots the game, `useCaptureFx` and `useMoveFeedback` play the effects
@@ -129,5 +137,9 @@ Players, saved games and QA scripts depend on them.
 ## Tests
 
 - `*.test.ts` next to the code, for the pure functions (`npm test`).
+- `src/session/step.golden.test.ts` holds `step()` to the game as App's
+  handlers played it before the session (`src/session/golden/legacy.ts`):
+  320 seeded self-play games and the QA fixtures, compared after every
+  action. A rule change shows up there first.
 - `scripts/test-*.ts`, `scripts/repro960.ts` and `qa/engine/*` for the engine and the game log (`npx tsx <file>`).
 - `npm run test:rules` for the rules, driven by the real client.
