@@ -4,6 +4,7 @@ A **Chess960 variant** with dynamically rotating 2×2 board segments and custom 
 
 ♟ **Live:** [subutai.honchar.dev](https://subutai.honchar.dev/)
 ✦ **Exhibition:** [Lucid Dreams · Projekt 027](https://www.lucid-dreams.at/2026-projekte/projekt-027)
+✎ **Feedback:** [GitHub Issues](https://github.com/B1toks/subutai/issues): bugs, ideas, or how the rotations felt.
 
 ---
 
