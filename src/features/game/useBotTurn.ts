@@ -1,8 +1,13 @@
 import { useEffect, type RefObject } from 'react';
 import { AI_ROULETTE_REVEAL_MS, AI_ROULETTE_BETWEEN_ACTIONS_MS } from './roulette';
 import type { WatchingGame } from '../review/watching';
-import type { GameStatus, GameMode } from '../../shared/game';
 import type { BoardState, Move, PieceType } from '../../engine';
+import { useSession } from '../../session/useSession';
+import { statusOf } from '../../session/step';
+
+/** The used slots when no bag is spun: one array, so the effect below
+ *  does not re-run for a new empty one. */
+const NO_SLOTS: number[] = [];
 
 interface UseBotTurnArgs {
   isAutoMode: boolean;
@@ -10,27 +15,20 @@ interface UseBotTurnArgs {
   autoTimerRef: RefObject<number | null>;
   isMultiplayer: boolean;
   watchingGame: WatchingGame | null;
-  gameStatus: GameStatus;
-  gameMode: GameMode;
-  state: BoardState;
-  legalMoves: Move[];
-  allowedPieceTypes: PieceType[] | null;
-  rouletteActionsLeft: number;
-  usedRouletteSlots: number[];
   aiTimerRef: RefObject<number | null>;
   currentPlayer: 'human' | 'ai';
   scheduleAutoMove: (boardState: BoardState, moves: Move[], wasRotation: boolean) => void;
   scheduleAiMove: (boardState: BoardState, moves: Move[], lastMoveWasRotation: boolean) => void;
   applyAiSpin: () => void;
   executeAiRouletteAction: (bs: BoardState, rolled: PieceType[], used: number[]) => void;
-  lastMoveWasRotation: boolean;
 }
 
 /**
  * When the bot moves: on its turn in a solo game (and on every turn in a
  * self-play run) this schedules one step through useBotScheduler's
  * functions. Roulette runs one phase per render: spin, then each action
- * after its pause, each a fresh run of this effect.
+ * after its pause, each a fresh run of this effect. Solo only, so it
+ * reads the game from the session itself.
  */
 export function useBotTurn({
   isAutoMode,
@@ -38,21 +36,24 @@ export function useBotTurn({
   autoTimerRef,
   isMultiplayer,
   watchingGame,
-  gameStatus,
-  gameMode,
-  state,
-  legalMoves,
-  allowedPieceTypes,
-  rouletteActionsLeft,
-  usedRouletteSlots,
   aiTimerRef,
   currentPlayer,
   scheduleAutoMove,
   scheduleAiMove,
   applyAiSpin,
   executeAiRouletteAction,
-  lastMoveWasRotation,
 }: UseBotTurnArgs) {
+  const state = useSession((s) => s.board);
+  const legalMoves = useSession((s) => s.legal) as Move[];
+  const gameStatus = useSession(statusOf);
+  const gameMode = useSession((s) => s.mode);
+  const bag = useSession((s) => s.roulette.bag);
+  const allowedPieceTypes = (bag?.slots ?? null) as PieceType[] | null;
+  const rouletteActionsLeft = bag?.actionsLeft ?? 0;
+  const usedRouletteSlots = (bag?.used ?? NO_SLOTS) as number[];
+  const lastMoveWasRotation = useSession(
+    (s) => s.log.moves.length > 0 && s.log.moves[s.log.moves.length - 1]?.move.kind === 'topologyToggle',
+  );
   useEffect(() => {
     if (isMultiplayer) return; // PvP: no engine drives the opponent
     if (gameStatus !== 'active') return;

@@ -1631,10 +1631,6 @@ function App() {
     commitAnalysis,
   });
 
-  const lastMoveWasRotation =
-    log.moves.length > 0 &&
-    log.moves[log.moves.length - 1]?.move.kind === 'topologyToggle';
-
   const { materialBreakdown, materialScore } = useMaterial({ state, myColor });
 
   useBotTurn({
@@ -1643,20 +1639,12 @@ function App() {
     autoTimerRef,
     isMultiplayer,
     watchingGame,
-    gameStatus,
-    gameMode,
-    state,
-    legalMoves,
-    allowedPieceTypes,
-    rouletteActionsLeft,
-    usedRouletteSlots,
     aiTimerRef,
     currentPlayer,
     scheduleAutoMove,
     scheduleAiMove,
     applyAiSpin,
     executeAiRouletteAction,
-    lastMoveWasRotation,
   });
 
   useChatVsBot({
