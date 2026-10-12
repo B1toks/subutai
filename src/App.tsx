@@ -469,13 +469,10 @@ function App() {
     announceGuessWinners,
   } = useTwitchState();
   const { showMusicDock, setShowMusicDock, vizOn, bgGridOn } = useMusicState();
-  // S2.5 — per-side elapsed clocks. Pure UX (no flag-fall): the active
-  // side's clock accumulates wall time while the game is live. Reset on
-  // every new game log.
-  const [clockMs, setClockMs] = useState<{ white: number; black: number }>({
-    white: 0,
-    black: 0,
-  });
+  // S2.5 — per-side elapsed clocks: the side to move's clock accumulates
+  // wall time while the game is live (useGameClocks ticks the session).
+  // A new game log starts them from zero.
+  const clockMs = sess.clock;
   // Stitch layout: optional solo time control in seconds.
   // null = free play (chips keep showing elapsed). With a value the chips
   // show remaining = tc - elapsed, floored at 0. Display-only in solo.
@@ -1352,9 +1349,6 @@ function App() {
     watchingGame,
     logLocal,
     gameStatus,
-    setClockMs,
-    soloTcSec,
-    state,
   });
 
   function toggleHelpTools() {

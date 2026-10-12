@@ -1,5 +1,4 @@
-import { useRef, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
-import type { Color, BoardState } from '../../engine';
+import { useRef, useEffect, useMemo, useState } from 'react';
 import { mpClockState, mpClockAt, mpClockHeldFor } from '../../utils/mpClock';
 import { serverNow } from '../../firebase/serverClock';
 import { drawOfferHolds, turnStartedMs } from '../../firebase/matchEnd';
@@ -10,6 +9,7 @@ import {
 import type { WatchingGame } from '../review/watching';
 import type { GameLog } from '../../recording/log';
 import type { GameStatus } from '../../shared/game';
+import { session } from '../../session/session';
 
 interface UseGameClocksArgs {
   isMultiplayer: boolean;
@@ -17,14 +17,12 @@ interface UseGameClocksArgs {
   watchingGame: WatchingGame | null;
   logLocal: GameLog;
   gameStatus: GameStatus;
-  setClockMs: Dispatch<SetStateAction<{ white: number; black: number }>>;
-  soloTcSec: number | null;
-  state: BoardState;
 }
 
 /**
- * The game clocks. Solo: App's clockMs ticks every 500 ms while a game
- * runs, from the first move. Online: mpClock is read from the match doc's
+ * The game clocks. Solo: the session's clock ticks every 500 ms while a
+ * game runs, from the first move (step.ts clockTick charges the side to
+ * move; a new log or a control picked before the first move zeroes it). Online: mpClock is read from the match doc's
  * move stamps (server time) and changes only with the doc; the faces tick
  * on their own, and the flag check is a timer, retried through
  * mpFlagRetry when the server refuses a claim. Inside, the effect that
@@ -36,21 +34,7 @@ export function useGameClocks({
   watchingGame,
   logLocal,
   gameStatus,
-  setClockMs,
-  soloTcSec,
-  state,
 }: UseGameClocksArgs) {
-  // S2.5 — clock ticking. A ref mirrors sideToMove so the interval
-  // closure always charges the side actually to move without re-arming
-  // the timer on every ply.
-  const clockSideRef = useRef<Color>(state.sideToMove);
-  useEffect(() => {
-    clockSideRef.current = state.sideToMove;
-  }, [state.sideToMove]);
-
-  useEffect(() => {
-    setClockMs({ white: 0, black: 0 });
-  }, [logLocal.id, setClockMs]);
 
   // V1 — the clocks arm on the FIRST MOVE, always.
   //
@@ -62,21 +46,16 @@ export function useGameClocks({
   // zeroes whatever already accumulated, so both sides start whole.
   const clockArmed = logLocal.moves.length > 0;
   useEffect(() => {
-    if (logLocal.moves.length === 0) setClockMs({ white: 0, black: 0 });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [soloTcSec]);
-  useEffect(() => {
     if (gameStatus !== 'active' || watchingGame || !clockArmed) return;
     let last = Date.now();
     const id = setInterval(() => {
       const now = Date.now();
       const dt = now - last;
       last = now;
-      const side = clockSideRef.current;
-      setClockMs((c) => ({ ...c, [side]: c[side] + dt }));
+      session.dispatch({ type: 'clockTick', dt });
     }, 500);
     return () => clearInterval(id);
-  }, [gameStatus, watchingGame, logLocal.id, clockArmed, setClockMs]);
+  }, [gameStatus, watchingGame, logLocal.id, clockArmed]);
 
   // ── B8: multiplayer time control ──────────────────────────────────
   // Both peers derive identical countdown clocks from the shared move
