@@ -54,10 +54,11 @@ export function createGameLog(
   id: string,
   initialState: BoardState,
   randomSeed: number,
+  now: number = Date.now(),
 ): GameLog {
   return {
     id,
-    createdAt: new Date().toISOString(),
+    createdAt: new Date(now).toISOString(),
     randomSeed,
     initialTopology: initialState.topologyState,
     initialState,
@@ -71,10 +72,11 @@ export function appendMove(
   san?: string,
   topology?: TopologyState,
   analysis?: MoveAnalysis,
+  now: number = Date.now(),
 ): GameLog {
   return {
     ...log,
-    moves: [...log.moves, { san, move, topology, timestamp: Date.now(), analysis }],
+    moves: [...log.moves, { san, move, topology, timestamp: now, analysis }],
   };
 }
 
