@@ -183,6 +183,8 @@ import { useNotation } from './features/game/useNotation';
 import { useGameSaveQueue, type FinishedGameSave } from './features/endgame/useGameSaveQueue';
 import { useMaterial } from './features/game/useMaterial';
 import { useCanRotate } from './features/game/useCanRotate';
+import { session } from './session/session';
+import { useSession } from './session/useSession';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -494,7 +496,7 @@ function App() {
   // Stitch layout: optional solo time control in seconds.
   // null = free play (chips keep showing elapsed). With a value the chips
   // show remaining = tc - elapsed, floored at 0. Display-only in solo.
-  const [soloTcSec, setSoloTcSec] = useState<number | null>(null);
+  const soloTcSec = useSession((s) => s.timeControlSec);
   const { botLevel, botLevelRef, setBotLevel } = useBotLevel();
   const [previewLocked, setPreviewLocked] = useState(false);
   const [lockedPreviewTopology, setLockedPreviewTopology] = useState<TopologyState | null>(null);
@@ -510,7 +512,7 @@ function App() {
     from: SquareId;
     to: SquareId;
   } | null>(null);
-  const [gameModeLocal, setGameMode] = useState<GameMode>('classic');
+  const gameModeLocal = useSession((s) => s.mode);
   // PvP gameMode flows from the match doc — host picks it at create time.
   // Q.D.2: reuse the SAME solo roulette UI/logic by aliasing gameMode,
   // allowedPieceTypes, rouletteActionsLeft, etc. through to MP-derived
@@ -4373,7 +4375,7 @@ function App() {
               title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Classic chess rules'}
               onClick={() => {
                 if (gameMode === 'classic') return;
-                setGameMode('classic');
+                session.dispatch({ type: 'setMode', mode: 'classic' });
                 setAllowedPieceTypes(null);
                 setIsRouletteSpinning(false);
                 setRouletteActionsLeft(0);
@@ -4397,7 +4399,7 @@ function App() {
               title={modeToggleLocked ? 'Finish or restart the game to change modes' : 'Spin a 4-slot bag · 2 actions/turn (move or rotate)'}
               onClick={() => {
                 if (gameMode === 'roulette') return;
-                setGameMode('roulette');
+                session.dispatch({ type: 'setMode', mode: 'roulette' });
                 setAllowedPieceTypes(null);
                 setIsRouletteSpinning(false);
                 setRouletteActionsLeft(0);
@@ -4471,7 +4473,7 @@ function App() {
                         ? 'Free play: clocks just count time spent'
                         : `Each side gets ${label}. Run out and you lose on time`
                 }
-                onClick={() => setSoloTcSec(sec)}
+                onClick={() => session.dispatch({ type: 'setTimeControl', sec })}
               >
                 {label}
               </button>
