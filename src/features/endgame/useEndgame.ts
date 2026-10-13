@@ -20,6 +20,7 @@ import type { MatchOutcome } from '../../firebase/matches';
 import type { MultiplayerSyncHandle } from '../../components/MultiplayerGameView';
 import type { WatchingGame } from '../review/watching';
 import type { GameLog } from '../../recording/log';
+import { registerFx } from '../../services/fxSeam';
 
 /**
  * The endgame cinematic is code-split, but it is handed the screen by the
@@ -60,8 +61,8 @@ interface UseEndgameArgs {
  * checkmate iris and shatter, and the cinematic cut (win, loss or draw)
  * with the freeze beat before it; endgameSceneActive tells every game-over
  * dialog to wait. Call order matters: its layout effects start the
- * sequence before the summary can paint, and its dev seams merge onto the
- * window.subutaiFX that useConsoleSeams created earlier in App.
+ * sequence before the summary can paint. Its dev seam subutaiFX.mate
+ * registers on the shared object in src/services/fxSeam.ts.
  */
 export function useEndgame({
   isAutoMode,
@@ -313,8 +314,8 @@ export function useEndgame({
 
   // Dev seams for the endings. Playing a real line out to a checkmate just
   // to look at 7 seconds of animation is hopeless, so every ending can be
-  // fired by hand. These merge onto the window.subutaiFX object the earlier
-  // console-seams effect (check/strobe/dust) already created.
+  // fired by hand. subutaiFX.mate registers on the shared subutaiFX object
+  // (src/services/fxSeam.ts) next to useConsoleSeams' check/strobe/dust.
   //
   //   subutaiVictory()            the win cut (king lift → crown → VICTORY)
   //   subutaiVictory('blue')      …in the blue palette instead of a coin flip
@@ -331,7 +332,6 @@ export function useEndgame({
   useEffect(() => {
     if (typeof window === 'undefined' || !mateKingPos) return;
     const w = window as unknown as {
-      subutaiFX?: Record<string, unknown>;
       subutaiVictory?: (t?: VictoryTheme) => void;
       __triggerVictory?: (t?: VictoryTheme) => void;
       subutaiDefeat?: () => void;
@@ -361,13 +361,11 @@ export function useEndgame({
     w.__triggerVictory = w.subutaiVictory; // legacy alias used in dev tooling
     w.subutaiDefeat = () => run('defeat', false);
     w.subutaiDraw = () => run('draw', false);
-    if (w.subutaiFX) {
-      w.subutaiFX.mate = () => {
-        setMateSeq('iris');
-        setTimeout(() => setMateSeq('shatter'), MATE_IRIS_MS + MATE_HOLD_MS);
-        setTimeout(() => setMateSeq('idle'), MATE_IRIS_MS + MATE_HOLD_MS + MATE_SHATTER_MS);
-      };
-    }
+    registerFx('mate', () => {
+      setMateSeq('iris');
+      setTimeout(() => setMateSeq('shatter'), MATE_IRIS_MS + MATE_HOLD_MS);
+      setTimeout(() => setMateSeq('idle'), MATE_IRIS_MS + MATE_HOLD_MS + MATE_SHATTER_MS);
+    });
   }, [mateKingPos, launchEndgame, cutSubjectColor]);
 
   // V1 — the endgame cut for games that do NOT end in checkmate: a flag

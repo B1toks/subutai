@@ -1,6 +1,7 @@
 import { useEffect, type Dispatch, type SetStateAction } from 'react';
 import { ENCOURAGE_ROTATE, ENCOURAGE_GENERIC } from './coachTexts';
 import type { ToastContextValue } from '../../components/Toast';
+import { registerFx } from '../../services/fxSeam';
 
 interface UseConsoleSeamsArgs {
   setCheckVignette: Dispatch<SetStateAction<boolean>>;
@@ -13,8 +14,8 @@ interface UseConsoleSeamsArgs {
 /**
  * DevTools seams for QA: window.subutaiEncourage and window.subutaiFX fire
  * the losing-position nudge and the check, strobe and dust effects on
- * demand. Call order matters: the endgame effect later in App adds
- * subutaiFX.mate onto the object this one creates.
+ * demand. subutaiFX is one object (src/services/fxSeam.ts); this hook
+ * registers its three entries and useEndgame its own, in either order.
  */
 export function useConsoleSeams({
   setCheckVignette,
@@ -38,8 +39,8 @@ export function useConsoleSeams({
   // same setters the real triggers use, so a reviewer can fire each one
   // in isolation. (subutaiFX.mate and the endgame cinematics — subutai
   // Victory / subutaiDefeat / subutaiEndgame — are attached by a separate
-  // effect further down, once mateKingPos exists; it merges onto this
-  // same object.)
+  // effect in useEndgame, once mateKingPos exists; it registers onto the
+  // same object, src/services/fxSeam.ts.)
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const encourage = () => {
@@ -48,25 +49,19 @@ export function useConsoleSeams({
       setEncourageRotate(true);
       window.setTimeout(() => setEncourageRotate(false), 5200);
     };
-    const fx = {
-      check: () => {
-        setCheckVignette(true);
-        window.setTimeout(() => setCheckVignette(false), 900);
-      },
-      strobe: (piece: 'queen' | 'rook' | 'bishop' | 'knight' = 'queen') => {
-        setCaptureStrobe(piece);
-        window.setTimeout(() => setCaptureStrobe(null), 760);
-      },
-      dust: () => {
-        setRotationDust(true);
-        window.setTimeout(() => setRotationDust(false), 780);
-      },
-    };
-    const w = window as unknown as {
-      subutaiEncourage?: () => void;
-      subutaiFX?: typeof fx;
-    };
+    registerFx('check', () => {
+      setCheckVignette(true);
+      window.setTimeout(() => setCheckVignette(false), 900);
+    });
+    registerFx('strobe', (piece: 'queen' | 'rook' | 'bishop' | 'knight' = 'queen') => {
+      setCaptureStrobe(piece);
+      window.setTimeout(() => setCaptureStrobe(null), 760);
+    });
+    registerFx('dust', () => {
+      setRotationDust(true);
+      window.setTimeout(() => setRotationDust(false), 780);
+    });
+    const w = window as unknown as { subutaiEncourage?: () => void };
     w.subutaiEncourage = encourage;
-    w.subutaiFX = fx;
   }, [toast, setCaptureStrobe, setCheckVignette, setEncourageRotate, setRotationDust]);
 }
