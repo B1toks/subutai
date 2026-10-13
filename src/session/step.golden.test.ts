@@ -248,26 +248,26 @@ function selfPlay(g: number) {
       if (human) {
         const canRotate = !s.board.lastMoveWasRotation;
         if (canRotate && (playable.length === 0 || rnd() < 0.15)) {
-          p.dispatch({ type: 'rotate', now: t }, () => p.app.rotate(t), 'rotate');
+          p.dispatch({ type: 'rotate', actor: 'human', now: t }, () => p.app.rotate(t), 'rotate');
           continue;
         }
         const m = playable[Math.floor(rnd() * playable.length)];
         const to = clickTarget(playable, m);
         const resolved = clickResolve(playable, m.from!, to)!;
-        p.dispatch({ type: 'move', move: resolved, now: t }, () => p.app.clickMove(m.from!, to, t), `click ${m.from}-${to}`);
+        p.dispatch({ type: 'move', actor: 'human', move: resolved, now: t }, () => p.app.clickMove(m.from!, to, t), `click ${m.from}-${to}`);
         continue;
       }
       // The bot: a move from the bag, or with none, a rotation that opens
       // one, or a pass.
       if (playable.length > 0) {
         const m = playable[Math.floor(rnd() * playable.length)];
-        p.dispatch({ type: 'move', move: m, now: t }, () => p.app.botRouletteAction(m, t), `bot ${m.from}-${m.to}`);
+        p.dispatch({ type: 'move', actor: 'human', move: m, now: t }, () => p.app.botRouletteAction(m, t), `bot ${m.from}-${m.to}`);
       } else {
         const opens =
           !s.board.lastMoveWasRotation &&
           playableRouletteMoves(toggleTopology(s.board), bag.slots, bag.used).length > 0;
         p.dispatch(
-          opens ? { type: 'rotate', now: t } : { type: 'pass' },
+          opens ? { type: 'rotate', actor: 'human', now: t } : { type: 'pass' },
           () => p.app.botRouletteAction(null, t),
           opens ? 'bot rotate' : 'bot pass',
         );
@@ -279,10 +279,10 @@ function selfPlay(g: number) {
     const canRotate = !s.board.lastMoveWasRotation && rotationKeepsKingSafe(s.board);
     if (canRotate && (s.legal.length === 0 || rnd() < 0.12)) {
       if (human) {
-        p.dispatch({ type: 'rotate', now: t }, () => p.app.rotate(t), 'rotate');
+        p.dispatch({ type: 'rotate', actor: 'human', now: t }, () => p.app.rotate(t), 'rotate');
       } else {
         const move: Move = { kind: 'topologyToggle' };
-        p.dispatch({ type: 'move', move, now: t }, () => p.app.botMove(move, t), 'bot rotate');
+        p.dispatch({ type: 'move', actor: 'human', move, now: t }, () => p.app.botMove(move, t), 'bot rotate');
       }
       continue;
     }
@@ -300,13 +300,13 @@ function selfPlay(g: number) {
         const piece = PROMOS[Math.floor(rnd() * PROMOS.length)];
         p.dispatch({ type: 'promote', piece, now: t }, () => p.app.promote(piece, t), `promote ${piece}`);
       } else {
-        p.dispatch({ type: 'move', move: resolved, now: t }, () => p.app.clickMove(m.from!, to, t), `click ${m.from}-${to}`);
+        p.dispatch({ type: 'move', actor: 'human', move: resolved, now: t }, () => p.app.clickMove(m.from!, to, t), `click ${m.from}-${to}`);
       }
       continue;
     }
     // The bot: the board changes now, the end check after classification.
     const held: { after?: ReturnType<LegacyApp['botMove']> } = {};
-    p.dispatch({ type: 'move', move: m, now: t, settle: false }, () => (held.after = p.app.botMove(m, t)), `bot ${m.from}-${m.to}`);
+    p.dispatch({ type: 'move', actor: 'human', move: m, now: t, settle: false }, () => (held.after = p.app.botMove(m, t)), `bot ${m.from}-${m.to}`);
     const settled = held.after!;
     p.dispatch(
       { type: 'settle', board: settled.next, lastWasRotation: false },
@@ -378,7 +378,7 @@ describe('the QA fixtures, through step()', () => {
           p.dispatch({ type: 'requestPromotion', from: resolved.from!, to: resolved.to! }, () => p.app.clickMove(m.from!, to, t), 'promo');
           p.dispatch({ type: 'promote', piece: 'queen', now: t }, () => p.app.promote('queen', t), 'promote');
         } else {
-          p.dispatch({ type: 'move', move: resolved, now: t }, () => p.app.clickMove(m.from!, to, t), 'click');
+          p.dispatch({ type: 'move', actor: 'human', move: resolved, now: t }, () => p.app.clickMove(m.from!, to, t), 'click');
         }
       }
     });
@@ -397,7 +397,7 @@ describe('the QA fixtures, through step()', () => {
       );
       const resolved = clickResolve(p.s.legal, fx.finalMove.from, fx.finalMove.to)!;
       expect(resolved).toBeDefined();
-      p.dispatch({ type: 'move', move: resolved, now }, () => p.app.clickMove(fx.finalMove.from, fx.finalMove.to, now), 'mate');
+      p.dispatch({ type: 'move', actor: 'human', move: resolved, now }, () => p.app.clickMove(fx.finalMove.from, fx.finalMove.to, now), 'mate');
       expect(statusOf(p.s)).toBe('checkmate');
     });
   }

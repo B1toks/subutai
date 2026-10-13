@@ -6,6 +6,7 @@ import App from './App.tsx'
 import { ToastProvider } from './components/Toast'
 import { BusyOverlay } from './components/BusyOverlay'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
+import { startSessionServices } from './services'
 
 // Sprint 4.4 — kiosk view is code-split: regular players never pay for it.
 const ShowcaseView = lazy(() =>
@@ -56,6 +57,10 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
       .catch((err) => console.warn('[pwa] sw registration failed', err));
   });
 }
+
+// The services that react to the game's events (src/services). Not in the
+// kiosk view, which plays no game of its own.
+if (!isShowcase) startSessionServices();
 
 // HMR can re-execute this entry module; calling createRoot twice on the
 // same container is a React error (and spams the console in dev). Stash

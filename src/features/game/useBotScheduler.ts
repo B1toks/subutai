@@ -77,7 +77,7 @@ export function useBotScheduler({
       // only worthwhile if the rotated topology opens up playable moves.
       const canRotate = !bs.lastMoveWasRotation;
       if (canRotate && playableRouletteMoves(toggleTopology(bs), rolled, used).length > 0) {
-        session.dispatch({ type: 'rotate', now: Date.now() });
+        session.dispatch({ type: 'rotate', actor: 'bot', now: Date.now() });
         return;
       }
       // Truly stuck — pass the turn.
@@ -92,7 +92,7 @@ export function useBotScheduler({
         : choice;
     // The turn goes on while the bag has actions and something to do with
     // them; a captured king ends the game (step.ts rouletteMove).
-    session.dispatch({ type: 'move', move: mv, now: Date.now() });
+    session.dispatch({ type: 'move', move: mv, actor: 'bot', now: Date.now() });
   }
 
   const scheduleAiMove = useCallback(
@@ -143,7 +143,7 @@ export function useBotScheduler({
 
         // The board changes now; whether the game is over is asked after
         // the classification below (settle), as it always was.
-        session.dispatch({ type: 'move', move, now: Date.now(), settle: false });
+        session.dispatch({ type: 'move', move, actor: 'bot', now: Date.now(), settle: false });
         setSelected(null);
 
         // Worker-backed classify: takes ~1 s of background work for depth 7
@@ -199,7 +199,7 @@ export function useBotScheduler({
             ? applyRotationMove(boardState)
             : applyMove(boardState, move);
 
-        session.dispatch({ type: 'move', move, now: Date.now() });
+        session.dispatch({ type: 'move', move, actor: 'bot', now: Date.now() });
         setSelected(null);
         autoLastMoveAtRef.current = Date.now();
 

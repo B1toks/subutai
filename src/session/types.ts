@@ -10,6 +10,9 @@ import type { GameMode, GameStatus } from '../shared/game';
 
 export type TerminalStatus = Exclude<GameStatus, 'active'>;
 
+/** Who made a move: a player at this device, the bot, or Twitch chat. */
+export type Actor = 'human' | 'bot' | 'chat';
+
 export interface LastMove {
   readonly from?: SquareId;
   readonly to?: SquareId;
@@ -118,14 +121,15 @@ export type Action =
   /** A move from the legal list. `settle: false` leaves the end-of-game
    *  check to a later 'settle' (the bot checks after its move is
    *  classified, as it always has). */
-  | { readonly type: 'move'; readonly move: Move; readonly now: number; readonly settle?: boolean }
-  | { readonly type: 'rotate'; readonly now: number }
+  | { readonly type: 'move'; readonly move: Move; readonly actor: Actor; readonly now: number; readonly settle?: boolean }
+  | { readonly type: 'rotate'; readonly actor: Actor; readonly now: number }
   /** Roulette: the bot found nothing to do with its bag. */
   | { readonly type: 'pass' }
   /** Is `board` (the one a move produced) over? Only ends an active game. */
   | { readonly type: 'settle'; readonly board: BoardState; readonly lastWasRotation: boolean }
   | { readonly type: 'requestPromotion'; readonly from: SquareId; readonly to: SquareId }
   | { readonly type: 'cancelPromotion' }
+  /** The promotion piece, picked at this device. */
   | { readonly type: 'promote'; readonly piece: PieceType; readonly now: number }
   /** Roulette: the wheel starts. `manual` is the Spin button (first spin). */
   | { readonly type: 'spinStart'; readonly now: number; readonly manual: boolean }
@@ -143,7 +147,7 @@ export type Action =
 
 /** What happened, for whoever wants to react to it (sound, effects, saves). */
 export type SessionEvent =
-  | { readonly type: 'move'; readonly move: Move; readonly san: string; readonly by: Color; readonly index: number }
+  | { readonly type: 'move'; readonly move: Move; readonly san: string; readonly by: Color; readonly actor: Actor; readonly index: number }
   | { readonly type: 'capture'; readonly square: SquareId; readonly piece: PieceType; readonly enPassant: boolean }
   | { readonly type: 'check'; readonly side: Color }
   | { readonly type: 'rotation'; readonly by: Color; readonly promoted: readonly SquareId[] }

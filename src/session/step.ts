@@ -35,6 +35,7 @@ import {
 } from './rules';
 import type {
   Action,
+  Actor,
   Phase,
   RouletteBag,
   SessionEvent,
@@ -208,16 +209,16 @@ function reduce(s: SessionState, a: Action): StepResult {
     }
 
     case 'move': {
-      if (a.move.kind === 'topologyToggle') return rotate(s, a.now);
+      if (a.move.kind === 'topologyToggle') return rotate(s, a.actor, a.now);
       if (!isLive(s.phase)) return SAME(s);
       if (!s.legal.some((m) => sameMove(m, a.move))) return SAME(s);
       return s.mode === 'roulette'
-        ? rouletteMove(s, a.move, a.now)
-        : classicMove(s, a.move, a.now, a.settle !== false);
+        ? rouletteMove(s, a.move, a.actor, a.now)
+        : classicMove(s, a.move, a.actor, a.now, a.settle !== false);
     }
 
     case 'rotate':
-      return rotate(s, a.now);
+      return rotate(s, a.actor, a.now);
 
     case 'pass': {
       // executeAiRouletteAction: a bag the bot can do nothing with.
@@ -258,7 +259,7 @@ function reduce(s: SessionState, a: Action): StepResult {
         (m) => m.from === p.from && m.to === p.to && m.kind === 'promotion' && m.promotion === a.piece,
       );
       if (!move) return SAME(s);
-      return classicMove(s, move, a.now, true);
+      return classicMove(s, move, 'human', a.now, true);
     }
 
     case 'spinStart': {
@@ -417,9 +418,16 @@ function settle(
 }
 
 /** The events of a piece move made by `by` on `before`, landing on `after`. */
-function moveEvents(before: BoardState, after: BoardState, move: Move, san: string, index: number): SessionEvent[] {
+function moveEvents(
+  before: BoardState,
+  after: BoardState,
+  move: Move,
+  san: string,
+  actor: Actor,
+  index: number,
+): SessionEvent[] {
   const by = before.sideToMove;
-  const events: SessionEvent[] = [{ type: 'move', move, san, by, index }];
+  const events: SessionEvent[] = [{ type: 'move', move, san, by, actor, index }];
   const victim = move.to ? before.pieces[move.to] : undefined;
   if (victim && move.to) {
     events.push({ type: 'capture', square: move.to, piece: victim.type, enPassant: false });
@@ -436,7 +444,7 @@ function moveEvents(before: BoardState, after: BoardState, move: Move, san: stri
 }
 
 /** commitMove (classic) / handlePromotion / the bot's and chat's moves. */
-function classicMove(s: SessionState, move: Move, now: number, settleNow: boolean): StepResult {
+function classicMove(s: SessionState, move: Move, actor: Actor, now: number, settleNow: boolean): StepResult {
   const before = s.board;
   const san = computeSAN(before, move);
   const after = applyMove(before, move);
@@ -450,13 +458,13 @@ function classicMove(s: SessionState, move: Move, now: number, settleNow: boolea
     draw: noteDrawMove(s, before.sideToMove),
     phase: { tag: 'playing' },
   };
-  const events = moveEvents(before, after, move, san, index);
+  const events = moveEvents(before, after, move, san, actor, index);
   return settleNow ? settle(next, events, after, false) : { state: next, events };
 }
 
 /** commitMove's Roulette half / executeAiRouletteAction: one action of
  *  the turn; the side keeps the turn while the bag has actions left. */
-function rouletteMove(s: SessionState, move: Move, now: number): StepResult {
+function rouletteMove(s: SessionState, move: Move, actor: Actor, now: number): StepResult {
   const bag = s.roulette.bag;
   if (!bag || bag.actionsLeft <= 0) return SAME(s);
   const before = s.board;
@@ -497,11 +505,11 @@ function rouletteMove(s: SessionState, move: Move, now: number): StepResult {
         roulette: { ...s.roulette, bag: null },
         legal: legalMovesFor(s.mode, after),
       };
-  return settle(next, moveEvents(before, after, move, san, index), after, false);
+  return settle(next, moveEvents(before, after, move, san, actor, index), after, false);
 }
 
 /** handleRotate / executeAiRouletteRotation / the bot's classic rotation. */
-function rotate(s: SessionState, now: number): StepResult {
+function rotate(s: SessionState, actor: Actor, now: number): StepResult {
   if (!isLive(s.phase)) return SAME(s);
   const before = s.board;
   if (before.lastMoveWasRotation) return SAME(s);
@@ -522,7 +530,7 @@ function rotate(s: SessionState, now: number): StepResult {
     (sq) => before.pieces[sq]?.type === 'pawn' && rotated.pieces[sq]?.type === 'queen',
   );
   const events: SessionEvent[] = [
-    { type: 'move', move: toggleMove, san, by: before.sideToMove, index },
+    { type: 'move', move: toggleMove, san, by: before.sideToMove, actor, index },
     { type: 'rotation', by: before.sideToMove, promoted },
   ];
   if (findKing(rotated, rotated.sideToMove) && isInCheck(rotated)) {

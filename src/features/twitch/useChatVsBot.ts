@@ -2,7 +2,6 @@ import { useEffect, type Dispatch, type SetStateAction, type RefObject } from 'r
 import { moveVoting, type VoteMode } from '../../twitch/moveVoting';
 import { rotateIsLegal } from '../../memory/replayImport';
 import { applyMove } from '../../engine/moves';
-import { beatBridge } from '../../music/beatBridge';
 import { bumpEvalForMove } from '../game/position';
 import { classifyAsync } from '../../analysis/classifyClient';
 import { scaleBudgetMs } from '../../utils/deviceTier';
@@ -77,8 +76,7 @@ export function useChatVsBot({
       }
       if (!move.from || !move.to) return;
       const afterMove = applyMove(state, move);
-      session.dispatch({ type: 'move', move, now: Date.now() });
-      beatBridge.reportMove();
+      session.dispatch({ type: 'move', move, actor: 'chat', now: Date.now() });
       setSearchEvalFromWhite((prev) => bumpEvalForMove(prev, state, move));
       setSearchMateInPlies(null);
       const moveIdx = logLengthRef.current;

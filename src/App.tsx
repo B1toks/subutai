@@ -91,7 +91,6 @@ import { moveVoting } from './twitch/moveVoting';
 import { busy } from './ui/busy';
 import { PerimeterEqualizer } from './components/PerimeterEqualizer';
 import { BackgroundWaveGrid } from './components/BackgroundWaveGrid';
-import { beatBridge } from './music/beatBridge';
 import { beatEngine } from './music/beatEngine';
 import { beatMode } from './music/beatMode';
 import { BeatCombo } from './components/BeatCombo';
@@ -1457,7 +1456,7 @@ function App() {
     // Classic: the king must stay safe and the rotation is the whole turn.
     // Roulette: it costs one action of the spun bag and spends no slot.
     // The rules are step()'s (src/session/step.ts rotate).
-    const events = session.dispatch({ type: 'rotate', now: Date.now() });
+    const events = session.dispatch({ type: 'rotate', actor: 'human', now: Date.now() });
     if (events.length === 0) return;
     setSelected(null);
     setPreviewTopology(null);
@@ -1987,10 +1986,7 @@ function App() {
     const afterMove = applyMove(state, resolvedMove);
     // The move itself (the board, the log, the roulette turn, the end of
     // the game) is step()'s: src/session/step.ts.
-    session.dispatch({ type: 'move', move: resolvedMove, now: Date.now() });
-    // SP-2 — score the move against the beat grid (no-op when music
-    // sync is off). Display-only combo; leaderboard points untouched.
-    beatBridge.reportMove();
+    session.dispatch({ type: 'move', move: resolvedMove, actor: 'human', now: Date.now() });
     // Defer classify so the click feels instant — main thread is still
     // single-threaded but the DOM paints first, then the analysis lands
     // ~300 ms later as if the engine is "thinking".
@@ -2046,7 +2042,6 @@ function App() {
     const next = applyMove(state, move);
     session.dispatch({ type: 'promote', piece: pieceType, now: Date.now() });
     setSelected(null);
-    beatBridge.reportMove(); // SP-2 — promotion path counts too
     // B3 — material-delta bump instead of static-fallback flicker.
     setSearchEvalFromWhite((prev) => bumpEvalForMove(prev, state, move));
     setSearchMateInPlies(null);
