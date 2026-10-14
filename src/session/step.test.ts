@@ -23,8 +23,17 @@ describe('load', () => {
   it('a replay frame one move on plays that move out as a replayed event', () => {
     const s = fresh();
     const { move, board, log } = oneMoveLater(s);
-    const out = step(s, { type: 'load', game: { board, log } });
+    const out = step(s, { type: 'load', game: { board, log }, replayStep: true });
     expect(out.events[0]).toMatchObject({ type: 'move', actor: 'replay', move, index: 0 });
+  });
+
+  it('a game put back on the board plays nothing out (resume, Load replay)', () => {
+    const s = fresh();
+    const { board, log } = oneMoveLater(s);
+    const resumed = { ...log, id: 'resume-1' };
+    expect(step(s, { type: 'load', game: { board, log: resumed }, fresh: true }).events).toEqual([]);
+    // Not even a longer log of the same game, unless it is a replay step.
+    expect(step(s, { type: 'load', game: { board, log } }).events).toEqual([]);
   });
 
   it('a load that does not lengthen the log is silent', () => {

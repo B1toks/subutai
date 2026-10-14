@@ -112,14 +112,15 @@ export type Action =
   /** Put a game on the board: a replay frame, a restored backup, an
    *  imported log, a Memory resume. `fresh` also clears the last game's
    *  Roulette turn, as starting a new game does; `settle` then checks
-   *  whether the loaded board is already over. A load that leaves a longer
-   *  log than before replays its last entry as events (actor 'replay'),
-   *  read against the board that was on the table. */
+   *  whether the loaded board is already over. `replayStep` marks a
+   *  watched replay moving one move on: that move plays out as events
+   *  (actor 'replay'); no other load makes any. */
   | {
       readonly type: 'load';
       readonly game: LoadedGame;
       readonly fresh?: boolean;
       readonly settle?: { readonly lastWasRotation: boolean };
+      readonly replayStep?: boolean;
     }
   | { readonly type: 'setMode'; readonly mode: GameMode }
   | { readonly type: 'setTimeControl'; readonly sec: number | null }

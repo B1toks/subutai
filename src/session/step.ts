@@ -156,12 +156,16 @@ function reduce(s: SessionState, a: Action): StepResult {
         phase,
         roulette,
       };
-      // The board's sound and effects have always followed the log: when
-      // it grows, its last entry plays out, against the board before.
-      const grew = g.log.moves.length > s.log.moves.length;
+      // A watched replay one move on plays that move out, for the board's
+      // sound and effects. A game put back on the board (a Memory resume,
+      // Load replay, the end of a replay) is not a move: it plays nothing.
+      const step =
+        a.replayStep === true &&
+        g.log.id === s.log.id &&
+        g.log.moves.length === s.log.moves.length + 1;
       const last = g.log.moves[g.log.moves.length - 1];
       const events =
-        grew && last
+        step && last
           ? eventsOfEntry(s.board, g.board, last.move, last.san ?? '', 'replay', g.log.moves.length - 1)
           : [];
       if (!a.settle) return { state: loaded, events };

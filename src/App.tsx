@@ -928,6 +928,7 @@ function App() {
             ? { from: lastEntry.move.from, to: lastEntry.move.to }
             : null,
       },
+      replayStep: true,
     });
     setSelected(null);
     setWatchingGame((w) => (w ? { ...w, currentMoveIdx: clamped } : w));
