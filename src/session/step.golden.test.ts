@@ -317,29 +317,31 @@ function selfPlay(g: number) {
   return p;
 }
 
+// 30 games per commit; the full gate at the end of a stage plays all of
+// them (GOLDEN_GAMES=320, set by check-all.sh).
+const GAMES = Number(import.meta.env.GOLDEN_GAMES ?? 30);
+
 describe('step() plays solo games exactly as App did', () => {
-  const GAMES = 320;
-  const CHUNK = 20;
+  const CHUNK = 10;
+  const seen = new Set<string>();
   for (let first = 0; first < GAMES; first += CHUNK) {
-    it(`self-play games ${first}..${first + CHUNK - 1}`, () => {
+    const last = Math.min(first + CHUNK, GAMES) - 1;
+    it(`self-play games ${first}..${last}`, () => {
       let plies = 0;
-      for (let g = first; g < first + CHUNK; g++) plies += selfPlay(g).s.log.moves.length;
-      expect(plies).toBeGreaterThan(CHUNK * 10);
+      for (let g = first; g <= last; g++) {
+        const p = selfPlay(g);
+        plies += p.s.log.moves.length;
+        for (const label of p.trail) seen.add(label.split(' ')[0]);
+      }
+      expect(plies).toBeGreaterThan((last - first + 1) * 10);
     }, 120_000);
   }
 
   it('covers what it claims to: roulette, rotations, promotions, flags, draws', () => {
-    const seen = new Set<string>();
-    for (let g = 0; g < 60; g++) {
-      const p = selfPlay(g);
-      for (const label of p.trail) seen.add(label.split(' ')[0]);
-      const st = statusOf(p.s);
-      seen.add(`status:${st}`);
-    }
     for (const want of ['spinLand', 'botSpin', 'rotate', 'promote', 'flag', 'offer', 'answer', 'newGame', 'bot']) {
       expect([...seen], want).toContain(want);
     }
-  }, 120_000);
+  });
 });
 
 describe('the QA fixtures, through step()', () => {
