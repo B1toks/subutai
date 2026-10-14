@@ -1,5 +1,5 @@
-import type { BoardState, Color, Move, SquareId } from '../engine';
-import { applyMove, findKing, isInCheck } from '../engine/moves';
+import type { BoardState, Color, Move } from '../engine';
+import { applyMove, findKing } from '../engine/moves';
 import { applyPassMove, applyRotationMove } from '../engine/auxetic';
 import {
   appendMove,
@@ -26,6 +26,7 @@ import {
 } from '../utils/drawOffer';
 import type { GameMode, GameStatus } from '../shared/game';
 import { rngCursor, rngFromSeed } from './rng';
+import { eventsOfEntry } from './events';
 import {
   legalMovesFor,
   otherColor,
@@ -155,8 +156,16 @@ function reduce(s: SessionState, a: Action): StepResult {
         phase,
         roulette,
       };
-      if (!a.settle) return { state: loaded, events: [] };
-      return settle(loaded, [], g.board, a.settle.lastWasRotation);
+      // The board's sound and effects have always followed the log: when
+      // it grows, its last entry plays out, against the board before.
+      const grew = g.log.moves.length > s.log.moves.length;
+      const last = g.log.moves[g.log.moves.length - 1];
+      const events =
+        grew && last
+          ? eventsOfEntry(s.board, g.board, last.move, last.san ?? '', 'replay', g.log.moves.length - 1)
+          : [];
+      if (!a.settle) return { state: loaded, events };
+      return settle(loaded, events, g.board, a.settle.lastWasRotation);
     }
 
     case 'setMode': {
@@ -417,31 +426,6 @@ function settle(
   };
 }
 
-/** The events of a piece move made by `by` on `before`, landing on `after`. */
-function moveEvents(
-  before: BoardState,
-  after: BoardState,
-  move: Move,
-  san: string,
-  actor: Actor,
-  index: number,
-): SessionEvent[] {
-  const by = before.sideToMove;
-  const events: SessionEvent[] = [{ type: 'move', move, san, by, actor, index }];
-  const victim = move.to ? before.pieces[move.to] : undefined;
-  if (victim && move.to) {
-    events.push({ type: 'capture', square: move.to, piece: victim.type, enPassant: false });
-  } else if (move.kind === 'enPassant' && move.to) {
-    events.push({ type: 'capture', square: move.to, piece: 'pawn', enPassant: true });
-  }
-  if (move.kind === 'promotion' && move.promotion && move.to) {
-    events.push({ type: 'promotion', square: move.to, piece: move.promotion });
-  }
-  if (findKing(after, after.sideToMove) && isInCheck(after)) {
-    events.push({ type: 'check', side: after.sideToMove });
-  }
-  return events;
-}
 
 /** commitMove (classic) / handlePromotion / the bot's and chat's moves. */
 function classicMove(s: SessionState, move: Move, actor: Actor, now: number, settleNow: boolean): StepResult {
@@ -458,7 +442,7 @@ function classicMove(s: SessionState, move: Move, actor: Actor, now: number, set
     draw: noteDrawMove(s, before.sideToMove),
     phase: { tag: 'playing' },
   };
-  const events = moveEvents(before, after, move, san, actor, index);
+  const events = eventsOfEntry(before, after, move, san, actor, index);
   return settleNow ? settle(next, events, after, false) : { state: next, events };
 }
 
@@ -505,7 +489,7 @@ function rouletteMove(s: SessionState, move: Move, actor: Actor, now: number): S
         roulette: { ...s.roulette, bag: null },
         legal: legalMovesFor(s.mode, after),
       };
-  return settle(next, moveEvents(before, after, move, san, actor, index), after, false);
+  return settle(next, eventsOfEntry(before, after, move, san, actor, index), after, false);
 }
 
 /** handleRotate / executeAiRouletteRotation / the bot's classic rotation. */
@@ -526,16 +510,7 @@ function rotate(s: SessionState, actor: Actor, now: number): StepResult {
   const toggleMove: Move = { kind: 'topologyToggle' };
   const san = computeSAN(before, toggleMove);
   const index = s.log.moves.length;
-  const promoted = (Object.keys(rotated.pieces) as SquareId[]).filter(
-    (sq) => before.pieces[sq]?.type === 'pawn' && rotated.pieces[sq]?.type === 'queen',
-  );
-  const events: SessionEvent[] = [
-    { type: 'move', move: toggleMove, san, by: before.sideToMove, actor, index },
-    { type: 'rotation', by: before.sideToMove, promoted },
-  ];
-  if (findKing(rotated, rotated.sideToMove) && isInCheck(rotated)) {
-    events.push({ type: 'check', side: rotated.sideToMove });
-  }
+  const events = eventsOfEntry(before, rotated, toggleMove, san, actor, index);
   const common = {
     ...s,
     log: appendMove(s.log, toggleMove, san, before.topologyState, undefined, now),

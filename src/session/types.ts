@@ -10,8 +10,14 @@ import type { GameMode, GameStatus } from '../shared/game';
 
 export type TerminalStatus = Exclude<GameStatus, 'active'>;
 
-/** Who made a move: a player at this device, the bot, or Twitch chat. */
-export type Actor = 'human' | 'bot' | 'chat';
+/**
+ * Who made a move: a player at this device, the bot, Twitch chat — or
+ * nobody now: 'replay' is a move shown again because a game was put on the
+ * board (a replay frame). Only the board's sound and effects react to a
+ * replayed move; whatever counts or records play ignores it. 'remote' is
+ * a move of an online match (services/onlineEvents.ts until B3).
+ */
+export type Actor = 'human' | 'bot' | 'chat' | 'replay' | 'remote';
 
 export interface LastMove {
   readonly from?: SquareId;
@@ -106,7 +112,9 @@ export type Action =
   /** Put a game on the board: a replay frame, a restored backup, an
    *  imported log, a Memory resume. `fresh` also clears the last game's
    *  Roulette turn, as starting a new game does; `settle` then checks
-   *  whether the loaded board is already over. */
+   *  whether the loaded board is already over. A load that leaves a longer
+   *  log than before replays its last entry as events (actor 'replay'),
+   *  read against the board that was on the table. */
   | {
       readonly type: 'load';
       readonly game: LoadedGame;
