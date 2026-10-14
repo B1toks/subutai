@@ -33,16 +33,16 @@ the clocks and presence keep running while the leaderboard is open. Game
 state never goes into a component that unmounts with its view.
 
 Each hook is a block that stood in App, moved as it was and called where it
-stood, so React still runs the effects in the same order. Four things depend
-on that order:
+stood, so React still runs the effects in the same order. Two things still
+depend on that order:
 
-- `useCaptureFx`: the capture and rotation effects read `prevBoardRef`
-  before the snapshot effect at its end moves it on.
-- `useConsoleSeams` creates `window.subutaiFX` before `useEndgame` adds
-  `mate` to it.
 - `useOnlineMatch`, which reseats a reloaded online match and clears its
   resume code, runs before `useResumeGame` checks that code.
 - `useGameClocks` resets the flag for a new match before the flag check.
+
+What a move sets off no longer depends on it: the board's sound and effects
+listen to events (see How data flows), and `window.subutaiFX` is one object
+each hook registers its entries on (`src/services/fxSeam.ts`).
 
 A hook receives what it reads as one object of arguments and returns what
 the rest of App reads. Setters and refs it returns never change, so App lists
@@ -83,12 +83,19 @@ not care which kind of game it is.
 A move, from the click to the record. A click on a square calls
 `onSquareClick` in App, which finds the move among the legal ones. Solo, it
 dispatches `{ type: 'move' }`: `step()` applies it, appends it to the log,
-runs the roulette turn and asks whether the game is over. The new session
-re-renders the board, and the effects follow: `useBotTurn` schedules
-the bot's reply through `useBotScheduler`, `commitAnalysis` from
-`useClassifier` records the classifier's verdict, `useMemoryAutosave`
-snapshots the game, `useCaptureFx` and `useMoveFeedback` play the effects
-and sounds. When the board ends the game, App's completion effect calls
+runs the roulette turn and asks whether the game is over, and says what
+happened as events (move, capture, check, rotation, promotion, game end).
+The services hear them (`src/services`, started in `main.tsx`): the
+beat combo scores the move at once; the move sound and `useCaptureFx`
+(spark, strobe, dust) act after the render that shows the move
+(`useBoardEventsAfterCommit`), so they are timed from what is on screen. A watched replay stepping one move on
+plays that move out too, as a replayed event (actor `replay`) that
+nothing counting or recording play looks at; online moves reach the same
+listeners through `src/services/onlineEvents.ts` until they go through
+the session. The new session re-renders the board, and the effects that
+still follow state run: `useBotTurn` schedules the bot's reply through
+`useBotScheduler`, `commitAnalysis` from `useClassifier` records the
+classifier's verdict, `useMemoryAutosave` snapshots the game. When the board ends the game, App's completion effect calls
 `finishGame`, which scores it and hands the save to `useGameSaveQueue`;
 `saveCompletedGame` in `src/firebase/games.ts` writes the game to `/games`
 and updates the player's `/users` profile in a transaction. Online, the
