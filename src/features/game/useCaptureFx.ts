@@ -1,9 +1,8 @@
 import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
-import type { SquareId, BoardState } from '../../engine';
-import { promoteStrandedPawns } from '../../engine/auxetic';
-import { samePieces } from './position';
-import type { GameLog } from '../../recording/log';
+import type { SquareId } from '../../engine';
 import type { ToastContextValue } from '../../components/Toast';
+import type { SessionEvent } from '../../session/types';
+import { useBoardEventsAfterCommit } from '../../services/useBoardEventsAfterCommit';
 
 interface UseCaptureFxArgs {
   setEnPassantExplosionSquare: Dispatch<SetStateAction<SquareId | null>>;
@@ -12,17 +11,20 @@ interface UseCaptureFxArgs {
   setCaptureShake: Dispatch<SetStateAction<boolean>>;
   setCaptureStrobe: Dispatch<SetStateAction<'queen' | 'rook' | 'bishop' | 'knight' | null>>;
   setRotationDust: Dispatch<SetStateAction<boolean>>;
-  state: BoardState;
-  log: GameLog;
   toast: ToastContextValue;
+  /** Length of the move log on the board (App's alias, online too). */
+  logLength: number;
 }
+
+type Timer = ReturnType<typeof setTimeout>;
 
 /**
  * The board's reactions to captures and rotations: the en-passant blast,
  * the spark and shake of a capture, the strobe when a big piece falls, and
- * the dust wave of a rotation. Order inside matters: the capture and
- * rotation effects read prevBoardRef (the board before the last move)
- * before the last effect moves it on to the current board.
+ * the dust wave of a rotation. They follow the board's events
+ * (src/services/boardEvents.ts), after the render that shows the move: a
+ * capture event names its victim, read off the board before the move, so
+ * nothing here keeps a copy of it.
  */
 export function useCaptureFx({
   setEnPassantExplosionSquare,
@@ -31,84 +33,67 @@ export function useCaptureFx({
   setCaptureShake,
   setCaptureStrobe,
   setRotationDust,
-  state,
-  log,
   toast,
+  logLength,
 }: UseCaptureFxArgs) {
-  // Stage T1: trigger the en-passant explosion overlay whenever a new
-  // EP move lands in the log — works for both solo + MP because the log
-  // alias covers both. Captured pawn sits at (file of `to`, rank of `from`).
-  useEffect(() => {
-    const last = log.moves[log.moves.length - 1];
-    if (!last) return;
-    const mv = last.move;
-    if (mv.kind !== 'enPassant' || !mv.from || !mv.to) return;
-    const captureSq = (mv.to[0] + mv.from[1]) as SquareId;
-    setEnPassantExplosionSquare(captureSq);
-    const t = setTimeout(() => setEnPassantExplosionSquare(null), 700);
-    return () => clearTimeout(t);
-  }, [log.moves.length, setEnPassantExplosionSquare]);
+  // Each move ends what the previous one's timers were still going to do,
+  // as the effects these replace did when the log grew again.
+  const timersRef = useRef<Timer[]>([]);
+  // The log length the last move event left behind.
+  const eventLengthRef = useRef(logLength);
+  const clearTimers = () => {
+    const timers = timersRef.current;
+    for (const t of timers) clearTimeout(t);
+    timers.length = 0;
+  };
+  const later = (fn: () => void, ms: number) => {
+    timersRef.current.push(setTimeout(fn, ms));
+  };
 
-  // R17c — the board as it stood BEFORE the latest log entry. The snapshot
-  // effect below is declared AFTER the capture/rotation effects, so within
-  // one commit they read the pre-move board (declaration order = run
-  // order) and only then the ref advances. pieces[mv.to] on the snapshot
-  // is therefore the piece that just got taken.
-  const prevBoardRef = useRef<BoardState | null>(null);
+  useBoardEventsAfterCommit((events: readonly SessionEvent[]) => {
+    const moveEvent = events.find((e) => e.type === 'move');
+    if (!moveEvent || moveEvent.type !== 'move') return;
+    clearTimers();
+    eventLengthRef.current = moveEvent.index + 1;
+    const mv = moveEvent.move;
 
-  // R17a — spark burst + micro-shake on every plain capture (EP keeps its
-  // dedicated bigger explosion above). Promotion-captures are skipped:
-  // the log entry can't tell a quiet promotion from a capturing one.
-  useEffect(() => {
-    const last = log.moves[log.moves.length - 1];
-    if (!last) return;
-    const mv = last.move;
-    if (mv.kind !== 'capture' || !mv.to) return;
-    registerFx();
-    setCaptureFxSquare(mv.to as SquareId);
-    setCaptureShake(true);
-    const t1 = setTimeout(() => setCaptureFxSquare(null), 620);
-    const t2 = setTimeout(() => setCaptureShake(false), 300);
-    // R17c/M.22 — strobe frames on any non-pawn capture. Pawns keep just
-    // the plain capture-burst spark (they're the most common loss, and
-    // keeping them "lighter" preserves the hierarchy: losing a piece that
-    // isn't a pawn is the moment worth a bigger flourish).
-    const victim = prevBoardRef.current?.pieces[mv.to as SquareId];
-    let t3: ReturnType<typeof setTimeout> | null = null;
-    if (
-      victim &&
-      (victim.type === 'queen' ||
-        victim.type === 'rook' ||
-        victim.type === 'bishop' ||
-        victim.type === 'knight')
-    ) {
-      setCaptureStrobe(victim.type);
-      t3 = setTimeout(() => setCaptureStrobe(null), 760);
+    // Stage T1: the en-passant explosion overlay. Captured pawn sits at
+    // (file of `to`, rank of `from`).
+    if (mv.kind === 'enPassant' && mv.from && mv.to) {
+      const captureSq = (mv.to[0] + mv.from[1]) as SquareId;
+      setEnPassantExplosionSquare(captureSq);
+      later(() => setEnPassantExplosionSquare(null), 700);
     }
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      if (t3) clearTimeout(t3);
-    };
-    // registerFx is stable; the effect keys off the move count as before.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [log.moves.length]);
 
-  // R17c — dust shockwave when a topology rotation commits.
-  useEffect(() => {
-    const last = log.moves[log.moves.length - 1];
-    if (!last || last.move.kind !== 'topologyToggle') return;
-    setRotationDust(true);
-    // V1 — a rotation can promote a pawn it swings onto the far row (see
-    // promoteStrandedPawns). The piece changes without anyone moving it,
-    // so say so — otherwise a queen simply appears where a pawn was.
-    // Only when `before` is the board this rotation was made from: loading,
-    // resuming or replaying a game whose log ends in a rotation lands here
-    // with the PREVIOUS game's snapshot, and its pawns are not this game's.
-    const before = prevBoardRef.current;
-    if (before && before.topologyState !== state.topologyState) {
-      const { pieces: rotated, promoted } = promoteStrandedPawns(before.pieces, state.topologyState);
-      if (promoted.length > 0 && samePieces(rotated, state.pieces)) {
+    // R17a — spark burst + micro-shake on every plain capture (EP keeps its
+    // dedicated bigger explosion above). Promotion-captures are skipped.
+    if (mv.kind === 'capture' && mv.to) {
+      registerFx();
+      setCaptureFxSquare(mv.to as SquareId);
+      setCaptureShake(true);
+      later(() => setCaptureFxSquare(null), 620);
+      later(() => setCaptureShake(false), 300);
+      // R17c/M.22 — strobe frames on any non-pawn capture. Pawns keep just
+      // the plain capture-burst spark (they're the most common loss, and
+      // keeping them "lighter" preserves the hierarchy: losing a piece that
+      // isn't a pawn is the moment worth a bigger flourish).
+      const capture = events.find((e) => e.type === 'capture');
+      const victim = capture?.type === 'capture' ? capture.piece : null;
+      if (victim === 'queen' || victim === 'rook' || victim === 'bishop' || victim === 'knight') {
+        setCaptureStrobe(victim);
+        later(() => setCaptureStrobe(null), 760);
+      }
+    }
+
+    // R17c — dust shockwave when a topology rotation commits.
+    if (mv.kind === 'topologyToggle') {
+      setRotationDust(true);
+      // V1 — a rotation can promote a pawn it swings onto the far row (see
+      // promoteStrandedPawns). The piece changes without anyone moving it,
+      // so say so — otherwise a queen simply appears where a pawn was.
+      const rotation = events.find((e) => e.type === 'rotation');
+      const promoted = rotation?.type === 'rotation' ? rotation.promoted : [];
+      if (promoted.length > 0) {
         toast.show(
           promoted.length === 1
             ? `The rotation carried the pawn on ${promoted[0]} to the edge — it's a queen now.`
@@ -117,17 +102,29 @@ export function useCaptureFx({
           4200,
         );
       }
+      later(() => setRotationDust(false), 780);
     }
-    const t = setTimeout(() => setRotationDust(false), 780);
-    return () => clearTimeout(t);
-    // `state` is read for the topology the rotation just produced; the
-    // effect keys off the move count exactly as before.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [log.moves.length]);
+  });
 
-  // R17c — snapshot advance. MUST stay declared after the two effects
-  // above (see prevBoardRef comment). Ref write only — no render churn.
+  // The effects these replace were cleaned up whenever the log's length
+  // changed, whatever changed it: a new game or a step back in a replay
+  // cancelled their timers too, and what those timers would have cleared
+  // (the spark, the shake, the strobe, the dust) stayed on the board until
+  // the next move set it again. A length no move event explains does the
+  // same here.
   useEffect(() => {
-    prevBoardRef.current = state;
-  }, [state]);
+    if (logLength === eventLengthRef.current) return;
+    eventLengthRef.current = logLength;
+    const timers = timersRef.current;
+    for (const t of timers) clearTimeout(t);
+    timers.length = 0;
+  }, [logLength]);
+
+  useEffect(() => {
+    const timers = timersRef.current; // one array for the hook's life
+    return () => {
+      for (const t of timers) clearTimeout(t);
+      timers.length = 0;
+    };
+  }, []);
 }

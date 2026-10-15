@@ -172,6 +172,7 @@ import { useMaterial } from './features/game/useMaterial';
 import { useCanRotate } from './features/game/useCanRotate';
 import { session } from './session/session';
 import { useSession } from './session/useSession';
+import { useOnlineBoardEvents } from './services/onlineEvents';
 import { drawTableOf, statusOf } from './session/step';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
@@ -1674,6 +1675,9 @@ function App() {
     currentPlayer,
   });
 
+  // TODO(B3): online moves become session events and this goes.
+  useOnlineBoardEvents({ isMultiplayer, state, log });
+
   useCaptureFx({
     setEnPassantExplosionSquare,
     registerFx,
@@ -1681,9 +1685,8 @@ function App() {
     setCaptureShake,
     setCaptureStrobe,
     setRotationDust,
-    state,
-    log,
     toast,
+    logLength: log.moves.length,
   });
 
   const {
