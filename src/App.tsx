@@ -172,6 +172,7 @@ import { useMaterial } from './features/game/useMaterial';
 import { useCanRotate } from './features/game/useCanRotate';
 import { session } from './session/session';
 import { useSession } from './session/useSession';
+import { useSessionEventsAfterCommit } from './session/useSessionEvents';
 import { useOnlineBoardEvents } from './services/onlineEvents';
 import { drawTableOf, statusOf } from './session/step';
 
@@ -704,11 +705,13 @@ function App() {
     liveSavedGameIdRef,
   });
 
-  // Game-completion pipeline: detects terminal gameStatus transitions, computes
-  // points, opens the GameSummary modal, and kicks the async Firestore save.
-  // The ref guards against double-fires (StrictMode + deps that move together).
+  // Game-completion pipeline: the session's gameEnd event, handled after the
+  // render that shows the ending, computes points, opens the GameSummary
+  // modal, and kicks the async Firestore save.
+  // The ref guards against double-fires (StrictMode, a game ending twice).
   // Auto mode handles completion via its own effect — never enters this path.
-  useEffect(() => {
+  useSessionEventsAfterCommit((events) => {
+    if (!events.some((e) => e.type === 'gameEnd')) return;
     if (isAutoMode) return;
     if (isMultiplayer) return; // MP completion runs through a separate effect
     // R13/BUG-5 — local hot-seat is two humans on one device: its results
@@ -726,10 +729,7 @@ function App() {
     completedLogIdRef.current = log.id;
 
     void finishGame(soloOutcome(gameStatus, state.sideToMove));
-    // finishGame closes over current state/log/user/displayName; we want this
-    // to fire once per terminal transition, hence the ref-guard above.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameStatus, log.id, log.moves.length, isAutoMode]);
+  });
 
   useOnlineMatchEnd({
     user,
