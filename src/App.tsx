@@ -1686,7 +1686,6 @@ function App() {
     setCaptureStrobe,
     setRotationDust,
     toast,
-    logLength: log.moves.length,
   });
 
   const {

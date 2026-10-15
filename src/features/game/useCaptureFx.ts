@@ -12,8 +12,6 @@ interface UseCaptureFxArgs {
   setCaptureStrobe: Dispatch<SetStateAction<'queen' | 'rook' | 'bishop' | 'knight' | null>>;
   setRotationDust: Dispatch<SetStateAction<boolean>>;
   toast: ToastContextValue;
-  /** Length of the move log on the board (App's alias, online too). */
-  logLength: number;
 }
 
 type Timer = ReturnType<typeof setTimeout>;
@@ -34,13 +32,10 @@ export function useCaptureFx({
   setCaptureStrobe,
   setRotationDust,
   toast,
-  logLength,
 }: UseCaptureFxArgs) {
   // Each move ends what the previous one's timers were still going to do,
   // as the effects these replace did when the log grew again.
   const timersRef = useRef<Timer[]>([]);
-  // The log length the last move event left behind.
-  const eventLengthRef = useRef(logLength);
   const clearTimers = () => {
     const timers = timersRef.current;
     for (const t of timers) clearTimeout(t);
@@ -54,7 +49,6 @@ export function useCaptureFx({
     const moveEvent = events.find((e) => e.type === 'move');
     if (!moveEvent || moveEvent.type !== 'move') return;
     clearTimers();
-    eventLengthRef.current = moveEvent.index + 1;
     const mv = moveEvent.move;
 
     // Stage T1: the en-passant explosion overlay. Captured pawn sits at
@@ -105,20 +99,6 @@ export function useCaptureFx({
       later(() => setRotationDust(false), 780);
     }
   });
-
-  // The effects these replace were cleaned up whenever the log's length
-  // changed, whatever changed it: a new game or a step back in a replay
-  // cancelled their timers too, and what those timers would have cleared
-  // (the spark, the shake, the strobe, the dust) stayed on the board until
-  // the next move set it again. A length no move event explains does the
-  // same here.
-  useEffect(() => {
-    if (logLength === eventLengthRef.current) return;
-    eventLengthRef.current = logLength;
-    const timers = timersRef.current;
-    for (const t of timers) clearTimeout(t);
-    timers.length = 0;
-  }, [logLength]);
 
   useEffect(() => {
     const timers = timersRef.current; // one array for the hook's life
