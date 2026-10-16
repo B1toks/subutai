@@ -95,8 +95,11 @@ listeners through `src/services/onlineEvents.ts` until they go through
 the session. The new session re-renders the board, and the effects that
 still follow state run: `useBotTurn` schedules the bot's reply through
 `useBotScheduler`, `commitAnalysis` from `useClassifier` records the
-classifier's verdict, `useMemoryAutosave` snapshots the game. When the board ends the game, App's completion effect calls
-`finishGame`, which scores it and hands the save to `useGameSaveQueue`;
+classifier's verdict, `useMemoryAutosave` snapshots the game. When a move,
+a flag fall, a resignation or an agreed draw ends the game, the session's
+`gameEnd` event reaches App after the render that shows the ending
+(`useSessionEventsAfterCommit`), and App calls `finishGame`, which scores
+it and hands the save to `useGameSaveQueue`;
 `saveCompletedGame` in `src/firebase/games.ts` writes the game to `/games`
 and updates the player's `/users` profile in a transaction. Online, the
 click goes to `mpSync.sendMove`, which appends the move to
@@ -105,6 +108,26 @@ check whose turn it is, and the opponent receives the new document through
 the same subscription.
 `useOnlineMatchEnd` writes the outcome and each player saves their own
 `/games` record.
+
+Three things still follow the game's state rather than its events, on
+purpose:
+
+- **The endgame scene** (`useEndgame`). It starts in layout effects on
+  `gameStatus`, before the browser paints the render that first shows the
+  ending: that render also carries the summary (and Local's "Game over"
+  card), and a start after the paint let the summary show for a frame or
+  more before the cut covered it (N-2). Events are handled in a passive
+  effect after the commit, with no promise to run before the paint; and an
+  online ending is the match document's, which sends no event.
+- **The coach** (`useCoachNudges`). Its nudges are triggered by the
+  search's evaluation of the position, which lands some time after the move
+  (and is `null` until then), not by the move: a move event carries no
+  evaluation to judge.
+- **The game-start ping** (`useGameStartPing`). It records a solo game the
+  first time the player is signed in and its log has a move, once per log
+  id. That covers a game resumed from Memory or a reload, which load
+  without events, and a sign-in in the middle of a game; driven by move
+  events it would miss both, which would change what is recorded.
 
 ## Where to add things
 
