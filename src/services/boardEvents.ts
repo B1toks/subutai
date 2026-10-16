@@ -2,11 +2,11 @@ import type { GameStatus } from '../shared/game';
 import type { SessionEvent } from '../session/types';
 
 /**
- * What happens on the board, whatever game is on it: the session's events
- * (solo and hot-seat, forwarded by startSessionServices) and, until online
- * play runs through the session, the match's (onlineEvents.ts). The
- * board's sound and effects listen here. `status` is the session's status
- * after the batch (online play does not set it).
+ * What happens on the board, whatever game is on it: the session's events,
+ * an online match's moves among them (actor 'remote'), forwarded by
+ * startSessionServices. The board's sound and effects listen here.
+ * `status` is the session's status after the batch (an online match does
+ * not set it: it ends in its document).
  */
 type Listener = (events: readonly SessionEvent[], status: GameStatus) => void;
 

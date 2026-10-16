@@ -13,8 +13,8 @@ export function startSessionServices(): void {
   if (started) return;
   started = true;
   session.onEvents(beatComboOnEvents);
-  // The board's sound and effects hear the session's events through the
-  // board-events bus, which online play feeds too (onlineEvents.ts); they
-  // act after the render that shows the move (useBoardEventsAfterCommit).
+  // The board's sound and effects hear the session's events, an online
+  // match's moves too, through the board-events bus; they act after the
+  // render that shows the move (useBoardEventsAfterCommit).
   session.onEvents((events, state) => boardEvents.emit(events, statusOf(state)));
 }

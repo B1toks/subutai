@@ -16,11 +16,12 @@ const move = (actor: Actor, kind: 'normal' | 'topologyToggle' = 'normal'): Sessi
 describe('beat combo', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('scores moves made here and by chat, not the bot, a rotation or a replay', () => {
+  it('scores moves made here and by chat, not the bot, an online match, a rotation or a replay', () => {
     const report = vi.spyOn(beatBridge, 'reportMove').mockReturnValue(null);
     beatComboOnEvents([move('human')]);
     beatComboOnEvents([move('chat')]);
     beatComboOnEvents([move('bot')]);
+    beatComboOnEvents([move('remote')]);
     beatComboOnEvents([move('replay')]);
     beatComboOnEvents([move('human', 'topologyToggle')]);
     beatComboOnEvents([{ type: 'gameEnd', status: 'checkmate' }]);

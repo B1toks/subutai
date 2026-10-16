@@ -90,9 +90,10 @@ beat combo scores the move at once; the move sound and `useCaptureFx`
 (spark, strobe, dust) act after the render that shows the move
 (`useBoardEventsAfterCommit`), so they are timed from what is on screen. A watched replay stepping one move on
 plays that move out too, as a replayed event (actor `replay`) that
-nothing counting or recording play looks at; online moves reach the same
-listeners through `src/services/onlineEvents.ts` until they go through
-the session. The new session opens the next turn
+nothing counting or recording play looks at. An online match's moves,
+both sides', come out of the session too: each snapshot of the match
+document is a `follow` action (`src/session/online.ts`), and a move
+appended to it plays out as a `remote` event. The new session opens the next turn
 (`src/session/players/turns.ts`): a side seated with the bot is asked for
 its answer, which it finds after a pause on the search worker
 (`src/ai/search.worker.ts`); a side seated here answers by acting

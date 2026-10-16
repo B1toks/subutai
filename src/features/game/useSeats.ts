@@ -8,6 +8,8 @@ import { moveVoting } from '../../twitch/moveVoting';
 import { bumpEvalForMove } from './position';
 import { session, turns } from '../../session/session';
 import { humanPlayers } from '../../session/players/human';
+import { remotePlayers } from '../../session/players/remote';
+import type { Color } from '../../engine';
 import { createAutoPlayer, createBotPlayer } from '../../session/players/bot';
 import type { Player, Seats } from '../../session/players/types';
 import type { WatchingGame } from '../review/watching';
@@ -19,6 +21,8 @@ const autoSeats = (moved: () => void): Seats => ({
 
 interface UseSeatsArgs {
   isMultiplayer: boolean;
+  /** My colour in the online match on the board. */
+  onlineColor: Color | null;
   watchingGame: WatchingGame | null;
   isAutoMode: boolean;
   autoStopped: boolean;
@@ -34,12 +38,14 @@ interface UseSeatsArgs {
 /**
  * Who plays each side of the session's game (src/session/players): in a
  * solo game the player here has white and the bot black; in hot-seat both
- * sides are here; a self-play run seats its bot on both. Nobody is seated
- * while a replay is watched or an online match is on (that game is the
- * match document's), or once a self-play run is stopped.
+ * sides are here; a self-play run seats its bot on both. In an online
+ * match the opponent's side is the remote player's, and mine nobody's
+ * here: both sides' moves arrive in the match document. Nobody is seated
+ * while a replay is watched, or once a self-play run is stopped.
  */
 export function useSeats({
   isMultiplayer,
+  onlineColor,
   watchingGame,
   isAutoMode,
   autoStopped,
@@ -88,11 +94,15 @@ export function useSeats({
       }),
     };
     const { bot, auto } = playersRef.current;
-    if (isMultiplayer || watchingGame) turns.seat(null);
+    if (isMultiplayer) {
+      const theirs = onlineColor === 'white' ? 'black' : 'white';
+      turns.seat({ white: null, black: null, [theirs]: remotePlayers[theirs] });
+    } else if (watchingGame) turns.seat(null);
     else if (isAutoMode) turns.seat(autoStopped ? null : auto);
     else turns.seat({ white: humanPlayers.white, black: isLocalMode ? humanPlayers.black : bot });
   }, [
     isMultiplayer,
+    onlineColor,
     watchingGame,
     isAutoMode,
     autoStopped,

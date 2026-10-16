@@ -19,6 +19,8 @@ import {
 } from '../engine';
 import { isInCheck } from '../engine/moves';
 import { rebuildBoardFromMatch } from '../features/online/matchLog';
+import { session } from '../session/session';
+import { useSession } from '../session/useSession';
 import { computeSAN } from '../recording/log';
 import { drawOfferHolds, inactivityForfeitApplies, turnStartedMs } from '../firebase/matchEnd';
 import { noteOwnWriteSeen, noteServerStampSeen, serverNow, takeJoinSent } from '../firebase/serverClock';
@@ -206,7 +208,21 @@ export function useMultiplayerSync(
   myUid: string | null,
   onMatchEvicted: () => void,
 ): MultiplayerSyncHandle | null {
-  const [matchState, setMatchState] = useState<MatchDoc | null>(activeMatch);
+  // The match document as last read lives in the session (session/online.ts)
+  // with the game it makes on the board, so a snapshot changes both in one
+  // step: nothing renders the new document beside the old board. Until this
+  // hook has read one (a render whose effects never run, as the rules
+  // tests' server render), it has the one it was first given, as its own
+  // state used to start; App mounts it with none.
+  const [mountedWith] = useState(activeMatch);
+  const online = useSession((s) => s.online);
+  const matchState = online ? online.doc : mountedWith;
+  const myUidRef = useRef(myUid);
+  useEffect(() => {
+    myUidRef.current = myUid;
+  }, [myUid]);
+  const followDoc = (doc: MatchDoc | null, uid: string | null) =>
+    session.dispatch({ type: 'follow', doc, myUid: uid, now: Date.now() });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selfAfkWarning, setSelfAfkWarning] = useState(false);
@@ -218,7 +234,7 @@ export function useMultiplayerSync(
 
   // Reset internal state when the parent swaps matches (or clears).
   useEffect(() => {
-    setMatchState(activeMatch);
+    followDoc(activeMatch, myUid);
     setError(null);
     setSelfAfkWarning(false);
     setDrawLockCode(null);
@@ -275,10 +291,17 @@ export function useMultiplayerSync(
       }
       if (typeof activity === 'number' && (first || !fromCache)) lastActivity = activity;
       first = false;
-      setMatchState(doc);
+      followDoc(doc, myUidRef.current);
     });
     return unsub;
   }, [code]);
+
+  // Signed in (or out) with the match on the board: the same document, read
+  // for whoever is here now.
+  useEffect(() => {
+    const doc = session.getState().online?.doc ?? null;
+    if (doc) followDoc(doc, myUid);
+  }, [myUid]);
 
   // fix/v1.1.4 — while the match is live, probe the server clock now and
   // then (firebase/clockProbe.ts), so both screens agree on the second
@@ -344,7 +367,7 @@ export function useMultiplayerSync(
     [matchState],
   );
 
-  if (!matchState || !myUid || !boardState) return null;
+  if (!matchState || !myUid || !boardState || (online !== null && online.myUid !== myUid)) return null;
 
   // Capture into narrowed locals so the closures below don't have to re-check.
   const liveMatch = matchState;

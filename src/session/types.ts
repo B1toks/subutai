@@ -3,6 +3,8 @@ import type { GameLog } from '../recording/log';
 import type { MoveAnalysis } from '../analysis/classify';
 import type { DrawTable } from '../utils/drawOffer';
 import type { GameMode, GameStatus } from '../shared/game';
+import type { MatchDoc } from '../firebase/matches';
+import type { OnlineState } from './online';
 
 // The game on the board as one value. Everything a solo or hot-seat game
 // knows about itself lives here; who is clicking, what is lit up and what
@@ -15,7 +17,8 @@ export type TerminalStatus = Exclude<GameStatus, 'active'>;
  * nobody now: 'replay' is a move shown again because a game was put on the
  * board (a replay frame). Only the board's sound and effects react to a
  * replayed move; whatever counts or records play ignores it. 'remote' is
- * a move of an online match (services/onlineEvents.ts until B3).
+ * a move of an online match, read off its match document (either side's:
+ * mine too comes back from it).
  */
 export type Actor = 'human' | 'bot' | 'chat' | 'replay' | 'remote';
 
@@ -89,6 +92,13 @@ export interface SessionState {
   readonly timeControlSec: number | null;
   /** The chance stream (see rng.ts). */
   readonly rng: number;
+  /**
+   * The online match on the board, if one is (session/online.ts): its
+   * document as last read, and the game it makes here. It sits beside the
+   * solo game, which it leaves as it was: the board shows this one while
+   * it is set, and the solo game again once it is gone.
+   */
+  readonly online: OnlineState | null;
 }
 
 /** A board and the history that leads to it, put on the table whole. */
@@ -152,7 +162,10 @@ export type Action =
   /** The classifier's verdict on move `index` (of game `logId`, if given). */
   | { readonly type: 'analysis'; readonly index: number; readonly analysis: MoveAnalysis; readonly logId?: string }
   /** Self-play: a search score for the last move. */
-  | { readonly type: 'searchScore'; readonly scoreFromWhite: number };
+  | { readonly type: 'searchScore'; readonly scoreFromWhite: number }
+  /** The online match's document as just read (null: no match on the
+   *  board any more), for the player `myUid` here; `now` stamps it. */
+  | { readonly type: 'follow'; readonly doc: MatchDoc | null; readonly myUid: string | null; readonly now: number };
 
 /** What happened, for whoever wants to react to it (sound, effects, saves). */
 export type SessionEvent =

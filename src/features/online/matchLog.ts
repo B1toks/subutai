@@ -22,10 +22,10 @@ export function rebuildBoardFromMatch(match: MatchDoc): BoardState {
 /** Reshape a live MatchDoc into the GameLog the single-player render code
  *  already knows how to consume. The stored move shape happens to be a
  *  superset of LoggedMove (analysis is absent in MP). */
-export function deriveMpLog(live: MatchDoc): GameLog {
+export function deriveMpLog(live: MatchDoc, now: number = Date.now()): GameLog {
   return {
     id: `mp-${live.code}`,
-    createdAt: new Date().toISOString(),
+    createdAt: new Date(now).toISOString(),
     randomSeed: live.seed,
     initialTopology: live.log.initialTopology,
     initialState: createPositionFromBackRankKey(live.chess960Id),

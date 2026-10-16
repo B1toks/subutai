@@ -123,7 +123,7 @@ import { recentPlies } from './features/game/boardMarks';
 import { soloOutcome } from './features/endgame/result';
 import { drawOfferTitle } from './features/game/drawOfferTitle';
 import { BOT_STRENGTH_HINT, BOT_STRENGTH_SUMMARY } from './features/game/botLevel';
-import { deriveMpLastMove, deriveMpLog } from './features/online/matchLog';
+import { deriveMpLog } from './features/online/matchLog';
 import { useUrlModes } from './app/useUrlModes';
 import { useOnlineMatch } from './features/online/useOnlineMatch';
 import { useMobileDrawers } from './app/useMobileDrawers';
@@ -172,7 +172,6 @@ import { useCanRotate } from './features/game/useCanRotate';
 import { session, turns } from './session/session';
 import { useSession } from './session/useSession';
 import { useSessionEventsAfterCommit } from './session/useSessionEvents';
-import { useOnlineBoardEvents } from './services/onlineEvents';
 import { drawTableOf, statusOf } from './session/step';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
@@ -405,17 +404,18 @@ function App() {
   // V1 — every visit starts from a fresh chess960 position (FIRST_SEED in
   // src/session/session.ts).
   const seed = sess.seed;
-  // Local single-player engine state. In multiplayer (Q.B.2) the rest of
-  // App reads through the `state` / `legalMoves` / `log` / `lastMove`
-  // const aliases below, which swap to mpSync-derived values.
-  const stateLocal = sess.board;
+  // The game on the board: the online match's while one is on (its
+  // document, as the session last read it: session/online.ts), else the
+  // solo or hot-seat game. The rest of App reads it through these names.
+  const online = isMultiplayer ? sess.online?.game ?? null : null;
+  const state: BoardState = online ? online.board : sess.board;
   const initialState = sess.initial;
   const [selected, setSelected] = useState<string | null>(null);
-  const legalMovesLocal = sess.legal as Move[];
-  const logLocal = sess.log;
+  const legalMoves = (online ? online.legal : sess.legal) as Move[];
+  const log: GameLog = online ? online.log : sess.log;
   const gameStatus = statusOf(sess);
   const [previewTopology, setPreviewTopology] = useState<TopologyState | null>(null);
-  const lastMoveLocal = sess.lastMove;
+  const lastMove: { from?: SquareId; to?: SquareId } | null = online ? online.lastMove : sess.lastMove;
   const { mobilePanel, setMobilePanel, closeMobilePanel } = useMobileDrawers();
 
   const [showHelp, setShowHelp] = useState(false);
@@ -497,16 +497,10 @@ function App() {
     : sess.phase.tag === 'promotion'
       ? sess.phase
       : null;
-  const gameModeLocal = useSession((s) => s.mode);
   // PvP gameMode flows from the match doc — host picks it at create time.
-  // Q.D.2: reuse the SAME solo roulette UI/logic by aliasing gameMode,
-  // allowedPieceTypes, rouletteActionsLeft, etc. through to MP-derived
-  // values. Single-player still drives those from local state below.
-  const gameMode: GameMode = isMultiplayer
-    ? mpSync?.isRouletteMode
-      ? 'roulette'
-      : 'classic'
-    : gameModeLocal;
+  // Q.D.2: the SAME solo roulette UI/logic reads gameMode, the bag and
+  // what is left of it from the game on the board, solo or online.
+  const gameMode: GameMode = online ? online.mode : sess.mode;
   // Q.D.8: roulette is now a capture-the-king variant — no check enforcement.
   // Every legal-move query routes through this wrapper so the option flips
   // automatically based on mode. Classic mode always returns the strict
@@ -515,16 +509,20 @@ function App() {
     return generateLegalMoves(s, { allowSelfCheck: gameMode === 'roulette' });
   }
   // The roulette turn (src/session/types.ts RouletteState): the spun bag
-  // and what is left of it, and whether the wheel is turning.
+  // and what is left of it, and whether the wheel is turning. Online, the
+  // live match doc carries the full 4-slot bag, action counter and used
+  // slot indices, so the same solo UI (Spin button, slot chips, "Move a
+  // knight" hint) renders verbatim in PvP roulette.
   const rouletteBag = sess.roulette.bag;
-  const allowedPieceTypesLocal = (rouletteBag?.slots ?? null) as PieceType[] | null;
+  const allowedPieceTypes = (online ? online.slots : rouletteBag?.slots ?? null) as PieceType[] | null;
   const isRouletteSpinning = sess.phase.tag === 'rouletteSpin';
-  const rouletteActionsLeftLocal = rouletteBag?.actionsLeft ?? 0;
-  const usedRouletteSlotsLocal = (rouletteBag?.used ?? NO_SLOTS) as number[];
+  const rouletteActionsLeft = online ? online.actionsLeft : rouletteBag?.actionsLeft ?? 0;
+  const usedRouletteSlots = (online ? online.used : rouletteBag?.used ?? NO_SLOTS) as number[];
   // First roulette spin per game requires a manual click on the Spin
   // Roulette button. Subsequent spins auto-fire via a useEffect after a
-  // short delay.
-  const firstRouletteSpinDoneLocal = sess.roulette.firstSpinDone;
+  // short delay. Online, my spin count off the match doc, so both players
+  // track independently across reloads.
+  const firstRouletteSpinDone = online ? online.firstSpinDone : sess.roulette.firstSpinDone;
   const {
     captureFxSquare,
     setCaptureFxSquare,
@@ -545,62 +543,6 @@ function App() {
     setEnPassantExplosionSquare,
   } = useBoardFxState();
 
-  // -------- Q.B.2: read-side aliases for multiplayer mode -----------------
-  // When isMultiplayer the board / log / legal-moves come from the live
-  // Firestore doc via mpSync. Writers (setState/setLog/...) still target
-  // local state — they're effectively dead writes in MP because the
-  // aliases below ignore them, and every write path is guarded by
-  // isMultiplayer anyway.
-  // Q.D.3: in MP roulette an action mid-turn flips boardState.sideToMove
-  // (the engine doesn't know we're keeping the same player on the clock
-  // for a second action). Solo solves this by clamping; here we clamp at
-  // alias time so generateLegalMoves below produces MY pieces' moves
-  // for action 2 instead of the opponent's.
-  const state: BoardState = (() => {
-    if (!isMultiplayer) return stateLocal;
-    const base = mpSync!.boardState;
-    if (
-      mpSync!.isRouletteMode &&
-      mpSync!.isMyTurn &&
-      mpSync!.rouletteActionsLeft > 0 &&
-      base.sideToMove !== mpSync!.myColor
-    ) {
-      return { ...base, sideToMove: mpSync!.myColor };
-    }
-    return base;
-  })();
-  const log: GameLog = isMultiplayer
-    ? deriveMpLog(mpSync!.matchState)
-    : logLocal;
-  const legalMoves: Move[] = isMultiplayer
-    ? getLegalMoves(state)
-    : legalMovesLocal;
-  const lastMove: { from?: SquareId; to?: SquareId } | null = isMultiplayer
-    ? deriveMpLastMove(mpSync!.matchState)
-    : lastMoveLocal;
-  // Q.D.3: roulette state aliases for MP. The live match doc carries the
-  // full 4-slot bag, action counter, and used-slot indices — so the same
-  // solo UI (Spin button, slot chips, "Move a knight" hint) renders
-  // verbatim in PvP roulette without any new components.
-  const allowedPieceTypes: PieceType[] | null =
-    isMultiplayer && mpSync?.isRouletteMode
-      ? mpSync.rouletteSlots
-      : allowedPieceTypesLocal;
-  const rouletteActionsLeft: number =
-    isMultiplayer && mpSync?.isRouletteMode
-      ? mpSync.rouletteActionsLeft
-      : rouletteActionsLeftLocal;
-  const usedRouletteSlots: number[] =
-    isMultiplayer && mpSync?.isRouletteMode
-      ? mpSync.usedRouletteSlots
-      : usedRouletteSlotsLocal;
-  // Per-player gate: solo uses a local boolean reset in startNewGame; MP
-  // reads my spin count off the match doc so both players track
-  // independently across reloads.
-  const firstRouletteSpinDone: boolean =
-    isMultiplayer && mpSync && user
-      ? (mpSync.matchState.rouletteSpinsByPlayer?.[user.uid] ?? 0) > 0
-      : firstRouletteSpinDoneLocal;
   const formationInputRef = useRef<HTMLInputElement>(null);
   // SP-3 — true while a Beat-Mode move is queued to land on the next
   // beat; blocks board input so the snap can't be raced.
@@ -1334,13 +1276,13 @@ function App() {
   // S2.4 — any change to the position invalidates a shown hint.
   useEffect(() => {
     setHintMove(null);
-  }, [logLocal.moves.length, state.topologyState, gameStatus]);
+  }, [sess.log.moves.length, state.topologyState, gameStatus]);
 
   const { mpMatchLive, mpClock } = useGameClocks({
     isMultiplayer,
     mpSync,
     watchingGame,
-    logLocal,
+    soloLog: sess.log,
     gameStatus,
   });
 
@@ -1610,6 +1552,7 @@ function App() {
   // on both sides (src/session/players).
   useSeats({
     isMultiplayer,
+    onlineColor: mpSync?.myColor ?? null,
     watchingGame,
     isAutoMode,
     autoStopped,
@@ -1656,9 +1599,6 @@ function App() {
     isLocalMode,
     currentPlayer,
   });
-
-  // TODO(B3): online moves become session events and this goes.
-  useOnlineBoardEvents({ isMultiplayer, state, log });
 
   useCaptureFx({
     setEnPassantExplosionSquare,
@@ -4814,7 +4754,7 @@ function App() {
       {STREAMING_UI && showTwitch && (
         <Suspense fallback={null}>
           <TwitchPanel
-            gameKey={logLocal.id}
+            gameKey={sess.log.id}
             gameResult={(() => {
               if (gameStatus === 'checkmate') {
                 return state.sideToMove === 'white' ? 'black' : 'white';

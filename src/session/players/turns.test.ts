@@ -118,3 +118,46 @@ describe('turns', () => {
     expect(turns.act(firstMove(store.getState()))).toEqual([]);
   });
 });
+
+describe('turns, an online match on the board', () => {
+  const doc = (moves: number, extra: Record<string, unknown> = {}) =>
+    ({
+      code: 'ABC123',
+      chess960Id: 'RNBQKBNR',
+      seed: 1,
+      host: { uid: 'me', color: 'white', displayName: 'Me' },
+      guest: { uid: 'them', color: 'black', displayName: 'Them' },
+      status: 'active',
+      currentTurn: moves % 2 === 0 ? 'me' : 'them',
+      outcome: null,
+      log: {
+        initialTopology: 'A',
+        moves: [{ san: 'e2→e4', move: { kind: 'normal', from: 'e2', to: 'e4' }, topology: 'A', timestamp: 1 }].slice(0, moves),
+      },
+      ...extra,
+    }) as never;
+
+  it('the side to move is the match\'s; its end closes the turn; nothing here acts', () => {
+    const store = newStore();
+    const turns = createTurns(store);
+    const diary: string[] = [];
+    const watch = (color: 'white' | 'black'): Player => ({
+      color,
+      kind: 'remote',
+      onTurn: (_s, signal) => {
+        diary.push(`${color} asked`);
+        signal.addEventListener('abort', () => diary.push(`${color} aborted`));
+        return new Promise(() => {});
+      },
+    });
+    turns.seat({ white: null, black: watch('black') });
+    store.dispatch({ type: 'follow', doc: doc(1), myUid: 'me', now: 0 });
+    expect(diary).toEqual(['black asked']);
+    // The solo board says white to move; the match says black, and nobody here plays.
+    expect(turns.act(firstMove(store.getState()))).toEqual([]);
+    expect(store.getState().log.moves.length).toBe(0);
+    store.dispatch({ type: 'follow', doc: doc(1, { status: 'finished', outcome: { winner: 'me' } }), myUid: 'me', now: 0 });
+    expect(diary).toEqual(['black asked', 'black aborted']);
+    turns.stop();
+  });
+});

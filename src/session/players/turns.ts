@@ -28,8 +28,17 @@ interface TurnKey {
   readonly player: Player;
 }
 
+/** The board whose turn it is: an online match's while the session follows
+ *  one (session/online.ts), else the session's own game. */
+const boardOf = (s: SessionState) => s.online?.game?.board ?? s.board;
+
+/** An online match is over when its document says so; it never ends the
+ *  session's own game. */
+const isOver = (s: SessionState) =>
+  s.online?.game ? s.online.doc.status !== 'active' || !!s.online.doc.outcome : s.phase.tag === 'ended';
+
 const keyOf = (s: SessionState, player: Player): TurnKey => ({
-  board: s.board,
+  board: boardOf(s),
   phase: s.phase,
   bag: s.roulette.bag,
   mode: s.mode,
@@ -51,7 +60,7 @@ export function createTurns(store: SessionStore): Turns {
   let open: { key: TurnKey; ctrl: AbortController } | null = null;
 
   const playerOf = (s: SessionState): Player | null =>
-    s.phase.tag === 'ended' || !seats ? null : seats[s.board.sideToMove];
+    isOver(s) || !seats ? null : seats[boardOf(s).sideToMove];
 
   function close() {
     open?.ctrl.abort();

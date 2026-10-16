@@ -27,6 +27,7 @@ import {
 import type { GameMode, GameStatus } from '../shared/game';
 import { rngCursor, rngFromSeed } from './rng';
 import { eventsOfEntry } from './events';
+import { gameOfMatch } from './online';
 import {
   legalMovesFor,
   otherColor,
@@ -82,6 +83,7 @@ export function createSession(opts: {
     clock: ZERO_CLOCK,
     timeControlSec: opts.timeControlSec ?? null,
     rng: rngFromSeed(opts.seed),
+    online: null,
   };
 }
 
@@ -107,12 +109,35 @@ export function step(s: SessionState, a: Action): StepResult {
 
 const SAME = (s: SessionState): StepResult => ({ state: s, events: [] });
 
+/**
+ * The online match, as its document now reads. A move appended within the
+ * same match plays out as events (actor 'remote', mine too), against the
+ * board shown before it; a match coming on the board, or another one
+ * replacing it, plays nothing. The solo game is left alone, and no event
+ * ends a game: an online match ends in its document.
+ */
+function follow(s: SessionState, a: Extract<Action, { type: 'follow' }>): StepResult {
+  if (!a.doc) return s.online ? { state: { ...s, online: null }, events: [] } : SAME(s);
+  const game = a.myUid ? gameOfMatch(a.doc, a.myUid, a.now) : null;
+  const prev = s.online?.doc.code === a.doc.code ? s.online.game : null;
+  const length = game?.log.moves.length ?? 0;
+  const last = game?.log.moves[length - 1];
+  const events =
+    game && prev && last && length > prev.log.moves.length
+      ? eventsOfEntry(prev.board, game.board, last.move, last.san ?? '', 'remote', length - 1)
+      : [];
+  return { state: { ...s, online: { doc: a.doc, myUid: a.myUid, game } }, events };
+}
+
 function isLive(p: Phase): boolean {
   return p.tag === 'setup' || p.tag === 'playing';
 }
 
 function reduce(s: SessionState, a: Action): StepResult {
   switch (a.type) {
+    case 'follow':
+      return follow(s, a);
+
     case 'newGame': {
       // startNewGame / applyFormationCode (+ resetGameEndState).
       const logSeed = a.seed ?? a.now;

@@ -15,7 +15,8 @@ interface UseGameClocksArgs {
   isMultiplayer: boolean;
   mpSync: MultiplayerSyncHandle | null;
   watchingGame: WatchingGame | null;
-  logLocal: GameLog;
+  /** The solo game's log (not an online match's): its clocks arm on its first move. */
+  soloLog: GameLog;
   gameStatus: GameStatus;
 }
 
@@ -32,7 +33,7 @@ export function useGameClocks({
   isMultiplayer,
   mpSync,
   watchingGame,
-  logLocal,
+  soloLog,
   gameStatus,
 }: UseGameClocksArgs) {
 
@@ -44,7 +45,7 @@ export function useGameClocks({
   // not thinking time you spent, and it made the clock look broken the
   // instant a game began. Picking a control before the first move still
   // zeroes whatever already accumulated, so both sides start whole.
-  const clockArmed = logLocal.moves.length > 0;
+  const clockArmed = soloLog.moves.length > 0;
   useEffect(() => {
     if (gameStatus !== 'active' || watchingGame || !clockArmed) return;
     let last = Date.now();
@@ -55,7 +56,7 @@ export function useGameClocks({
       session.dispatch({ type: 'clockTick', dt });
     }, 500);
     return () => clearInterval(id);
-  }, [gameStatus, watchingGame, logLocal.id, clockArmed]);
+  }, [gameStatus, watchingGame, soloLog.id, clockArmed]);
 
   // ── B8: multiplayer time control ──────────────────────────────────
   // Both peers derive identical countdown clocks from the shared move

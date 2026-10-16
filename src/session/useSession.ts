@@ -9,5 +9,8 @@ import type { SessionState } from './types';
  * that would be a "change" on every read.
  */
 export function useSession<T>(selector: (s: SessionState) => T): T {
-  return useSyncExternalStore(session.subscribe, () => selector(session.getState()));
+  const read = () => selector(session.getState());
+  // The same read on the server (the rules tests render the online hook
+  // there): no store is shared with a client to hydrate from.
+  return useSyncExternalStore(session.subscribe, read, read);
 }
