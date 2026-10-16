@@ -221,8 +221,20 @@ export function useMultiplayerSync(
   useEffect(() => {
     myUidRef.current = myUid;
   }, [myUid]);
-  const followDoc = (doc: MatchDoc | null, uid: string | null) =>
-    session.dispatch({ type: 'follow', doc, myUid: uid, now: Date.now() });
+  // A document the board cannot be made of (a broken log, an unknown start)
+  // throws in step(), here in the snapshot callback, where no error
+  // boundary sees it. It is thrown again in this hook's render, where the
+  // board used to be rebuilt from the document, so AppErrorBoundary shows
+  // the error screen as it always did.
+  const [followError, setFollowError] = useState<{ error: unknown } | null>(null);
+  if (followError) throw followError.error;
+  const followDoc = (doc: MatchDoc | null, uid: string | null) => {
+    try {
+      session.dispatch({ type: 'follow', doc, myUid: uid, now: Date.now() });
+    } catch (error) {
+      setFollowError({ error });
+    }
+  };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selfAfkWarning, setSelfAfkWarning] = useState(false);
