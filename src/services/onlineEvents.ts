@@ -31,12 +31,17 @@ export function useOnlineBoardEvents({
   // sees the pre-move board and only then the ref moves on.
   const prevBoardRef = useRef<BoardState | null>(null);
   const prevLengthRef = useRef(log.moves.length);
+  // The match the previous commit showed: a log that only "grew" because
+  // a match came on the board (a reload into a live one) has no move to
+  // play out, and the board before it is the solo one.
+  const prevMatchRef = useRef<string | null>(null);
 
   useEffect(() => {
     const length = log.moves.length;
     const grew = length > prevLengthRef.current;
     prevLengthRef.current = length;
-    if (!isMultiplayer || !grew) return;
+    const sameMatch = isMultiplayer && log.id === prevMatchRef.current;
+    if (!sameMatch || !grew) return;
     const last = log.moves[length - 1];
     const before = prevBoardRef.current;
     if (!last || !before) return;
@@ -52,4 +57,8 @@ export function useOnlineBoardEvents({
   useEffect(() => {
     prevBoardRef.current = state;
   }, [state]);
+
+  useEffect(() => {
+    prevMatchRef.current = isMultiplayer ? log.id : null;
+  }, [isMultiplayer, log.id]);
 }
