@@ -170,7 +170,8 @@ import { useNotation } from './features/game/useNotation';
 import { useGameSaveQueue, type FinishedGameSave } from './features/endgame/useGameSaveQueue';
 import { useMaterial } from './features/game/useMaterial';
 import { useCanRotate } from './features/game/useCanRotate';
-import { session } from './session/session';
+import { session, turns } from './session/session';
+import { humanPlayers } from './session/players/human';
 import { useSession } from './session/useSession';
 import { useSessionEventsAfterCommit } from './session/useSessionEvents';
 import { useOnlineBoardEvents } from './services/onlineEvents';
@@ -1458,7 +1459,7 @@ function App() {
     // Classic: the king must stay safe and the rotation is the whole turn.
     // Roulette: it costs one action of the spun bag and spends no slot.
     // The rules are step()'s (src/session/step.ts rotate).
-    const events = session.dispatch({ type: 'rotate', actor: 'human', now: Date.now() });
+    const events = turns.act({ type: 'rotate', actor: 'human', now: Date.now() });
     if (events.length === 0) return;
     setSelected(null);
     setPreviewTopology(null);
@@ -1578,6 +1579,16 @@ function App() {
       : state.sideToMove === 'white'
         ? 'human'
         : 'ai';
+  // Who plays each side at this device (src/session/players): in a solo
+  // game white is the player here, and in hot-seat black too; the moves,
+  // rotations and promotions of a seated side go through turns.act. An
+  // online match is played through its match document.
+  useEffect(() => {
+    turns.seat(
+      isMultiplayer ? null : { white: humanPlayers.white, black: isLocalMode ? humanPlayers.black : null },
+    );
+  }, [isMultiplayer, isLocalMode]);
+
   /** QA-11 — solo only: the bot's move is in flight. */
   const botThinking =
     !isMultiplayer && !isLocalMode && gameStatus === 'active' && currentPlayer === 'ai';
@@ -1912,7 +1923,7 @@ function App() {
     // Promotion picker (classic only — in roulette we auto-queen to keep the
     // multi-action flow uninterrupted).
     if (move.kind === 'promotion' && move.from && move.to && gameMode !== 'roulette') {
-      session.dispatch({ type: 'requestPromotion', from: move.from, to: move.to });
+      turns.act({ type: 'requestPromotion', from: move.from, to: move.to });
       return;
     }
     const resolvedMove: Move =
@@ -1989,7 +2000,7 @@ function App() {
     const afterMove = applyMove(state, resolvedMove);
     // The move itself (the board, the log, the roulette turn, the end of
     // the game) is step()'s: src/session/step.ts.
-    session.dispatch({ type: 'move', move: resolvedMove, actor: 'human', now: Date.now() });
+    turns.act({ type: 'move', move: resolvedMove, actor: 'human', now: Date.now() });
     // Defer classify so the click feels instant — main thread is still
     // single-threaded but the DOM paints first, then the analysis lands
     // ~300 ms later as if the engine is "thinking".
@@ -2043,7 +2054,7 @@ function App() {
     // R2 — promotion commits bypass commitMove; settle the guess round here too.
     announceGuessWinners(moveVoting.resolveGuessRound(move, san));
     const next = applyMove(state, move);
-    session.dispatch({ type: 'promote', piece: pieceType, now: Date.now() });
+    turns.act({ type: 'promote', piece: pieceType, now: Date.now() });
     setSelected(null);
     // B3 — material-delta bump instead of static-fallback flicker.
     setSearchEvalFromWhite((prev) => bumpEvalForMove(prev, state, move));
@@ -2060,7 +2071,7 @@ function App() {
 
   function cancelPromotion() {
     if (isMultiplayer) setMpPendingPromotion(null);
-    else session.dispatch({ type: 'cancelPromotion' });
+    else turns.act({ type: 'cancelPromotion' });
   }
 
   const squares = useMemo(() => {
