@@ -13,13 +13,12 @@ import {
   type MatchOutcome,
 } from '../firebase/matches';
 import {
-  createPositionFromBackRankKey,
   type BoardState,
   type Move,
   type PieceType,
 } from '../engine';
-import { applyMove, isInCheck } from '../engine/moves';
-import { applyRotationMove } from '../engine/auxetic';
+import { isInCheck } from '../engine/moves';
+import { rebuildBoardFromMatch } from '../features/online/matchLog';
 import { computeSAN } from '../recording/log';
 import { drawOfferHolds, inactivityForfeitApplies, turnStartedMs } from '../firebase/matchEnd';
 import { noteOwnWriteSeen, noteServerStampSeen, serverNow, takeJoinSent } from '../firebase/serverClock';
@@ -187,20 +186,9 @@ function nextMoveTimestamp(moves: MatchDoc['log']['moves']): number {
   return Math.max(serverNow(), moves[moves.length - 1]?.timestamp ?? 0);
 }
 
-/** Rebuild the canonical board from the log. Topology toggles (Rotate)
- *  flow through here just like any other move (Stage T1). */
-export function rebuildBoardFromMatch(match: MatchDoc): BoardState {
-  let state = createPositionFromBackRankKey(match.chess960Id);
-  for (const entry of match.log.moves) {
-    if (entry.move.kind === 'topologyToggle') {
-      state = applyRotationMove(state);
-      continue;
-    }
-    if (!entry.move.from || !entry.move.to) continue;
-    state = applyMove(state, entry.move);
-  }
-  return state;
-}
+/** Lives in features/online/matchLog.ts; still exported from here, where
+ *  scripts (scripts/test-mp-draws.ts) import it. */
+export { rebuildBoardFromMatch } from '../features/online/matchLog';
 
 /**
  * Subscribes to /matches/{code} and exposes the live doc + write helpers.

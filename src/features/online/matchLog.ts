@@ -1,6 +1,23 @@
-import { createPositionFromBackRankKey, type SquareId } from '../../engine';
+import { createPositionFromBackRankKey, type BoardState, type SquareId } from '../../engine';
+import { applyMove } from '../../engine/moves';
+import { applyRotationMove } from '../../engine/auxetic';
 import type { MatchDoc } from '../../firebase/matches';
 import type { GameLog } from '../../recording/log';
+
+/** Rebuild the canonical board from the log. Topology toggles (Rotate)
+ *  flow through here just like any other move (Stage T1). */
+export function rebuildBoardFromMatch(match: MatchDoc): BoardState {
+  let state = createPositionFromBackRankKey(match.chess960Id);
+  for (const entry of match.log.moves) {
+    if (entry.move.kind === 'topologyToggle') {
+      state = applyRotationMove(state);
+      continue;
+    }
+    if (!entry.move.from || !entry.move.to) continue;
+    state = applyMove(state, entry.move);
+  }
+  return state;
+}
 
 /** Reshape a live MatchDoc into the GameLog the single-player render code
  *  already knows how to consume. The stored move shape happens to be a
