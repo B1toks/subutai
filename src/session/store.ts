@@ -9,6 +9,12 @@
  *
  * An action `step` refuses comes back as the same state object; nobody
  * is told and nothing re-renders.
+ *
+ * A listener that throws does not stop the others, nor the dispatch: the
+ * first such error is kept as the store's fatal error (getFatal), and the
+ * React listeners are told again, so the app can throw it while it
+ * renders and its error boundary shows the error screen, as an error in
+ * the render itself would.
  */
 export interface Store<S, A, E> {
   getState(): S;
@@ -16,6 +22,8 @@ export interface Store<S, A, E> {
   dispatch(action: A): readonly E[];
   subscribe(listener: () => void): () => void;
   onEvents(listener: (events: readonly E[], state: S) => void): () => void;
+  /** The first error a listener threw, as thrown; null while none has. */
+  getFatal(): unknown;
 }
 
 export function createStore<S, A, E>(
@@ -23,18 +31,38 @@ export function createStore<S, A, E>(
   stepFn: (state: S, action: A) => { state: S; events: readonly E[] },
 ): Store<S, A, E> {
   let state = initial;
+  let fatal: unknown = null;
   const listeners = new Set<() => void>();
   const eventListeners = new Set<(events: readonly E[], state: S) => void>();
+
+  /** Runs each listener; the first error any of them throws is kept. */
+  function tell<L>(set: Set<L>, call: (l: L) => void): boolean {
+    let failed = false;
+    for (const l of [...set]) {
+      try {
+        call(l);
+      } catch (err) {
+        if (fatal === null) {
+          fatal = err ?? new Error('a session listener threw nothing');
+          failed = true;
+        }
+      }
+    }
+    return failed;
+  }
+
   return {
     getState: () => state,
     dispatch(action) {
       const out = stepFn(state, action);
       if (out.state === state) return out.events;
       state = out.state;
-      for (const l of [...listeners]) l();
+      let failed = tell(listeners, (l) => l());
       if (out.events.length > 0) {
-        for (const l of [...eventListeners]) l(out.events, state);
+        if (tell(eventListeners, (l) => l(out.events, state))) failed = true;
       }
+      // A listener failed: React reads the store again and finds the error.
+      if (failed) tell(listeners, (l) => l());
       return out.events;
     },
     subscribe(listener) {
@@ -49,5 +77,6 @@ export function createStore<S, A, E>(
         eventListeners.delete(listener);
       };
     },
+    getFatal: () => fatal,
   };
 }

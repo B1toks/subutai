@@ -168,7 +168,7 @@ import { useGameSaveQueue, type FinishedGameSave } from './features/endgame/useG
 import { useMaterial } from './features/game/useMaterial';
 import { useCanRotate } from './features/game/useCanRotate';
 import { session, turns } from './session/session';
-import { useSession } from './session/useSession';
+import { useSession, useSessionFatal } from './session/useSession';
 import { useSessionEventsAfterCommit } from './session/useSessionEvents';
 import { drawTableOf, statusOf } from './session/step';
 
@@ -304,6 +304,9 @@ function App() {
   // below). The draw offers are never saved: hot-seat stores nothing
   // beyond the Memory entry.
   const sess = useSession((s) => s);
+  // A session listener that threw (the turns, a service) throws here, so
+  // AppErrorBoundary shows the error screen instead of a dead board.
+  useSessionFatal();
   // Sprint 4.3.1 — pending opponent switch during an active local game.
   // When non-null the ConfirmDialog mounts; on confirm we discard the
   // local game state and start fresh in the requested mode.

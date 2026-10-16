@@ -36,4 +36,40 @@ describe('createStore', () => {
     store.dispatch({ type: 'add', n: 1 });
     expect(calls).toBe(0);
   });
+
+  it("a listener that throws stops nobody; its error is the store's fatal one", () => {
+    const store = counter();
+    const boom = new Error('boom');
+    const seen: string[] = [];
+    store.subscribe(() => {
+      seen.push('turns');
+      throw boom;
+    });
+    store.subscribe(() => seen.push(`react ${String(store.getFatal() === boom)}`));
+    store.onEvents((events) => seen.push(`events ${events.join(',')}`));
+    expect(store.getFatal()).toBeNull();
+    expect(store.dispatch({ type: 'add', n: 1 })).toEqual(['+1']);
+    expect(store.getState()).toBe(1);
+    expect(store.getFatal()).toBe(boom);
+    // React hears the change, the events go out, and React is told again.
+    expect(seen).toEqual(['turns', 'react true', 'events +1', 'turns', 'react true']);
+  });
+
+  it('keeps the first error: a listener throwing later does not replace it', () => {
+    const store = counter();
+    const first = new Error('first');
+    let renders = 0;
+    store.subscribe(() => renders++);
+    store.onEvents(() => {
+      throw first;
+    });
+    store.dispatch({ type: 'add', n: 1 });
+    expect(store.getFatal()).toBe(first);
+    expect(renders).toBe(2); // told of the change, then of the error
+    store.onEvents(() => {
+      throw new Error('second');
+    });
+    store.dispatch({ type: 'add', n: 1 });
+    expect(store.getFatal()).toBe(first);
+  });
 });

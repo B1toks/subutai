@@ -14,3 +14,13 @@ export function useSession<T>(selector: (s: SessionState) => T): T {
   // there): no store is shared with a client to hydrate from.
   return useSyncExternalStore(session.subscribe, read, read);
 }
+
+/**
+ * Throws, while rendering, the error a session listener threw (the
+ * store's fatal error, store.ts), so the error boundary above shows the
+ * error screen: a listener runs in a dispatch, where no boundary catches.
+ */
+export function useSessionFatal(): void {
+  const fatal = useSyncExternalStore(session.subscribe, session.getFatal, session.getFatal);
+  if (fatal !== null) throw fatal;
+}
