@@ -4,12 +4,12 @@ import type { BoardState, PieceType, Move, SquareId } from '../../engine';
 import { pickAiRouletteMove } from './roulette';
 import { applyRotationMove, toggleTopology } from '../../engine/auxetic';
 import { applyMove } from '../../engine/moves';
-import { SubutaiAgent, type BotStrength } from '../../ai/agents';
+import type { BotStrength } from '../../ai/agents';
 import { moveVoting } from '../../twitch/moveVoting';
 import { bumpEvalForMove } from './position';
 import { classifyAsync } from '../../analysis/classifyClient';
 import { scaleBudgetMs } from '../../utils/deviceTier';
-import { searchPosition } from '../../ai/search';
+import { chooseBotMove, searchAsync } from '../../ai/searchClient';
 import type { GameMode } from '../../shared/game';
 import { session } from '../../session/session';
 import { playableRouletteMoves } from '../../session/rules';
@@ -103,7 +103,7 @@ export function useBotScheduler({
     ) => {
       if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
       aiTimerRef.current = setTimeout(async () => {
-        const chosen = await SubutaiAgent.chooseMove(boardState, moves, {
+        const chosen = await chooseBotMove(boardState, moves, {
           lastMoveWasRotation,
           allowSelfCheck: gameMode === 'roulette',
           strength: botLevelRef.current,
@@ -187,7 +187,7 @@ export function useBotScheduler({
     (boardState: BoardState, moves: Move[], wasRotation: boolean) => {
       if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
       autoTimerRef.current = setTimeout(async () => {
-        const move = await SubutaiAgent.chooseMove(boardState, moves, {
+        const move = await chooseBotMove(boardState, moves, {
           lastMoveWasRotation: wasRotation,
           allowSelfCheck: gameMode === 'roulette',
         });
@@ -203,11 +203,12 @@ export function useBotScheduler({
         setSelected(null);
         autoLastMoveAtRef.current = Date.now();
 
-        // Label the resulting position with a shallow search score. Synchronous
-        // (worker-free) so we don't add a second round-trip per move. Wrapped
-        // in try/catch — a labeller failure must never stall the auto loop.
+        // Label the resulting position with a shallow search score, on the
+        // search worker: it runs before the next move's search, which waits
+        // behind it there. Wrapped in try/catch — a labeller failure must
+        // never stall the auto loop.
         try {
-          const labelled = searchPosition(next, {
+          const labelled = await searchAsync(next, {
             budgetMs: AUTO_SEARCH_LABEL_BUDGET_MS,
             maxDepth: AUTO_SEARCH_LABEL_DEPTH,
           });

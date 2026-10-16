@@ -12,7 +12,7 @@ import {
   BOT_STRENGTHS,
   BOT_STRENGTH_LABEL,
 } from './ai/agents';
-import { searchPosition, ttClear } from './ai/search';
+import { clearSearchTable, searchAsync } from './ai/searchClient';
 import { classifyAsync } from './analysis/classifyClient';
 import { NamePicker } from './components/NamePicker';
 import { useToast } from './components/Toast';
@@ -1284,7 +1284,7 @@ function App() {
     if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
     // Reset the transposition table so positions from the previous game can't
     // bias the new search. (TT is reused across moves WITHIN one game.)
-    ttClear();
+    clearSearchTable();
     const newSeed = Date.now();
     const initial =
       formationLocked && lockedFormationKey
@@ -1368,20 +1368,24 @@ function App() {
     });
   }
 
-  // S2.4 — engine hint. A short synchronous search (~0.5s) is fine for a
+  // S2.4 — engine hint. A short search (~0.5s) on the search worker, for a
   // deliberate button press. Classic mode only: roulette's slot
   // restrictions aren't modeled by the bare search, so its "best move"
   // could be illegal this turn.
-  function computeHint() {
+  async function computeHint() {
     if (currentPlayer !== 'human' || gameStatus !== 'active' || watchingGame) return;
     if (gameMode !== 'classic') return;
-    const result = searchPosition(state, {
+    // The board may move on while the worker thinks (a new game, a
+    // resume): a hint for another position is dropped.
+    const asked = session.getState().board;
+    const stillAsked = () => session.getState().board === asked;
+    const result = await searchAsync(state, {
       budgetMs: 500,
       maxDepth: 5,
       lastMoveWasRotation: state.lastMoveWasRotation,
     });
     const best = result.bestMove;
-    if (!best) return;
+    if (!best || !stillAsked()) return;
     if (best.kind === 'topologyToggle') {
       setHintMove({ rotate: true });
       return;
@@ -1393,11 +1397,12 @@ function App() {
     // mechanic worth teaching.
     if (canRotate && !state.lastMoveWasRotation) {
       const rotated = applyRotationMove(state);
-      const reply = searchPosition(rotated, {
+      const reply = await searchAsync(rotated, {
         budgetMs: 300,
         maxDepth: 4,
         lastMoveWasRotation: true,
       });
+      if (!stillAsked()) return;
       const rotationScore = -reply.score; // negamax: reply is opponent-side
       if (rotationScore >= result.score - 30) {
         setHintMove({ rotate: true });

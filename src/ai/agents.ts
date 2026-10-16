@@ -1,6 +1,6 @@
 import type { BoardState, Move } from '../engine';
 import { generateLegalMoves } from '../engine/moves';
-import { iterativeDeepen } from './search';
+import { iterativeDeepen, type SearchOptions } from './search';
 import { scaleBudgetMs } from '../utils/deviceTier';
 
 /** V1 — bot strength levels. `strong` is the historical engine (800ms /
@@ -94,6 +94,36 @@ export const RandomAgent: Agent = {
   },
 };
 
+/**
+ * What a level does with this move: let one slip (a random legal move) or
+ * search, and with what budget. The game's bot (session/players/bot.ts)
+ * runs the search on the search worker; SubutaiAgent runs it here.
+ */
+export function planBotMove(
+  state: BoardState,
+  legalMoves: readonly Move[],
+  context?: AgentContext,
+): { readonly slip: Move } | { readonly search: SearchOptions } {
+  const profile = STRENGTH_PROFILE[context?.strength ?? 'strong'];
+  if (profile.randomMoveChance > 0 && Math.random() < profile.randomMoveChance) {
+    const moves = legalMoves.length
+      ? legalMoves
+      : generateLegalMoves(state, { allowSelfCheck: context?.allowSelfCheck });
+    const slip = moves.length ? moves[Math.floor(Math.random() * moves.length)] : undefined;
+    if (slip) return { slip };
+  }
+  // Sprint 4.5 — low-end devices get ~45% of the think budget so the
+  // AI never locks the main thread for close to a second.
+  return {
+    search: {
+      budgetMs: scaleBudgetMs(profile.budgetMs),
+      maxDepth: profile.maxDepth,
+      lastMoveWasRotation: context?.lastMoveWasRotation ?? false,
+      allowSelfCheck: context?.allowSelfCheck ?? false,
+    },
+  };
+}
+
 export const SubutaiAgent: Agent = {
   id: 'subutai',
   name: 'Subutai',
@@ -102,21 +132,9 @@ export const SubutaiAgent: Agent = {
     legalMoves: readonly Move[],
     context?: AgentContext,
   ): Promise<Move | null> {
-    const profile = STRENGTH_PROFILE[context?.strength ?? 'strong'];
-    if (profile.randomMoveChance > 0 && Math.random() < profile.randomMoveChance) {
-      const moves = legalMoves.length
-        ? legalMoves
-        : generateLegalMoves(state, { allowSelfCheck: context?.allowSelfCheck });
-      if (moves.length) return moves[Math.floor(Math.random() * moves.length)] ?? null;
-    }
-    // Sprint 4.5 — low-end devices get ~45% of the think budget so the
-    // AI never locks the main thread for close to a second.
-    return iterativeDeepen(
-      state,
-      scaleBudgetMs(profile.budgetMs),
-      context?.lastMoveWasRotation ?? false,
-      context?.allowSelfCheck ?? false,
-      profile.maxDepth,
-    );
+    const plan = planBotMove(state, legalMoves, context);
+    if ('slip' in plan) return plan.slip;
+    const { budgetMs, maxDepth, lastMoveWasRotation, allowSelfCheck } = plan.search;
+    return iterativeDeepen(state, budgetMs, lastMoveWasRotation, allowSelfCheck, maxDepth);
   },
 };
