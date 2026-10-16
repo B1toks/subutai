@@ -157,8 +157,6 @@ import { useAfkNudge } from './features/game/useAfkNudge';
 import { useMoveFeedback } from './features/game/useMoveFeedback';
 import { useRouletteAutoSpin } from './features/game/useRouletteAutoSpin';
 import { useSeats } from './features/game/useSeats';
-import { useChatVsBot } from './features/twitch/useChatVsBot';
-import { useGuessTheStreamer } from './features/twitch/useGuessTheStreamer';
 import { useCaptureFx } from './features/game/useCaptureFx';
 import { useBoardMarks } from './features/game/useBoardMarks';
 import { useCoachNudges } from './features/game/useCoachNudges';
@@ -1557,10 +1555,12 @@ function App() {
     isAutoMode,
     autoStopped,
     isLocalMode,
+    twitchVoteMode,
     botLevelRef,
     setSelected,
     setSearchEvalFromWhite,
     setSearchMateInPlies,
+    setPreviewTopology,
     commitAnalysis,
     autoLastMoveAtRef,
   });
@@ -1568,37 +1568,7 @@ function App() {
   const { materialBreakdown, materialScore } = useMaterial({ state, myColor });
 
 
-  useChatVsBot({
-    isAutoMode,
-    isMultiplayer,
-    watchingGame,
-    setSelected,
-    gameStatus,
-    twitchVoteMode,
-    gameMode,
-    state,
-    legalMoves,
-    setSearchEvalFromWhite,
-    setSearchMateInPlies,
-    logLengthRef,
-    commitAnalysis,
-    handleRotate,
-    isLocalMode,
-    currentPlayer,
-  });
 
-  useGuessTheStreamer({
-    isAutoMode,
-    isMultiplayer,
-    watchingGame,
-    gameStatus,
-    twitchVoteMode,
-    gameMode,
-    state,
-    legalMoves,
-    isLocalMode,
-    currentPlayer,
-  });
 
   useCaptureFx({
     setEnPassantExplosionSquare,

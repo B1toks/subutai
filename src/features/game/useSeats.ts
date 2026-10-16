@@ -1,10 +1,13 @@
 import { useEffect, useRef, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import type { MoveAnalysis } from '../../analysis/classify';
-import type { SquareId } from '../../engine';
+import type { SquareId, TopologyState } from '../../engine';
+import { applyMove } from '../../engine/moves';
 import type { BotStrength } from '../../ai/agents';
 import { classifyAsync } from '../../analysis/classifyClient';
 import { scaleBudgetMs } from '../../utils/deviceTier';
-import { moveVoting } from '../../twitch/moveVoting';
+import { moveVoting, type VoteMode } from '../../twitch/moveVoting';
+import { rotateIsLegal } from '../../memory/replayImport';
+import { createChatPlayer, withGuess } from '../../session/players/chat';
 import { bumpEvalForMove } from './position';
 import { session, turns } from '../../session/session';
 import { humanPlayers } from '../../session/players/human';
@@ -27,10 +30,13 @@ interface UseSeatsArgs {
   isAutoMode: boolean;
   autoStopped: boolean;
   isLocalMode: boolean;
+  /** Twitch: chat plays white ('chatvsbot') or guesses its moves ('guess'). */
+  twitchVoteMode: VoteMode;
   botLevelRef: RefObject<BotStrength>;
   setSelected: Dispatch<SetStateAction<string | null>>;
   setSearchEvalFromWhite: Dispatch<SetStateAction<number | null>>;
   setSearchMateInPlies: Dispatch<SetStateAction<number | null>>;
+  setPreviewTopology: Dispatch<SetStateAction<TopologyState | null>>;
   commitAnalysis: (moveIdx: number, analysis: MoveAnalysis, moveTo: SquareId | undefined) => void;
   autoLastMoveAtRef: RefObject<number>;
 }
@@ -38,7 +44,9 @@ interface UseSeatsArgs {
 /**
  * Who plays each side of the session's game (src/session/players): in a
  * solo game the player here has white and the bot black; in hot-seat both
- * sides are here; a self-play run seats its bot on both. In an online
+ * sides are here; a self-play run seats its bot on both. Twitch, in a solo
+ * game: chat plays white with the player here ('chatvsbot'), or guesses
+ * the player's moves ('guess'). In an online
  * match the opponent's side is the remote player's, and mine nobody's
  * here: both sides' moves arrive in the match document. Nobody is seated
  * while a replay is watched, or once a self-play run is stopped.
@@ -50,10 +58,12 @@ export function useSeats({
   isAutoMode,
   autoStopped,
   isLocalMode,
+  twitchVoteMode,
   botLevelRef,
   setSelected,
   setSearchEvalFromWhite,
   setSearchMateInPlies,
+  setPreviewTopology,
   commitAnalysis,
   autoLastMoveAtRef,
 }: UseSeatsArgs) {
@@ -65,7 +75,7 @@ export function useSeats({
   }, [commitAnalysis]);
 
   // Built once, on first use in the effect below.
-  const playersRef = useRef<{ bot: Player; auto: Seats } | null>(null);
+  const playersRef = useRef<{ bot: Player; auto: Seats; chat: Player; guess: Player } | null>(null);
 
   useEffect(() => {
     playersRef.current ??= {
@@ -92,14 +102,52 @@ export function useSeats({
         setSelected(null);
         autoLastMoveAtRef.current = Date.now();
       }),
+      // T6 — "chat vs bot": chat plays the human (white) side by majority,
+      // through the same classic path a click takes.
+      chat: createChatPlayer({
+        color: 'white',
+        elect: (board, legal) => moveVoting.gateHumanMove(board, legal, rotateIsLegal(board)),
+        cancel: () => moveVoting.cancelRound(),
+        played(action, events, before, index) {
+          if (action.type === 'rotate') {
+            if (events.length === 0) return;
+            setSelected(null);
+            setPreviewTopology(null);
+            return;
+          }
+          if (action.type !== 'move') return;
+          const move = action.move;
+          const afterMove = applyMove(before, move);
+          setSearchEvalFromWhite((prev) => bumpEvalForMove(prev, before, move));
+          setSearchMateInPlies(null);
+          void classifyAsync(before, move, afterMove, {
+            budgetMs: scaleBudgetMs(1000),
+            maxDepth: 7,
+            allowSelfCheck: false,
+          }).then((analysis) => {
+            commitRef.current(index, analysis, move.to);
+          });
+          setSelected(null);
+        },
+      }),
+      // R2 — "guess the streamer": chat guesses the player's move.
+      guess: withGuess(humanPlayers.white, {
+        open: (board, legal) => moveVoting.openGuessRound(board, legal, rotateIsLegal(board)),
+        cancel: () => moveVoting.cancelRound(),
+      }),
     };
-    const { bot, auto } = playersRef.current;
+    const { bot, auto, chat, guess } = playersRef.current;
     if (isMultiplayer) {
       const theirs = onlineColor === 'white' ? 'black' : 'white';
       turns.seat({ white: null, black: null, [theirs]: remotePlayers[theirs] });
     } else if (watchingGame) turns.seat(null);
     else if (isAutoMode) turns.seat(autoStopped ? null : auto);
-    else turns.seat({ white: humanPlayers.white, black: isLocalMode ? humanPlayers.black : bot });
+    else if (isLocalMode) turns.seat({ white: humanPlayers.white, black: humanPlayers.black });
+    else {
+      const white =
+        twitchVoteMode === 'chatvsbot' ? chat : twitchVoteMode === 'guess' ? guess : humanPlayers.white;
+      turns.seat({ white, black: bot });
+    }
   }, [
     isMultiplayer,
     onlineColor,
@@ -107,10 +155,12 @@ export function useSeats({
     isAutoMode,
     autoStopped,
     isLocalMode,
+    twitchVoteMode,
     botLevelRef,
     setSelected,
     setSearchEvalFromWhite,
     setSearchMateInPlies,
+    setPreviewTopology,
     autoLastMoveAtRef,
   ]);
 }

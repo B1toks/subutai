@@ -9,8 +9,9 @@ export interface Turns {
    *  being watched). A side whose player changed loses the turn it had. */
   seat(seats: Seats | null): void;
   /** A player at this device acts: runs `action` now if the side to move
-   *  is seated here as a human and the game is on; returns what happened
-   *  (nothing: not theirs to do, or the session refused it). */
+   *  is seated here as a human (or as chat, whose seat the streamer shares)
+   *  and the game is on; returns what happened (nothing: not theirs to do,
+   *  or the session refused it). */
   act(action: Action): readonly SessionEvent[];
   /** The side to move's player, if it is seated here. */
   toMove(): Player | null;
@@ -108,7 +109,7 @@ export function createTurns(store: SessionStore): Turns {
     },
     act(action) {
       const player = playerOf(store.getState());
-      if (!player || player.kind !== 'human') return [];
+      if (!player || (player.kind !== 'human' && player.kind !== 'chat')) return [];
       return store.dispatch(action);
     },
     toMove: () => playerOf(store.getState()),
