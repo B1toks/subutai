@@ -1,4 +1,4 @@
-import { useRef, useEffect, type Dispatch, type SetStateAction, type RefObject } from 'react';
+import { useEffect, type Dispatch, type SetStateAction, type RefObject } from 'react';
 import type { User } from 'firebase/auth';
 import { useMultiplayerSync } from '../../components/MultiplayerGameView';
 import { rejoinMatch, type MatchDoc, type MatchOutcome } from '../../firebase/matches';
@@ -55,12 +55,6 @@ export function useOnlineMatch({
     },
   );
   const isMultiplayer = mpSync !== null;
-  // R15-bug — mirror for async continuations (AI think can outlive the
-  // solo game it started in when a PvP match begins mid-search).
-  const isMultiplayerRef = useRef(isMultiplayer);
-  useEffect(() => {
-    isMultiplayerRef.current = isMultiplayer;
-  }, [isMultiplayer]);
 
   // R13b — persist the live match code so a refresh can resume it. The
   // key exists only while a match is genuinely live: it clears when the
@@ -105,5 +99,5 @@ export function useOnlineMatch({
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
-  return { mpSync, isMultiplayer, isMultiplayerRef };
+  return { mpSync, isMultiplayer };
 }

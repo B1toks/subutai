@@ -156,8 +156,7 @@ import { useSoloFlagFall } from './features/game/useSoloFlagFall';
 import { useAfkNudge } from './features/game/useAfkNudge';
 import { useMoveFeedback } from './features/game/useMoveFeedback';
 import { useRouletteAutoSpin } from './features/game/useRouletteAutoSpin';
-import { useBotScheduler } from './features/game/useBotScheduler';
-import { useBotTurn } from './features/game/useBotTurn';
+import { useSeats } from './features/game/useSeats';
 import { useChatVsBot } from './features/twitch/useChatVsBot';
 import { useGuessTheStreamer } from './features/twitch/useGuessTheStreamer';
 import { useCaptureFx } from './features/game/useCaptureFx';
@@ -171,7 +170,6 @@ import { useGameSaveQueue, type FinishedGameSave } from './features/endgame/useG
 import { useMaterial } from './features/game/useMaterial';
 import { useCanRotate } from './features/game/useCanRotate';
 import { session, turns } from './session/session';
-import { humanPlayers } from './session/players/human';
 import { useSession } from './session/useSession';
 import { useSessionEventsAfterCommit } from './session/useSessionEvents';
 import { useOnlineBoardEvents } from './services/onlineEvents';
@@ -385,7 +383,7 @@ function App() {
   const [activeReviewMeta, setActiveReviewMeta] =
     useState<GameReviewMeta | null>(null);
   const [sharedGameError, setSharedGameError] = useState<string | null>(null);
-  const { mpSync, isMultiplayer, isMultiplayerRef } = useOnlineMatch({
+  const { mpSync, isMultiplayer } = useOnlineMatch({
     user,
     setView,
     setOpponentMode,
@@ -1584,16 +1582,6 @@ function App() {
       : state.sideToMove === 'white'
         ? 'human'
         : 'ai';
-  // Who plays each side at this device (src/session/players): in a solo
-  // game white is the player here, and in hot-seat black too; the moves,
-  // rotations and promotions of a seated side go through turns.act. An
-  // online match is played through its match document.
-  useEffect(() => {
-    turns.seat(
-      isMultiplayer ? null : { white: humanPlayers.white, black: isLocalMode ? humanPlayers.black : null },
-    );
-  }, [isMultiplayer, isLocalMode]);
-
   /** QA-11 — solo only: the bot's move is in flight. */
   const botThinking =
     !isMultiplayer && !isLocalMode && gameStatus === 'active' && currentPlayer === 'ai';
@@ -1625,40 +1613,25 @@ function App() {
   // change mid-game (e.g. switching out of Roulette skips a spin).
   const modeToggleLocked = log.moves.length > 0 || state.fullmoveNumber > 1;
 
-  const {
-    applyAiSpin,
-    executeAiRouletteAction,
-    scheduleAiMove,
-    scheduleAutoMove,
-  } = useBotScheduler({
-    autoTimerRef,
-    autoLastMoveAtRef,
-    isMultiplayerRef,
-    setSelected,
+  // Who plays each side: the player here (whose moves, rotations and
+  // promotions go through turns.act), the bot, or a self-play run's bot
+  // on both sides (src/session/players).
+  useSeats({
+    isMultiplayer,
+    watchingGame,
+    isAutoMode,
+    autoStopped,
+    isLocalMode,
     botLevelRef,
-    gameMode,
-    aiTimerRef,
+    setSelected,
     setSearchEvalFromWhite,
     setSearchMateInPlies,
-    logLengthRef,
     commitAnalysis,
+    autoLastMoveAtRef,
   });
 
   const { materialBreakdown, materialScore } = useMaterial({ state, myColor });
 
-  useBotTurn({
-    isAutoMode,
-    autoStopped,
-    autoTimerRef,
-    isMultiplayer,
-    watchingGame,
-    aiTimerRef,
-    currentPlayer,
-    scheduleAutoMove,
-    scheduleAiMove,
-    applyAiSpin,
-    executeAiRouletteAction,
-  });
 
   useChatVsBot({
     isAutoMode,

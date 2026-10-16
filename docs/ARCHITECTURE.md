@@ -92,9 +92,12 @@ beat combo scores the move at once; the move sound and `useCaptureFx`
 plays that move out too, as a replayed event (actor `replay`) that
 nothing counting or recording play looks at; online moves reach the same
 listeners through `src/services/onlineEvents.ts` until they go through
-the session. The new session re-renders the board, and the effects that
-still follow state run: `useBotTurn` schedules the bot's reply through
-`useBotScheduler`, `commitAnalysis` from `useClassifier` records the
+the session. The new session opens the next turn
+(`src/session/players/turns.ts`): a side seated with the bot is asked for
+its answer, which it finds after a pause on the search worker
+(`src/ai/search.worker.ts`); a side seated here answers by acting
+(`turns.act`). The new session re-renders the board, and the effects that
+still follow state run: `commitAnalysis` from `useClassifier` records the
 classifier's verdict, `useMemoryAutosave` snapshots the game. When a move,
 a flag fall, a resignation or an agreed draw ends the game, the session's
 `gameEnd` event reaches App after the render that shows the ending
