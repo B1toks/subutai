@@ -7,8 +7,9 @@ Firestore rules are the only trust boundary (see `FIRESTORE-RULES.md`).
 
 | Folder | What lives there |
 |---|---|
-| `src/engine`, `src/ai`, `src/analysis`, `src/recording` | Rules of the variant, the bot, scoring, the game log. No React. `scripts/` and `qa/engine` import these by path. |
-| `src/session` | The game on the board as one value: `SessionState`, the pure `step(state, action)` that makes the next one and says what happened, and the store App and the hooks read it from (`session`, `useSession`). No React in `step.ts`; time comes in the action, chance from a seed in the state. |
+| `src/engine`, `src/ai`, `src/analysis`, `src/recording` | Rules of the variant, the bot, scoring, the game log. No React. `scripts/` and `qa/engine` import these by path. The game's search runs on a worker (`src/ai/search.worker.ts`, `searchClient.ts`), the classifier on another. |
+| `src/session` | The game on the board as one value: `SessionState`, the pure `step(state, action)` that makes the next one and says what happened, and the store App and the hooks read it from (`session`, `useSession`). An online match's document is followed into it (`online.ts`). No React in `step.ts`; time comes in the action, chance from a seed in the state. |
+| `src/session/players` | Who plays each side: the seats, the turns that ask the side to move (`turns.ts`), and the players (here, bot, chat, remote). |
 | `src/firebase` | Every Firestore read and write. The document shapes here are what the rules check; `npm run test:rules` runs this code against the emulator. |
 | `src/audio`, `src/music`, `src/twitch`, `src/spotify` | Browser integrations with no UI of their own. |
 | `src/memory` | Saved games: storage, notation, replay import, the Memory panel, and the hooks that autosave a game and resume one. |
@@ -25,8 +26,9 @@ games), `endgame` (results, the save queue, the end-of-game sequence),
 
 ## The shell
 
-`App.tsx` calls the hooks, reads the game from the session (and an online
-game from its match), keeps the screen's own state, and picks a view: stats,
+`App.tsx` calls the hooks, reads the game from the session (an online match
+too: the session follows its document), keeps the screen's own state, and
+picks a view: stats,
 autoplay, review, leaderboard, lobby or the game. Every hook is called
 before that choice, so they all stay mounted whatever is on screen: the bot,
 the clocks and presence keep running while the leaderboard is open. Game
@@ -58,27 +60,33 @@ function declaration (`startNewGame`) or, for a state setter declared later
         │  snapshot          ▲ writes               ▲              │
         ▼                    │                      │              ▼
  useOnlineMatch ──┐   useOnlineMatchEnd     useMemoryAutosave   useResumeGame
-                  │   useGameSaveQueue
+  (follow)        │   useGameSaveQueue
                   ▼
  session (src/session): step(state, action) ◄── session.dispatch(action)
-        │ useSession                                        ▲
-        ▼                                                   │
- App.tsx: read-side aliases (state, log, legalMoves)        │
-        │                                                   │
-        ▼                                                   │
- feature hooks (bot, clocks, classifier, effects, coach …) ─┤
-        │                                                   │
-        ▼                                                   │
- the view on screen (board, panels, dialogs) ── a click ────┘
+        │ useSession        │ the turns (players/turns.ts)      ▲
+        │                   └─► the bot, chat: onTurn ─────────┤
+        ▼                                                      │
+ App.tsx: the game on the board (state, log, legalMoves)       │
+        │                                                      │
+        ▼                                                      │
+ feature hooks (clocks, classifier, effects, coach …) ─────────┤
+        │                                                      │
+        ▼                                                      │
+ the view on screen (board, panels, dialogs) ── a click: turns.act
 ```
 
 Where the game lives: a solo or hot-seat game is the session (the board, the
 log, the status, the roulette turn, the pending promotion, the draw offers,
 the clocks); App reads it with `useSession` and changes it only by
-dispatching an action. An online game lives in its match document;
-`useOnlineMatch` subscribes to it and App reads it through the same names
-(`state`, `log`, `legalMoves`, `lastMove`), so the board and the hooks do
-not care which kind of game it is.
+dispatching an action. An online game lives in its match document, which
+`useMultiplayerSync` reads; each snapshot is a `follow` action, and the
+session keeps the document beside the solo game (`state.online`) with what
+it makes on the board here (the board, the log, the legal moves, the last
+move, the Roulette bag). The document and the board change in one step,
+and App reads the game on the board through one set of names (`state`,
+`log`, `legalMoves`, `lastMove`), so the board and the hooks do not care
+which kind of game it is. The solo game is left as it was and shows again
+when the match goes.
 
 A move, from the click to the record. A click on a square calls
 `onSquareClick` in App, which finds the move among the legal ones. Solo, it
@@ -133,6 +141,44 @@ purpose:
   without events, and a sign-in in the middle of a game; driven by move
   events it would miss both, which would change what is recorded.
 
+## Players
+
+Each side of the game on the board is seated with a player
+(`src/session/players`), and `useSeats` chooses them:
+
+| Game | White | Black |
+|---|---|---|
+| solo vs the bot | the player here (with Twitch: chat, or the player with chat guessing) | the bot |
+| hot-seat | the player here | the player here |
+| self-play run | the run's bot | the run's bot |
+| online match | the remote player on the opponent's side; nobody on mine | |
+| a replay being watched, a stopped run | nobody | nobody |
+
+The turns (`turns.ts`) open a turn whenever the board, the phase, the
+Roulette bag, the mode or the game changes (a clock tick or a classifier's
+verdict is not a new turn), ask the side to move's player with `onTurn`,
+and dispatch its answer. A turn that ends first (a move, a resign, a flag,
+a new game, a resume, a seat change) aborts the player's signal, and an
+answer that comes after that is dropped: what used to clear the bot's
+timer by hand.
+
+- **The player here** (`human.ts`) answers by acting: App's click, rotation
+  and promotion handlers call `turns.act`, which dispatches at once, in the
+  click, and only for a side seated here.
+- **The bot** (`bot.ts`) pauses, asks the search worker for the level's
+  move, lets the Twitch Predict vote have its say (`moveVoting.gate`), and
+  answers; the end of the game is asked after the classifier's verdict.
+  Roulette: the spin, then each action of the bag after its pause. The
+  self-play bot is the same with a short pause and a label search.
+- **Chat** (`chat.ts`) votes the side's move through
+  `moveVoting.gateHumanMove`, the one vote pipeline; the player here shares
+  the seat, and their move first ends the turn and drops the vote. Guess
+  the streamer wraps the player here: the guess opens with the turn and is
+  dropped when it ends unrevealed.
+- **The remote player** (`remote.ts`) answers nothing here: the opponent's
+  moves, and mine once written (`mpSync.sendMove`), arrive in the match
+  document, which the session follows.
+
 ## Where to add things
 
 - A new feature: a folder `src/features/<name>` with its hook, helpers and
@@ -173,7 +219,8 @@ Players, saved games and QA scripts depend on them.
 - `*.test.ts` next to the code, for the pure functions (`npm test`).
 - `src/session/step.golden.test.ts` holds `step()` to the game as App's
   handlers played it before the session (`src/session/golden/legacy.ts`):
-  320 seeded self-play games and the QA fixtures, compared after every
-  action. A rule change shows up there first.
+  30 seeded self-play games per commit (320 in a full gate,
+  `GOLDEN_GAMES=320`) and the QA fixtures, compared after every action. A
+  rule change shows up there first.
 - `scripts/test-*.ts`, `scripts/repro960.ts` and `qa/engine/*` for the engine and the game log (`npx tsx <file>`).
 - `npm run test:rules` for the rules, driven by the real client.
