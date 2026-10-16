@@ -2682,7 +2682,7 @@ function App() {
             // two are never confusable at a glance. Online it follows the
             // colour you were actually dealt; in hot-seat nobody is "you",
             // so the two seats simply get the two colours.
-            const mine = side === (isMultiplayer ? mpSync?.myColor ?? 'white' : 'white');
+            const mine = side === myColor;
             return (
               <ClockFace
                 key={side}
@@ -2909,7 +2909,7 @@ function App() {
           // The parent .board stays unrotated so piece glyphs render right-
           // way-up for both colors; we just flip the per-tile position so
           // the black player sees their own back rank at the bottom.
-          const flip = isMultiplayer && mpSync?.myColor === 'black';
+          const flip = myColor === 'black';
           const cxView = flip ? boardSize - cx : cx;
           const cyView = flip ? boardSize - cy : cy;
           const tx = cxView - tileBase / 2;
@@ -3253,7 +3253,7 @@ function App() {
               ))}
             </defs>
             {arrowAnnotations.map((arrow, i) => {
-              const annFlip = isMultiplayer && mpSync?.myColor === 'black';
+              const annFlip = myColor === 'black';
               const fromC = tilePixelCenter(arrow.from, displayTopology, layout);
               const toC = tilePixelCenter(arrow.to, displayTopology, layout);
               const fromX = annFlip ? boardSize - fromC.cx : fromC.cx;
@@ -3446,7 +3446,7 @@ function App() {
           Earlier attempts kept the labels inside the tiles, which meant
           the .board rotation transform dragged them along. */}
       {(() => {
-        const flip = isMultiplayer && mpSync?.myColor === 'black';
+        const flip = myColor === 'black';
         const previewing = !!(previewTopology || previewLocked);
         return (
           <div
