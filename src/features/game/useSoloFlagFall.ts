@@ -11,7 +11,6 @@ interface UseSoloFlagFallArgs {
   isMultiplayer: boolean;
   watchingGame: WatchingGame | null;
   setSelected: Dispatch<SetStateAction<string | null>>;
-  aiTimerRef: RefObject<number | null>;
   toast: ToastContextValue;
   isLocalMode: boolean;
 }
@@ -28,7 +27,6 @@ export function useSoloFlagFall({
   isMultiplayer,
   watchingGame,
   setSelected,
-  aiTimerRef,
   toast,
   isLocalMode,
 }: UseSoloFlagFallArgs) {
@@ -53,7 +51,6 @@ export function useSoloFlagFall({
     );
     if (!flagged) return;
     soloFlagLogIdRef.current = log.id;
-    if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
     setSelected(null);
     session.dispatch({ type: 'flag', side: flagged });
     if (isLocalMode) completedLogIdRef.current = log.id;
@@ -73,8 +70,7 @@ export function useSoloFlagFall({
     log.moves.length,
     isLocalMode,
     toast,
-    aiTimerRef,
-    completedLogIdRef,
+      completedLogIdRef,
     setSelected,
   ]);
 }

@@ -281,7 +281,6 @@ function App() {
   const [autoMoveHistory, setAutoMoveHistory] = useState<number[]>([]);
   const [autoStopped, setAutoStopped] = useState(false);
   const [autoStoppedReason, setAutoStoppedReason] = useState<string | null>(null);
-  const autoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoNextGameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoLastMoveAtRef = useRef<number>(Date.now());
   // Each completed game-id is processed exactly once by the auto-save effect.
@@ -603,7 +602,6 @@ function App() {
       ? (mpSync.matchState.rouletteSpinsByPlayer?.[user.uid] ?? 0) > 0
       : firstRouletteSpinDoneLocal;
   const formationInputRef = useRef<HTMLInputElement>(null);
-  const aiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // SP-3 — true while a Beat-Mode move is queued to land on the next
   // beat; blocks board input so the snap can't be raced.
   const beatSnapPendingRef = useRef(false);
@@ -827,7 +825,6 @@ function App() {
     autoStopped,
     setAutoStopped,
     setAutoStoppedReason,
-    autoTimerRef,
     autoNextGameTimerRef,
     autoLastMoveAtRef,
     autoSavedLogIdRef,
@@ -873,7 +870,6 @@ function App() {
         lockedFormationKey,
       };
 
-      if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
       if (watchAutoplayRef.current) clearTimeout(watchAutoplayRef.current);
 
       // Project frame 0 of the replay.
@@ -1008,7 +1004,6 @@ function App() {
       return;
     }
     if (!side || gameStatus !== 'active' || botThinking) return;
-    if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
     // Stamped before the status flips, so the completion effect skips it.
     completedLogIdRef.current = log.id;
     session.dispatch({ type: 'resign', side });
@@ -1173,7 +1168,6 @@ function App() {
       setFormationInputValue(raw);
       return;
     }
-    if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
     const initial = createPositionFromBackRankKey(raw);
     // A new log, named after now; the seed stays (the code names the board).
     session.dispatch({ type: 'newGame', initial, now: Date.now() });
@@ -1279,7 +1273,6 @@ function App() {
   }
 
   function startNewGame() {
-    if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
     // Reset the transposition table so positions from the previous game can't
     // bias the new search. (TT is reused across moves WITHIN one game.)
     clearSearchTable();
@@ -1538,7 +1531,6 @@ function App() {
     isMultiplayer,
     watchingGame,
     setSelected,
-    aiTimerRef,
     toast,
     isLocalMode,
   });
@@ -2150,7 +2142,6 @@ function App() {
     setBotLevel,
     setFormationLocked,
     setLockedFormationKey,
-    aiTimerRef,
     savedForLogIdRef,
     liveSavedGameIdRef,
     setSearchEvalFromWhite,

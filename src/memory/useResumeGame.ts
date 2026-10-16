@@ -33,7 +33,6 @@ interface UseResumeGameArgs {
   setBotLevel: (next: BotStrength) => void;
   setFormationLocked: Dispatch<SetStateAction<boolean>>;
   setLockedFormationKey: Dispatch<SetStateAction<string | null>>;
-  aiTimerRef: RefObject<number | null>;
   savedForLogIdRef: RefObject<string | null>;
   liveSavedGameIdRef: RefObject<string>;
   setSearchEvalFromWhite: Dispatch<SetStateAction<number | null>>;
@@ -62,7 +61,6 @@ export function useResumeGame({
   setBotLevel,
   setFormationLocked,
   setLockedFormationKey,
-  aiTimerRef,
   savedForLogIdRef,
   liveSavedGameIdRef,
   setSearchEvalFromWhite,
@@ -107,7 +105,6 @@ export function useResumeGame({
       nextLog = appendMove(nextLog, mv, san, entry.topology);
     }
 
-    if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
     session.dispatch({
       type: 'load',
       game: { initial, board: current, log: nextLog, lastMove: null },

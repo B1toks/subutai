@@ -25,7 +25,6 @@ interface UseAutoPlayArgs {
   autoStopped: boolean;
   setAutoStopped: Dispatch<SetStateAction<boolean>>;
   setAutoStoppedReason: Dispatch<SetStateAction<string | null>>;
-  autoTimerRef: RefObject<number | null>;
   autoNextGameTimerRef: RefObject<number | null>;
   autoLastMoveAtRef: RefObject<number>;
   autoSavedLogIdRef: RefObject<string | null>;
@@ -54,7 +53,6 @@ export function useAutoPlay({
   autoStopped,
   setAutoStopped,
   setAutoStoppedReason,
-  autoTimerRef,
   autoNextGameTimerRef,
   autoLastMoveAtRef,
   autoSavedLogIdRef,
@@ -129,7 +127,6 @@ export function useAutoPlay({
       setAutoStopped(true);
       setAutoStoppedReason(`Done. ${autoGamesCompleted} games completed.`);
       if (autoNextGameTimerRef.current) clearTimeout(autoNextGameTimerRef.current);
-      if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
     }
   }, [
     autoGamesCompleted,
@@ -137,7 +134,6 @@ export function useAutoPlay({
     isAutoMode,
     autoStopped,
     autoNextGameTimerRef,
-    autoTimerRef,
     setAutoStopped,
     setAutoStoppedReason,
   ]);
@@ -160,16 +156,13 @@ export function useAutoPlay({
   // Clear auto timers on unmount.
   useEffect(() => {
     return () => {
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- a timer id, not a DOM node: unmount clears whichever timer is pending then
-      if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
       if (autoNextGameTimerRef.current) clearTimeout(autoNextGameTimerRef.current);
     };
-  }, [autoNextGameTimerRef, autoTimerRef]);
+  }, [autoNextGameTimerRef]);
 
   function stopAuto() {
     setAutoStopped(true);
     setAutoStoppedReason('Stopped by user.');
-    if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
     if (autoNextGameTimerRef.current) clearTimeout(autoNextGameTimerRef.current);
     // Navigate back to the clean URL so a reload exits auto mode entirely.
     setTimeout(() => {
