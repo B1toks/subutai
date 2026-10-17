@@ -2,6 +2,7 @@ import { useEffect, type Dispatch, type SetStateAction, type RefObject } from 'r
 import type { User } from 'firebase/auth';
 import { useMultiplayerSync } from '../../components/MultiplayerGameView';
 import { rejoinMatch, type MatchDoc, type MatchOutcome } from '../../firebase/matches';
+import { localData, LOCAL_KEYS } from '../../infra/localData';
 
 interface UseOnlineMatchArgs {
   user: User | null;
@@ -62,9 +63,9 @@ export function useOnlineMatch({
   useEffect(() => {
     try {
       if (activeMatch && !mpEndOutcome) {
-        localStorage.setItem('subutai_mp_active', activeMatch.code);
+        localData.set(LOCAL_KEYS.mpActive, activeMatch.code);
       } else {
-        localStorage.removeItem('subutai_mp_active');
+        localData.remove(LOCAL_KEYS.mpActive);
       }
     } catch {
       /* private mode */
@@ -92,7 +93,7 @@ export function useOnlineMatch({
       })
       .catch(() => {
         try {
-          localStorage.removeItem('subutai_mp_active');
+          localData.remove(LOCAL_KEYS.mpActive);
         } catch {
           /* private mode */
         }

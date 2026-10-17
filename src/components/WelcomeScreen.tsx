@@ -1,8 +1,6 @@
 import { ArrowRight } from 'lucide-react';
 import { Icon } from './Icon';
 
-export const WELCOME_SEEN_KEY = 'subutai_welcome_seen';
-
 interface WelcomeScreenProps {
   /** Dismiss and run the tour. The primary (and intended) path. */
   onStart: () => void;

@@ -1,9 +1,10 @@
 import { isValidChess960Key } from '../engine';
 import type { GameStorage, SavedGame } from './types';
+import { localData, LOCAL_KEYS } from '../infra/localData';
 
-const STORAGE_KEY = 'subutai-games';
+const STORAGE_KEY = LOCAL_KEYS.games;
 /** V1 — App's pointer to the Memory entry of the solo game in progress. */
-export const LIVE_SESSION_KEY = 'subutai_live_session';
+export const LIVE_SESSION_KEY = LOCAL_KEYS.liveSession;
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -45,7 +46,7 @@ function isSavedGame(v: unknown): v is SavedGame {
 
 function loadRawGames(): SavedGame[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localData.get(STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
@@ -62,8 +63,8 @@ function loadRawGames(): SavedGame[] {
  *  Settings, the player's name and anything online are left alone. */
 export function clearMemoryStorage(): void {
   try {
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(LIVE_SESSION_KEY);
+    localData.remove(STORAGE_KEY);
+    localData.remove(LIVE_SESSION_KEY);
   } catch {
     /* private mode */
   }
@@ -87,7 +88,7 @@ export const localStorageAdapter: GameStorage = {
   async saveGame(game: SavedGame): Promise<void> {
     const games = loadRawGames();
     const updated = [...games, game];
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    localData.set(STORAGE_KEY, JSON.stringify(updated));
   },
 
   async saveOrUpdateGame(game: SavedGame): Promise<void> {
@@ -98,12 +99,12 @@ export const localStorageAdapter: GameStorage = {
     } else {
       games[idx] = game;
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(games));
+    localData.set(STORAGE_KEY, JSON.stringify(games));
   },
 
   async deleteGame(id: string): Promise<void> {
     const games = loadRawGames();
     const filtered = games.filter((g) => g.id !== id);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+    localData.set(STORAGE_KEY, JSON.stringify(filtered));
   },
 };

@@ -1,11 +1,12 @@
 import { isBotStrength, type BotStrength } from '../../ai/agents';
+import { localData, LOCAL_KEYS } from '../../infra/localData';
 
 /** The level picked last time, kept across visits. */
-export const BOT_LEVEL_KEY = 'subutai_bot_level';
+export const BOT_LEVEL_KEY = LOCAL_KEYS.botLevel;
 
 export function readInitialBotLevel(): BotStrength {
   try {
-    const raw = localStorage.getItem(BOT_LEVEL_KEY);
+    const raw = localData.get(BOT_LEVEL_KEY);
     if (isBotStrength(raw)) return raw;
   } catch {
     /* private mode */

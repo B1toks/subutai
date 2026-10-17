@@ -1,5 +1,6 @@
 import { isBotStrength, type BotStrength } from '../ai/agents';
 import { LIVE_SESSION_KEY } from './storage';
+import { localData } from '../infra/localData';
 
 /** V1 — pointer to the solo game in progress, for a new tab to resume.
  *  The key lives next to Memory's, whose entry it points at. */
@@ -21,7 +22,7 @@ export interface LiveSession {
 
 export function writeLiveSession(s: LiveSession): void {
   try {
-    localStorage.setItem(LIVE_SESSION_KEY, JSON.stringify(s));
+    localData.set(LIVE_SESSION_KEY, JSON.stringify(s));
   } catch {
     /* private mode — the tab just starts fresh */
   }
@@ -29,7 +30,7 @@ export function writeLiveSession(s: LiveSession): void {
 
 export function readLiveSession(): LiveSession | null {
   try {
-    const raw = localStorage.getItem(LIVE_SESSION_KEY);
+    const raw = localData.get(LIVE_SESSION_KEY);
     if (!raw) return null;
     const v = JSON.parse(raw) as Partial<LiveSession>;
     if (typeof v.gameId !== 'string' || typeof v.savedAt !== 'number') return null;
@@ -49,7 +50,7 @@ export function readLiveSession(): LiveSession | null {
 
 export function clearLiveSession(): void {
   try {
-    localStorage.removeItem(LIVE_SESSION_KEY);
+    localData.remove(LIVE_SESSION_KEY);
   } catch {
     /* private mode */
   }

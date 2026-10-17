@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import type { BotStrength } from '../../ai/agents';
 import { readInitialBotLevel, BOT_LEVEL_KEY } from './botLevel';
+import { localData } from '../../infra/localData';
 
 /**
  * The bot's strength: the level on screen, a ref the bot's scheduler
@@ -17,7 +18,7 @@ export function useBotLevel() {
   function setBotLevel(next: BotStrength) {
     setBotLevelState(next);
     try {
-      localStorage.setItem(BOT_LEVEL_KEY, next);
+      localData.set(BOT_LEVEL_KEY, next);
     } catch {
       /* private mode */
     }

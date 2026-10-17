@@ -23,8 +23,6 @@ import { Icon } from './Icon';
 
 import { STREAMING_UI } from '../featureFlags';
 
-export const TUTORIAL_DONE_KEY = 'subutai_tutorial_done';
-
 interface TourStep {
   /** [data-tour] attribute value; omit for a centered card. */
   target?: string;

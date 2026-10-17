@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { dockLayout, type DockState } from '../ui/dockLayout';
 import { computeBoardSize } from './boardSize';
+import { localData, LOCAL_KEYS } from '../infra/localData';
 
 /**
  * How big the board is: the columns docked panels reserve, the UI scale
@@ -20,7 +21,7 @@ export function useBoardSize() {
   // happens in zoomed coordinates.
   const [uiScale, setUiScale] = useState<number>(() => {
     try {
-      const v = Number.parseFloat(localStorage.getItem('subutai_ui_scale') ?? '1');
+      const v = Number.parseFloat(localData.get(LOCAL_KEYS.uiScale) ?? '1');
       return Number.isFinite(v) && v >= 0.8 && v <= 1.5 ? v : 1;
     } catch {
       return 1;
@@ -37,7 +38,7 @@ export function useBoardSize() {
     const clamped = Math.max(0.8, Math.min(1.5, v));
     setUiScale(clamped);
     try {
-      localStorage.setItem('subutai_ui_scale', String(clamped));
+      localData.set(LOCAL_KEYS.uiScale, String(clamped));
     } catch {
       /* private mode */
     }

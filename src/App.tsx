@@ -171,6 +171,7 @@ import { session, turns } from './session/session';
 import { useSession, useSessionFatal } from './session/useSession';
 import { useSessionEventsAfterCommit } from './session/useSessionEvents';
 import { drawTableOf, statusOf } from './session/step';
+import { localData, LOCAL_KEYS } from './infra/localData';
 
 // Sprint 4.4 — heavy sub-views are code-split. Each renders as a
 // full-screen takeover, so a Suspense spinner fallback is natural.
@@ -363,7 +364,7 @@ function App() {
   const mpResumeCodeRef = useRef<string | null>(
     (() => {
       try {
-        return localStorage.getItem('subutai_mp_active');
+        return localData.get(LOCAL_KEYS.mpActive);
       } catch {
         return null;
       }
@@ -449,7 +450,7 @@ function App() {
   // so the choice survives reloads.
   const [helpToolsEnabled, setHelpToolsEnabled] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('subutai_help_tools') !== '0';
+      return localData.get(LOCAL_KEYS.helpTools) !== '0';
     } catch {
       return true;
     }
@@ -1291,7 +1292,7 @@ function App() {
     setHelpToolsEnabled((v) => {
       const next = !v;
       try {
-        localStorage.setItem('subutai_help_tools', next ? '1' : '0');
+        localData.set(LOCAL_KEYS.helpTools, next ? '1' : '0');
       } catch { /* private mode */ }
       if (!next) {
         setShowSupport(false);

@@ -1,6 +1,5 @@
 import { useState, useCallback } from 'react';
-import { TUTORIAL_DONE_KEY } from '../components/TutorialOverlay';
-import { WELCOME_SEEN_KEY } from '../components/WelcomeScreen';
+import { LOCAL_KEYS, localData } from '../infra/localData';
 
 /**
  * The first-visit welcome screen and the guided tour: whether each is up,
@@ -17,22 +16,22 @@ export function useOnboarding() {
   const [showWelcome, setShowWelcome] = useState<boolean>(() => {
     try {
       // Anyone who already finished the old tour is not a first-timer.
-      if (localStorage.getItem(TUTORIAL_DONE_KEY) === '1') return false;
-      return localStorage.getItem(WELCOME_SEEN_KEY) !== '1';
+      if (localData.get(LOCAL_KEYS.tutorialDone) === '1') return false;
+      return localData.get(LOCAL_KEYS.welcomeSeen) !== '1';
     } catch {
       return false;
     }
   });
   const dismissWelcome = useCallback((startTour: boolean) => {
     try {
-      localStorage.setItem(WELCOME_SEEN_KEY, '1');
+      localData.set(LOCAL_KEYS.welcomeSeen, '1');
     } catch { /* private mode — it will greet them again next visit */ }
     setShowWelcome(false);
     if (startTour) setShowTutorial(true);
   }, []);
   const closeTutorial = useCallback(() => {
     try {
-      localStorage.setItem(TUTORIAL_DONE_KEY, '1');
+      localData.set(LOCAL_KEYS.tutorialDone, '1');
     } catch { /* private mode — show it again next visit */ }
     setShowTutorial(false);
   }, []);

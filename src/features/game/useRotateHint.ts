@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { GameStatus } from '../../shared/game';
+import { localData, LOCAL_KEYS } from '../../infra/localData';
 
 interface UseRotateHintArgs {
   gameStatus: GameStatus;
@@ -18,13 +19,13 @@ export function useRotateHint({ gameStatus }: UseRotateHintArgs) {
   // first dismissal or first rotation.
   const [rotateHintShown, setRotateHintShown] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
-    return window.localStorage.getItem('subutai_rotate_hint_seen') === '1';
+    return localData.get(LOCAL_KEYS.rotateHintSeen) === '1';
   });
   const showRotateHint = !rotateHintShown && gameStatus === 'active';
   function dismissRotateHint() {
     setRotateHintShown(true);
     try {
-      window.localStorage.setItem('subutai_rotate_hint_seen', '1');
+      localData.set(LOCAL_KEYS.rotateHintSeen, '1');
     } catch {
       /* private mode / quota — no-op */
     }
