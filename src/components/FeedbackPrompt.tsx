@@ -4,10 +4,10 @@ import { Frown, Heart, Meh, Smile, Sparkles } from 'lucide-react';
 import { Icon } from './Icon';
 import {
   hasAnyContent,
-  submitFeedback,
   type FeedbackGameContext,
   type FeedbackRating,
 } from '../firebase/feedback';
+import { feedbackRepo } from '../infra/firestore/feedback';
 
 interface FeedbackPromptProps {
   playerId: string;
@@ -60,7 +60,7 @@ export function FeedbackPrompt({
     setSubmitting(true);
     setError(null);
     try {
-      await submitFeedback({
+      await feedbackRepo.submit({
         type: 'game',
         playerId,
         playerName,

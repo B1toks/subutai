@@ -2,16 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Dices, Users, Zap } from 'lucide-react';
 import { Icon } from './Icon';
 import {
-  createMatch,
-  joinMatch,
   normalizeMatchCode,
-  subscribeMatch,
   type MatchDoc,
   type MatchGameMode,
 } from '../firebase/matches';
-import { findQuickMatch, type QuickMatchHandle } from '../firebase/quickMatch';
+import type { QuickMatchHandle } from '../firebase/quickMatch';
 import { noteServerStampSeen } from '../firebase/serverClock';
-import { getOnlineCount } from '../firebase/presence';
+import { lobbyRepo } from '../infra/firestore/lobby';
 
 interface FriendLobbyProps {
   uid: string | null;
@@ -77,7 +74,7 @@ export function FriendLobby({
   useEffect(() => {
     let live = true;
     const refresh = () => {
-      void getOnlineCount().then((n) => {
+      void lobbyRepo.onlineCount().then((n) => {
         if (live) setOnlineCount(n);
       });
     };
@@ -107,7 +104,7 @@ export function FriendLobby({
     setBusy(true);
     setError(null);
     setView({ kind: 'searching' });
-    const handle = findQuickMatch({ uid: uid!, displayName: displayName! });
+    const handle = lobbyRepo.findQuick({ uid: uid!, displayName: displayName! });
     qmHandleRef.current = handle;
     try {
       const res = await handle.result;
@@ -147,7 +144,7 @@ export function FriendLobby({
   useEffect(() => {
     if (view.kind !== 'hosted') return;
     let first = true;
-    const unsub = subscribeMatch(view.code, (doc, fromCache) => {
+    const unsub = lobbyRepo.subscribe(view.code, (doc, fromCache) => {
       const seenAt = Date.now();
       const wasFirst = first;
       // fix/v1.1.4 — any first snapshot, cached too. The host's first copy
@@ -178,7 +175,7 @@ export function FriendLobby({
     setBusy(true);
     setError(null);
     try {
-      const code = await createMatch(
+      const code = await lobbyRepo.create(
         { uid: uid!, displayName: displayName! },
         createMode,
         // Timed roulette doesn't fit the multi-action turn model yet.
@@ -205,7 +202,7 @@ export function FriendLobby({
     setError(null);
     setView({ kind: 'joining' });
     try {
-      const match = await joinMatch(code, {
+      const match = await lobbyRepo.join(code, {
         uid: uid!,
         displayName: displayName!,
       });

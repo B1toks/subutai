@@ -20,7 +20,8 @@ import {
   query,
 } from 'firebase/firestore';
 import { db } from '../firebase/client';
-import { fetchLeaderboardPage, type LeaderboardEntry } from '../firebase/leaderboard';
+import type { LeaderboardEntry } from '../firebase/leaderboard';
+import { leaderboardRepo } from '../infra/firestore/leaderboard';
 import { createStartingPosition } from '../engine';
 import type { BoardState, Color, PieceType, SquareId } from '../engine/types';
 import {
@@ -308,7 +309,7 @@ function ShowcaseLeaderboard({ highlightedUser }: LeaderboardProps) {
 
   useEffect(() => {
     let cancelled = false;
-    fetchLeaderboardPage()
+    leaderboardRepo.page()
       .then((page) => {
         if (cancelled) return;
         setEntries(page.entries.slice(0, 10));

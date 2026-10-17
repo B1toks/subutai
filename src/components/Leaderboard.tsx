@@ -11,11 +11,11 @@ import {
   XCircle,
 } from 'lucide-react';
 import {
-  fetchLeaderboardPage,
   type BoardType,
   type LeaderboardCursor,
   type LeaderboardEntry,
 } from '../firebase/leaderboard';
+import { leaderboardRepo } from '../infra/firestore/leaderboard';
 import type { GameOutcome } from '../analysis/points';
 import { Icon } from './Icon';
 import { Skeleton } from './Skeleton';
@@ -66,7 +66,7 @@ export function Leaderboard({ currentUid, onBack, onWatchGame, watchDisabled }: 
     setEntries([]);
     setCursor(null);
     setHasMore(false);
-    fetchLeaderboardPage(undefined, boardType)
+    leaderboardRepo.page(undefined, boardType)
       .then((page) => {
         if (cancelled) return;
         setEntries(page.entries);
@@ -90,7 +90,7 @@ export function Leaderboard({ currentUid, onBack, onWatchGame, watchDisabled }: 
     if (!cursor || loadingMore) return;
     setLoadingMore(true);
     try {
-      const page = await fetchLeaderboardPage(cursor, boardType);
+      const page = await leaderboardRepo.page(cursor, boardType);
       setEntries((prev) => [...prev, ...page.entries]);
       setCursor(page.cursor);
       setHasMore(page.hasMore);

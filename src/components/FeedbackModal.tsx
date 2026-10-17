@@ -2,11 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { Frown, Heart, Meh, Smile, Sparkles } from 'lucide-react';
 import { Icon } from './Icon';
-import {
-  hasAnyContent,
-  submitFeedback,
-  type FeedbackRating,
-} from '../firebase/feedback';
+import { hasAnyContent, type FeedbackRating } from '../firebase/feedback';
+import { feedbackRepo } from '../infra/firestore/feedback';
 
 interface FeedbackModalProps {
   playerId: string;
@@ -63,7 +60,7 @@ export function FeedbackModal({ playerId, playerName, onClose }: FeedbackModalPr
     setSubmitting(true);
     setError(null);
     try {
-      await submitFeedback({
+      await feedbackRepo.submit({
         type: 'general',
         playerId,
         playerName,

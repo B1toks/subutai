@@ -1,11 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  changeDisplayName,
-  claimDisplayName,
-  displayNameProblem,
-  isDisplayNameAvailable,
-  normalizeDisplayName,
-} from '../firebase/auth';
+import { displayNameProblem, normalizeDisplayName } from '../firebase/auth';
+import { profileRepo } from '../infra/firestore/profile';
 
 type Mode = 'initial' | 'change';
 
@@ -90,7 +85,7 @@ export function NamePicker({
 
     const handle = setTimeout(async () => {
       try {
-        const available = await isDisplayNameAvailable(value);
+        const available = await profileRepo.isNameAvailable(value);
         if (lastQueryRef.current !== trimmedSlug) return;
         setRemoteResult({
           slug: trimmedSlug,
@@ -115,9 +110,9 @@ export function NamePicker({
     setError(null);
     try {
       if (mode === 'initial') {
-        await claimDisplayName(uid, value);
+        await profileRepo.claimName(uid, value);
       } else {
-        await changeDisplayName(uid, currentName, value);
+        await profileRepo.changeName(uid, currentName, value);
       }
       onComplete(value.trim());
     } catch (err) {
