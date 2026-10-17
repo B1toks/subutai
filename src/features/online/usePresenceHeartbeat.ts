@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import type { User } from 'firebase/auth';
-import { startPresenceHeartbeat, stopPresenceHeartbeat } from '../../firebase/presence';
+import { presenceRepo } from '../../infra/firestore/presence';
 
 interface UsePresenceHeartbeatArgs {
   user: User | null;
@@ -16,7 +16,7 @@ export function usePresenceHeartbeat({ user, displayName }: UsePresenceHeartbeat
   // Signed-in users only (same gate as everything matchmaking touches).
   useEffect(() => {
     if (!user || !displayName) return;
-    startPresenceHeartbeat(user.uid);
-    return () => stopPresenceHeartbeat();
+    presenceRepo.start(user.uid);
+    return () => presenceRepo.stop();
   }, [user, displayName]);
 }

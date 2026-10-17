@@ -1,7 +1,8 @@
 import { useEffect, type Dispatch, type SetStateAction, type RefObject } from 'react';
 import type { User } from 'firebase/auth';
 import { useMultiplayerSync } from '../../components/MultiplayerGameView';
-import { rejoinMatch, type MatchDoc, type MatchOutcome } from '../../firebase/matches';
+import type { MatchDoc, MatchOutcome } from '../../firebase/matches';
+import { matchesRepo } from '../../infra/firestore/matches';
 import { localData, LOCAL_KEYS } from '../../infra/localData';
 
 interface UseOnlineMatchArgs {
@@ -80,7 +81,7 @@ export function useOnlineMatch({
     const code = mpResumeCodeRef.current;
     if (!code || !user || activeMatch) return;
     mpResumeCodeRef.current = null;
-    void rejoinMatch(code, user.uid)
+    void matchesRepo.rejoin(code, user.uid)
       .then((match) => {
         startNewGame(); // R15-bug — same solo-world reset as onMatchReady
         setActiveMatch(match);

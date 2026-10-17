@@ -6,12 +6,8 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase/client';
-import {
-  subscribeMatch,
-  type MatchDoc,
-  type MatchEndReason,
-  type MatchOutcome,
-} from '../firebase/matches';
+import type { MatchDoc, MatchEndReason, MatchOutcome } from '../firebase/matches';
+import { matchesRepo } from '../infra/firestore/matches';
 import {
   type BoardState,
   type Move,
@@ -277,7 +273,7 @@ export function useMultiplayerSync(
     let first = true;
     let joinChecked = false;
     let lastActivity: number | undefined;
-    const unsub = subscribeMatch(code, (doc, fromCache) => {
+    const unsub = matchesRepo.subscribe(code, (doc, fromCache) => {
       const seenAt = Date.now();
       if (!doc) {
         evictedRef.current();

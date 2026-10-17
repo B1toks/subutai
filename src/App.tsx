@@ -72,10 +72,8 @@ import {
   translateOutcomeForPlayer,
 } from './firebase/multiplayerGames';
 import { useAuth } from './firebase/useAuth';
-import {
-  fetchSavedGame,
-  deserializeGameLog,
-} from './firebase/games';
+import { deserializeGameLog } from './firebase/games';
+import { gamesRepo } from './infra/firestore/games';
 import { computeGamePoints, type GameOutcome, type GamePoints } from './analysis/points';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
@@ -789,7 +787,7 @@ function App() {
     // the backstop.
     if (isMultiplayer) return;
     try {
-      const saved = await fetchSavedGame(gameId);
+      const saved = await gamesRepo.fetchSaved(gameId);
       if (!saved) {
         console.warn('[watch] game not found', gameId);
         return;

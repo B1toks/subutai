@@ -1,6 +1,6 @@
 import { useRef, useEffect } from 'react';
 import type { User } from 'firebase/auth';
-import { logGameStart } from '../../firebase/gameStarts';
+import { gamesRepo } from '../../infra/firestore/games';
 import type { GameMode } from '../../shared/game';
 import type { GameLog } from '../../recording/log';
 
@@ -41,7 +41,7 @@ export function useGameStartPing({
     if (log.moves.length === 0) return; // HUMAN_COLOR is white — first entry is the human's
     if (startPingedLogIdRef.current === log.id) return;
     startPingedLogIdRef.current = log.id;
-    logGameStart({
+    gamesRepo.logStart({
       uid: user.uid,
       chess960Id: positionLabel,
       seed,

@@ -1,5 +1,6 @@
 import { useEffect, type Dispatch, type SetStateAction } from 'react';
-import { fetchSavedGame, deserializeGameLog } from '../../firebase/games';
+import { deserializeGameLog } from '../../firebase/games';
+import { gamesRepo } from '../../infra/firestore/games';
 import type { GameLog } from '../../recording/log';
 import type { GameReviewMeta } from '../../components/GameReview';
 
@@ -30,7 +31,7 @@ export function useSharedGame({
   useEffect(() => {
     if (!sharedGameId) return;
     let cancelled = false;
-    void fetchSavedGame(sharedGameId)
+    void gamesRepo.fetchSaved(sharedGameId)
       .then((saved) => {
         if (cancelled || !saved) {
           if (!cancelled) setSharedGameError('Game not found.');

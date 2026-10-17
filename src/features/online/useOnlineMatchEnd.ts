@@ -2,7 +2,7 @@ import { useEffect, type Dispatch, type SetStateAction, type RefObject } from 'r
 import type { User } from 'firebase/auth';
 import type { MatchOutcome } from '../../firebase/matches';
 import { findKing, isCheckmate, checkDrawConditions } from '../../engine/moves';
-import { saveMultiplayerGameToGames } from '../../firebase/multiplayerGames';
+import { gamesRepo } from '../../infra/firestore/games';
 import type { MultiplayerSyncHandle } from '../../components/MultiplayerGameView';
 import type { ToastContextValue } from '../../components/Toast';
 
@@ -78,7 +78,7 @@ export function useOnlineMatchEnd({
     // re-attempts.
     if (user && mpSavedGameIdRef.current !== match.code) {
       mpSavedGameIdRef.current = match.code;
-      void saveMultiplayerGameToGames(match, user.uid).catch((err) => {
+      void gamesRepo.saveMultiplayer(match, user.uid).catch((err) => {
         console.error('[mp] save to /games failed', err);
         // QA-22 (last point) — a real refusal no longer disappears silently.
         toast.show('This match could not be saved to your games.', 'error', 5000);

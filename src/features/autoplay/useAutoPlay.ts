@@ -2,7 +2,7 @@ import { useEffect, type Dispatch, type SetStateAction, type RefObject } from 'r
 import type { GameOutcome } from '../../analysis/points';
 import { HUMAN_COLOR, type GameStatus } from '../../shared/game';
 import { evaluate } from '../../ai/evaluate';
-import { saveTrainingGame } from '../../firebase/trainingGames';
+import { gamesRepo } from '../../infra/firestore/games';
 import { backRankString } from '../game/position';
 import type { BoardState } from '../../engine';
 import type { GameLog } from '../../recording/log';
@@ -99,7 +99,7 @@ export function useAutoPlay({
       return next.length > 50 ? next.slice(-50) : next;
     });
 
-    void saveTrainingGame({
+    void gamesRepo.saveTraining({
       log,
       chess960Id: backRankString(initialState),
       seed,
