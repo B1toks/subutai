@@ -8,8 +8,9 @@
  * read it every frame with zero React overhead, and the dock slider can
  * write + persist it.
  */
+import { localData, LOCAL_KEYS } from '../infra/localData';
 
-const KEY = 'subutai_eq_sensitivity';
+const KEY = LOCAL_KEYS.eqSensitivity;
 // M.20 — MIN dropped 0.3 → 0.05: the bottom of the range is now truly
 // tiny bars. The dock slider walks this range LOGARITHMICALLY, so the
 // old minimum (0.3 — the "calm but alive" look the user wants to keep)
@@ -30,7 +31,7 @@ class EqSettingsStore {
   constructor() {
     let v = EQ_SENS_DEFAULT;
     try {
-      const raw = localStorage.getItem(KEY);
+      const raw = localData.get(KEY);
       if (raw !== null) {
         const parsed = Number.parseFloat(raw);
         if (Number.isFinite(parsed)) v = clamp(parsed);
@@ -48,7 +49,7 @@ class EqSettingsStore {
     if (next === this.sensitivity) return;
     this.sensitivity = next;
     try {
-      localStorage.setItem(KEY, String(next));
+      localData.set(KEY, String(next));
     } catch { /* private mode */ }
     this.listeners.forEach((cb) => {
       try {

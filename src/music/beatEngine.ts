@@ -14,6 +14,7 @@
  * Tap-tempo works in both bases: taps record the current source-time;
  * 4+ taps lock BPM from the mean interval and phase from the last tap.
  */
+import { localData, LOCAL_KEYS } from '../infra/localData';
 
 export type BeatScore = 'perfect' | 'good' | 'off';
 export type BeatListener = (index: number) => void;
@@ -26,7 +27,7 @@ const GOOD_MS = 170;
 const MIN_BPM = 40;
 const MAX_BPM = 220;
 
-const OFFSET_KEY = 'subutai_beat_offset';
+const OFFSET_KEY = LOCAL_KEYS.beatOffset;
 const MAX_OFFSET_MS = 400;
 
 export class BeatEngine {
@@ -59,7 +60,7 @@ export class BeatEngine {
 
   constructor() {
     try {
-      const raw = localStorage.getItem(OFFSET_KEY);
+      const raw = localData.get(OFFSET_KEY);
       if (raw !== null) {
         const v = Number.parseFloat(raw);
         if (Number.isFinite(v)) {
@@ -84,7 +85,7 @@ export class BeatEngine {
   setUserOffset(ms: number) {
     this.userOffsetMs = Math.max(-MAX_OFFSET_MS, Math.min(MAX_OFFSET_MS, ms));
     try {
-      localStorage.setItem(OFFSET_KEY, String(this.userOffsetMs));
+      localData.set(OFFSET_KEY, String(this.userOffsetMs));
     } catch {
       /* private mode */
     }

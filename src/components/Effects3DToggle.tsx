@@ -4,14 +4,15 @@ import { Icon } from './Icon';
 import { Tooltip } from './Tooltip';
 import { useToast } from './Toast';
 import { audio } from '../audio/AudioController';
+import { localData, LOCAL_KEYS } from '../infra/localData';
 
-const STORAGE_KEY = 'subutai_3d';
+const STORAGE_KEY = LOCAL_KEYS.effects3d;
 
 function readInitial(): boolean {
   if (typeof window === 'undefined') return false;
   // Explicit user choice always wins.
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
+    const stored = localData.get(STORAGE_KEY);
     if (stored === '0') return false;
     if (stored === '1') return true;
   } catch {
@@ -44,7 +45,7 @@ export function Effects3DToggle() {
     const next = !enabled;
     setEnabled(next);
     try {
-      window.localStorage.setItem(STORAGE_KEY, next ? '1' : '0');
+      localData.set(STORAGE_KEY, next ? '1' : '0');
     } catch {
       /* private mode / quota — no-op */
     }

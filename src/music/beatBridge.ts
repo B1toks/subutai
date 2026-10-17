@@ -14,6 +14,7 @@
 
 import { beatEngine, type BeatScore } from './beatEngine';
 import { vizMode } from './vizMode';
+import { localData, LOCAL_KEYS } from '../infra/localData';
 
 export type ComboTier = 'none' | 'good' | 'great' | 'awesome' | 'master';
 
@@ -39,7 +40,7 @@ export interface BeatSessionStats {
   streak: number;
 }
 
-const ACHIEVEMENTS_KEY = 'subutai_achievements';
+const ACHIEVEMENTS_KEY = LOCAL_KEYS.achievements;
 const RHYTHM_MASTER_ID = 'rhythm-master';
 
 export function comboTier(streak: number): ComboTier {
@@ -180,11 +181,11 @@ class BeatBridge {
   /** True only the first time the achievement is earned. */
   private earnRhythmMaster(): boolean {
     try {
-      const raw = localStorage.getItem(ACHIEVEMENTS_KEY);
+      const raw = localData.get(ACHIEVEMENTS_KEY);
       const earned = raw ? (JSON.parse(raw) as string[]) : [];
       if (earned.includes(RHYTHM_MASTER_ID)) return false;
       earned.push(RHYTHM_MASTER_ID);
-      localStorage.setItem(ACHIEVEMENTS_KEY, JSON.stringify(earned));
+      localData.set(ACHIEVEMENTS_KEY, JSON.stringify(earned));
       return true;
     } catch {
       return false;

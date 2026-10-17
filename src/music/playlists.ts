@@ -10,6 +10,7 @@
  * Stored in localStorage; small enough that the whole library lives in
  * one key.
  */
+import { localData, LOCAL_KEYS } from '../infra/localData';
 
 export interface PlaylistTrack {
   /** Original Spotify track URL the user pasted. */
@@ -29,7 +30,7 @@ export interface SavedPlaylist {
   createdAt: number;
 }
 
-const KEY = 'subutai_playlists';
+const KEY = LOCAL_KEYS.playlists;
 
 const SPOTIFY_URI_RE = /^spotify:(track|playlist|album):[a-zA-Z0-9]+$/;
 
@@ -68,7 +69,7 @@ function sanitize(raw: unknown): SavedPlaylist[] {
 
 export function loadPlaylists(): SavedPlaylist[] {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localData.get(KEY);
     if (!raw) return [];
     return sanitize(JSON.parse(raw));
   } catch {
@@ -78,7 +79,7 @@ export function loadPlaylists(): SavedPlaylist[] {
 
 function persist(playlists: SavedPlaylist[]): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(playlists));
+    localData.set(KEY, JSON.stringify(playlists));
   } catch {
     /* private mode / quota — playlists just won't persist */
   }

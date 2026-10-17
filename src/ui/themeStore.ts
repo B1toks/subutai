@@ -16,12 +16,13 @@
  * letting the room turn with it makes the rotation impossible to miss, and
  * it is the one theme behaviour that teaches the mechanic by itself.
  */
+import { localData, LOCAL_KEYS } from '../infra/localData';
 
 export type ThemeChoice = 'adaptive' | 'neon' | 'wood' | 'wood-light' | 'fantasy';
 export type ResolvedTheme = 'neon' | 'wood' | 'wood-light' | 'fantasy';
 export type Topology = 'A' | 'B';
 
-const STORAGE_KEY = 'subutai_theme';
+const STORAGE_KEY = LOCAL_KEYS.theme;
 
 export const THEME_CHOICES: readonly ThemeChoice[] = [
   'adaptive',
@@ -56,12 +57,12 @@ const VEIL_PEAK_MS = 170;
 function readStoredChoice(): ThemeChoice {
   if (typeof window === 'undefined') return 'adaptive';
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = localData.get(STORAGE_KEY);
     // 'cyberpunk' was retired in V1; anyone still on it lands on neon,
     // which is the palette it was competing with. Rewrite the key so the
     // dead value doesn't sit in storage being re-migrated forever.
     if (raw === 'cyberpunk') {
-      window.localStorage.setItem(STORAGE_KEY, 'neon');
+      localData.set(STORAGE_KEY, 'neon');
       return 'neon';
     }
     if (raw && (THEME_CHOICES as readonly string[]).includes(raw)) {
@@ -99,7 +100,7 @@ class ThemeStore {
     if (choice === this.choice) return;
     this.choice = choice;
     try {
-      window.localStorage.setItem(STORAGE_KEY, choice);
+      localData.set(STORAGE_KEY, choice);
     } catch {
       /* private mode — the pick just won't survive a reload */
     }

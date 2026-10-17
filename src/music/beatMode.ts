@@ -14,8 +14,9 @@
  */
 
 import { beatEngine } from './beatEngine';
+import { localData, LOCAL_KEYS } from '../infra/localData';
 
-const KEY = 'subutai_beat_mode';
+const KEY = LOCAL_KEYS.beatMode;
 /** Don't bother snapping if the next beat is basically now — avoids a
  *  pointless 1-frame timeout and feels instant near the beat. */
 const SNAP_FLOOR_MS = 60;
@@ -29,7 +30,7 @@ class BeatModeStore {
   constructor() {
     let initial = false;
     try {
-      initial = localStorage.getItem(KEY) === '1';
+      initial = localData.get(KEY) === '1';
     } catch { /* private mode */ }
     this.enabled = initial;
   }
@@ -41,7 +42,7 @@ class BeatModeStore {
   set(enabled: boolean) {
     this.enabled = enabled;
     try {
-      localStorage.setItem(KEY, enabled ? '1' : '0');
+      localData.set(KEY, enabled ? '1' : '0');
     } catch { /* private mode */ }
     this.listeners.forEach((cb) => {
       try {

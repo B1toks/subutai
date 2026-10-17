@@ -20,9 +20,10 @@ import {
 } from '../twitch/moveVoting';
 import { loadEmoteMap, type EmoteMap } from '../twitch/seventv';
 import { dockLayout, DOCK_WIDTH } from '../ui/dockLayout';
+import { localData, LOCAL_KEYS } from '../infra/localData';
 
-const CHANNEL_KEY = 'subutai_twitch_channel';
-const POS_KEY = 'subutai_twitch_pos';
+const CHANNEL_KEY = LOCAL_KEYS.twitchChannel;
+const POS_KEY = LOCAL_KEYS.twitchPos;
 const MAX_MESSAGES = 60;
 const LEADERBOARD_SIZE = 10;
 
@@ -99,7 +100,7 @@ const TwitchMessageRow = memo(function TwitchMessageRow({
 export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) {
   const [channelInput, setChannelInput] = useState(() => {
     try {
-      return localStorage.getItem(CHANNEL_KEY) ?? '';
+      return localData.get(CHANNEL_KEY) ?? '';
     } catch {
       return '';
     }
@@ -116,7 +117,7 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
   const [emotes, setEmotes] = useState<EmoteMap | null>(null);
   // M.13 — dock to the RIGHT edge (Spotify left, chat right stream layout).
   const [dockedRight, setDockedRight] = useState(() => {
-    try { return localStorage.getItem('subutai_twitch_docked') === '1'; } catch { return false; }
+    try { return localData.get(LOCAL_KEYS.twitchDocked) === '1'; } catch { return false; }
   });
   const predictionsRef = useRef<PredictionState>(emptyPredictions());
   const feedRef = useRef<HTMLDivElement | null>(null);
@@ -228,7 +229,7 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
   // ── free drag (desktop) — header is the handle ──
   const [pos, setPos] = useState<{ x: number; y: number } | null>(() => {
     try {
-      const raw = localStorage.getItem(POS_KEY);
+      const raw = localData.get(POS_KEY);
       return raw ? (JSON.parse(raw) as { x: number; y: number }) : null;
     } catch {
       return null;
@@ -265,7 +266,7 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
       window.removeEventListener('pointerup', up);
       if (lastPosRef.current) {
         try {
-          localStorage.setItem(POS_KEY, JSON.stringify(lastPosRef.current));
+          localData.set(POS_KEY, JSON.stringify(lastPosRef.current));
         } catch { /* private mode */ }
       }
     };
@@ -276,7 +277,7 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
   function resetPos() {
     setPos(null);
     try {
-      localStorage.removeItem(POS_KEY);
+      localData.remove(POS_KEY);
     } catch { /* private mode */ }
   }
 
@@ -284,7 +285,7 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
     const ch = channelInput.trim();
     if (!ch) return;
     try {
-      localStorage.setItem(CHANNEL_KEY, ch);
+      localData.set(CHANNEL_KEY, ch);
     } catch { /* private mode */ }
     setMessages([]);
     setEmotes(null);
@@ -348,7 +349,7 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
             onClick={() => {
               setDockedRight((v) => {
                 const next = !v;
-                try { localStorage.setItem('subutai_twitch_docked', next ? '1' : '0'); } catch { /* private */ }
+                try { localData.set(LOCAL_KEYS.twitchDocked, next ? '1' : '0'); } catch { /* private */ }
                 return next;
               });
             }}

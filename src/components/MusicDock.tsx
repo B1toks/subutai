@@ -22,6 +22,7 @@ import {
 } from '../music/playlists';
 import { micEq, type MicStartResult } from '../audio/micEqualizer';
 import { dockLayout, DOCK_WIDTH } from '../ui/dockLayout';
+import { localData, LOCAL_KEYS, musicTutorialKey } from '../infra/localData';
 
 /* SP-2 — the Spotify dock, IFrame-API edition.
  *
@@ -40,9 +41,9 @@ import { dockLayout, DOCK_WIDTH } from '../ui/dockLayout';
  * and portals to <body> — transformed ancestors hijack position:fixed.
  */
 
-const URL_KEY = 'subutai_spotify_url';
-const BPM_MAP_KEY = 'subutai_spotify_bpm';
-const POS_KEY = 'subutai_music_pos';
+const URL_KEY = LOCAL_KEYS.spotifyUrl;
+const BPM_MAP_KEY = LOCAL_KEYS.spotifyBpm;
+const POS_KEY = LOCAL_KEYS.musicPos;
 
 // M.16 — tab/system-audio capture only exists on desktop browsers; Android
 // and installed-PWA WebViews lack getDisplayMedia, so we hide that source.
@@ -172,7 +173,7 @@ function rememberBpm(url: string, bpm: number): void {
   const map = readBpmMap();
   map[bpmKey(url)] = bpm;
   try {
-    localStorage.setItem(BPM_MAP_KEY, JSON.stringify(map));
+    localData.set(BPM_MAP_KEY, JSON.stringify(map));
   } catch { /* private mode */ }
 }
 
@@ -191,7 +192,7 @@ function parseSpotifyUrl(
 
 function readBpmMap(): Record<string, number> {
   try {
-    return JSON.parse(localStorage.getItem(BPM_MAP_KEY) ?? '{}') as Record<string, number>;
+    return JSON.parse(localData.get(BPM_MAP_KEY) ?? '{}') as Record<string, number>;
   } catch {
     return {};
   }
@@ -204,7 +205,7 @@ interface MusicDockProps {
 export function MusicDock({ onClose }: MusicDockProps) {
   const [urlInput, setUrlInput] = useState(() => {
     try {
-      return localStorage.getItem(URL_KEY) ?? '';
+      return localData.get(URL_KEY) ?? '';
     } catch {
       return '';
     }
@@ -231,7 +232,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
   // M.13 — dock to the LEFT edge as a full-height column (Spotify left,
   // Twitch chat right). Persisted so the stream layout sticks.
   const [dockedLeft, setDockedLeft] = useState(() => {
-    try { return localStorage.getItem('subutai_music_docked') === '1'; } catch { return false; }
+    try { return localData.get(LOCAL_KEYS.musicDocked) === '1'; } catch { return false; }
   });
   // M.10 — manual tempo controls (TAP + presets) folded away by default.
   const [showManual, setShowManual] = useState(false);
@@ -271,8 +272,8 @@ export function MusicDock({ onClose }: MusicDockProps) {
   const [coach, setCoach] = useState<string | null>(null);
   const coachOnce = useCallback((key: string) => {
     try {
-      if (localStorage.getItem(`subutai_music_tut_${key}`) === '1') return;
-      localStorage.setItem(`subutai_music_tut_${key}`, '1');
+      if (localData.get(musicTutorialKey(key)) === '1') return;
+      localData.set(musicTutorialKey(key), '1');
     } catch {
       /* private mode — still show it, just won't be remembered */
     }
@@ -301,7 +302,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
     const parsed = parseSpotifyUrl(url);
     if (!parsed || !embedHostRef.current) return;
     try {
-      localStorage.setItem(URL_KEY, url);
+      localData.set(URL_KEY, url);
     } catch { /* private mode */ }
     setUrlInput(url);
     setPlayerState('loading');
@@ -788,7 +789,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
   // ── drag (desktop) — header is the handle, same recipe as Twitch ──
   const [pos, setPos] = useState<{ x: number; y: number } | null>(() => {
     try {
-      const raw = localStorage.getItem(POS_KEY);
+      const raw = localData.get(POS_KEY);
       return raw ? (JSON.parse(raw) as { x: number; y: number }) : null;
     } catch {
       return null;
@@ -826,7 +827,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
       window.removeEventListener('pointerup', up);
       if (lastPosRef.current) {
         try {
-          localStorage.setItem(POS_KEY, JSON.stringify(lastPosRef.current));
+          localData.set(POS_KEY, JSON.stringify(lastPosRef.current));
         } catch { /* private mode */ }
       }
     };
@@ -837,7 +838,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
   function resetPos() {
     setPos(null);
     try {
-      localStorage.removeItem(POS_KEY);
+      localData.remove(POS_KEY);
     } catch { /* private mode */ }
   }
 
@@ -900,7 +901,7 @@ export function MusicDock({ onClose }: MusicDockProps) {
   function toggleDock() {
     setDockedLeft((v) => {
       const next = !v;
-      try { localStorage.setItem('subutai_music_docked', next ? '1' : '0'); } catch { /* private mode */ }
+      try { localData.set(LOCAL_KEYS.musicDocked, next ? '1' : '0'); } catch { /* private mode */ }
       return next;
     });
   }

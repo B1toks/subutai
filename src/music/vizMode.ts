@@ -6,9 +6,10 @@
  * canvas). Tiny singleton like beatMode/eqSettings so the dock can toggle
  * it and App can mount the canvas reactively.
  */
+import { localData, LOCAL_KEYS } from '../infra/localData';
 
-const KEY = 'subutai_bg_grid';
-const PULSE_KEY = 'subutai_pulse_mode';
+const KEY = LOCAL_KEYS.bgGrid;
+const PULSE_KEY = LOCAL_KEYS.pulseMode;
 
 type Listener = (enabled: boolean) => void;
 
@@ -31,8 +32,8 @@ class VizModeStore {
     let initial = false;
     let pulse: PulseMode = 'always';
     try {
-      initial = localStorage.getItem(KEY) === '1';
-      if (localStorage.getItem(PULSE_KEY) === 'onmove') pulse = 'onmove';
+      initial = localData.get(KEY) === '1';
+      if (localData.get(PULSE_KEY) === 'onmove') pulse = 'onmove';
     } catch { /* private mode */ }
     this.bgGrid = initial;
     this.pulseMode = pulse;
@@ -46,7 +47,7 @@ class VizModeStore {
     if (mode === this.pulseMode) return;
     this.pulseMode = mode;
     try {
-      localStorage.setItem(PULSE_KEY, mode);
+      localData.set(PULSE_KEY, mode);
     } catch { /* private mode */ }
     this.pulseListeners.forEach((cb) => {
       try {
@@ -70,7 +71,7 @@ class VizModeStore {
     if (enabled === this.bgGrid) return;
     this.bgGrid = enabled;
     try {
-      localStorage.setItem(KEY, enabled ? '1' : '0');
+      localData.set(KEY, enabled ? '1' : '0');
     } catch { /* private mode */ }
     this.listeners.forEach((cb) => {
       try {

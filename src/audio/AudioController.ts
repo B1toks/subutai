@@ -16,6 +16,7 @@ import {
   type AmbientTheme,
   type StingerKind,
 } from './ambient';
+import { localData, LOCAL_KEYS } from '../infra/localData';
 
 export type { AmbientStyle, AmbientTheme, StingerKind };
 
@@ -37,11 +38,11 @@ interface WindowWithWebkit extends Window {
   webkitAudioContext?: AudioConstructor;
 }
 
-const ENABLED_KEY = 'subutai_audio_enabled';
-const VOLUME_KEY = 'subutai_audio_volume';
-const MUSIC_ENABLED_KEY = 'subutai_music_enabled';
-const MUSIC_VOLUME_KEY = 'subutai_music_volume';
-const MUSIC_STYLE_KEY = 'subutai_music_style';
+const ENABLED_KEY = LOCAL_KEYS.audioEnabled;
+const VOLUME_KEY = LOCAL_KEYS.audioVolume;
+const MUSIC_ENABLED_KEY = LOCAL_KEYS.musicEnabled;
+const MUSIC_VOLUME_KEY = LOCAL_KEYS.musicVolume;
+const MUSIC_STYLE_KEY = LOCAL_KEYS.musicStyle;
 
 /**
  * Sprint 3.7 — singleton wrapping a Web Audio context. Lazily creates
@@ -78,18 +79,18 @@ class AudioControllerImpl {
 
   private readMusicStyleFromStorage(): AmbientStyle {
     if (typeof window === 'undefined') return 'warm';
-    const raw = window.localStorage.getItem(MUSIC_STYLE_KEY);
+    const raw = localData.get(MUSIC_STYLE_KEY);
     return raw === 'dark' || raw === 'adaptive' ? raw : 'warm';
   }
 
   private readEnabledFromStorage(): boolean {
     if (typeof window === 'undefined') return false;
-    return window.localStorage.getItem(ENABLED_KEY) === '1';
+    return localData.get(ENABLED_KEY) === '1';
   }
 
   private readVolumeFromStorage(): number {
     if (typeof window === 'undefined') return 0.5;
-    const raw = window.localStorage.getItem(VOLUME_KEY);
+    const raw = localData.get(VOLUME_KEY);
     if (!raw) return 0.5;
     const parsed = parseFloat(raw);
     if (Number.isNaN(parsed)) return 0.5;
@@ -98,12 +99,12 @@ class AudioControllerImpl {
 
   private readMusicEnabledFromStorage(): boolean {
     if (typeof window === 'undefined') return false;
-    return window.localStorage.getItem(MUSIC_ENABLED_KEY) === '1';
+    return localData.get(MUSIC_ENABLED_KEY) === '1';
   }
 
   private readMusicVolumeFromStorage(): number {
     if (typeof window === 'undefined') return 0.15;
-    const raw = window.localStorage.getItem(MUSIC_VOLUME_KEY);
+    const raw = localData.get(MUSIC_VOLUME_KEY);
     if (!raw) return 0.15;
     const parsed = parseFloat(raw);
     if (Number.isNaN(parsed)) return 0.15;
@@ -140,7 +141,7 @@ class AudioControllerImpl {
   setEnabled(value: boolean) {
     this.enabled = value;
     try {
-      window.localStorage.setItem(ENABLED_KEY, value ? '1' : '0');
+      localData.set(ENABLED_KEY, value ? '1' : '0');
     } catch {
       /* private mode / quota — no-op */
     }
@@ -150,7 +151,7 @@ class AudioControllerImpl {
   setVolume(value: number) {
     this.volume = Math.max(0, Math.min(1, value));
     try {
-      window.localStorage.setItem(VOLUME_KEY, this.volume.toString());
+      localData.set(VOLUME_KEY, this.volume.toString());
     } catch {
       /* private mode / quota — no-op */
     }
@@ -195,7 +196,7 @@ class AudioControllerImpl {
   setMusicEnabled(value: boolean, theme?: AmbientTheme) {
     this.musicEnabled = value;
     try {
-      window.localStorage.setItem(MUSIC_ENABLED_KEY, value ? '1' : '0');
+      localData.set(MUSIC_ENABLED_KEY, value ? '1' : '0');
     } catch {
       /* private mode / quota — no-op */
     }
@@ -220,7 +221,7 @@ class AudioControllerImpl {
   setMusicVolume(v: number) {
     this.musicVolume = Math.max(0, Math.min(0.4, v));
     try {
-      window.localStorage.setItem(MUSIC_VOLUME_KEY, this.musicVolume.toString());
+      localData.set(MUSIC_VOLUME_KEY, this.musicVolume.toString());
     } catch {
       /* private mode / quota — no-op */
     }
@@ -244,7 +245,7 @@ class AudioControllerImpl {
   setMusicStyle(style: AmbientStyle) {
     this.musicStyle = style;
     try {
-      window.localStorage.setItem(MUSIC_STYLE_KEY, style);
+      localData.set(MUSIC_STYLE_KEY, style);
     } catch {
       /* private mode / quota — no-op */
     }
