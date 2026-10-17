@@ -11,6 +11,8 @@ Firestore rules are the only trust boundary (see `FIRESTORE-RULES.md`).
 | `src/session` | The game on the board as one value: `SessionState`, the pure `step(state, action)` that makes the next one and says what happened, and the store App and the hooks read it from (`session`, `useSession`). An online match's document is followed into it (`online.ts`). No React in `step.ts`; time comes in the action, chance from a seed in the state. |
 | `src/session/players` | Who plays each side: the seats, the turns that ask the side to move (`turns.ts`), and the players (here, bot, chat, remote). |
 | `src/firebase` | Every Firestore read and write. The document shapes here are what the rules check; `npm run test:rules` runs this code against the emulator. |
+| `src/infra` | The app's side of storage: `repos.ts` names the Firestore functions the app calls as interfaces (games, the live match, the lobby, presence, the profile name, the leaderboard, feedback), `firestore/*` hands each call to its `src/firebase` function, `localData.ts` holds every localStorage key and the calls that touch them, and `fakes/*` are in-memory versions for unit tests only. |
+| `src/services` | What reacts to the game or works on it outside React: the board's sound and effects bus, the beat combo, the save queue (`saveQueue.ts`, over a `GamesRepo`). |
 | `src/audio`, `src/music`, `src/twitch`, `src/spotify` | Browser integrations with no UI of their own. |
 | `src/memory` | Saved games: storage, notation, replay import, the Memory panel, and the hooks that autosave a game and resume one. |
 | `src/components` | Components that several parts of the app use (Toast, Tooltip, modals, NamePicker, ClockFace, PlayerRow), and the screens that predate the feature folders (GameReview, MusicDock, Leaderboard, FriendLobby, TwitchPanel, StatsPage, ShowcaseView). |
@@ -111,8 +113,9 @@ classifier's verdict, `useMemoryAutosave` snapshots the game. When a move,
 a flag fall, a resignation or an agreed draw ends the game, the session's
 `gameEnd` event reaches App after the render that shows the ending
 (`useSessionEventsAfterCommit`), and App calls `finishGame`, which scores
-it and hands the save to `useGameSaveQueue`;
-`saveCompletedGame` in `src/firebase/games.ts` writes the game to `/games`
+it and hands the save to `useGameSaveQueue`, which runs the save queue
+(`src/services/saveQueue.ts`) over `gamesRepo`: one save at a time,
+`saveCompletedGame` in `src/firebase/games.ts` writing the game to `/games`
 and updates the player's `/users` profile in a transaction. Online, the
 click goes to `mpSync.sendMove`, which appends the move to
 `/matches/{code}` in a transaction stamped with server time; the rules
@@ -191,7 +194,12 @@ timer by hand.
   `AppErrorBoundary`.
 - A new Firestore record: its reads and writes in `src/firebase/<name>.ts`,
   its rules in `firestore.rules` with tests in `tests/rules`, and rules that
-  allow it deployed before any client writes it.
+  allow it deployed before any client writes it. The app calls it through a
+  repository member (`src/infra/repos.ts` and the `firestore/*` module of the
+  screen that loads it: one the first screen needs, or a lazy screen's own,
+  so no Firestore code moves into the first load).
+- A new localStorage setting: its key in `LOCAL_KEYS`
+  (`src/infra/localData.ts`), read and written through `localData`.
 
 ## Styles
 
@@ -210,7 +218,7 @@ move is byte-identical.
 
 ## Things that do not change
 
-`localStorage` keys `subutai_*`, the console seams `window.subutai*`, the
+`localStorage` keys `subutai_*` (all in `LOCAL_KEYS`), the console seams `window.subutai*`, the
 `data-tour` attributes, CSS class names and the fields of Firestore documents.
 Players, saved games and QA scripts depend on them.
 
@@ -224,3 +232,6 @@ Players, saved games and QA scripts depend on them.
   rule change shows up there first.
 - `scripts/test-*.ts`, `scripts/repro960.ts` and `qa/engine/*` for the engine and the game log (`npx tsx <file>`).
 - `npm run test:rules` for the rules, driven by the real client.
+- Services that write through a repository are tested with an in-memory one
+  (`src/infra/fakes/*`, e.g. the save queue with `memoryGames`); nothing in
+  the app imports the fakes, so they never reach the build.
