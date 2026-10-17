@@ -1,22 +1,9 @@
 import { useRef, useEffect, type Dispatch, type SetStateAction, type RefObject } from 'react';
 import type { User } from 'firebase/auth';
-import { getPersonalBest, saveCompletedGame } from '../../firebase/games';
-import { HUMAN_COLOR, type GameMode } from '../../shared/game';
-import type { GameOutcome, GamePoints } from '../../analysis/points';
-import type { GameLog } from '../../recording/log';
-import type { BotStrength } from '../../ai/agents';
+import { gamesRepo } from '../../infra/firestore/games';
+import { createSaveQueue, type FinishedGameSave } from '../../services/saveQueue';
 
-/** A finished solo game, as finishGame hands it to the Firestore save. */
-export interface FinishedGameSave {
-  outcome: GameOutcome;
-  points: GamePoints;
-  durationMs: number;
-  log: GameLog;
-  gameMode: GameMode;
-  botLevel: BotStrength;
-  chess960Id: string;
-  seed: number;
-}
+export type { FinishedGameSave };
 
 interface UseGameSaveQueueArgs {
   authLoading: boolean;
@@ -32,11 +19,10 @@ interface UseGameSaveQueueArgs {
 }
 
 /**
- * Saves finished solo games to Firestore one at a time (the rules count a
- * Strong win only after the profile's previous save), fills the summary's
- * rank and best while that game is still the one shown, and saves games
- * that ended before sign-in answered once it does. finishGame in App
- * builds the jobs.
+ * Saves finished solo games to Firestore one at a time (the save queue,
+ * src/services/saveQueue.ts, over gamesRepo), fills the summary's rank and
+ * best while that game is still the one shown, and saves games that ended
+ * before sign-in answered once it does. finishGame in App builds the jobs.
  */
 export function useGameSaveQueue({
   authLoading,
@@ -51,61 +37,22 @@ export function useGameSaveQueue({
   completedLogIdRef,
 }: UseGameSaveQueueArgs) {
 
-  /** The Firestore half of finishGame (also run later, see N-6). The UI
-   *  state it fills in belongs to the summary of that game, so it is only
-   *  touched while that game is still the last one finished. */
-  async function saveFinishedGame(job: FinishedGameSave, uid: string, name: string) {
-    const stillShown = () => completedLogIdRef.current === job.log.id;
-    if (stillShown()) setSavingGame(true);
-    try {
-      // Snapshot the pre-write best so the modal can show "old" alongside new.
-      const oldBest = await getPersonalBest(uid, job.gameMode);
-      if (stillShown()) setPersonalBest(oldBest);
-
-      const { gameId, isNewBest: nb, newRank } = await saveCompletedGame({
-        uid,
-        displayName: name,
-        log: job.log,
-        outcome: job.outcome,
-        points: job.points,
-        chess960Id: job.chess960Id,
-        seed: job.seed,
-        humanColor: HUMAN_COLOR,
-        gameMode: job.gameMode,
-        durationMs: job.durationMs,
-        botLevel: job.botLevel,
-      });
-      if (stillShown()) {
-        setLastGameId(gameId);
-        setIsNewBest(nb);
-        setCurrentRank(newRank);
-        if (nb) setPersonalBest(job.points.total);
-      }
-    } catch (err) {
-      console.error('[finishGame] save failed', err);
-      // QA-03 — a refusal by the rules is not a connection problem, and
-      // telling the player to check their connection sent them the wrong way.
-      const denied = (err as { code?: unknown } | null)?.code === 'permission-denied';
-      if (stillShown()) {
-        setSaveError(
-          denied
-            ? 'This game wasn’t counted: the server refused to save it.'
-            : 'Could not save this game. Check your connection.',
-        );
-      }
-    } finally {
-      if (stillShown()) setSavingGame(false);
-    }
-  }
-
-  // QA-06 — one save at a time: the rules count a Strong win only for a
-  // game saved after the profile's previous save, so two saves racing
-  // could refuse the later one's stats. saveFinishedGame never rejects.
-  const saveChainRef = useRef<Promise<void>>(Promise.resolve());
+  // QA-06 — one save at a time (src/services/saveQueue.ts). Built on the
+  // first save; what it fills in is this game's summary while it is shown.
+  const queueRef = useRef<ReturnType<typeof createSaveQueue> | null>(null);
   function queueSave(job: FinishedGameSave, uid: string, name: string): Promise<void> {
-    const next = saveChainRef.current.then(() => saveFinishedGame(job, uid, name));
-    saveChainRef.current = next;
-    return next;
+    queueRef.current ??= createSaveQueue(gamesRepo, {
+      shows: (logId) => completedLogIdRef.current === logId,
+      setSaving: setSavingGame,
+      setPersonalBest,
+      setSaved: ({ gameId, isNewBest, newRank }) => {
+        setLastGameId(gameId);
+        setIsNewBest(isNewBest);
+        setCurrentRank(newRank);
+      },
+      setError: setSaveError,
+    });
+    return queueRef.current.queue(job, uid, name);
   }
 
   // N-6 — finished games waiting for the sign-in (see finishGame). A list:
