@@ -8,6 +8,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { initializeApp } from 'firebase/app';
+import { firebaseConfig } from './firebase-config.mjs';
 import {
   collection,
   getDocs,
@@ -18,12 +19,6 @@ import {
   startAfter,
   terminate,
 } from 'firebase/firestore';
-
-const firebaseConfig = {
-  apiKey: 'AIzaSyAbqverdzFCHOpJeoN8WI3_5CWUNWV6mhk',
-  authDomain: 'subutai-chess.firebaseapp.com',
-  projectId: 'subutai-chess',
-};
 
 const PAGE_SIZE = 500;
 const outFile = resolve(process.argv[2] ?? 'data/games-dump.json');
