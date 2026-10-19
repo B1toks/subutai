@@ -38,6 +38,8 @@ const { useMultiplayerSync, writeInactivityForfeit } = await import(
 );
 const { generateLegalMoves } = await import('../../src/engine/moves.ts');
 const { drawOfferBlock } = await import('../../src/utils/drawOffer.ts');
+const { getOnlineCount, writePresence } = await import('../../src/firebase/presence.ts');
+const { logReaching, stampLog } = await import('./positions.mjs');
 
 // ── harness ────────────────────────────────────────────────────────────
 
@@ -1521,6 +1523,96 @@ describe('online: draw offers', () => {
     const next = await match(code);
     assert.equal(next.log.moves.length, 3);
     assert.ok(next.log.moves[2].timestamp >= next.log.moves[1].timestamp);
+  });
+});
+
+// ── the match document both boards are built from ──────────────────────
+// rebuildBoardFromMatch builds each player's board from chess960Id and the
+// log, so a document it cannot build breaks the match for both. "allowed":
+// every kind of entry the v1.1.5 hook writes, played by the hook itself
+// from a log that reaches it (positions.mjs). "denied": the broken
+// documents of the corrupted-data probe, written by a seated player.
+
+/** A live match whose log is reach.entries, the side to move on turn. */
+async function matchAt(reach, gameMode = 'classic') {
+  const c = await startMatch(gameMode);
+  const mover = reach.sideToMove === 'white' ? c.white : c.black;
+  await patch(`matches/${c.code}`, {
+    chess960Id: reach.key,
+    'log.moves': stampLog(reach.entries),
+    currentTurn: mover,
+  });
+  return { ...c, mover };
+}
+
+/** The hook of the player on turn plays reach.move; the entry lands as the hook wrote it. */
+async function playsAsHook(c, reach) {
+  const before = (await match(c.code)).log.moves.length;
+  await (await hookAs(c.mover, c.code)).sendMove(reach.move);
+  const moves = (await match(c.code)).log.moves;
+  assert.equal(moves.length, before + 1, `${reach.move.kind} did not land`);
+  const entry = moves.at(-1);
+  assert.deepEqual(entry.move, reach.move);
+  assert.deepEqual(Object.keys(entry).sort(), ['move', 'san', 'timestamp', 'topology']);
+  return entry;
+}
+
+describe('online: the match document the boards are built from', () => {
+  it('allowed: every kind of move the hook writes — capture, castle, en passant, the four promotions, moves in topology B', async () => {
+    const reaches = [
+      logReaching('capture'),
+      logReaching('castle'),
+      logReaching('enPassant'),
+      ...['queen', 'rook', 'bishop', 'knight'].map((promotion) => logReaching('promotion', { promotion })),
+      logReaching('normal', { rotateFirst: true }),
+      logReaching('castle', { rotateFirst: true }),
+    ];
+    for (const reach of reaches) {
+      const entry = await playsAsHook(await matchAt(reach), reach);
+      assert.equal(entry.topology, reach.entries.some((e) => e.move.kind === 'topologyToggle') ? 'B' : 'A');
+    }
+  });
+
+  it('allowed: roulette — a promotion (the auto-queen) and a castle, from the bag', async () => {
+    for (const [reach, bag] of [
+      [logReaching('promotion', { promotion: 'queen' }), ['pawn', 'pawn', 'pawn', 'pawn']],
+      [logReaching('castle'), ['king', 'king', 'king', 'king']],
+    ]) {
+      const c = await matchAt(reach, 'roulette');
+      await patch(`matches/${c.code}`, { rouletteSlots: bag, rouletteActionsLeft: 2, usedRouletteSlots: [] });
+      await playsAsHook(c, reach);
+      assert.equal((await match(c.code)).rouletteActionsLeft, 1);
+    }
+  });
+
+  it('allowed: presence — the heartbeat creates and refreshes its doc, the online count reads (writePresence, getOnlineCount)', async () => {
+    actAs('pia');
+    await writePresence('pia');
+    const first = (await read('presence/pia')).lastSeen;
+    assert.ok(first instanceof Timestamp);
+    await new Promise((r) => setTimeout(r, 20));
+    await writePresence('pia');
+    assert.ok((await read('presence/pia')).lastSeen.toMillis() >= first.toMillis());
+    assert.equal(await getOnlineCount(), 1);
+    await denied(setDoc(doc(as('pia'), 'presence', 'gus'), { lastSeen: serverTimestamp() }));
+  });
+
+  it('denied: the probe\'s broken documents as a seated player writes them — log.moves null, the start changed, an entry with no move and no stamp', async () => {
+    const { code, white, black } = await startMatch();
+    const fs = (uid) => doc(as(uid), 'matches', code);
+    for (const uid of [white, black]) {
+      await denied(updateDoc(fs(uid), { log: { initialTopology: 'A', moves: null }, lastActivity: serverTimestamp() }));
+      await denied(updateDoc(fs(uid), { 'log.moves': null, lastActivity: serverTimestamp() }));
+      await denied(updateDoc(fs(uid), { chess960Id: 'ZZZZ', lastActivity: serverTimestamp() }));
+    }
+    await denied(updateDoc(fs(white), {
+      log: { initialTopology: 'A', moves: [{ san: '?' }] },
+      currentTurn: black, lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
+    }));
+    await denied(updateDoc(fs(white), {
+      'log.moves': ['e2e4'], currentTurn: black, lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
+    }));
+    assert.equal((await match(code)).log.moves.length, 0);
   });
 });
 
