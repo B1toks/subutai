@@ -8,6 +8,19 @@ const { createPositionFromBackRankKey } = await import('../../src/engine/index.t
 const { applyMove, generateLegalMoves } = await import('../../src/engine/moves.ts');
 const { applyRotationMove } = await import('../../src/engine/auxetic.ts');
 const { computeSAN } = await import('../../src/recording/log.ts');
+const { isValidChess960Key } = await import('../../src/engine/index.ts');
+
+/** Every arrangement of R N B Q K B N R on a back rank, 5040 of them, with
+ *  isValidChess960Key's verdict: 960 are Chess960 starts. */
+export function backRanks() {
+  const out = new Set();
+  const walk = (rest, acc) => {
+    if (!rest.length) return void out.add(acc);
+    for (const ch of new Set(rest)) walk(rest.replace(ch, ''), acc + ch);
+  };
+  walk('RNBQKBNR', '');
+  return [...out].map((key) => ({ key, valid: isValidChess960Key(key) }));
+}
 
 /** Rebuilds the board from a log the way rebuildBoardFromMatch does. */
 export function boardAfter(key, entries) {

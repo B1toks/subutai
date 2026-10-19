@@ -31,15 +31,16 @@ import { PROJECT_ID, actAs, firestoreFor, terminateAll } from './client-stub.mjs
 
 const { claimDisplayName, changeDisplayName, displayNameProblem } = await import('../../src/firebase/auth.ts');
 const { saveCompletedGame } = await import('../../src/firebase/games.ts');
-const { createMatch, joinMatch } = await import('../../src/firebase/matches.ts');
+const { buildMatchDocPayload, createMatch, joinMatch } = await import('../../src/firebase/matches.ts');
 const { saveMultiplayerGameToGames } = await import('../../src/firebase/multiplayerGames.ts');
 const { useMultiplayerSync, writeInactivityForfeit } = await import(
   '../../src/components/MultiplayerGameView.tsx'
 );
 const { generateLegalMoves } = await import('../../src/engine/moves.ts');
 const { drawOfferBlock } = await import('../../src/utils/drawOffer.ts');
+const { isValidChess960Key } = await import('../../src/engine/index.ts');
 const { getOnlineCount, writePresence } = await import('../../src/firebase/presence.ts');
-const { logReaching, stampLog } = await import('./positions.mjs');
+const { backRanks, logReaching, stampLog } = await import('./positions.mjs');
 
 // ── harness ────────────────────────────────────────────────────────────
 
@@ -1595,6 +1596,56 @@ describe('online: the match document the boards are built from', () => {
     assert.ok((await read('presence/pia')).lastSeen.toMillis() >= first.toMillis());
     assert.equal(await getOnlineCount(), 1);
     await denied(setDoc(doc(as('pia'), 'presence', 'gus'), { lastSeen: serverTimestamp() }));
+  });
+
+  // The app's own payload (buildMatchDocPayload) with chess960Id swapped,
+  // under codes of its own; writes go in batches, the emulator keeps up.
+  async function createsWith(keys) {
+    const results = [];
+    for (let i = 0; i < keys.length; i += 120) {
+      results.push(...(await Promise.allSettled(keys.slice(i, i + 120).map((key, j) => {
+        const code = `K${String(i + j).padStart(5, '0')}`;
+        return setDoc(doc(as(HOST.uid), 'matches', code), { ...buildMatchDocPayload(HOST, code), chess960Id: key });
+      }))));
+    }
+    return results;
+  }
+
+  it('allowed: a new match from each of the 960 Chess960 starts (createMatch\'s payload)', async () => {
+    const keys = backRanks().filter((r) => r.valid).map((r) => r.key);
+    assert.equal(keys.length, 960);
+    const refused = (await createsWith(keys)).flatMap((r, i) => (r.status === 'rejected' ? [`${keys[i]}: ${r.reason?.code}`] : []));
+    assert.deepEqual(refused, []);
+  });
+
+  it('denied: a new match whose start is no Chess960 back rank — the probe\'s ZZZZ, every 16th of the 4080 other arrangements of RNBQKBNR, the client\'s "?" fallback', async () => {
+    const keys = [
+      'ZZZZ', '', 'rnbqkbnr', 'RNBQKBN?', 'RNBQKBNRR', 'RNBQKBN', 'RNBQKBNRRNBQKBNR',
+      ...backRanks().filter((r) => !r.valid).filter((_, i) => i % 16 === 0).map((r) => r.key),
+    ];
+    assert.equal(keys.length, 7 + 255);
+    const landed = (await createsWith(keys)).flatMap((r, i) =>
+      r.status === 'fulfilled' ? [keys[i]] : r.reason?.code === 'permission-denied' ? [] : [`${keys[i]}: ${r.reason}`]);
+    assert.deepEqual(landed.slice(0, 20), [], `${landed.length} landed`);
+    await denied(setDoc(doc(as(HOST.uid), 'matches', 'KNULL0'), { ...buildMatchDocPayload(HOST, 'KNULL0'), chess960Id: null }));
+  });
+
+  it('chess960Ok in the rules accepts exactly what isValidChess960Key does: all 5^8 strings of R N B Q K (its regexes, read out of the rules file)', () => {
+    const src = readFileSync(RULES, 'utf8');
+    const at = src.indexOf('function chess960Ok(');
+    assert.ok(at >= 0, 'no chess960Ok in the rules');
+    const body = src.slice(at, src.indexOf(';', at));
+    const patterns = [...body.matchAll(/k\.matches\('([^']+)'\)/g)].map((m) => new RegExp(`^(?:${m[1]})$`));
+    assert.equal(patterns.length, 5);
+    const disagree = [];
+    const letters = 'RNBQK';
+    for (let n = 0; n < 5 ** 8; n++) {
+      let key = '';
+      for (let i = 0, v = n; i < 8; i++, v = Math.floor(v / 5)) key += letters[v % 5];
+      if (patterns.every((p) => p.test(key)) !== isValidChess960Key(key)) disagree.push(key);
+    }
+    assert.deepEqual(disagree.slice(0, 10), [], `${disagree.length} keys disagree`);
+    assert.equal(backRanks().filter((r) => patterns.every((p) => p.test(r.key))).length, 960);
   });
 
   it('denied: the probe\'s broken documents as a seated player writes them — log.moves null, the start changed, an entry with no move and no stamp', async () => {

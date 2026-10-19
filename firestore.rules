@@ -512,6 +512,21 @@ service cloud.firestore {
         && (!timed || ts >= request.time.toMillis() - skewMs)
         && (moves.size() == 0 || ts >= moves[moves.size() - 1].get('timestamp', 0));
     }
+    // The start both boards are built from (createPositionFromBackRankKey,
+    // which throws on anything else): a Chess960 back rank as
+    // isValidChess960Key has it. The eight pieces, each as often as on a
+    // back rank; the king between the rooks; the bishops on squares of both
+    // colours (an even number of squares between them). The client derives
+    // it from the seed and writes nothing else.
+    function chess960Ok(k) {
+      return k is string
+        && k.matches('[RNBQK]{8}')
+        && k.matches('[^Q]*Q[^Q]*')
+        && k.matches('[^N]*N[^N]*N[^N]*')
+        && k.matches('[^RK]*R[^RK]*K[^RK]*R[^RK]*')
+        && k.matches('[^B]*B([^B][^B])*B[^B]*');
+    }
+
     function timeControlOk(d) {
       return (d.get('timeControlSec', null) == null || intIn(d.timeControlSec, 60, 3600))
         && (d.get('timeIncrementSec', null) == null || intIn(d.timeIncrementSec, 0, 60));
@@ -674,7 +689,7 @@ service cloud.firestore {
                     && request.resource.data.host.uid == request.auth.uid
                     && validName(request.resource.data.host.displayName)
                     && request.resource.data.host.color in ['white', 'black']
-                    && str(request.resource.data.chess960Id, 8)
+                    && chess960Ok(request.resource.data.chess960Id)
                     && request.resource.data.status == 'waiting'
                     && request.resource.data.guest == null
                     && request.resource.data.outcome == null
