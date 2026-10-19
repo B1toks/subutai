@@ -1630,6 +1630,20 @@ describe('online: the match document the boards are built from', () => {
     await denied(setDoc(doc(as(HOST.uid), 'matches', 'KNULL0'), { ...buildMatchDocPayload(HOST, 'KNULL0'), chess960Id: null }));
   });
 
+  it('denied: a new match whose seed is no integer (the notation prints it: a map that cannot print breaks the render)', async () => {
+    const landed = [];
+    for (const [i, seed] of [{ toString: 0, valueOf: 0 }, '7', 7.5, null, [7]].entries()) {
+      const code = `SEED0${i}`;
+      try {
+        await setDoc(doc(as(HOST.uid), 'matches', code), { ...buildMatchDocPayload(HOST, code), seed });
+        landed.push(JSON.stringify(seed));
+      } catch (e) {
+        if (e?.code !== 'permission-denied') throw e;
+      }
+    }
+    assert.deepEqual(landed, [], `landed: ${landed.join('; ')}`);
+  });
+
   it('chess960Ok in the rules accepts exactly what isValidChess960Key does: all 5^8 strings of R N B Q K (its regexes, read out of the rules file)', () => {
     const src = readFileSync(RULES, 'utf8');
     const at = src.indexOf('function chess960Ok(');
@@ -1669,6 +1683,12 @@ describe('online: the match document the boards are built from', () => {
       ['castle rook to null', () => withMove({ kind: 'castle', from: 'e1', to: 'g1', castleRookFrom: 'h1', castleRookTo: null })],
       ['san a map', () => ({ ...good(), san: { x: 1 } })],
       ['san a number', () => ({ ...good(), san: 5 })],
+      ['no san', () => { const { san, ...rest } = good(); void san; return rest; }],
+      ['topology C', () => ({ ...good(), topology: 'C' })],
+      ['topology a map that cannot print', () => ({ ...good(), topology: { toString: 0, valueOf: 0 } })],
+      ['a rotation with a topology that cannot print', () => ({ move: { kind: 'topologyToggle' }, topology: { toString: 0, valueOf: 0 }, timestamp: Date.now() })],
+      ['a rotation with a from that cannot print', () => ({ move: { kind: 'topologyToggle', from: { toString: 0, valueOf: 0 } }, san: 'A→B', topology: 'A', timestamp: Date.now() })],
+      ['a rotation with squares', () => ({ move: { kind: 'topologyToggle', from: 'e2', to: 'e4' }, san: 'A→B', topology: 'A', timestamp: Date.now() })],
       ['the entry a string', () => 'e2e4'],
       ['the entry null', () => null],
     ];
@@ -1700,9 +1720,9 @@ describe('online: the match document the boards are built from', () => {
     assert.deepEqual(landed, [], `landed: ${landed.join('; ')}`);
   });
 
-  it('allowed (known limit): entry fields the boards do not read — another kind, topology, fields of its own', async () => {
+  it('allowed (known limit): entry fields the boards do not read — another kind, fields of its own', async () => {
     const { code, white, black } = await startMatch();
-    const entry = { move: { kind: 'teleport', from: 'e2', to: 'e4', piece: 'pawn' }, san: 'e4', topology: 'C', note: 'x', timestamp: Date.now() };
+    const entry = { move: { kind: 'teleport', from: 'e2', to: 'e4', piece: 'pawn' }, san: 'e4', topology: 'A', note: 'x', timestamp: Date.now() };
     await updateDoc(doc(as(white), 'matches', code), {
       'log.moves': [entry], currentTurn: black, lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
     });

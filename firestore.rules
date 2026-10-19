@@ -503,27 +503,32 @@ service cloud.firestore {
     }
 
     // The entry a move appends, read the way both boards read it
-    // (rebuildBoardFromMatch, applyMove, the move list): a move that is a
-    // map; but for a rotation, a from and a to on squares a1-h8, and so do
-    // a castle's rook squares and a promotion's piece, which the engine
-    // reads for those kinds only; a san that is a string. The engine walks
-    // off the board on any other square ('a' loops, '__proto__' throws),
-    // the move list breaks on a san that is not a string, and the log
-    // cannot be mended (R-2). Only the new entry is read: the ones before
-    // it were read when they came. Fields the boards do not read (another
-    // kind, topology, fields of its own) are left alone, as is whether the
-    // move is legal (DEF-8). Checked behind the append above, so a write
-    // without a move pays nothing for it; cheap on purpose, for the
-    // Roulette actions near the limit of 1000 expressions.
+    // (rebuildBoardFromMatch, applyMove, the move list, the status bar): a
+    // move that is a map; a rotation with nothing but its kind; any other
+    // move with a from and a to that make two squares a1-h8, and so do a
+    // castle's rook squares, and a promotion's piece is a queen, rook,
+    // bishop or knight (the engine reads those for those kinds only); a
+    // san that is a string, and a topology 'A' or 'B'. The engine walks off
+    // the board on any other square ('a' loops, '__proto__' throws), and
+    // the move list and the status bar print san, topology, from and to: a
+    // map there that cannot print throws in every render. The log cannot
+    // be mended (R-2). Only the new entry is read: the ones before it were
+    // read when they came. Fields the boards do not read (another kind,
+    // fields of their own on a move that is not a rotation) are left alone,
+    // as is whether the move is legal (DEF-8). Checked behind the append
+    // above, so a write without a move pays nothing for it; cheap on
+    // purpose, for the Roulette actions near the limit of 1000 expressions.
     function moveEntryOk(e) {
       let m = e.move;
       return m is map
         && (m.kind == 'topologyToggle'
-            || ((m.from + m.to).matches('[a-h][1-8][a-h][1-8]')
-                && (m.kind != 'castle'
-                    || (m.castleRookFrom + m.castleRookTo).matches('[a-h][1-8][a-h][1-8]'))
-                && (m.kind != 'promotion' || m.promotion in ['queen', 'rook', 'bishop', 'knight'])))
-        && e.get('san', '') is string;
+            ? m.keys().hasOnly(['kind'])
+            : ((m.from + m.to).matches('[a-h][1-8][a-h][1-8]')
+               && (m.kind != 'castle'
+                   || (m.castleRookFrom + m.castleRookTo).matches('[a-h][1-8][a-h][1-8]'))
+               && (m.kind != 'promotion' || m.promotion in ['queen', 'rook', 'bishop', 'knight'])))
+        && e.san is string
+        && e.get('topology', 'A') in ['A', 'B'];
     }
     function timedMatch(m) {
       return m.get('gameMode', 'classic') != 'roulette'
@@ -715,6 +720,8 @@ service cloud.firestore {
                     && validName(request.resource.data.host.displayName)
                     && request.resource.data.host.color in ['white', 'black']
                     && chess960Ok(request.resource.data.chess960Id)
+                    // The notation prints it; the client writes Date.now().
+                    && request.resource.data.seed is int
                     && request.resource.data.status == 'waiting'
                     && request.resource.data.guest == null
                     && request.resource.data.outcome == null
