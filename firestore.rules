@@ -503,32 +503,30 @@ service cloud.firestore {
     }
 
     // The entry a move appends, read the way both boards read it
-    // (rebuildBoardFromMatch, applyMove, the move list, the status bar): a
-    // move that is a map; a rotation with nothing but its kind; any other
-    // move with a from and a to that make two squares a1-h8, and so do a
-    // castle's rook squares, and a promotion's piece is a queen, rook,
-    // bishop or knight (the engine reads those for those kinds only); a
-    // san that is a string, and a topology 'A' or 'B'. The engine walks off
-    // the board on any other square ('a' loops, '__proto__' throws), and
-    // the move list and the status bar print san, topology, from and to: a
-    // map there that cannot print throws in every render. The log cannot
-    // be mended (R-2). Only the new entry is read: the ones before it were
-    // read when they came. Fields the boards do not read (another kind,
-    // fields of their own on a move that is not a rotation) are left alone,
-    // as is whether the move is legal (DEF-8). Checked behind the append
-    // above, so a write without a move pays nothing for it; cheap on
-    // purpose, for the Roulette actions near the limit of 1000 expressions.
+    // (rebuildBoardFromMatch, applyMove, the move list, the status bar):
+    // the move's fields as the engine writes them for its kind — a
+    // rotation nothing but its kind; a normal move, a capture or an en
+    // passant a from and a to; a castle those and its rook's squares; a
+    // promotion those and a queen, rook, bishop or knight — every square
+    // a1-h8; a topology 'A' or 'B' and a san that is a string. The engine
+    // walks off the board on any other square ('a' loops, '__proto__'
+    // throws), and the move list and the status bar print san, topology,
+    // from and to: a map there that cannot print throws in every render.
+    // The log cannot be mended (R-2). Only the new entry is read: the ones
+    // before it were read when they came. Fields the boards do not read
+    // (fields of its own on the entry or the move) are left alone, as is
+    // whether the move is legal (DEF-8).
+    // One string and one regex, on purpose: the check sits behind the
+    // append above, so a write without a move pays nothing for it, but
+    // every move pays, and the Roulette actions are near the limit of 1000
+    // expressions (each read of the entry costs; a field that is not a
+    // string makes the + an error, and the write is refused).
     function moveEntryOk(e) {
       let m = e.move;
-      return m is map
-        && (m.kind == 'topologyToggle'
-            ? m.keys().hasOnly(['kind'])
-            : ((m.from + m.to).matches('[a-h][1-8][a-h][1-8]')
-               && (m.kind != 'castle'
-                   || (m.castleRookFrom + m.castleRookTo).matches('[a-h][1-8][a-h][1-8]'))
-               && (m.kind != 'promotion' || m.promotion in ['queen', 'rook', 'bishop', 'knight'])))
-        && e.san is string
-        && e.get('topology', 'A') in ['A', 'B'];
+      return (m.kind + '|' + m.get('from', '') + m.get('to', '') + '|' + m.get('castleRookFrom', '')
+              + m.get('castleRookTo', '') + '|' + m.get('promotion', '') + '|' + e.get('topology', 'A'))
+          .matches('(topologyToggle[|][|][|]|(normal|capture|enPassant)[|]([a-h][1-8]){2}[|][|]|castle[|]([a-h][1-8]){2}[|]([a-h][1-8]){2}[|]|promotion[|]([a-h][1-8]){2}[|][|](queen|rook|bishop|knight))[|][AB]')
+        && e.san is string;
     }
     function timedMatch(m) {
       return m.get('gameMode', 'classic') != 'roulette'

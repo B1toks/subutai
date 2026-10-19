@@ -1672,6 +1672,11 @@ describe('online: the match document the boards are built from', () => {
       ['move a string', () => ({ ...good(), move: 'e2e4' })],
       ['move empty', () => ({ ...good(), move: {} })],
       ['move without kind', () => ({ ...good(), move: { from: 'e2', to: 'e4' } })],
+      ['unknown kind', () => withMove({ kind: 'teleport' })],
+      ['kind a number', () => withMove({ kind: 5 })],
+      ['a castle without its rook squares', () => withMove({ kind: 'castle', from: 'e1', to: 'g1' })],
+      ['a normal move with a promotion', () => withMove({ promotion: 'queen' })],
+      ['a promotion without its piece', () => withMove({ kind: 'promotion', from: 'e7', to: 'e8' })],
       ['from off the board', () => withMove({ from: 'z9' })],
       ['from a number', () => withMove({ from: 52 })],
       ['from __proto__ (the board breaks on it)', () => withMove({ from: '__proto__' })],
@@ -1720,9 +1725,9 @@ describe('online: the match document the boards are built from', () => {
     assert.deepEqual(landed, [], `landed: ${landed.join('; ')}`);
   });
 
-  it('allowed (known limit): entry fields the boards do not read — another kind, fields of its own', async () => {
+  it('allowed (known limit): entry fields the boards do not read — fields of its own on the entry or the move', async () => {
     const { code, white, black } = await startMatch();
-    const entry = { move: { kind: 'teleport', from: 'e2', to: 'e4', piece: 'pawn' }, san: 'e4', topology: 'A', note: 'x', timestamp: Date.now() };
+    const entry = { move: { kind: 'normal', from: 'e2', to: 'e4', piece: 'pawn' }, san: 'e4', topology: 'A', note: 'x', timestamp: Date.now() };
     await updateDoc(doc(as(white), 'matches', code), {
       'log.moves': [entry], currentTurn: black, lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
     });
