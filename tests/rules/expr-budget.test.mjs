@@ -4,7 +4,8 @@
 // rules). Run on its own:
 //   firebase emulators:exec --only firestore --project demo-subutai
 //     "node --import ./tests/rules/register.mjs --test --test-isolation=none tests/rules/expr-budget.test.mjs"
-// (EXPR_ONLY=users or EXPR_ONLY=matches: only those writes.)
+// (EXPR_ONLY=users, matches or create, or a list like matches,create:
+// only those writes; EXPR_NAMES=<regex>: only the writes so named.)
 //
 // Method: K no-op conditions (`request.time != null`) go in front of the
 // update rule, behind a switch: they are evaluated only once /padflag/on
@@ -31,12 +32,14 @@ const { saveCompletedGame } = await import('../../src/firebase/games.ts');
 const { createMatch, joinMatch } = await import('../../src/firebase/matches.ts');
 const { useMultiplayerSync, writeInactivityForfeit } = await import('../../src/components/MultiplayerGameView.tsx');
 const { generateLegalMoves } = await import('../../src/engine/moves.ts');
+const { logReaching, stampLog } = await import('./positions.mjs');
 
 const BASE = readFileSync(process.env.RULES_FILE ?? new URL('../../firestore.rules', import.meta.url), 'utf8')
   .split('\r\n').join('\n');
 const ANCHORS = {
   users: '      allow update: if isOwner(uid)\n                    && request.resource.data.uid == uid\n',
   matches: '      allow update: if signedIn()\n        && matchKeysOk(request.resource.data)\n',
+  create: '      allow create: if signedIn()\n                    && request.resource.data.code == code\n',
   calib: '  }\n}\n',
 };
 for (const a of Object.values(ANCHORS)) assert.equal(BASE.split(a).length, 2, `anchor not unique: ${a}`);
@@ -54,7 +57,8 @@ function rulesWith(target, k) {
   if (target === 'calib') {
     return r.replace(ANCHORS.calib, `    match /calib/{id} {\n      allow create: if ${sw};\n    }\n` + ANCHORS.calib);
   }
-  return r.replace(ANCHORS[target], ANCHORS[target].replace('allow update: if ', `allow update: if ${sw}\n        && `));
+  const verb = target === 'create' ? 'allow create: if ' : 'allow update: if ';
+  return r.replace(ANCHORS[target], ANCHORS[target].replace(verb, `${verb}${sw}\n        && `));
 }
 
 let env;
@@ -92,6 +96,21 @@ async function spin(uid, code) {
   await patch(`matches/${code}`, { rouletteSlots: ['pawn', 'knight', 'pawn', 'knight'] });
 }
 const m = (code) => read(`matches/${code}`);
+/** A started match moved to a log that reaches reach.move, the side to move
+ *  on turn; in roulette with a bag of `bag` and `left` actions. */
+async function at(reach, mode = 'classic', bag = null, left = 2) {
+  const c = await start(mode);
+  const mover = reach.sideToMove === 'white' ? c.white : c.black;
+  await patch(`matches/${c.code}`, {
+    chess960Id: reach.key, 'log.moves': stampLog(reach.entries), currentTurn: mover,
+    ...(bag ? { rouletteSlots: bag, rouletteActionsLeft: left, usedRouletteSlots: [] } : {}),
+  });
+  return { ...c, mover, reach };
+}
+const plays = async (c) => (await hookAs(c.mover, c.code)).sendMove(c.reach.move);
+const grew = (c) => async () => (await m(c.code)).log.moves.length === c.reach.entries.length + 1;
+const PROMO = () => logReaching('promotion', { promotion: 'queen' });
+const CASTLE = () => logReaching('castle');
 /** offerDraw, checked: the app's own write must land in setup. */
 async function offerOf(uid, code) {
   await (await hookAs(uid, code)).offerDraw();
@@ -176,6 +195,19 @@ const CASES = [
     const c = await start(); await move(c.white, c.code); await offerOf(c.black, c.code); await move(c.black, c.code);
     await patch(`matches/${c.code}`, { lastActivity: ago(100_000), turnStartedAt: ago(100_000) }); return c;
   }, async (c) => { actAs(c.black); await writeInactivityForfeit(c.code, c.black); }, async (c) => !!(await m(c.code)).outcome],
+  // The entries moveEntryOk reads most of: a castle (two square pairs) and a promotion.
+  ['/matches: create (createMatch)', 'create', async () => ({}),
+    async (c) => { actAs(H.uid); c.code = await createMatch(H, 'classic', 180, 2); }, async (c) => !!c.code && !!(await m(c.code))],
+  ['/matches: classic castle', 'matches', () => at(CASTLE()), plays, (c) => grew(c)()],
+  ['/matches: classic promotion', 'matches', () => at(PROMO()), plays, (c) => grew(c)()],
+  ['/matches: roulette first action, a promotion from the bag', 'matches', () => at(PROMO(), 'roulette', ['pawn', 'pawn', 'pawn', 'pawn']),
+    plays, (c) => grew(c)()],
+  ['/matches: roulette last action, a castle, with the mover\'s offer standing', 'matches', async () => {
+    const c = await at(CASTLE(), 'roulette', ['king', 'king', 'king', 'king'], 1); await offerOf(c.mover, c.code); return c;
+  }, plays, async (c) => (await m(c.code)).currentTurn !== c.mover],
+  ['/matches: roulette last action, a promotion, with the mover\'s offer standing', 'matches', async () => {
+    const c = await at(PROMO(), 'roulette', ['pawn', 'pawn', 'pawn', 'pawn'], 1); await offerOf(c.mover, c.code); return c;
+  }, plays, async (c) => (await m(c.code)).currentTurn !== c.mover],
   ['/matches: flag claim with a declined offer on the table, 1+2', 'matches', async () => {
     const c = await start('classic', 60); await move(c.white, c.code); await offerOf(c.black, c.code);
     await (await hookAs(c.white, c.code)).answerDraw(false);
@@ -204,7 +236,9 @@ const ONLY = process.env.EXPR_ONLY;
 it('expression margin of the honest writes', { timeout: 30 * 60_000 }, async () => {
   const rows = [];
   let perPad = null;
-  for (const c of CASES.filter((c) => !ONLY || c[1] === 'calib' || c[1] === ONLY)) {
+  const NAMES = process.env.EXPR_NAMES ? new RegExp(process.env.EXPR_NAMES) : null;
+  for (const c of CASES.filter((c) => (!ONLY || c[1] === 'calib' || ONLY.split(',').includes(c[1]))
+    && (!NAMES || c[1] === 'calib' || NAMES.test(c[0])))) {
     const zero = await probe(c, 0);
     assert.ok(zero.ok, `${c[0]} does not land with no pads: ${zero.errors.join(' | ')}`);
     let lo = 0, hi = 1000; // lo lands, hi does not
