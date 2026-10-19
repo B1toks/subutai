@@ -497,8 +497,33 @@ service cloud.firestore {
       return after.get('timeControlSec', null) == before.get('timeControlSec', null)
         && after.get('timeIncrementSec', null) == before.get('timeIncrementSec', null)
         && (after.log.moves.size() == before.log.moves.size()
-            || moveStampOk(after.log.moves[before.log.moves.size()].get('timestamp', null),
-                           before.log.moves, timedMatch(before)));
+            || (moveStampOk(after.log.moves[before.log.moves.size()].get('timestamp', null),
+                            before.log.moves, timedMatch(before))
+                && moveEntryOk(after.log.moves[before.log.moves.size()])));
+    }
+
+    // The entry a move appends, read the way both boards read it
+    // (rebuildBoardFromMatch, applyMove, the move list): a move that is a
+    // map; but for a rotation, a from and a to on squares a1-h8, and so do
+    // a castle's rook squares and a promotion's piece, which the engine
+    // reads for those kinds only; a san that is a string. The engine walks
+    // off the board on any other square ('a' loops, '__proto__' throws),
+    // the move list breaks on a san that is not a string, and the log
+    // cannot be mended (R-2). Only the new entry is read: the ones before
+    // it were read when they came. Fields the boards do not read (another
+    // kind, topology, fields of its own) are left alone, as is whether the
+    // move is legal (DEF-8). Checked behind the append above, so a write
+    // without a move pays nothing for it; cheap on purpose, for the
+    // Roulette actions near the limit of 1000 expressions.
+    function moveEntryOk(e) {
+      let m = e.move;
+      return m is map
+        && (m.kind == 'topologyToggle'
+            || ((m.from + m.to).matches('[a-h][1-8][a-h][1-8]')
+                && (m.kind != 'castle'
+                    || (m.castleRookFrom + m.castleRookTo).matches('[a-h][1-8][a-h][1-8]'))
+                && (m.kind != 'promotion' || m.promotion in ['queen', 'rook', 'bishop', 'knight'])))
+        && e.get('san', '') is string;
     }
     function timedMatch(m) {
       return m.get('gameMode', 'classic') != 'roulette'
@@ -720,6 +745,8 @@ service cloud.firestore {
       //   - the move log only ever GROWS by at most one entry per write,
       //     only the player whose turn it is may grow it, and the entries
       //     already there never change (R-2);
+      //   - the entry a move appends is one both boards can be built
+      //     from (moveEntryOk), as the start is (chess960Ok, at create);
       //   - currentTurn always names a seated player, and moves only with
       //     the join or a move (matchTurnOk);
       //   - lastActivity and turnStartedAt are server time, so the 90 s in

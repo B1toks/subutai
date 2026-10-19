@@ -1648,6 +1648,67 @@ describe('online: the match document the boards are built from', () => {
     assert.equal(backRanks().filter((r) => patterns.every((p) => p.test(r.key))).length, 960);
   });
 
+  it('denied: an appended entry the boards cannot be built from, each breaking one thing (the probe\'s entry with no move among them), at ply 0 and 1; the same write with a good entry lands', async () => {
+    const { code, white, black } = await startMatch();
+    const good = () => ({ move: { kind: 'normal', from: 'e2', to: 'e4' }, san: 'e4', topology: 'A', timestamp: Date.now() });
+    const withMove = (m) => ({ ...good(), move: { ...good().move, ...m } });
+    const bad = [
+      ['the probe\'s entry, stamped: no move', () => ({ san: '?', timestamp: Date.now() })],
+      ['move null', () => ({ ...good(), move: null })],
+      ['move a string', () => ({ ...good(), move: 'e2e4' })],
+      ['move empty', () => ({ ...good(), move: {} })],
+      ['move without kind', () => ({ ...good(), move: { from: 'e2', to: 'e4' } })],
+      ['from off the board', () => withMove({ from: 'z9' })],
+      ['from a number', () => withMove({ from: 52 })],
+      ['from __proto__ (the board breaks on it)', () => withMove({ from: '__proto__' })],
+      ['to a file only (the engine loops on it)', () => withMove({ from: 'e8', to: 'a' })],
+      ['to too long', () => withMove({ to: 'e44' })],
+      ['no to', () => ({ ...good(), move: { kind: 'normal', from: 'e2' } })],
+      ['promotion to a dragon', () => withMove({ kind: 'promotion', from: 'e7', to: 'e8', promotion: 'dragon' })],
+      ['castle rook from off the board', () => withMove({ kind: 'castle', from: 'e1', to: 'g1', castleRookFrom: 'h9', castleRookTo: 'f1' })],
+      ['castle rook to null', () => withMove({ kind: 'castle', from: 'e1', to: 'g1', castleRookFrom: 'h1', castleRookTo: null })],
+      ['san a map', () => ({ ...good(), san: { x: 1 } })],
+      ['san a number', () => ({ ...good(), san: 5 })],
+      ['the entry a string', () => 'e2e4'],
+      ['the entry null', () => null],
+    ];
+    const landed = [];
+    for (const ply of [0, 1]) {
+      if (ply === 1) await playMove(code);
+      const m = await match(code);
+      const mover = m.currentTurn;
+      const write = (entry) => updateDoc(doc(as(mover), 'matches', code), {
+        'log.moves': [...m.log.moves, entry],
+        currentTurn: mover === white ? black : white,
+        lastActivity: serverTimestamp(),
+        turnStartedAt: serverTimestamp(),
+      });
+      for (const [what, entry] of bad) {
+        try {
+          await write(entry());
+          landed.push(`ply ${ply}: ${what}`);
+          await patch(`matches/${code}`, { 'log.moves': m.log.moves, currentTurn: mover });
+        } catch (e) {
+          if (e?.code !== 'permission-denied') throw e;
+        }
+      }
+      if (ply === 1) {
+        await write(good());
+        assert.equal((await match(code)).log.moves.length, 2);
+      }
+    }
+    assert.deepEqual(landed, [], `landed: ${landed.join('; ')}`);
+  });
+
+  it('allowed (known limit): entry fields the boards do not read — another kind, topology, fields of its own', async () => {
+    const { code, white, black } = await startMatch();
+    const entry = { move: { kind: 'teleport', from: 'e2', to: 'e4', piece: 'pawn' }, san: 'e4', topology: 'C', note: 'x', timestamp: Date.now() };
+    await updateDoc(doc(as(white), 'matches', code), {
+      'log.moves': [entry], currentTurn: black, lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
+    });
+    assert.equal((await match(code)).log.moves.length, 1);
+  });
+
   it('denied: the probe\'s broken documents as a seated player writes them — log.moves null, the start changed, an entry with no move and no stamp', async () => {
     const { code, white, black } = await startMatch();
     const fs = (uid) => doc(as(uid), 'matches', code);
