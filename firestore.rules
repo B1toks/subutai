@@ -708,6 +708,70 @@ service cloud.firestore {
                     && a == { 'by': b.by, 'atPly': b.atPly, 'declined': true })));
     }
 
+    // The update rule over its two documents and the writer, read once
+    // each: the same conditions in the same order as when they read
+    // resource.data and request.resource.data in place, which cost a few
+    // expressions per read on writes near the limit of 1000 (the Roulette
+    // actions). Only values the rule always reads are passed in.
+    function matchUpdateOk(before, after, uid) {
+      return matchKeysOk(after)
+        && after.log.initialTopology == before.log.initialTopology
+        && after.host == before.host
+        && after.chess960Id == before.chess960Id
+        && after.seed == before.seed
+        && after.code == before.code
+        && after.get('gameMode', 'classic') == before.get('gameMode', 'classic')
+        && after.lastActivity == request.time
+        && after.status in ['waiting', 'active', 'completed']
+        // The status follows the match, so it cannot end one without an
+        // outcome or bring one back: waiting until the guest sits,
+        // completed exactly when there is an outcome.
+        && (after.status == 'waiting') == (after.guest == null)
+        && (after.status == 'completed') == (after.outcome != null)
+        && (before.guest == null
+            || after.guest == before.guest)
+        && (after.guest == null
+            || (validName(after.guest.displayName)
+                && after.guest.color in ['white', 'black']))
+        && (before.outcome == null
+            || after.outcome == before.outcome)
+        && (after.outcome == null
+            || after.outcome in ['white-win', 'black-win', 'draw', 'host-resign', 'guest-resign'])
+        && logAppendOk(before, after, uid, before.log.moves.size(), after.log.moves.size())
+        && (after.currentTurn == ''
+            || after.currentTurn == after.host.uid
+            || (after.guest != null
+                && after.currentTurn == after.guest.uid))
+        && matchTurnOk()
+        && matchClockOk()
+        && turnStartOk()
+        && rouletteOk()
+        && matchOutcomeOk()
+        && matchEndReasonOk()
+        && matchDrawOfferOk()
+        && (
+          before.host.uid == uid
+          || (before.guest != null && before.guest.uid == uid)
+          || (before.status == 'waiting'
+              && before.guest == null
+              && after.guest != null
+              && after.guest.uid == uid)
+        );
+    }
+    // The move log only ever grows, by one entry at most, the entries
+    // already there stay as they are (R-2: a write may only append, never
+    // rewrite the history, on or off turn; a slice of an empty list is an
+    // index error in rules, hence the size check), and only the player on
+    // turn appends. nb and na: the log's length before and after.
+    function logAppendOk(before, after, uid, nb, na) {
+      return na >= nb
+        && na <= nb + 1
+        && (nb == 0
+            || after.log.moves[0:nb] == before.log.moves)
+        && (na == nb
+            || before.currentTurn == uid);
+    }
+
     match /matches/{code} {
       allow read: if signedIn();
 
@@ -772,57 +836,7 @@ service cloud.firestore {
       // writes (no log change) from either seat, draw offer / decline /
       // accept (no log change).
       allow update: if signedIn()
-        && matchKeysOk(request.resource.data)
-        && request.resource.data.log.initialTopology == resource.data.log.initialTopology
-        && request.resource.data.host == resource.data.host
-        && request.resource.data.chess960Id == resource.data.chess960Id
-        && request.resource.data.seed == resource.data.seed
-        && request.resource.data.code == resource.data.code
-        && request.resource.data.get('gameMode', 'classic') == resource.data.get('gameMode', 'classic')
-        && request.resource.data.lastActivity == request.time
-        && request.resource.data.status in ['waiting', 'active', 'completed']
-        // The status follows the match, so it cannot end one without an
-        // outcome or bring one back: waiting until the guest sits,
-        // completed exactly when there is an outcome.
-        && (request.resource.data.status == 'waiting') == (request.resource.data.guest == null)
-        && (request.resource.data.status == 'completed') == (request.resource.data.outcome != null)
-        && (resource.data.guest == null
-            || request.resource.data.guest == resource.data.guest)
-        && (request.resource.data.guest == null
-            || (validName(request.resource.data.guest.displayName)
-                && request.resource.data.guest.color in ['white', 'black']))
-        && (resource.data.outcome == null
-            || request.resource.data.outcome == resource.data.outcome)
-        && (request.resource.data.outcome == null
-            || request.resource.data.outcome in ['white-win', 'black-win', 'draw', 'host-resign', 'guest-resign'])
-        && request.resource.data.log.moves.size() >= resource.data.log.moves.size()
-        && request.resource.data.log.moves.size() <= resource.data.log.moves.size() + 1
-        // R-2 — the moves already there stay as they are: a write may only
-        // append, never rewrite the history, on or off turn. (A slice of an
-        // empty list is an index error in rules, hence the size check.)
-        && (resource.data.log.moves.size() == 0
-            || request.resource.data.log.moves[0:resource.data.log.moves.size()] == resource.data.log.moves)
-        && (request.resource.data.log.moves.size() == resource.data.log.moves.size()
-            || resource.data.currentTurn == request.auth.uid)
-        && (request.resource.data.currentTurn == ''
-            || request.resource.data.currentTurn == request.resource.data.host.uid
-            || (request.resource.data.guest != null
-                && request.resource.data.currentTurn == request.resource.data.guest.uid))
-        && matchTurnOk()
-        && matchClockOk()
-        && turnStartOk()
-        && rouletteOk()
-        && matchOutcomeOk()
-        && matchEndReasonOk()
-        && matchDrawOfferOk()
-        && (
-          resource.data.host.uid == request.auth.uid
-          || (resource.data.guest != null && resource.data.guest.uid == request.auth.uid)
-          || (resource.data.status == 'waiting'
-              && resource.data.guest == null
-              && request.resource.data.guest != null
-              && request.resource.data.guest.uid == request.auth.uid)
-        );
+        && matchUpdateOk(resource.data, request.resource.data, request.auth.uid);
 
       allow delete: if false;
     }
