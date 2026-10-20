@@ -80,7 +80,7 @@ npm run dev
 
 Display names, saved games, the leaderboard, and the feedback collector use Firebase (Anonymous Auth + Firestore) on the free Spark plan. The chess engine, classifier, and eval bar work fully offline without it. See [FIREBASE_SETUP.md](./FIREBASE_SETUP.md) for the setup walkthrough.
 
-`firestore.rules` validates every write (field shapes, size caps, leaderboard numbers must be backed by a saved game, match logs are append-only and turn-owned). Deploy them with `npx firebase-tools deploy --only firestore:rules` after any change. Publishing the site (`npm run deploy`) does not publish the rules; a release that changes `firestore.rules` needs that command as a separate step.
+`firestore.rules` validates every write (field shapes, size caps, leaderboard numbers must be backed by a saved game, match logs are append-only and turn-owned). Deploy them with `npx.cmd firebase-tools deploy --only firestore:rules --config firebase.deploy.json --project subutai-chess` after any change (`firebase.json` holds only the emulator for `npm run test:rules`; `firebase.deploy.json` names the rules file). Publishing the site (`npm run deploy`) does not publish the rules; a release that changes `firestore.rules` needs that command as a separate step.
 
 ## Security notes
 

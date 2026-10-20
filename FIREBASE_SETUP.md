@@ -49,17 +49,13 @@ The repo ships rules in `firestore.rules` (project root).
 **CLI path (optional):**
 
 ```bash
-npm install -g firebase-tools
-firebase login
-firebase use <your-project-id>
-firebase deploy --only firestore:rules
+npx.cmd firebase-tools login
+npx.cmd firebase-tools deploy --only firestore:rules --config firebase.deploy.json --project <your-project-id>
 ```
 
-`firebase.json` is not committed — if you go CLI, create a minimal one:
-
-```json
-{ "firestore": { "rules": "firestore.rules" } }
-```
+(`npx.cmd` in PowerShell; `npx` elsewhere.) `firebase.json` holds only the
+emulator, for `npm run test:rules`; `firebase.deploy.json` names the rules file
+for the deploy. This project's own deploy is `--project subutai-chess`.
 
 ## 6. Verify
 
