@@ -65,37 +65,46 @@ Firestore перестає обчислювати правило після 1000
 
 ### Після `fix/match-doc-shape` (2026-10-20)
 
-Заміряно на емуляторі тим самим скриптом, `EXPR_ONLY=matches,create`: правила гілки (`04ea63c`) — двічі, у таблиці менше K з двох; правила `main` (`655d9f3`) — один раз, 2026-10-19, у правій колонці. Нові рядки: create матчу (`chess960Ok`, `seed`), рокіровка й перетворення (записи, у яких `moveEntryOk` читає найбільше полів), зокрема в діях Roulette, поки стоїть пропозиція ходока.
+Заміряно на емуляторі тим самим скриптом, правила гілки після `matchUpdateOk` (`2c7d889`), `EXPR_ONLY=matches,create`, двічі: з хостом білим і чорним (`EXPR_HOST`). У таблиці — гірший колір; з фіксованим кольором K однакове в кожному запуску (записи Roulette з ходом проміряно тричі в кожному кольорі: усі три однакові). Права колонка — `main` (`655d9f3`), один запуск 2026-10-19 з випадковим кольором; новим записам там нема рядка.
 
-| Запис (код клієнта) | K | ≈ виразів | Запас | `main`: K / запас |
-|---|---|---|---|---|
-| **`/matches`: roulette first action, a promotion from the bag** | **10** | **939** | **≈61** | 20 / ≈122 |
-| `/matches`: roulette last action with the mover's offer standing | 15 | 909 | ≈91 | 25 / ≈152 |
-| `/matches`: roulette last action, a castle, with the mover's offer standing | 15 | 909 | ≈91 | 25 / ≈152 |
-| `/matches`: roulette last action, a promotion, with the mover's offer standing | 15 | 909 | ≈91 | 25 / ≈152 |
-| `/matches`: roulette first action, a piece from the bag | 16 | 902 | ≈98 | 31 / ≈189 |
-| `/matches`: roulette last action, passes the turn | 17 | 896 | ≈104 | 27 / ≈165 |
-| `/matches`: inactivity forfeit with a declined offer on the table | 23 | 860 | ≈140 | 23 / ≈140 |
-| `/matches`: inactivity forfeit (writeInactivityForfeit) | 27 | 835 | ≈165 | 27 / ≈165 |
-| `/matches`: accept of an offer made on turn | 27 | 835 | ≈165 | 28 / ≈171 |
-| `/matches`: inactivity forfeit with a retired offer (offered on turn, then moved) | 27 | 835 | ≈165 | 28 / ≈171 |
-| `/matches`: flag claim with a declined offer on the table, 1+2 | 27 | 835 | ≈165 | 27 / ≈165 |
-| `/matches`: classic move that retires the opponent's offer | 31 | 811 | ≈189 | 42 / ≈256 |
-| `/matches`: flag claim by the opponent, 90 s after the turn started | 32 | 805 | ≈195 | 32 / ≈195 |
-| `/matches`: classic move, no clock, 40th move | 34 | 793 | ≈207 | 44 / ≈268 |
-| `/matches`: classic castle | 34 | 793 | ≈207 | 44 / ≈268 |
-| `/matches`: classic promotion | 34 | 793 | ≈207 | 44 / ≈268 |
-| `/matches`: classic move, 3+2 clock | 36 | 780 | ≈220 | 47 / ≈287 |
-| `/matches`: roulette spin | 37 | 774 | ≈226 | 33 / ≈201 |
-| `/matches`: decline of an offer made on turn, restarts the turn (answerDraw) | 38 | 768 | ≈232 | 38 / ≈232 |
-| `/matches`: resign | 41 | 750 | ≈250 | 39 / ≈238 |
-| `/matches`: mate written by writeOutcomeIfFirst | 44 | 732 | ≈268 | 44 / ≈268 |
-| `/matches`: draw offer on turn (offerDraw) | 44 | 732 | ≈268 | 45 / ≈274 |
-| `/matches`: draw offer off turn | 46 | 720 | ≈280 | 47 / ≈287 |
-| `/matches`: join (joinMatch) | 57 | 652 | ≈348 | 57 / ≈348 |
-| `/matches`: create (createMatch) | 101 | 384 | ≈616 | 105 / ≈640 |
+| Запис (код клієнта) | Хост у гіршому | K | ≈ виразів | Запас | Запас в іншому кольорі | `main`: запас |
+|---|---|---|---|---|---|---|
+| **`/matches`: roulette first action, a promotion, with the mover's offer standing** | чорний | **22** | **866** | **≈134** | ≈159 | — |
+| **`/matches`: roulette first action, a promotion, that retires the opponent's offer** | чорний | **22** | **866** | **≈134** | ≈159 | — |
+| `/matches`: roulette first action, a promotion from the bag | чорний | 24 | 854 | ≈146 | ≈171 | ≈122 |
+| `/matches`: roulette first action, a castle | чорний | 24 | 854 | ≈146 | ≈171 | — |
+| `/matches`: roulette first action, an en passant | чорний | 24 | 854 | ≈146 | ≈171 | — |
+| `/matches`: roulette first action, a move in topology B | білий | 24 | 854 | ≈146 | ≈171 | — |
+| `/matches`: roulette first action, a piece from the bag | чорний | 28 | 829 | ≈171 | ≈195 | ≈189 |
+| `/matches`: roulette last action with the mover's offer standing | обидва | 28 | 829 | ≈171 | ≈171 | ≈152 |
+| `/matches`: roulette last action, a castle, with the mover's offer standing | обидва | 28 | 829 | ≈171 | ≈171 | ≈152 |
+| `/matches`: roulette last action, a promotion, with the mover's offer standing | обидва | 28 | 829 | ≈171 | ≈171 | ≈152 |
+| `/matches`: roulette last action, passes the turn | чорний | 30 | 817 | ≈183 | ≈189 | ≈165 |
+| `/matches`: inactivity forfeit with a declined offer on the table | обидва | 36 | 780 | ≈220 | ≈220 | ≈140 |
+| `/matches`: accept of an offer made on turn | чорний | 39 | 762 | ≈238 | ≈250 | ≈171 |
+| `/matches`: inactivity forfeit (writeInactivityForfeit) | чорний | 40 | 756 | ≈244 | ≈250 | ≈165 |
+| `/matches`: inactivity forfeit with a retired offer (offered on turn, then moved) | білий | 40 | 756 | ≈244 | ≈250 | ≈171 |
+| `/matches`: flag claim with a declined offer on the table, 1+2 | чорний | 40 | 756 | ≈244 | ≈250 | ≈165 |
+| `/matches`: flag claim by the opponent, 90 s after the turn started | чорний | 44 | 732 | ≈268 | ≈280 | ≈195 |
+| `/matches`: roulette spin | чорний | 45 | 726 | ≈274 | ≈299 | ≈201 |
+| `/matches`: classic move that retires the opponent's offer | обидва | 45 | 726 | ≈274 | ≈274 | ≈256 |
+| `/matches`: classic move, no clock, 40th move | обидва | 47 | 713 | ≈287 | ≈287 | ≈268 |
+| `/matches`: classic castle | обидва | 47 | 713 | ≈287 | ≈287 | ≈268 |
+| `/matches`: classic promotion | обидва | 47 | 713 | ≈287 | ≈287 | ≈268 |
+| `/matches`: classic move, 3+2 clock | чорний | 48 | 707 | ≈293 | ≈299 | ≈287 |
+| `/matches`: decline of an offer made on turn, restarts the turn (answerDraw) | обидва | 50 | 695 | ≈305 | ≈305 | ≈232 |
+| `/matches`: resign | білий | 51 | 689 | ≈311 | ≈341 | ≈238 |
+| `/matches`: mate written by writeOutcomeIfFirst | чорний | 57 | 652 | ≈348 | ≈360 | ≈268 |
+| `/matches`: draw offer on turn (offerDraw) | білий | 57 | 652 | ≈348 | ≈372 | ≈274 |
+| `/matches`: draw offer off turn | обидва | 59 | 640 | ≈360 | ≈360 | ≈287 |
+| `/matches`: join (joinMatch) | чорний | 70 | 573 | ≈427 | ≈445 | ≈348 |
+| `/matches`: create (createMatch) | обидва | 101 | 384 | ≈616 | ≈616 | ≈640 |
 
-Що коштує нове. `moveEntryOk` стоїть за перевіркою «лог виріс», тож записи без ходу (форфейт, здача, нічия, прапорець, спін, приєднання) за неї не платять: їхні K на гілці й на `main` різняться не більше ніж на розкид між запусками (форфейт з відхиленою пропозицією — ≈140 проти ≈140). Запис із ходом платить ≈61–91 виразів, create — ≈24 (п'ять регекспів `chess960Ok` і тип `seed`). Платить саме читання запису (порожня `moveEntryOk` коштувала ≈6–13), тому всі поля йдуть в один рядок і один регексп; на найгіршому записі це в межах розкиду те саме, що окрема умова на поле (`984480b`: запас 67 і 85 у двох запусках), рокіровка й перетворення трохи дешевші, поворот трохи дорожчий. Найгірший чесний запис тепер — roulette first action, a promotion from the bag: запас ≈61 (на `main` ≈122); два запуски дали K 16 і 10. Запуски того самого запису розходяться до ≈37 виразів, тож нижня межа — ≈24. Кожна нова умова в `/matches`, яка лягає на хід, бере з цього запасу.
+Звідки розкид. Колір хоста застосунок тягне з `Math.random` (`buildMatchDocPayload`), а правила йдуть різними гілками залежно від того, хто ходить: `seated`, `opponentOf` і остання умова правила оновлення спершу порівнюють з хостом, тож хід гостя дорожчий. Звідси розкид до 6 кроків K (≈37 виразів) на тому самому записі в попередніх замірах; з `EXPR_HOST` розкиду немає.
+
+Де йшли вирази. Звіт покриття емулятора (`EXPR_COVERAGE=1`, `:ruleCoverage`) на найгіршому записі до перетворення, першій дії Roulette з перетворенням, поки стоїть пропозиція ходока, хост чорний (≈729 обчислень вузлів за запис; вузли рахують не так, як ліміт, тож порівнювати лише між собою): саме правило оновлення 292, `matchClockOk` 54, `matchOutcomeOk` 42, `rouletteActionOk` 36, `matchKeysOk` 35, `moveEntryOk` 32, `matchTurnOk` 32, `moveStampOk` 32, `turnStartOk` 31, `matchEndReasonOk` 26. У самому правилі найдорожчі рядки — перемикач і перші умови (`request.resource.data.…`), зріз R-2 і довжини логу (кожне `request.resource.data.log.moves.size()` — шість вузлів, і їх вісім). Правила обривають `&&` і `||`: функції, які на записі з ходом не потрібні (`loserOf`, дальші гілки `matchEndReasonOk`), не обчислюються.
+
+Що зроблено. Правило оновлення читає документи один раз: `matchUpdateOk(before, after, uid)` — ті самі умови в тому самому порядку над параметрами, `logAppendOk` — ріст логу, R-2 і хто дописує, з двома довжинами логу. Аргументи — лише те, що правило й так читало в тих місцях, тож жодне читання не стало раннім. Після цього правило оновлення разом з `matchUpdateOk` і `logAppendOk` — ≈209 вузлів замість 292, весь запис ≈680 замість ≈729. Найгірший чесний запис тепер — roulette first action, a promotion, with the mover's offer standing: запас ≈134 (до перетворення 49); кожна дія Roulette з ходом — не менше ≈134. Записи без ходу (форфейт з відхиленою пропозицією) — ≈220. Кожна нова умова в `/matches`, яка лягає на хід, бере з цього запасу; міряти з `EXPR_HOST` в обох кольорах.
 
 ## Документ матчу, з якого будуються дошки (`fix/match-doc-shape`)
 
@@ -161,14 +170,14 @@ Firestore перестає обчислювати правило після 1000
       - Наслідок: суперник може лише здатися чи чекати. Це вимагає модифікованого клієнта у вікні bridge і нічого не дає понад R-3 (п. 1).
       - Як закрити: перед кроком 4 знайти скриптом лише на читання матчі з `drawOffer` не-map серед активних. Виправлення `o is map` у `standingDrawOffer` — лише з прогоном `expr-budget`: умова лягає на форфейт із запасом ≈140.
       - Тест: `round4` X2 (гілка `qa/independent-2026-09`).
-12. **Запас до ліміту 1000 виразів на запит.** Firestore обчислює не більше 1000 виразів на запит, і правило оновлення матчу вже близько до цієї межі. Заміри — у розділі «Запас до ліміту 1000 виразів» вище (`expr-budget`): з нічиєю найменший запас ≈140 виразів (форфейт, коли в матчі лежить відхилена пропозиція), далі ≈152 (остання дія Roulette, поки стоїть пропозиція ходока); без нічиї, на `fix/rules`, найгірший запис `/matches` має ≈195. Числа, що стояли тут раніше (70–104, з нічиєю 56–93), рахували додані вирази `true`, а не умови `request.time != null` по ≈6,1 виразу, тож із таблицею вони не порівнюються. Довжина логу на запас не впливає. Відхилені записи межу перетинають (тому в логах тестів «maximum of 1000 expressions»), але відхиляються вони однаково. Кожна нова умова в `/matches` має перевірятися на дозволених записах, насамперед на форфейті з пропозицією й у Roulette. Після `fix/match-doc-shape` найменший запас у запису з ходом: ≈61 (roulette first action, a promotion from the bag; на `main` ≈122); у запису без ходу — як і був, ≈140 (форфейт з відхиленою пропозицією).
+12. **Запас до ліміту 1000 виразів на запит.** Firestore обчислює не більше 1000 виразів на запит, і правило оновлення матчу вже близько до цієї межі. Заміри — у розділі «Запас до ліміту 1000 виразів» вище (`expr-budget`): з нічиєю найменший запас ≈140 виразів (форфейт, коли в матчі лежить відхилена пропозиція), далі ≈152 (остання дія Roulette, поки стоїть пропозиція ходока); без нічиї, на `fix/rules`, найгірший запис `/matches` має ≈195. Числа, що стояли тут раніше (70–104, з нічиєю 56–93), рахували додані вирази `true`, а не умови `request.time != null` по ≈6,1 виразу, тож із таблицею вони не порівнюються. Довжина логу на запас не впливає. Відхилені записи межу перетинають (тому в логах тестів «maximum of 1000 expressions»), але відхиляються вони однаково. Кожна нова умова в `/matches` має перевірятися на дозволених записах, насамперед на форфейті з пропозицією й у Roulette. Після `fix/match-doc-shape` найменший запас у запису з ходом: ≈134 (roulette first action, a promotion, with the mover's offer standing, хід гостя); у запису без ходу ≈220 (форфейт з відхиленою пропозицією).
 
 Пункти 13–16 знайшов раунд 2 огляду. Його тести до них лежать у гілці `qa/independent-2026-09`, `qa/rules/round2.test.mjs`. Для 13–15 правила тут не змінювались, і тестів у `tests/rules/` немає. Для 16 правило змінювалось (вікно мітки, п. 3), і він має тут тести в `clock`: «a device more than 60 s off», «a device more than 60 s ahead», «no clock, no lower bound».
 
 13. **Хід розміром ~1 МБ заморожує матч (R-16).**
     - Що лишається: розмір нового запису правила не обмежують. Його форму читає `moveEntryOk` (`fix/match-doc-shape`), але `san` там лише рядок, без довжини. Гравець на своєму ході може дописати хід із рядком `san` майже на мегабайт.
     - Наслідок: якщо розмір влучає у вікно близько 500 байт під лімітом документа (на емуляторі `san` від 1 047 800 до 1 047 960 символів), правила для наступного запису впираються в ліміт пам'яті. Тоді не проходить ні хід, ні здача, ні форфейт, і матч назавжди лишається `active`. Вигоди атакувальнику це не дає (перемогу собі він і так може записати, R-3), але зіпсувати гру суперникові так можна. На лідерборд не впливає.
-    - Як закрити: `e.san.size() <= 16` у `moveEntryOk`. Умову проганяти через `expr-budget` (розділ вище): найгірший запис із ходом має запас ≈61. Для `/games.log.moves` те саме.
+    - Як закрити: `e.san.size() <= 16` у `moveEntryOk`. Умову проганяти через `expr-budget` в обох кольорах хоста (розділ вище): найгірший запис із ходом має запас ≈134. Для `/games.log.moves` те саме.
     - Тест: `round2` M9.
 14. **Профіль зі сміттям (R-17, доповнює п. 7).**
     - Що лишається: `createdAt` і `lastActive` у `/users` не мають ні типу, ні розміру. `updateDoc(users/me, {lastActive: 'x' × 1 000 000})` проходить.
@@ -191,7 +200,7 @@ Firestore перестає обчислювати правило після 1000
     - Старі матчі: правила перевіряють лише новий запис і старт нового матчу. Матч, зіпсований до деплою, лишається зіпсованим, поки клієнт не навчиться показувати такий матч без падіння.
     - `/games`: create так само приймає будь-який `chess960Id` до 8 символів і будь-які записи в `log.moves` (до 700). Посилання `?game=` на таку партію клієнт показує повідомленням про помилку; огляд партії й Watch з лідерборда з поганим записом не перевірені. Огляд безпеки 2026-10-19, MEDIUM.
     - `log.initialTopology` `'B'` при create проходить, а `rebuildBoardFromMatch` завжди починає з A: реплей і копія в `/games` розійдуться з грою. Дошка будується. Клієнт пише лише `'A'`.
-    - Запас до ліміту 1000 виразів у ходів Roulette: ≈61 (п. 12).
+    - Запас до ліміту 1000 виразів у ходів Roulette: ≈134 (п. 12).
 
 ## Порядок деплою
 
