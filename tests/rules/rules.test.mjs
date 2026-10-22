@@ -31,13 +31,16 @@ import { PROJECT_ID, actAs, firestoreFor, terminateAll } from './client-stub.mjs
 
 const { claimDisplayName, changeDisplayName, displayNameProblem } = await import('../../src/firebase/auth.ts');
 const { saveCompletedGame } = await import('../../src/firebase/games.ts');
-const { createMatch, joinMatch } = await import('../../src/firebase/matches.ts');
+const { buildMatchDocPayload, createMatch, joinMatch } = await import('../../src/firebase/matches.ts');
 const { saveMultiplayerGameToGames } = await import('../../src/firebase/multiplayerGames.ts');
 const { useMultiplayerSync, writeInactivityForfeit } = await import(
   '../../src/components/MultiplayerGameView.tsx'
 );
 const { generateLegalMoves } = await import('../../src/engine/moves.ts');
 const { drawOfferBlock } = await import('../../src/utils/drawOffer.ts');
+const { isValidChess960Key } = await import('../../src/engine/index.ts');
+const { getOnlineCount, writePresence } = await import('../../src/firebase/presence.ts');
+const { backRanks, logReaching, stampLog } = await import('./positions.mjs');
 
 // ── harness ────────────────────────────────────────────────────────────
 
@@ -1521,6 +1524,232 @@ describe('online: draw offers', () => {
     const next = await match(code);
     assert.equal(next.log.moves.length, 3);
     assert.ok(next.log.moves[2].timestamp >= next.log.moves[1].timestamp);
+  });
+});
+
+// ── the match document both boards are built from ──────────────────────
+// rebuildBoardFromMatch builds each player's board from chess960Id and the
+// log, so a document it cannot build breaks the match for both. "allowed":
+// every kind of entry the v1.1.5 hook writes, played by the hook itself
+// from a log that reaches it (positions.mjs). "denied": the broken
+// documents of the corrupted-data probe, written by a seated player.
+
+/** A live match whose log is reach.entries, the side to move on turn. */
+async function matchAt(reach, gameMode = 'classic') {
+  const c = await startMatch(gameMode);
+  const mover = reach.sideToMove === 'white' ? c.white : c.black;
+  await patch(`matches/${c.code}`, {
+    chess960Id: reach.key,
+    'log.moves': stampLog(reach.entries),
+    currentTurn: mover,
+  });
+  return { ...c, mover };
+}
+
+/** The hook of the player on turn plays reach.move; the entry lands as the hook wrote it. */
+async function playsAsHook(c, reach) {
+  const before = (await match(c.code)).log.moves.length;
+  await (await hookAs(c.mover, c.code)).sendMove(reach.move);
+  const moves = (await match(c.code)).log.moves;
+  assert.equal(moves.length, before + 1, `${reach.move.kind} did not land`);
+  const entry = moves.at(-1);
+  assert.deepEqual(entry.move, reach.move);
+  assert.deepEqual(Object.keys(entry).sort(), ['move', 'san', 'timestamp', 'topology']);
+  return entry;
+}
+
+describe('online: the match document the boards are built from', () => {
+  it('allowed: every kind of move the hook writes — capture, castle, en passant, the four promotions, moves in topology B', async () => {
+    const reaches = [
+      logReaching('capture'),
+      logReaching('castle'),
+      logReaching('enPassant'),
+      ...['queen', 'rook', 'bishop', 'knight'].map((promotion) => logReaching('promotion', { promotion })),
+      logReaching('normal', { rotateFirst: true }),
+      logReaching('castle', { rotateFirst: true }),
+    ];
+    for (const reach of reaches) {
+      const entry = await playsAsHook(await matchAt(reach), reach);
+      assert.equal(entry.topology, reach.entries.some((e) => e.move.kind === 'topologyToggle') ? 'B' : 'A');
+    }
+  });
+
+  it('allowed: roulette — a promotion (the auto-queen) and a castle, from the bag', async () => {
+    for (const [reach, bag] of [
+      [logReaching('promotion', { promotion: 'queen' }), ['pawn', 'pawn', 'pawn', 'pawn']],
+      [logReaching('castle'), ['king', 'king', 'king', 'king']],
+    ]) {
+      const c = await matchAt(reach, 'roulette');
+      await patch(`matches/${c.code}`, { rouletteSlots: bag, rouletteActionsLeft: 2, usedRouletteSlots: [] });
+      await playsAsHook(c, reach);
+      assert.equal((await match(c.code)).rouletteActionsLeft, 1);
+    }
+  });
+
+  it('allowed: presence — the heartbeat creates and refreshes its doc, the online count reads (writePresence, getOnlineCount)', async () => {
+    actAs('pia');
+    await writePresence('pia');
+    const first = (await read('presence/pia')).lastSeen;
+    assert.ok(first instanceof Timestamp);
+    await new Promise((r) => setTimeout(r, 20));
+    await writePresence('pia');
+    assert.ok((await read('presence/pia')).lastSeen.toMillis() >= first.toMillis());
+    assert.equal(await getOnlineCount(), 1);
+    await denied(setDoc(doc(as('pia'), 'presence', 'gus'), { lastSeen: serverTimestamp() }));
+  });
+
+  // The app's own payload (buildMatchDocPayload) with chess960Id swapped,
+  // under codes of its own; writes go in batches, the emulator keeps up.
+  async function createsWith(keys) {
+    const results = [];
+    for (let i = 0; i < keys.length; i += 120) {
+      results.push(...(await Promise.allSettled(keys.slice(i, i + 120).map((key, j) => {
+        const code = `K${String(i + j).padStart(5, '0')}`;
+        return setDoc(doc(as(HOST.uid), 'matches', code), { ...buildMatchDocPayload(HOST, code), chess960Id: key });
+      }))));
+    }
+    return results;
+  }
+
+  it('allowed: a new match from each of the 960 Chess960 starts (createMatch\'s payload)', async () => {
+    const keys = backRanks().filter((r) => r.valid).map((r) => r.key);
+    assert.equal(keys.length, 960);
+    const refused = (await createsWith(keys)).flatMap((r, i) => (r.status === 'rejected' ? [`${keys[i]}: ${r.reason?.code}`] : []));
+    assert.deepEqual(refused, []);
+  });
+
+  it('denied: a new match whose start is no Chess960 back rank — the probe\'s ZZZZ, every 16th of the 4080 other arrangements of RNBQKBNR, the client\'s "?" fallback', async () => {
+    const keys = [
+      'ZZZZ', '', 'rnbqkbnr', 'RNBQKBN?', 'RNBQKBNRR', 'RNBQKBN', 'RNBQKBNRRNBQKBNR',
+      ...backRanks().filter((r) => !r.valid).filter((_, i) => i % 16 === 0).map((r) => r.key),
+    ];
+    assert.equal(keys.length, 7 + 255);
+    const landed = (await createsWith(keys)).flatMap((r, i) =>
+      r.status === 'fulfilled' ? [keys[i]] : r.reason?.code === 'permission-denied' ? [] : [`${keys[i]}: ${r.reason}`]);
+    assert.deepEqual(landed.slice(0, 20), [], `${landed.length} landed`);
+    await denied(setDoc(doc(as(HOST.uid), 'matches', 'KNULL0'), { ...buildMatchDocPayload(HOST, 'KNULL0'), chess960Id: null }));
+  });
+
+  it('denied: a new match whose seed is no integer (the notation prints it: a map that cannot print breaks the render)', async () => {
+    const landed = [];
+    for (const [i, seed] of [{ toString: 0, valueOf: 0 }, '7', 7.5, null, [7]].entries()) {
+      const code = `SEED0${i}`;
+      try {
+        await setDoc(doc(as(HOST.uid), 'matches', code), { ...buildMatchDocPayload(HOST, code), seed });
+        landed.push(JSON.stringify(seed));
+      } catch (e) {
+        if (e?.code !== 'permission-denied') throw e;
+      }
+    }
+    assert.deepEqual(landed, [], `landed: ${landed.join('; ')}`);
+  });
+
+  it('chess960Ok in the rules accepts exactly what isValidChess960Key does: all 5^8 strings of R N B Q K (its regexes, read out of the rules file)', () => {
+    const src = readFileSync(RULES, 'utf8');
+    const at = src.indexOf('function chess960Ok(');
+    assert.ok(at >= 0, 'no chess960Ok in the rules');
+    const body = src.slice(at, src.indexOf(';', at));
+    const patterns = [...body.matchAll(/k\.matches\('([^']+)'\)/g)].map((m) => new RegExp(`^(?:${m[1]})$`));
+    assert.equal(patterns.length, 5);
+    const disagree = [];
+    const letters = 'RNBQK';
+    for (let n = 0; n < 5 ** 8; n++) {
+      let key = '';
+      for (let i = 0, v = n; i < 8; i++, v = Math.floor(v / 5)) key += letters[v % 5];
+      if (patterns.every((p) => p.test(key)) !== isValidChess960Key(key)) disagree.push(key);
+    }
+    assert.deepEqual(disagree.slice(0, 10), [], `${disagree.length} keys disagree`);
+    assert.equal(backRanks().filter((r) => patterns.every((p) => p.test(r.key))).length, 960);
+  });
+
+  it('denied: an appended entry the boards cannot be built from, each breaking one thing (the probe\'s entry with no move among them), at ply 0 and 1; the same write with a good entry lands', async () => {
+    const { code, white, black } = await startMatch();
+    const good = () => ({ move: { kind: 'normal', from: 'e2', to: 'e4' }, san: 'e4', topology: 'A', timestamp: Date.now() });
+    const withMove = (m) => ({ ...good(), move: { ...good().move, ...m } });
+    const bad = [
+      ['the probe\'s entry, stamped: no move', () => ({ san: '?', timestamp: Date.now() })],
+      ['move null', () => ({ ...good(), move: null })],
+      ['move a string', () => ({ ...good(), move: 'e2e4' })],
+      ['move empty', () => ({ ...good(), move: {} })],
+      ['move without kind', () => ({ ...good(), move: { from: 'e2', to: 'e4' } })],
+      ['unknown kind', () => withMove({ kind: 'teleport' })],
+      ['kind a number', () => withMove({ kind: 5 })],
+      ['a castle without its rook squares', () => withMove({ kind: 'castle', from: 'e1', to: 'g1' })],
+      ['a normal move with a promotion', () => withMove({ promotion: 'queen' })],
+      ['a promotion without its piece', () => withMove({ kind: 'promotion', from: 'e7', to: 'e8' })],
+      ['from off the board', () => withMove({ from: 'z9' })],
+      ['from a number', () => withMove({ from: 52 })],
+      ['from __proto__ (the board breaks on it)', () => withMove({ from: '__proto__' })],
+      ['to a file only (the engine loops on it)', () => withMove({ from: 'e8', to: 'a' })],
+      ['to too long', () => withMove({ to: 'e44' })],
+      ['no to', () => ({ ...good(), move: { kind: 'normal', from: 'e2' } })],
+      ['promotion to a dragon', () => withMove({ kind: 'promotion', from: 'e7', to: 'e8', promotion: 'dragon' })],
+      ['castle rook from off the board', () => withMove({ kind: 'castle', from: 'e1', to: 'g1', castleRookFrom: 'h9', castleRookTo: 'f1' })],
+      ['castle rook to null', () => withMove({ kind: 'castle', from: 'e1', to: 'g1', castleRookFrom: 'h1', castleRookTo: null })],
+      ['san a map', () => ({ ...good(), san: { x: 1 } })],
+      ['san a number', () => ({ ...good(), san: 5 })],
+      ['no san', () => { const { san, ...rest } = good(); void san; return rest; }],
+      ['topology C', () => ({ ...good(), topology: 'C' })],
+      ['topology a map that cannot print', () => ({ ...good(), topology: { toString: 0, valueOf: 0 } })],
+      ['a rotation with a topology that cannot print', () => ({ move: { kind: 'topologyToggle' }, topology: { toString: 0, valueOf: 0 }, timestamp: Date.now() })],
+      ['a rotation with a from that cannot print', () => ({ move: { kind: 'topologyToggle', from: { toString: 0, valueOf: 0 } }, san: 'A→B', topology: 'A', timestamp: Date.now() })],
+      ['a rotation with squares', () => ({ move: { kind: 'topologyToggle', from: 'e2', to: 'e4' }, san: 'A→B', topology: 'A', timestamp: Date.now() })],
+      ['the entry a string', () => 'e2e4'],
+      ['the entry null', () => null],
+    ];
+    const landed = [];
+    for (const ply of [0, 1]) {
+      if (ply === 1) await playMove(code);
+      const m = await match(code);
+      const mover = m.currentTurn;
+      const write = (entry) => updateDoc(doc(as(mover), 'matches', code), {
+        'log.moves': [...m.log.moves, entry],
+        currentTurn: mover === white ? black : white,
+        lastActivity: serverTimestamp(),
+        turnStartedAt: serverTimestamp(),
+      });
+      for (const [what, entry] of bad) {
+        try {
+          await write(entry());
+          landed.push(`ply ${ply}: ${what}`);
+          await patch(`matches/${code}`, { 'log.moves': m.log.moves, currentTurn: mover });
+        } catch (e) {
+          if (e?.code !== 'permission-denied') throw e;
+        }
+      }
+      if (ply === 1) {
+        await write(good());
+        assert.equal((await match(code)).log.moves.length, 2);
+      }
+    }
+    assert.deepEqual(landed, [], `landed: ${landed.join('; ')}`);
+  });
+
+  it('allowed (known limit): entry fields the boards do not read — fields of its own on the entry or the move', async () => {
+    const { code, white, black } = await startMatch();
+    const entry = { move: { kind: 'normal', from: 'e2', to: 'e4', piece: 'pawn' }, san: 'e4', topology: 'A', note: 'x', timestamp: Date.now() };
+    await updateDoc(doc(as(white), 'matches', code), {
+      'log.moves': [entry], currentTurn: black, lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
+    });
+    assert.equal((await match(code)).log.moves.length, 1);
+  });
+
+  it('denied: the probe\'s broken documents as a seated player writes them — log.moves null, the start changed, an entry with no move and no stamp', async () => {
+    const { code, white, black } = await startMatch();
+    const fs = (uid) => doc(as(uid), 'matches', code);
+    for (const uid of [white, black]) {
+      await denied(updateDoc(fs(uid), { log: { initialTopology: 'A', moves: null }, lastActivity: serverTimestamp() }));
+      await denied(updateDoc(fs(uid), { 'log.moves': null, lastActivity: serverTimestamp() }));
+      await denied(updateDoc(fs(uid), { chess960Id: 'ZZZZ', lastActivity: serverTimestamp() }));
+    }
+    await denied(updateDoc(fs(white), {
+      log: { initialTopology: 'A', moves: [{ san: '?' }] },
+      currentTurn: black, lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
+    }));
+    await denied(updateDoc(fs(white), {
+      'log.moves': ['e2e4'], currentTurn: black, lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
+    }));
+    assert.equal((await match(code)).log.moves.length, 0);
   });
 });
 

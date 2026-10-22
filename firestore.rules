@@ -497,8 +497,36 @@ service cloud.firestore {
       return after.get('timeControlSec', null) == before.get('timeControlSec', null)
         && after.get('timeIncrementSec', null) == before.get('timeIncrementSec', null)
         && (after.log.moves.size() == before.log.moves.size()
-            || moveStampOk(after.log.moves[before.log.moves.size()].get('timestamp', null),
-                           before.log.moves, timedMatch(before)));
+            || (moveStampOk(after.log.moves[before.log.moves.size()].get('timestamp', null),
+                            before.log.moves, timedMatch(before))
+                && moveEntryOk(after.log.moves[before.log.moves.size()])));
+    }
+
+    // The entry a move appends, read the way both boards read it
+    // (rebuildBoardFromMatch, applyMove, the move list, the status bar):
+    // the move's fields as the engine writes them for its kind — a
+    // rotation nothing but its kind; a normal move, a capture or an en
+    // passant a from and a to; a castle those and its rook's squares; a
+    // promotion those and a queen, rook, bishop or knight — every square
+    // a1-h8; a topology 'A' or 'B' and a san that is a string. The engine
+    // walks off the board on any other square ('a' loops, '__proto__'
+    // throws), and the move list and the status bar print san, topology,
+    // from and to: a map there that cannot print throws in every render.
+    // The log cannot be mended (R-2). Only the new entry is read: the ones
+    // before it were read when they came. Fields the boards do not read
+    // (fields of its own on the entry or the move) are left alone, as is
+    // whether the move is legal (DEF-8).
+    // One string and one regex, on purpose: the check sits behind the
+    // append above, so a write without a move pays nothing for it, but
+    // every move pays, and the Roulette actions are near the limit of 1000
+    // expressions (each read of the entry costs; a field that is not a
+    // string makes the + an error, and the write is refused).
+    function moveEntryOk(e) {
+      let m = e.move;
+      return (m.kind + '|' + m.get('from', '') + m.get('to', '') + '|' + m.get('castleRookFrom', '')
+              + m.get('castleRookTo', '') + '|' + m.get('promotion', '') + '|' + e.get('topology', 'A'))
+          .matches('(topologyToggle[|][|][|]|(normal|capture|enPassant)[|]([a-h][1-8]){2}[|][|]|castle[|]([a-h][1-8]){2}[|]([a-h][1-8]){2}[|]|promotion[|]([a-h][1-8]){2}[|][|](queen|rook|bishop|knight))[|][AB]')
+        && e.san is string;
     }
     function timedMatch(m) {
       return m.get('gameMode', 'classic') != 'roulette'
@@ -512,6 +540,21 @@ service cloud.firestore {
         && (!timed || ts >= request.time.toMillis() - skewMs)
         && (moves.size() == 0 || ts >= moves[moves.size() - 1].get('timestamp', 0));
     }
+    // The start both boards are built from (createPositionFromBackRankKey,
+    // which throws on anything else): a Chess960 back rank as
+    // isValidChess960Key has it. The eight pieces, each as often as on a
+    // back rank; the king between the rooks; the bishops on squares of both
+    // colours (an even number of squares between them). The client derives
+    // it from the seed and writes nothing else.
+    function chess960Ok(k) {
+      return k is string
+        && k.matches('[RNBQK]{8}')
+        && k.matches('[^Q]*Q[^Q]*')
+        && k.matches('[^N]*N[^N]*N[^N]*')
+        && k.matches('[^RK]*R[^RK]*K[^RK]*R[^RK]*')
+        && k.matches('[^B]*B([^B][^B])*B[^B]*');
+    }
+
     function timeControlOk(d) {
       return (d.get('timeControlSec', null) == null || intIn(d.timeControlSec, 60, 3600))
         && (d.get('timeIncrementSec', null) == null || intIn(d.timeIncrementSec, 0, 60));
@@ -665,6 +708,70 @@ service cloud.firestore {
                     && a == { 'by': b.by, 'atPly': b.atPly, 'declined': true })));
     }
 
+    // The update rule over its two documents and the writer, read once
+    // each: the same conditions in the same order as when they read
+    // resource.data and request.resource.data in place, which cost a few
+    // expressions per read on writes near the limit of 1000 (the Roulette
+    // actions). Only values the rule always reads are passed in.
+    function matchUpdateOk(before, after, uid) {
+      return matchKeysOk(after)
+        && after.log.initialTopology == before.log.initialTopology
+        && after.host == before.host
+        && after.chess960Id == before.chess960Id
+        && after.seed == before.seed
+        && after.code == before.code
+        && after.get('gameMode', 'classic') == before.get('gameMode', 'classic')
+        && after.lastActivity == request.time
+        && after.status in ['waiting', 'active', 'completed']
+        // The status follows the match, so it cannot end one without an
+        // outcome or bring one back: waiting until the guest sits,
+        // completed exactly when there is an outcome.
+        && (after.status == 'waiting') == (after.guest == null)
+        && (after.status == 'completed') == (after.outcome != null)
+        && (before.guest == null
+            || after.guest == before.guest)
+        && (after.guest == null
+            || (validName(after.guest.displayName)
+                && after.guest.color in ['white', 'black']))
+        && (before.outcome == null
+            || after.outcome == before.outcome)
+        && (after.outcome == null
+            || after.outcome in ['white-win', 'black-win', 'draw', 'host-resign', 'guest-resign'])
+        && logAppendOk(before, after, uid, before.log.moves.size(), after.log.moves.size())
+        && (after.currentTurn == ''
+            || after.currentTurn == after.host.uid
+            || (after.guest != null
+                && after.currentTurn == after.guest.uid))
+        && matchTurnOk()
+        && matchClockOk()
+        && turnStartOk()
+        && rouletteOk()
+        && matchOutcomeOk()
+        && matchEndReasonOk()
+        && matchDrawOfferOk()
+        && (
+          before.host.uid == uid
+          || (before.guest != null && before.guest.uid == uid)
+          || (before.status == 'waiting'
+              && before.guest == null
+              && after.guest != null
+              && after.guest.uid == uid)
+        );
+    }
+    // The move log only ever grows, by one entry at most, the entries
+    // already there stay as they are (R-2: a write may only append, never
+    // rewrite the history, on or off turn; a slice of an empty list is an
+    // index error in rules, hence the size check), and only the player on
+    // turn appends. nb and na: the log's length before and after.
+    function logAppendOk(before, after, uid, nb, na) {
+      return na >= nb
+        && na <= nb + 1
+        && (nb == 0
+            || after.log.moves[0:nb] == before.log.moves)
+        && (na == nb
+            || before.currentTurn == uid);
+    }
+
     match /matches/{code} {
       allow read: if signedIn();
 
@@ -674,7 +781,9 @@ service cloud.firestore {
                     && request.resource.data.host.uid == request.auth.uid
                     && validName(request.resource.data.host.displayName)
                     && request.resource.data.host.color in ['white', 'black']
-                    && str(request.resource.data.chess960Id, 8)
+                    && chess960Ok(request.resource.data.chess960Id)
+                    // The notation prints it; the client writes Date.now().
+                    && request.resource.data.seed is int
                     && request.resource.data.status == 'waiting'
                     && request.resource.data.guest == null
                     && request.resource.data.outcome == null
@@ -705,6 +814,8 @@ service cloud.firestore {
       //   - the move log only ever GROWS by at most one entry per write,
       //     only the player whose turn it is may grow it, and the entries
       //     already there never change (R-2);
+      //   - the entry a move appends is one both boards can be built
+      //     from (moveEntryOk), as the start is (chess960Ok, at create);
       //   - currentTurn always names a seated player, and moves only with
       //     the join or a move (matchTurnOk);
       //   - lastActivity and turnStartedAt are server time, so the 90 s in
@@ -725,57 +836,7 @@ service cloud.firestore {
       // writes (no log change) from either seat, draw offer / decline /
       // accept (no log change).
       allow update: if signedIn()
-        && matchKeysOk(request.resource.data)
-        && request.resource.data.log.initialTopology == resource.data.log.initialTopology
-        && request.resource.data.host == resource.data.host
-        && request.resource.data.chess960Id == resource.data.chess960Id
-        && request.resource.data.seed == resource.data.seed
-        && request.resource.data.code == resource.data.code
-        && request.resource.data.get('gameMode', 'classic') == resource.data.get('gameMode', 'classic')
-        && request.resource.data.lastActivity == request.time
-        && request.resource.data.status in ['waiting', 'active', 'completed']
-        // The status follows the match, so it cannot end one without an
-        // outcome or bring one back: waiting until the guest sits,
-        // completed exactly when there is an outcome.
-        && (request.resource.data.status == 'waiting') == (request.resource.data.guest == null)
-        && (request.resource.data.status == 'completed') == (request.resource.data.outcome != null)
-        && (resource.data.guest == null
-            || request.resource.data.guest == resource.data.guest)
-        && (request.resource.data.guest == null
-            || (validName(request.resource.data.guest.displayName)
-                && request.resource.data.guest.color in ['white', 'black']))
-        && (resource.data.outcome == null
-            || request.resource.data.outcome == resource.data.outcome)
-        && (request.resource.data.outcome == null
-            || request.resource.data.outcome in ['white-win', 'black-win', 'draw', 'host-resign', 'guest-resign'])
-        && request.resource.data.log.moves.size() >= resource.data.log.moves.size()
-        && request.resource.data.log.moves.size() <= resource.data.log.moves.size() + 1
-        // R-2 — the moves already there stay as they are: a write may only
-        // append, never rewrite the history, on or off turn. (A slice of an
-        // empty list is an index error in rules, hence the size check.)
-        && (resource.data.log.moves.size() == 0
-            || request.resource.data.log.moves[0:resource.data.log.moves.size()] == resource.data.log.moves)
-        && (request.resource.data.log.moves.size() == resource.data.log.moves.size()
-            || resource.data.currentTurn == request.auth.uid)
-        && (request.resource.data.currentTurn == ''
-            || request.resource.data.currentTurn == request.resource.data.host.uid
-            || (request.resource.data.guest != null
-                && request.resource.data.currentTurn == request.resource.data.guest.uid))
-        && matchTurnOk()
-        && matchClockOk()
-        && turnStartOk()
-        && rouletteOk()
-        && matchOutcomeOk()
-        && matchEndReasonOk()
-        && matchDrawOfferOk()
-        && (
-          resource.data.host.uid == request.auth.uid
-          || (resource.data.guest != null && resource.data.guest.uid == request.auth.uid)
-          || (resource.data.status == 'waiting'
-              && resource.data.guest == null
-              && request.resource.data.guest != null
-              && request.resource.data.guest.uid == request.auth.uid)
-        );
+        && matchUpdateOk(resource.data, request.resource.data, request.auth.uid);
 
       allow delete: if false;
     }

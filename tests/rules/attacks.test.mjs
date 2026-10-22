@@ -11,6 +11,10 @@ import {
 } from 'firebase/firestore';
 
 const RULES = process.env.RULES_FILE ?? new URL('../../firestore.rules', import.meta.url);
+// The move every log entry here carries: since the rules read the appended
+// entry (moveEntryOk), an entry with no move is refused for that alone, and
+// a DENIED test would no longer test its own condition.
+const ROT = { kind: 'topologyToggle' };
 let env;
 before(async () => {
   env = await initializeTestEnvironment({
@@ -41,7 +45,7 @@ async function claim(uid, displayName, slug) {
 }
 
 function garbageMoves(n) {
-  return Array.from({ length: n }, () => ({ san: 'x' }));
+  return Array.from({ length: n }, () => ({ move: ROT, san: 'x' }));
 }
 function fakeGame(uid, { moveCount = 10, outcome = 'human-win', points } = {}) {
   return {
@@ -286,7 +290,7 @@ async function activeMatch({ mode = 'classic', moves = 0, turn = 'host' } = {}) 
     guest: { uid: 'guest', displayName: 'Guest', color: 'black' },
     chess960Id: 'RNBQKBNR', seed: 1, status: 'active', gameMode: mode,
     currentTurn: turn, outcome: null,
-    log: { initialTopology: 'A', moves: Array.from({ length: moves }, (_, i) => ({ san: `m${i}` })) },
+    log: { initialTopology: 'A', moves: Array.from({ length: moves }, (_, i) => ({ move: ROT, san: `m${i}` })) },
     createdAt: ago(5 * 60_000), lastActivity: ago(5_000), turnStartedAt: ago(5_000),
   });
 }
@@ -296,7 +300,7 @@ describe('M: matches', () => {
   it('M1 DENIED (R-2): the player NOT on turn rewrites the whole move history (same length)', async () => {
     await activeMatch({ moves: 4, turn: 'host' });
     await denied(updateDoc(m('guest'), {
-      'log.moves': [{ san: 'f3' }, { san: 'e5' }, { san: 'g4' }, { san: 'Qh4#' }],
+      'log.moves': [{ move: ROT, san: 'f3' }, { move: ROT, san: 'e5' }, { move: ROT, san: 'g4' }, { move: ROT, san: 'Qh4#' }],
       lastActivity: serverTimestamp(),
     }));
     assert.equal((await read('matches/ABC123')).log.moves[3].san, 'm3');
@@ -304,11 +308,11 @@ describe('M: matches', () => {
   it('M1b DENIED (R-2): on own turn, append one move AND rewrite earlier ones', async () => {
     await activeMatch({ moves: 2, turn: 'host' });
     await denied(updateDoc(m('host'), {
-      'log.moves': [{ san: 'X' }, { san: 'Y' }, { san: 'Z', timestamp: Date.now() }], currentTurn: 'guest', lastActivity: serverTimestamp(),
+      'log.moves': [{ move: ROT, san: 'X' }, { move: ROT, san: 'Y' }, { move: ROT, san: 'Z', timestamp: Date.now() }], currentTurn: 'guest', lastActivity: serverTimestamp(),
     }));
     // The same append over the untouched history goes through.
     await allowed(updateDoc(m('host'), {
-      'log.moves': [{ san: 'm0' }, { san: 'm1' }, { san: 'Z', timestamp: Date.now() }], currentTurn: 'guest', lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
+      'log.moves': [{ move: ROT, san: 'm0' }, { move: ROT, san: 'm1' }, { move: ROT, san: 'Z', timestamp: Date.now() }], currentTurn: 'guest', lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp(),
     }));
   });
   it('M2 ALLOWED (known limit, R-3: QA-05 stays open online): claim "white-win" (no mate) after one move, on the opponent\'s turn', async () => {
@@ -338,7 +342,7 @@ describe('M: matches', () => {
   it('M5 DENIED (R-8): roulette — no action without a spin; two actions per spin, and the second ends the turn', async () => {
     await activeMatch({ mode: 'roulette', moves: 0, turn: 'host' });
     const stamp = { lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp() };
-    const move = (i) => ({ san: `h${i}`, timestamp: Date.now() });
+    const move = (i) => ({ move: ROT, san: `h${i}`, timestamp: Date.now() });
     await denied(updateDoc(m('host'), { 'log.moves': [move(1)], ...stamp }));
     await allowed(updateDoc(m('host'), {
       rouletteSlots: ['pawn', 'pawn', 'knight', 'king'], rouletteActionsLeft: 2, usedRouletteSlots: [],
@@ -395,9 +399,9 @@ describe('M: matches', () => {
   // closed
   it('M10 DENIED: classic — a move that keeps the turn; a move off turn; two moves at once', async () => {
     await activeMatch({ moves: 0, turn: 'host' });
-    await denied(updateDoc(m('host'), { 'log.moves': [{ san: 'a', timestamp: Date.now() }], lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp() }));
-    await denied(updateDoc(m('guest'), { 'log.moves': [{ san: 'a', timestamp: Date.now() }], currentTurn: 'host', lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp() }));
-    await denied(updateDoc(m('host'), { 'log.moves': [{ san: 'a', timestamp: Date.now() }, { san: 'b', timestamp: Date.now() }], currentTurn: 'guest', lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp() }));
+    await denied(updateDoc(m('host'), { 'log.moves': [{ move: ROT, san: 'a', timestamp: Date.now() }], lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp() }));
+    await denied(updateDoc(m('guest'), { 'log.moves': [{ move: ROT, san: 'a', timestamp: Date.now() }], currentTurn: 'host', lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp() }));
+    await denied(updateDoc(m('host'), { 'log.moves': [{ move: ROT, san: 'a', timestamp: Date.now() }, { move: ROT, san: 'b', timestamp: Date.now() }], currentTurn: 'guest', lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp() }));
   });
   it('M11 DENIED: opponent resignation before 90 s; the player on turn calling the other idle', async () => {
     await activeMatch({ moves: 2, turn: 'host' });
@@ -408,13 +412,13 @@ describe('M: matches', () => {
   it('M12 DENIED: back-dated lastActivity; outcome changed after the end; third party writes', async () => {
     await activeMatch({ moves: 2, turn: 'host' });
     await denied(updateDoc(m('guest'), { lastActivity: ago(200_000) }));
-    await denied(updateDoc(m('mallory'), { 'log.moves': [{ san: 'm0' }, { san: 'm1' }, { san: 'b', timestamp: Date.now() }], lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp() }));
+    await denied(updateDoc(m('mallory'), { 'log.moves': [{ move: ROT, san: 'm0' }, { move: ROT, san: 'm1' }, { move: ROT, san: 'b', timestamp: Date.now() }], lastActivity: serverTimestamp(), turnStartedAt: serverTimestamp() }));
     await updateDoc(m('host'), { outcome: 'host-resign', status: 'completed', lastActivity: serverTimestamp() });
     await denied(updateDoc(m('host'), { outcome: 'white-win', lastActivity: serverTimestamp() }));
   });
   it('M13 DENIED: shrinking the log (undo a move)', async () => {
     await activeMatch({ moves: 3, turn: 'host' });
-    await denied(updateDoc(m('host'), { 'log.moves': [{ san: 'a' }, { san: 'b' }], lastActivity: serverTimestamp() }));
+    await denied(updateDoc(m('host'), { 'log.moves': [{ move: ROT, san: 'a' }, { move: ROT, san: 'b' }], lastActivity: serverTimestamp() }));
   });
 });
 

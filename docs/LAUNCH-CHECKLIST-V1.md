@@ -88,7 +88,7 @@
    Шлях, яким публікували правила V1:
    ```bash
    npx firebase-tools login
-   npx firebase-tools deploy --only firestore:rules
+   npx.cmd firebase-tools deploy --only firestore:rules --config firebase.deploy.json --project subutai-chess
    ```
    Потім пройти чек-лист §5 у `docs/SECURITY-AUDIT-2026-09.md`
    (соло Strong, соло Casual, PvP-матч, quick match, feedback).
