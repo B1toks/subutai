@@ -5115,6 +5115,11 @@ body.checkmate-flash::after {
   animation: roulette-roll 0.4s infinite alternate;
 }
 
+/* A slot the reveal has just landed on: one quick settle, the "bam". */
+.roulette-face-landed {
+  animation: roulette-land 0.18s ease-out;
+}
+
 .roulette-face.slot-used {
   opacity: 0.35;
   filter: grayscale(1);
@@ -5156,6 +5161,17 @@ body.checkmate-flash::after {
 @keyframes roulette-roll {
   from { transform: translateY(0); }
   to   { transform: translateY(-4px); }
+}
+
+@keyframes roulette-land {
+  from { transform: scale(1.25); }
+  to   { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .roulette-face-landed {
+    animation: none;
+  }
 }
 
 .roulette-label {

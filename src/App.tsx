@@ -249,7 +249,15 @@ const BOT_STRENGTH_SUMMARY: Record<BotStrength, string> = {
 
 const ROULETTE_SLOT_COUNT = 4;
 const ROULETTE_MAX_ACTIONS = 2;
-const AI_ROULETTE_REVEAL_MS = 1200;
+// The spin lands slot by slot, one every 400 ms, with a short "bam" each
+// (1.6 s for the four, then a 200 ms settle): the human's spin, the bot's
+// and, online, both players'. The bot then pauses AI_ROULETTE_REVEAL_MS
+// before its first action (the reveal already showed the roll; it used to
+// appear at once and stay 1.2 s).
+const ROULETTE_SLOT_REVEAL_MS = 400;
+// The last slot's settle (.roulette-face-landed, 0.18 s) before the bag is live.
+const ROULETTE_SLOT_SETTLE_MS = 200;
+const AI_ROULETTE_REVEAL_MS = 600;
 const AI_ROULETTE_BETWEEN_ACTIONS_MS = 900;
 
 /**
@@ -1260,6 +1268,12 @@ function App() {
   }
   const [allowedPieceTypesLocal, setAllowedPieceTypes] = useState<PieceType[] | null>(null);
   const [isRouletteSpinning, setIsRouletteSpinning] = useState<boolean>(false);
+  // The bag being revealed and how many of its slots have landed. Set only
+  // while isRouletteSpinning; the timers live in a ref so a new game can
+  // cancel a reveal that is still running.
+  const [spinFaces, setSpinFaces] = useState<PieceType[] | null>(null);
+  const [spinShown, setSpinShown] = useState(0);
+  const spinTimersRef = useRef<number[]>([]);
   const [rouletteActionsLeftLocal, setRouletteActionsLeft] = useState<number>(0);
   const [usedRouletteSlotsLocal, setUsedRouletteSlots] = useState<number[]>([]);
   // First roulette spin per game requires a manual click on the Spin
@@ -1359,9 +1373,11 @@ function App() {
   // full 4-slot bag, action counter, and used-slot indices — so the same
   // solo UI (Spin button, slot chips, "Move a knight" hint) renders
   // verbatim in PvP roulette without any new components.
+  // While a fresh online bag is landing it is not the bag yet: no
+  // highlights, no hint, until the reveal ends (as in solo).
   const allowedPieceTypes: PieceType[] | null =
     isMultiplayer && mpSync?.isRouletteMode
-      ? mpSync.rouletteSlots
+      ? (isRouletteSpinning ? null : mpSync.rouletteSlots)
       : allowedPieceTypesLocal;
   const rouletteActionsLeft: number =
     isMultiplayer && mpSync?.isRouletteMode
@@ -2899,23 +2915,53 @@ function App() {
     doSpinRouletteNow();
   }
 
-  function doSpinRouletteNow() {
+  /** Lands `bag` on the roulette panel one slot every 400 ms with a
+   *  "bam" each, lets the last one settle, then runs `onDone` (in the same
+   *  update that ends the spin, so the panel goes straight from the reveal
+   *  to the bag). */
+  function startRouletteReveal(bag: PieceType[], onDone?: () => void) {
+    for (const t of spinTimersRef.current) clearTimeout(t);
+    setSpinFaces(bag);
+    setSpinShown(0);
     setIsRouletteSpinning(true);
-    // Sprint 3.8 — fire the roulette spin SFX at the same moment the
-    // visual roll starts; the synth's decelerating clicks + final
-    // chime line up with the spin animation.
-    // Sprint 4.0 — slowed visual reveal from 400ms to 2500ms so the
-    // wheel reads as a real "gambling" deceleration. Audio extended
-    // to ~2.5–3s in synths.ts to match.
-    // Sprint 4.1 — pulled back to 2300ms (~1.5× faster than 4.0)
-    // after the 2.5s felt sluggish in repeated play; still reads as
-    // a deliberate deceleration rather than a quick blip.
-    audio.play('rouletteSpin');
-    setTimeout(() => {
-      // Roll only from pieces the current player actually has on the board.
-      const activeTypes = getActivePieceTypes(state, state.sideToMove);
-      const pawnBoost = rouletteSpinCount < 3;
-      const rolled = spinRoulette(activeTypes, pawnBoost);
+    // Each landing is timed from the one before, so a busy frame (a match
+    // snapshot rendering) delays the beat without squeezing the rest; the
+    // last slot gets its settle before the bag goes live.
+    const land = (i: number) => {
+      spinTimersRef.current = [window.setTimeout(() => {
+        setSpinShown(i + 1);
+        audio.play(i === bag.length - 1 ? 'rouletteSlotLast' : 'rouletteSlot');
+        if (i + 1 < bag.length) {
+          land(i + 1);
+          return;
+        }
+        spinTimersRef.current = [window.setTimeout(() => {
+          spinTimersRef.current = [];
+          setSpinFaces(null);
+          setIsRouletteSpinning(false);
+          onDone?.();
+        }, ROULETTE_SLOT_SETTLE_MS)];
+      }, ROULETTE_SLOT_REVEAL_MS)];
+    };
+    land(0);
+  }
+
+  function cancelRouletteReveal() {
+    for (const t of spinTimersRef.current) clearTimeout(t);
+    spinTimersRef.current = [];
+    setSpinFaces(null);
+    setSpinShown(0);
+    setIsRouletteSpinning(false);
+  }
+
+  function doSpinRouletteNow() {
+    // The roll is made at the start (it was made 2.3 s later from the
+    // same captured state, so it is the same roll) and lands slot by slot.
+    // Roll only from pieces the current player actually has on the board.
+    const activeTypes = getActivePieceTypes(state, state.sideToMove);
+    const pawnBoost = rouletteSpinCount < 3;
+    const rolled = spinRoulette(activeTypes, pawnBoost);
+    startRouletteReveal(rolled, () => {
       setRouletteSpinCount((n) => n + 1);
       // Q.D.5: route through the central gate so in-check override applies.
       // Note: usedRouletteSlots is [] here — we just spun, nothing consumed.
@@ -2930,21 +2976,19 @@ function App() {
         setState(next);
         setAllowedPieceTypes(null);
         setSelected(null);
-        setIsRouletteSpinning(false);
         setLastMove(null);
         setLegalMoves(getLegalMoves(next));
         setRouletteActionsLeft(0);
         setUsedRouletteSlots([]);
       } else {
         setAllowedPieceTypes(rolled);
-        setIsRouletteSpinning(false);
         setRouletteActionsLeft(ROULETTE_MAX_ACTIONS);
         setUsedRouletteSlots([]);
         // Board highlights expect `legalMoves`; swap in the roulette-filtered
         // set so target squares (teal) show up for the allowed pieces.
         setLegalMoves(playable);
       }
-    }, 2300);
+    });
   }
 
   /** The ending this board is in under the current mode's rules, if any. */
@@ -3021,7 +3065,7 @@ function App() {
    */
   function resetGameEndState() {
     setAllowedPieceTypes(null);
-    setIsRouletteSpinning(false);
+    cancelRouletteReveal();
     setRouletteActionsLeft(0);
     setUsedRouletteSlots([]);
     setFirstRouletteSpinDone(false);
@@ -3316,6 +3360,7 @@ function App() {
     if (isMultiplayer && mpSync) {
       if (mpSync.matchState.status !== 'active') return;
       if (!mpSync.isMyTurn) return;
+      if (isRouletteSpinning) return; // the bag is still landing
       const toggledMp = toggleTopology(state);
       const ourKingMp = findKing(toggledMp, state.sideToMove);
       if (!ourKingMp) return;
@@ -3764,6 +3809,20 @@ function App() {
     mpSync?.mySpinCount,
   ]);
 
+  // Online roulette: when a fresh bag arrives in the match doc (the bag
+  // was empty before), both players watch it land slot by slot, as in solo.
+  // The spinner's moves wait for it (handleSquareClick, handleRotate). A
+  // bag already there when the match is joined or rejoined is shown as is.
+  const mpBag = isMultiplayer && mpSync?.isRouletteMode ? mpSync.rouletteSlots : null;
+  const mpBagSeenRef = useRef<PieceType[] | null | undefined>(undefined);
+  useEffect(() => {
+    const before = mpBagSeenRef.current;
+    mpBagSeenRef.current = mpBag;
+    if (before === null && mpBag !== null) startRouletteReveal(mpBag);
+    // startRouletteReveal re-allocates each render; only the bag matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mpBag === null]);
+
   // Mode can only be switched before the first move — otherwise rules would
   // change mid-game (e.g. switching out of Roulette skips a spin).
   const modeToggleLocked = log.moves.length > 0 || state.fullmoveNumber > 1;
@@ -3795,11 +3854,13 @@ function App() {
     const activeTypes = getActivePieceTypes(bs, bs.sideToMove);
     const pawnBoost = rouletteSpinCount < 3;
     const rolled = spinRoulette(activeTypes, pawnBoost);
-    setRouletteSpinCount((n) => n + 1);
-    setAllowedPieceTypes(rolled);
-    setUsedRouletteSlots([]);
-    setRouletteActionsLeft(ROULETTE_MAX_ACTIONS);
-    setLegalMoves(playableRouletteMoves(bs, rolled, []));
+    startRouletteReveal(rolled, () => {
+      setRouletteSpinCount((n) => n + 1);
+      setAllowedPieceTypes(rolled);
+      setUsedRouletteSlots([]);
+      setRouletteActionsLeft(ROULETTE_MAX_ACTIONS);
+      setLegalMoves(playableRouletteMoves(bs, rolled, []));
+    });
   }
 
   // Apply an AI rotation as one action. Same semantics as handleRotate's
@@ -4171,6 +4232,9 @@ function App() {
     // (2a and 2b are the same branch; the delay is longer on the first one
     //  so the human can see the fresh roll.)
 
+    // A spin is landing (the bot's own): nothing to do until it has.
+    if (isRouletteSpinning) return;
+
     if (allowedPieceTypes === null) {
       // Phase 1 — AI spin. Always runs after a short pause; the first-spin
       // gate only applies to human turns (auto-spin effect there waits for
@@ -4220,6 +4284,7 @@ function App() {
     isAutoMode,
     autoStopped,
     isMultiplayer,
+    isRouletteSpinning,
   ]);
 
   // T6 — "chat vs bot": chat plays the human (white) side by majority.
@@ -4598,6 +4663,7 @@ function App() {
       // unused can be selected.
       const isMpRoulette = mpSync.isRouletteMode;
       if (isMpRoulette && mpSync.rouletteSlots === null) return;
+      if (isMpRoulette && isRouletteSpinning) return; // the bag is still landing
       const canSelect = (type: PieceType): boolean =>
         !isMpRoulette ||
         isPieceMovableInRoulette(
@@ -6369,7 +6435,22 @@ function App() {
         (allowedPieceTypes || isRouletteSpinning) && (
         <div className="roulette-panel">
           <div className="roulette-display">
-            {allowedPieceTypes ? (
+            {isRouletteSpinning && spinFaces ? (
+              spinFaces.map((t, i) => {
+                const owner: 'white' | 'black' = isMultiplayer && mpSync
+                  ? (mpSync.isMyTurn
+                      ? mpSync.myColor
+                      : (mpSync.myColor === 'white' ? 'black' : 'white'))
+                  : state.sideToMove;
+                return i < spinShown ? (
+                  <span key={i} className={`roulette-face roulette-face-${t} roulette-face-landed`}>
+                    <span className={`piece piece-${owner}`}>{glyphForPiece(owner, t)}</span>
+                  </span>
+                ) : (
+                  <span key={i} className="roulette-face roulette-face-rolling">?</span>
+                );
+              })
+            ) : allowedPieceTypes ? (
               allowedPieceTypes.map((t, i) => {
                 const isUsed = usedRouletteSlots.includes(i);
                 // Sprint 4.0 — render the piece in the *turn-owner's*
@@ -6404,7 +6485,7 @@ function App() {
             )}
           </div>
 
-          {allowedPieceTypes && (
+          {allowedPieceTypes && !isRouletteSpinning && (
             <div className="roulette-actions" aria-label="Actions remaining">
               <span className="roulette-actions-label">Actions:</span>
               {Array.from({ length: ROULETTE_MAX_ACTIONS }, (_, i) => (
