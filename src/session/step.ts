@@ -40,6 +40,7 @@ import type {
   Actor,
   Phase,
   RouletteBag,
+  RouletteReveal,
   SessionEvent,
   SessionState,
   StepResult,
@@ -56,7 +57,7 @@ import type {
 // while one is turning, anything after the end) returns the state
 // unchanged, the same object, with no events.
 
-const NO_ROULETTE = { bag: null, spins: 0, firstSpinDone: false } as const;
+const NO_ROULETTE = { bag: null, reveal: null, spins: 0, firstSpinDone: false } as const;
 const ZERO_CLOCK = { white: 0, black: 0 } as const;
 
 /** A session for a board nobody has touched. */
@@ -119,14 +120,32 @@ const SAME = (s: SessionState): StepResult => ({ state: s, events: [] });
 function follow(s: SessionState, a: Extract<Action, { type: 'follow' }>): StepResult {
   if (!a.doc) return s.online ? { state: { ...s, online: null }, events: [] } : SAME(s);
   const game = a.myUid ? gameOfMatch(a.doc, a.myUid, a.now) : null;
-  const prev = s.online?.doc.code === a.doc.code ? s.online.game : null;
+  const same = s.online?.doc.code === a.doc.code;
+  const prev = same ? s.online!.game : null;
   const length = game?.log.moves.length ?? 0;
   const last = game?.log.moves[length - 1];
   const events =
     game && prev && last && length > prev.log.moves.length
       ? eventsOfEntry(prev.board, game.board, last.move, last.san ?? '', 'remote', length - 1)
       : [];
-  return { state: { ...s, online: { doc: a.doc, myUid: a.myUid, game } }, events };
+  // v1.1.6: a bag that arrives where there was none lands slot by slot on
+  // both screens; one already there when the match is joined or rejoined
+  // is shown as it is. A reveal under way survives the next snapshots.
+  const reveal: RouletteReveal | null =
+    !game || game.slots === null
+      ? null
+      : prev && prev.slots === null
+        ? { since: a.now, slots: game.slots, shown: 0, of: 'online' }
+        : same
+          ? s.online!.reveal
+          : null;
+  return { state: { ...s, online: { doc: a.doc, myUid: a.myUid, game, reveal } }, events };
+}
+
+/** The bag landing now: the online match's while the session follows one,
+ *  else the session's own game's. */
+export function revealOf(s: SessionState): RouletteReveal | null {
+  return s.online ? s.online.reveal : s.roulette.reveal;
 }
 
 function isLive(p: Phase): boolean {
@@ -162,7 +181,7 @@ function reduce(s: SessionState, a: Action): StepResult {
       // startWatching / seekWatchTo / stopWatching / importReplay /
       // resumeGame. `fresh` is resetGameEndState's Roulette half.
       const g = a.game;
-      const roulette = a.fresh ? NO_ROULETTE : s.roulette;
+      const roulette = a.fresh ? NO_ROULETTE : { ...s.roulette, reveal: null };
       const status = g.status ?? 'active';
       const phase: Phase =
         status !== 'active'
@@ -206,7 +225,7 @@ function reduce(s: SessionState, a: Action): StepResult {
         state: {
           ...s,
           mode: a.mode,
-          roulette: { ...s.roulette, bag: null },
+          roulette: { ...s.roulette, bag: null, reveal: null },
           phase: s.phase.tag === 'rouletteSpin' ? afterTurnPhase(s) : s.phase,
         },
         events: [],
@@ -301,34 +320,72 @@ function reduce(s: SessionState, a: Action): StepResult {
     }
 
     case 'spinStart': {
-      // handleSpinRoulette (manual) / the auto-spin effect.
+      // handleSpinRoulette (manual) / the auto-spin effect. The roll is
+      // made now, from the pieces the side has; it lands slot by slot.
       if (s.mode !== 'roulette' || !isLive(s.phase) || s.roulette.bag !== null) return SAME(s);
+      const { slots, rng } = roll(s);
       return {
         state: {
           ...s,
+          rng,
           phase: { tag: 'rouletteSpin', since: a.now },
-          roulette: a.manual ? { ...s.roulette, firstSpinDone: true } : s.roulette,
+          roulette: {
+            ...s.roulette,
+            firstSpinDone: a.manual ? true : s.roulette.firstSpinDone,
+            reveal: { since: a.now, slots, shown: 0, of: 'spin' },
+          },
         },
         events: [],
       };
     }
 
+    case 'botSpin': {
+      // applyAiSpin: the bot's roll lands the same way, and the bag is kept
+      // even if it allows nothing.
+      if (s.mode !== 'roulette' || !isLive(s.phase) || s.roulette.bag !== null) return SAME(s);
+      const { slots, rng } = roll(s);
+      return {
+        state: {
+          ...s,
+          rng,
+          phase: { tag: 'rouletteSpin', since: a.now },
+          roulette: { ...s.roulette, reveal: { since: a.now, slots, shown: 0, of: 'botSpin' } },
+        },
+        events: [],
+      };
+    }
+
+    case 'spinSlot': {
+      const r = revealOf(s);
+      if (!r || r.since !== a.since || r.shown >= r.slots.length) return SAME(s);
+      const next = { ...r, shown: r.shown + 1 };
+      const events: SessionEvent[] = [
+        { type: 'rouletteSlot', index: r.shown, last: next.shown === r.slots.length },
+      ];
+      return s.online
+        ? { state: { ...s, online: { ...s.online, reveal: next } }, events }
+        : { state: { ...s, roulette: { ...s.roulette, reveal: next } }, events };
+    }
+
     case 'spinLand': {
-      // doSpinRouletteNow's timeout: roll from the pieces the side has.
+      // The reveal has landed whole.
+      const r = revealOf(s);
+      if (!r || r.since !== a.since || r.shown < r.slots.length) return SAME(s);
+      if (s.online) return { state: { ...s, online: { ...s.online, reveal: null } }, events: [] };
       if (s.phase.tag !== 'rouletteSpin') return SAME(s);
       const side = s.board.sideToMove;
-      const { slots, rng } = roll(s);
-      const playable = playableRouletteMoves(s.board, slots, []);
+      const slots = r.slots;
       const spins = s.roulette.spins + 1;
+      const playable = playableRouletteMoves(s.board, slots, []);
       // Pass only when nothing can be done: no piece move and no rotation.
-      if (playable.length === 0 && s.board.lastMoveWasRotation) {
+      // The bot keeps its bag whatever it allows (its turn decides).
+      if (r.of === 'spin' && playable.length === 0 && s.board.lastMoveWasRotation) {
         const passed = applyPassMove(s.board);
         return {
           state: {
             ...s,
-            rng,
             board: passed,
-            roulette: { ...s.roulette, spins, bag: null },
+            roulette: { ...s.roulette, spins, bag: null, reveal: null },
             lastMove: null,
             legal: legalMovesFor(s.mode, passed),
             phase: { tag: 'playing' },
@@ -339,36 +396,16 @@ function reduce(s: SessionState, a: Action): StepResult {
       return {
         state: {
           ...s,
-          rng,
           roulette: {
             ...s.roulette,
             spins,
+            reveal: null,
             bag: { slots, used: [], actionsLeft: ROULETTE_MAX_ACTIONS },
           },
           legal: playable,
           phase: { tag: 'playing' },
         },
         events: [{ type: 'rouletteSpin', by: side, slots }],
-      };
-    }
-
-    case 'botSpin': {
-      // applyAiSpin: drawn at once, and kept even if it allows nothing.
-      if (s.mode !== 'roulette' || !isLive(s.phase) || s.roulette.bag !== null) return SAME(s);
-      const { slots, rng } = roll(s);
-      return {
-        state: {
-          ...s,
-          rng,
-          roulette: {
-            ...s.roulette,
-            spins: s.roulette.spins + 1,
-            bag: { slots, used: [], actionsLeft: ROULETTE_MAX_ACTIONS },
-          },
-          legal: playableRouletteMoves(s.board, slots, []),
-          phase: { tag: 'playing' },
-        },
-        events: [{ type: 'rouletteSpin', by: s.board.sideToMove, slots }],
       };
     }
 

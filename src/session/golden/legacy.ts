@@ -379,8 +379,13 @@ export class LegacyApp {
     });
   }
 
-  /** handleSpinRoulette (manual) or the auto-spin effect: the wheel starts. */
-  spinStart(manual: boolean) {
+  /** v1.1.6 doSpinRouletteNow / startRouletteReveal: the bag a spin is
+   *  landing, made when the wheel starts; applyAiSpin's too. */
+  private pendingSpin: { rolled: PieceType[]; of: 'spin' | 'botSpin' } | null = null;
+
+  /** handleSpinRoulette (manual) or the auto-spin effect: the wheel starts
+   *  and the roll is made (v1.1.6), from the pieces the side has. */
+  spinStart(manual: boolean, random: () => number) {
     this.act((r) => {
       if (manual) {
         if (r.gameModeLocal !== 'roulette') return;
@@ -388,21 +393,37 @@ export class LegacyApp {
         if (r.allowedPieceTypesLocal !== null) return;
         if (!r.firstRouletteSpinDoneLocal) this.set('firstRouletteSpinDoneLocal', true);
       }
+      const state = r.stateLocal;
+      const activeTypes = getActivePieceTypes(state, state.sideToMove);
+      const pawnBoost = r.rouletteSpinCountLocal < 3;
+      this.pendingSpin = { rolled: spinRoulette(activeTypes, pawnBoost, random), of: 'spin' };
       this.set('isRouletteSpinning', true);
     });
   }
 
-  /** doSpinRouletteNow's 2300 ms timeout, on the render it was armed in. */
-  spinLand(random: () => number) {
+  /** useBotScheduler.applyAiSpin (v1.1.6): the bot's roll, landing the same way. */
+  botSpin(random: () => number) {
     this.act((r) => {
-      const state = r.stateLocal;
-      const activeTypes = getActivePieceTypes(state, state.sideToMove);
+      const bs = r.stateLocal;
+      const activeTypes = getActivePieceTypes(bs, bs.sideToMove);
       const pawnBoost = r.rouletteSpinCountLocal < 3;
-      const rolled = spinRoulette(activeTypes, pawnBoost, random);
+      this.pendingSpin = { rolled: spinRoulette(activeTypes, pawnBoost, random), of: 'botSpin' };
+      this.set('isRouletteSpinning', true);
+    });
+  }
+
+  /** startRouletteReveal's last timer: the bag has landed. The player's
+   *  spin passes when nothing can be done; the bot's bag is kept. */
+  spinLand() {
+    this.act((r) => {
+      const pending = this.pendingSpin;
+      if (!pending) return;
+      this.pendingSpin = null;
+      const state = r.stateLocal;
+      const rolled = pending.rolled;
       this.set('rouletteSpinCountLocal', (n) => n + 1);
       const playable = this.playableRouletteMoves(r, state, rolled, []);
-      const canRotate = !state.lastMoveWasRotation;
-      if (playable.length === 0 && !canRotate) {
+      if (pending.of === 'spin' && playable.length === 0 && state.lastMoveWasRotation) {
         const next = applyPassMove(state);
         this.set('stateLocal', next);
         this.set('allowedPieceTypesLocal', null);
@@ -418,21 +439,6 @@ export class LegacyApp {
         this.set('usedRouletteSlotsLocal', []);
         this.set('legalMovesLocal', playable);
       }
-    });
-  }
-
-  /** useBotScheduler.applyAiSpin. */
-  botSpin(random: () => number) {
-    this.act((r) => {
-      const bs = r.stateLocal;
-      const activeTypes = getActivePieceTypes(bs, bs.sideToMove);
-      const pawnBoost = r.rouletteSpinCountLocal < 3;
-      const rolled = spinRoulette(activeTypes, pawnBoost, random);
-      this.set('rouletteSpinCountLocal', (n) => n + 1);
-      this.set('allowedPieceTypesLocal', rolled);
-      this.set('usedRouletteSlotsLocal', []);
-      this.set('rouletteActionsLeftLocal', ROULETTE_MAX_ACTIONS);
-      this.set('legalMovesLocal', this.playableRouletteMoves(r, bs, rolled, []));
     });
   }
 

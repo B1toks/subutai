@@ -182,6 +182,37 @@ timer by hand.
   moves, and mine once written (`mpSync.sendMove`), arrive in the match
   document, which the session follows.
 
+### A Roulette bag landing (v1.1.6)
+
+A bag lands on the panel one slot every 400 ms, with a beat each, and the
+last settles 200 ms before the bag is the side's: the player's spin, the
+bot's, and online on both screens when a fresh bag arrives in the match
+document. The landing is **session state**, `RouletteReveal` (in
+`roulette.reveal`, or `online.reveal` for a match's bag), not UI state or
+a player's own timer, because three things must hold for every kind of
+spin and only the session sees them all:
+
+- **The turn waits for it.** `turns.ts` opens no turn while a reveal is
+  there, so the bot, the auto-spin and the player here cannot act on a bag
+  that has not landed, without a check of their own; when it lands, the
+  state changes and the turn opens with the bag.
+- **A new game is a clean board.** `newGame`, `load` and the mode click
+  reset the roulette state, the reveal with it, so nothing of an
+  interrupted spin can land on the next board. (In v1.1.6 App a mode click
+  mid-spin still landed the bag in Classic; here it is dropped.)
+- **Online and solo look the same.** `follow` opens the reveal when the
+  document's bag goes from none to one; one already there when the match
+  is joined or rejoined is shown as it is.
+
+The roll is made when the wheel starts (`spinStart`, `botSpin`), as in
+v1.1.6. The clock is not in `step()`, which has none: `session/reveal.ts`
+watches the store like the turns do and dispatches `spinSlot` 400 ms after
+each beat (timed from the one before, so a busy frame delays a beat without
+squeezing the rest) and `spinLand` 200 ms after the last; both name their
+reveal by `since`, so a late one for a reveal that is gone is refused.
+`services/spinSounds.ts` plays the beat of each `rouletteSlot` event; App
+only draws the slots that have landed.
+
 ## Where to add things
 
 - A new feature: a folder `src/features/<name>` with its hook, helpers and

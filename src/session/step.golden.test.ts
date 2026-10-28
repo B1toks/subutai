@@ -228,20 +228,30 @@ function selfPlay(g: number) {
     if (s.mode === 'roulette') {
       const bag = s.roulette.bag;
       if (!bag) {
-        if (human) {
-          const manual = !s.roulette.firstSpinDone;
-          p.dispatch({ type: 'spinStart', now: t, manual }, () => p.app.spinStart(manual), 'spinStart');
-          // Before the wheel stops, maybe a mode click (allowed on an empty log).
-          if (rnd() < 0.1) {
-            p.dispatch({ type: 'setMode', mode: 'classic' }, () => p.app.setMode('classic'), 'mode C (spinning)');
-            continue;
+        // v1.1.6: the roll is made as the wheel starts, then the bag lands
+        // slot by slot (session/reveal.ts dispatches the beats).
+        // A spin still landing (a mode click refused once the log has a
+        // move) is landed, not started again.
+        const landing = s.roulette.reveal;
+        const since = landing ? landing.since : t;
+        if (!landing) {
+          const random = p.legacyRandom();
+          if (human) {
+            const manual = !s.roulette.firstSpinDone;
+            p.dispatch({ type: 'spinStart', now: t, manual }, () => p.app.spinStart(manual, random), 'spinStart');
+            // Before the bag has landed, maybe a mode click (allowed on an empty log).
+            if (rnd() < 0.1) {
+              p.dispatch({ type: 'setMode', mode: 'classic' }, () => p.app.setMode('classic'), 'mode C (spinning)');
+              continue;
+            }
+          } else {
+            p.dispatch({ type: 'botSpin', now: t }, () => p.app.botSpin(random), 'botSpin');
           }
-          const random = p.legacyRandom();
-          p.dispatch({ type: 'spinLand' }, () => p.app.spinLand(random), 'spinLand');
-        } else {
-          const random = p.legacyRandom();
-          p.dispatch({ type: 'botSpin' }, () => p.app.botSpin(random), 'botSpin');
         }
+        for (let slot = 0; slot < 4; slot++) {
+          p.dispatch({ type: 'spinSlot', since }, () => {}, 'spinSlot');
+        }
+        p.dispatch({ type: 'spinLand', since }, () => p.app.spinLand(), 'spinLand');
         continue;
       }
       const playable = s.legal;

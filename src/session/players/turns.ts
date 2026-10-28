@@ -1,6 +1,7 @@
 import type { Store } from '../store';
 import type { Action, SessionEvent, SessionState } from '../types';
 import type { Player, Seats } from './types';
+import { revealOf } from '../step';
 
 type SessionStore = Store<SessionState, Action, SessionEvent>;
 
@@ -60,8 +61,10 @@ export function createTurns(store: SessionStore): Turns {
   let seats: Seats | null = null;
   let open: { key: TurnKey; ctrl: AbortController } | null = null;
 
+  // While a Roulette bag lands (RouletteReveal) the turn waits: nobody,
+  // bot or human, may act until it is the side's.
   const playerOf = (s: SessionState): Player | null =>
-    isOver(s) || !seats ? null : seats[boardOf(s).sideToMove];
+    isOver(s) || !seats || revealOf(s) ? null : seats[boardOf(s).sideToMove];
 
   function close() {
     open?.ctrl.abort();

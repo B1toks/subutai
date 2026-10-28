@@ -235,57 +235,6 @@ export function playPromotion(ctx: AudioContext, out: GainNode) {
  *  16 in 3.8) with the same 1.8-power ease-out + a slightly shorter
  *  interval scale, totalling ~2.3s of clicks + chime so the audio
  *  lines up with the 2300ms visual reveal in doSpinRouletteNow. */
-/** Sprint 4.1 — roulette wheel, tightened. 20 ticks (was 24 in 4.0,
- *  16 in 3.8) with the same 1.8-power ease-out + a slightly shorter
- *  interval scale, totalling ~2.3s of clicks + chime so the audio
- *  lines up with the 2300ms visual reveal in doSpinRouletteNow. */
-export function playRouletteSpin(ctx: AudioContext, out: GainNode) {
-  const t = ctx.currentTime;
-  const ticks = 20;
-  let cumulative = 0;
-
-  for (let i = 0; i < ticks; i++) {
-    const progress = i / ticks;
-    const interval = 0.04 + Math.pow(progress, 1.8) * 0.13;
-    cumulative += interval;
-
-    const click = ctx.createOscillator();
-    const clickGain = ctx.createGain();
-    const clickFilter = ctx.createBiquadFilter();
-
-    click.type = 'square';
-    click.frequency.value = 750 + Math.random() * 250;
-
-    clickFilter.type = 'bandpass';
-    clickFilter.frequency.value = 1200;
-    clickFilter.Q.value = 2;
-
-    const startAt = t + cumulative;
-    clickGain.gain.setValueAtTime(0, startAt);
-    clickGain.gain.linearRampToValueAtTime(0.06, startAt + 0.002);
-    clickGain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.025);
-
-    click.connect(clickFilter).connect(clickGain).connect(out);
-    click.start(startAt);
-    click.stop(startAt + 0.03);
-  }
-
-  const chimeStart = t + cumulative + 0.08;
-  [1320, 1980].forEach((freq, i) => {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.value = freq;
-    const startAt = chimeStart + i * 0.04;
-    gain.gain.setValueAtTime(0, startAt);
-    gain.gain.linearRampToValueAtTime(0.1, startAt + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.6);
-    osc.connect(gain).connect(out);
-    osc.start(startAt);
-    osc.stop(startAt + 0.65);
-  });
-}
-
 /**
  * One roulette slot landing: a short low thump with a click on top, the
  * "bam" of the slot-by-slot reveal (0.4 s apart, so each one rings out

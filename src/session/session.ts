@@ -2,6 +2,7 @@ import { createStartingPosition } from '../engine';
 import { createStore } from './store';
 import { createSession, step } from './step';
 import { createTurns } from './players/turns';
+import { createReveal } from './reveal';
 import type { Action, SessionEvent, SessionState } from './types';
 
 /** V1 — seed of the very first game of a page load: every visit starts
@@ -17,3 +18,6 @@ export const session = createStore<SessionState, Action, SessionEvent>(
 
 /** Whose turn it is and who answers it (src/session/players). */
 export const turns = createTurns(session);
+
+/** Roulette: the clock of a bag landing slot by slot (session/reveal.ts). */
+export const reveal = createReveal(session);

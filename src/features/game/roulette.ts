@@ -8,7 +8,10 @@ import type { GameMode } from '../../shared/game';
 
 export const ROULETTE_SLOT_COUNT = 4;
 export const ROULETTE_MAX_ACTIONS = 2;
-export const AI_ROULETTE_REVEAL_MS = 1200;
+// v1.1.6: the bot's bag lands slot by slot like the player's (session/
+// reveal.ts), then it waits AI_ROULETTE_REVEAL_MS before its first action
+// (it used to appear at once and stay 1.2 s).
+export const AI_ROULETTE_REVEAL_MS = 600;
 export const AI_ROULETTE_BETWEEN_ACTIONS_MS = 900;
 
 /**

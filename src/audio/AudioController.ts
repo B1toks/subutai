@@ -8,7 +8,6 @@ import {
   playMove,
   playPieceTouch,
   playPromotion,
-  playRouletteSpin,
   playRouletteSlot,
 } from './synths';
 import {
@@ -30,7 +29,6 @@ export type SfxName =
   | 'blunder'
   | 'promotion'
   | 'click'
-  | 'rouletteSpin'
   | 'rouletteSlot'
   | 'rouletteSlotLast'
   | 'pieceTouch';
@@ -189,7 +187,6 @@ class AudioControllerImpl {
       case 'blunder':    playBlunder(ctx, out); break;
       case 'promotion':  playPromotion(ctx, out); break;
       case 'click':      playClick(ctx, out); break;
-      case 'rouletteSpin': playRouletteSpin(ctx, out); break;
       case 'rouletteSlot': playRouletteSlot(ctx, out, false); break;
       case 'rouletteSlotLast': playRouletteSlot(ctx, out, true); break;
       case 'pieceTouch': playPieceTouch(ctx, out); break;

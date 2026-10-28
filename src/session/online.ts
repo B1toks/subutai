@@ -4,7 +4,7 @@ import type { MatchDoc } from '../firebase/matches';
 import type { GameLog } from '../recording/log';
 import type { GameMode } from '../shared/game';
 import { deriveMpLastMove, deriveMpLog, rebuildBoardFromMatch } from '../features/online/matchLog';
-import type { LastMove } from './types';
+import type { LastMove, RouletteReveal } from './types';
 
 /**
  * An online match as the board shows it, read off its match document for
@@ -37,6 +37,9 @@ export interface OnlineState {
   readonly doc: MatchDoc;
   readonly myUid: string | null;
   readonly game: OnlineGame | null;
+  /** A fresh bag of the document landing on both screens (v1.1.6): set
+   *  when the bag goes from none to one, then timed like a solo spin. */
+  readonly reveal: RouletteReveal | null;
 }
 
 const NO_USED: readonly number[] = [];

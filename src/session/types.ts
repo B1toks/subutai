@@ -35,9 +35,27 @@ export interface RouletteBag {
   readonly actionsLeft: number;
 }
 
+/**
+ * Roulette: a bag landing on the panel, one slot every 400 ms (v1.1.6).
+ * The roll is made when the wheel starts; while it lands nobody may act
+ * (no turn opens, players/turns.ts) and the bag is not the side's yet.
+ * session/reveal.ts times it: a 'spinSlot' per slot, then 'spinLand'.
+ * `of`: whose spin it is, which decides what landing does with the bag
+ * ('online': a fresh bag of the match document, landing only shows it).
+ */
+export interface RouletteReveal {
+  readonly since: number;
+  readonly slots: readonly PieceType[];
+  /** Slots landed so far. */
+  readonly shown: number;
+  readonly of: 'spin' | 'botSpin' | 'online';
+}
+
 export interface RouletteState {
   /** null until the side to move has spun this turn. */
   readonly bag: RouletteBag | null;
+  /** The spin landing now (the session's own game), if any. */
+  readonly reveal: RouletteReveal | null;
   /** Spins this game, both sides: the first three favour pawns. */
   readonly spins: number;
   /** The first spin of a game is a click; after it the spins run by themselves. */
@@ -150,12 +168,16 @@ export type Action =
   | { readonly type: 'cancelPromotion' }
   /** The promotion piece, picked at this device. */
   | { readonly type: 'promote'; readonly piece: PieceType; readonly now: number }
-  /** Roulette: the wheel starts. `manual` is the Spin button (first spin). */
+  /** Roulette: the wheel starts and the bag is drawn; it lands slot by
+   *  slot (RouletteReveal). `manual` is the Spin button (first spin). */
   | { readonly type: 'spinStart'; readonly now: number; readonly manual: boolean }
-  /** Roulette: the wheel stops and the bag is drawn. */
-  | { readonly type: 'spinLand' }
-  /** Roulette: the bot's spin, drawn at once. */
-  | { readonly type: 'botSpin' }
+  /** Roulette: the bot's spin, landing the same way. */
+  | { readonly type: 'botSpin'; readonly now: number }
+  /** Roulette: the next slot of the reveal begun at `since` lands. */
+  | { readonly type: 'spinSlot'; readonly since: number }
+  /** Roulette: the reveal begun at `since` has landed whole: the bag is
+   *  the side's (or a spin with nothing to do passes the turn). */
+  | { readonly type: 'spinLand'; readonly since: number }
   | { readonly type: 'resign'; readonly side: Color }
   | { readonly type: 'offerDraw'; readonly side: Color }
   | { readonly type: 'answerDraw'; readonly side: Color; readonly accept: boolean }
@@ -175,6 +197,8 @@ export type SessionEvent =
   | { readonly type: 'rotation'; readonly by: Color; readonly promoted: readonly SquareId[] }
   | { readonly type: 'promotion'; readonly square: SquareId; readonly piece: PieceType }
   | { readonly type: 'rouletteSpin'; readonly by: Color; readonly slots: readonly PieceType[] | null }
+  /** A slot of a reveal has landed (the "bam"); `last`: the fourth. */
+  | { readonly type: 'rouletteSlot'; readonly index: number; readonly last: boolean }
   | { readonly type: 'drawOffer'; readonly by: Color; readonly answer?: 'accepted' | 'declined' }
   | { readonly type: 'gameEnd'; readonly status: TerminalStatus }
   | { readonly type: 'flagFall'; readonly side: Color };

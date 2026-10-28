@@ -32,7 +32,6 @@ import { PlayerRow } from './components/PlayerRow';
 import { Effects3DToggle } from './components/Effects3DToggle';
 import { AudioToggle } from './components/AudioToggle';
 import { MusicToggle } from './components/MusicToggle';
-import { audio } from './audio/AudioController';
 import { Icon } from './components/Icon';
 import { Tooltip } from './components/Tooltip';
 import { TutorialOverlay } from './components/TutorialOverlay';
@@ -513,9 +512,15 @@ function App() {
   // live match doc carries the full 4-slot bag, action counter and used
   // slot indices, so the same solo UI (Spin button, slot chips, "Move a
   // knight" hint) renders verbatim in PvP roulette.
+  // While a bag lands (session RouletteReveal, the solo game's or the
+  // online match's) it is not the bag yet: the panel shows it slot by slot,
+  // nothing is lit and nothing can be picked until it has landed.
   const rouletteBag = sess.roulette.bag;
-  const allowedPieceTypes = (online ? online.slots : rouletteBag?.slots ?? null) as PieceType[] | null;
-  const isRouletteSpinning = sess.phase.tag === 'rouletteSpin';
+  const rouletteReveal = isMultiplayer ? sess.online?.reveal ?? null : sess.roulette.reveal;
+  const allowedPieceTypes = (
+    online ? (rouletteReveal ? null : online.slots) : rouletteBag?.slots ?? null
+  ) as PieceType[] | null;
+  const isRouletteSpinning = rouletteReveal !== null || sess.phase.tag === 'rouletteSpin';
   const rouletteActionsLeft = online ? online.actionsLeft : rouletteBag?.actionsLeft ?? 0;
   const usedRouletteSlots = (online ? online.used : rouletteBag?.used ?? NO_SLOTS) as number[];
   // First roulette spin per game requires a manual click on the Spin
@@ -668,6 +673,12 @@ function App() {
     completedLogIdRef.current = log.id;
 
     void finishGame(soloOutcome(gameStatus, state.sideToMove));
+  });
+
+  // A spin with nothing to do passes the turn as it lands: drop the
+  // selection it left (it used to be dropped in doSpinRouletteNow's timer).
+  useSessionEventsAfterCommit((events) => {
+    if (events.some((e) => e.type === 'rouletteSpin' && e.slots === null)) setSelected(null);
   });
 
   useOnlineMatchEnd({
@@ -1186,24 +1197,10 @@ function App() {
   }
 
   function doSpinRouletteNow(manual = false) {
-    // Sprint 3.8 — fire the roulette spin SFX at the same moment the
-    // visual roll starts; the synth's decelerating clicks + final
-    // chime line up with the spin animation.
-    // Sprint 4.0 — slowed visual reveal from 400ms to 2500ms so the
-    // wheel reads as a real "gambling" deceleration. Audio extended
-    // to ~2.5–3s in synths.ts to match.
-    // Sprint 4.1 — pulled back to 2300ms (~1.5× faster than 4.0)
-    // after the 2.5s felt sluggish in repeated play; still reads as
-    // a deliberate deceleration rather than a quick blip.
-    audio.play('rouletteSpin');
+    // v1.1.6: the roll is made as the wheel starts and lands slot by slot,
+    // one every 400 ms with a beat each (session/reveal.ts times it,
+    // services/spinSounds.ts sounds it); the turn waits until it has.
     session.dispatch({ type: 'spinStart', now: Date.now(), manual });
-    setTimeout(() => {
-      // Rolls only from pieces the player actually has on the board, and
-      // passes the turn if nothing at all can be done with the bag
-      // (step.ts spinLand).
-      const events = session.dispatch({ type: 'spinLand' });
-      if (events.some((e) => e.type === 'rouletteSpin' && e.slots === null)) setSelected(null);
-    }, 2300);
   }
 
   /** The ending this board is in under the current mode's rules, if any. */
@@ -1370,6 +1367,7 @@ function App() {
     if (isMultiplayer && mpSync) {
       if (mpSync.matchState.status !== 'active') return;
       if (!mpSync.isMyTurn) return;
+      if (rouletteReveal) return; // the bag is still landing
       const toggledMp = toggleTopology(state);
       const ourKingMp = findKing(toggledMp, state.sideToMove);
       if (!ourKingMp) return;
@@ -1673,6 +1671,7 @@ function App() {
       // unused can be selected.
       const isMpRoulette = mpSync.isRouletteMode;
       if (isMpRoulette && mpSync.rouletteSlots === null) return;
+      if (isMpRoulette && rouletteReveal) return; // the bag is still landing
       const canSelect = (type: PieceType): boolean =>
         !isMpRoulette ||
         isPieceMovableInRoulette(
@@ -2713,7 +2712,22 @@ function App() {
         (allowedPieceTypes || isRouletteSpinning) && (
         <div className="roulette-panel">
           <div className="roulette-display">
-            {allowedPieceTypes ? (
+            {rouletteReveal ? (
+              rouletteReveal.slots.map((t, i) => {
+                const owner: 'white' | 'black' = isMultiplayer && mpSync
+                  ? (mpSync.isMyTurn
+                      ? mpSync.myColor
+                      : (mpSync.myColor === 'white' ? 'black' : 'white'))
+                  : state.sideToMove;
+                return i < rouletteReveal.shown ? (
+                  <span key={i} className={`roulette-face roulette-face-${t} roulette-face-landed`}>
+                    <span className={`piece piece-${owner}`}>{glyphForPiece(owner, t)}</span>
+                  </span>
+                ) : (
+                  <span key={i} className="roulette-face roulette-face-rolling">?</span>
+                );
+              })
+            ) : allowedPieceTypes ? (
               allowedPieceTypes.map((t, i) => {
                 const isUsed = usedRouletteSlots.includes(i);
                 // Sprint 4.0 — render the piece in the *turn-owner's*
@@ -2748,7 +2762,7 @@ function App() {
             )}
           </div>
 
-          {allowedPieceTypes && (
+          {allowedPieceTypes && !rouletteReveal && (
             <div className="roulette-actions" aria-label="Actions remaining">
               <span className="roulette-actions-label">Actions:</span>
               {Array.from({ length: ROULETTE_MAX_ACTIONS }, (_, i) => (

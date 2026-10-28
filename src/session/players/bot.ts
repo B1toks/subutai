@@ -97,9 +97,10 @@ export function createBotPlayer(opts: BotPlayerOptions): Player {
       if (s.mode === 'roulette') {
         const bag = s.roulette.bag;
         if (bag === null) {
-          // The bot spins after a short pause; its bag is drawn at once.
+          // The bot spins after a short pause; its bag lands slot by slot
+          // (the turn waits for it, players/turns.ts).
           await pause(SPIN_MS, signal);
-          return { type: 'botSpin' };
+          return { type: 'botSpin', now: Date.now() };
         }
         if (bag.actionsLeft <= 0) return stall(signal);
         await pause(bag.used.length === 0 ? AI_ROULETTE_REVEAL_MS : AI_ROULETTE_BETWEEN_ACTIONS_MS, signal);
