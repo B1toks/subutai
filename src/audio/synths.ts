@@ -235,6 +235,10 @@ export function playPromotion(ctx: AudioContext, out: GainNode) {
  *  16 in 3.8) with the same 1.8-power ease-out + a slightly shorter
  *  interval scale, totalling ~2.3s of clicks + chime so the audio
  *  lines up with the 2300ms visual reveal in doSpinRouletteNow. */
+/** Sprint 4.1 — roulette wheel, tightened. 20 ticks (was 24 in 4.0,
+ *  16 in 3.8) with the same 1.8-power ease-out + a slightly shorter
+ *  interval scale, totalling ~2.3s of clicks + chime so the audio
+ *  lines up with the 2300ms visual reveal in doSpinRouletteNow. */
 export function playRouletteSpin(ctx: AudioContext, out: GainNode) {
   const t = ctx.currentTime;
   const ticks = 20;
@@ -273,6 +277,58 @@ export function playRouletteSpin(ctx: AudioContext, out: GainNode) {
     osc.type = 'sine';
     osc.frequency.value = freq;
     const startAt = chimeStart + i * 0.04;
+    gain.gain.setValueAtTime(0, startAt);
+    gain.gain.linearRampToValueAtTime(0.1, startAt + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.6);
+    osc.connect(gain).connect(out);
+    osc.start(startAt);
+    osc.stop(startAt + 0.65);
+  });
+}
+
+/**
+ * One roulette slot landing: a short low thump with a click on top, the
+ * "bam" of the slot-by-slot reveal (0.4 s apart, so each one rings out
+ * before the next). `last` adds the bright two-note chime that used to
+ * close the whole spin.
+ */
+export function playRouletteSlot(ctx: AudioContext, out: GainNode, last: boolean) {
+  const t = ctx.currentTime;
+
+  const body = ctx.createOscillator();
+  const bodyGain = ctx.createGain();
+  body.type = 'sine';
+  body.frequency.setValueAtTime(220, t);
+  body.frequency.exponentialRampToValueAtTime(110, t + 0.12);
+  bodyGain.gain.setValueAtTime(0, t);
+  bodyGain.gain.linearRampToValueAtTime(0.22, t + 0.004);
+  bodyGain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+  body.connect(bodyGain).connect(out);
+  body.start(t);
+  body.stop(t + 0.25);
+
+  const click = ctx.createOscillator();
+  const clickGain = ctx.createGain();
+  const clickFilter = ctx.createBiquadFilter();
+  click.type = 'square';
+  click.frequency.value = 900;
+  clickFilter.type = 'bandpass';
+  clickFilter.frequency.value = 1400;
+  clickFilter.Q.value = 2;
+  clickGain.gain.setValueAtTime(0, t);
+  clickGain.gain.linearRampToValueAtTime(0.05, t + 0.002);
+  clickGain.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+  click.connect(clickFilter).connect(clickGain).connect(out);
+  click.start(t);
+  click.stop(t + 0.04);
+
+  if (!last) return;
+  [1320, 1980].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    const startAt = t + 0.06 + i * 0.04;
     gain.gain.setValueAtTime(0, startAt);
     gain.gain.linearRampToValueAtTime(0.1, startAt + 0.01);
     gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.6);
