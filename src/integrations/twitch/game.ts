@@ -1,5 +1,4 @@
 import type { Store } from '../../session/store';
-import { statusOf } from '../../session/step';
 import type { Action, SessionEvent, SessionState } from '../../session/types';
 import { twitchChat } from './chat';
 import { moveVoting } from './moveVoting';
@@ -17,7 +16,10 @@ export type TwitchGameChange = 'newGame' | 'ended';
 
 /** How the game on the board ended, as chat predicts it; null while it runs. */
 export function resultOf(s: SessionState): GameResult | null {
-  const status = statusOf(s);
+  // statusOf (session/step.ts), read off the phase here: this module is in
+  // the lazy streaming chunk, and an import of step.ts from it splits
+  // step.ts out of the entry chunk into one more first-load file (+0.8 KB).
+  const status = s.phase.tag === 'ended' ? s.phase.status : 'active';
   if (status === 'checkmate') {
     const board = s.online?.game?.board ?? s.board;
     return board.sideToMove === 'white' ? 'black' : 'white';
