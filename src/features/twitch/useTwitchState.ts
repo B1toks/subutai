@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { moveVoting, type VoteMode, type VoteRound, type GuessWinner } from '../../integrations/twitch/moveVoting';
+import type { Move } from '../../engine';
+import { streaming, useStreaming } from '../../integrations';
+import type { VoteMode, VoteRound, GuessWinner } from '../../integrations/twitch/moveVoting';
 
 /**
  * The Twitch layer as the board sees it: whether the panel is open, the
@@ -7,18 +9,21 @@ import { moveVoting, type VoteMode, type VoteRound, type GuessWinner } from '../
  * the cloud of chatters who guessed the streamer's move.
  */
 export function useTwitchState() {
+  // Without STREAMING_UI the integrations never load: the mode stays
+  // 'off' and no round opens, as the panel that sets them never shows.
+  const live = useStreaming();
   // T3 — Twitch overlay visibility (session-only; channel persists in
   // the panel itself).
   const [showTwitch, setShowTwitch] = useState(false);
   // T6 — mirrored vote mode so the chat-vs-bot scheduler effect below can
   // react when the streamer flips the mode pill in the Twitch panel.
-  const [twitchVoteMode, setTwitchVoteMode] = useState<VoteMode>(() => moveVoting.getMode());
-  useEffect(() => moveVoting.onMode(setTwitchVoteMode), []);
+  const [twitchVoteMode, setTwitchVoteMode] = useState<VoteMode>('off');
+  useEffect(() => live?.moveVoting.onMode(setTwitchVoteMode), [live]);
   // R1 — live vote round mirrored for the on-board variant arrows: each
   // candidate is drawn as a dashed arrow in its own color (matching the
   // !1..!4 slots), growing thicker as its votes come in.
-  const [voteRound, setVoteRound] = useState<VoteRound | null>(() => moveVoting.getRound());
-  useEffect(() => moveVoting.onRound(setVoteRound), []);
+  const [voteRound, setVoteRound] = useState<VoteRound | null>(null);
+  useEffect(() => live?.moveVoting.onRound(setVoteRound), [live]);
   // R2/R9 — chatters who called the streamer's move burst over the board
   // as a chaotic word-cloud of nicks (no plate): each nick gets a random
   // spot, size, tilt and stagger, floats up and fades. Randomisation is
@@ -56,5 +61,15 @@ export function useTwitchState() {
     if (guessWinnersTimer.current) clearTimeout(guessWinnersTimer.current);
     guessWinnersTimer.current = setTimeout(() => setGuessCloud([]), 5_200);
   }, []);
-  return { showTwitch, setShowTwitch, twitchVoteMode, voteRound, guessCloud, announceGuessWinners };
+  // R2/R10 — the streamer's move (or rotation) settles chat's guess round,
+  // where it is made: the turn's end would drop the round unrevealed.
+  const settleGuessRound = useCallback((move: Move, san: string) => {
+    const s = streaming();
+    if (s) announceGuessWinners(s.moveVoting.resolveGuessRound(move, san));
+  }, [announceGuessWinners]);
+  const settleGuessRotate = useCallback(() => {
+    const s = streaming();
+    if (s) announceGuessWinners(s.moveVoting.resolveGuessRotate());
+  }, [announceGuessWinners]);
+  return { showTwitch, setShowTwitch, twitchVoteMode, voteRound, guessCloud, settleGuessRound, settleGuessRotate };
 }

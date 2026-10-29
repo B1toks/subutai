@@ -7,6 +7,7 @@ import { ToastProvider } from './components/Toast'
 import { BusyOverlay } from './components/BusyOverlay'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { startSessionServices } from './services'
+import { loadStreaming } from './integrations'
 
 // Sprint 4.4 — kiosk view is code-split: regular players never pay for it.
 const ShowcaseView = lazy(() =>
@@ -60,7 +61,12 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
 // The services that react to the game's events (src/services). Not in the
 // kiosk view, which plays no game of its own.
-if (!isShowcase) startSessionServices();
+if (!isShowcase) {
+  startSessionServices();
+  // The streaming integrations (music, Twitch), with STREAMING_UI only:
+  // a chunk of their own, fetched after the first load.
+  void loadStreaming();
+}
 
 // HMR can re-execute this entry module; calling createRoot twice on the
 // same container is a React error (and spams the console in dev). Stash

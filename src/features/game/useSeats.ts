@@ -5,7 +5,8 @@ import { applyMove } from '../../engine/moves';
 import type { BotStrength } from '../../ai/agents';
 import { classifyAsync } from '../../analysis/classifyClient';
 import { scaleBudgetMs } from '../../utils/deviceTier';
-import { moveVoting, type VoteMode } from '../../integrations/twitch/moveVoting';
+import { streaming } from '../../integrations';
+import type { VoteMode } from '../../integrations/twitch/moveVoting';
 import { rotateIsLegal } from '../../memory/replayImport';
 import { createChatPlayer, withGuess } from '../../session/players/chat';
 import { bumpEvalForMove } from './position';
@@ -83,7 +84,8 @@ export function useSeats({
         color: 'black',
         dispatch: session.dispatch,
         strength: () => botLevelRef.current,
-        vote: (board, legal, chosen) => moveVoting.gate(board, legal, chosen),
+        // Twitch Predict / chat vote; without the integrations, the bot's own move.
+        vote: (board, legal, chosen) => streaming()?.moveVoting.gate(board, legal, chosen) ?? Promise.resolve(chosen),
         async analyse(before, move, after, index) {
           // B3 — material-delta bump instead of static-fallback flicker.
           setSearchEvalFromWhite((prev) => bumpEvalForMove(prev, before, move));
@@ -106,8 +108,9 @@ export function useSeats({
       // through the same classic path a click takes.
       chat: createChatPlayer({
         color: 'white',
-        elect: (board, legal) => moveVoting.gateHumanMove(board, legal, rotateIsLegal(board)),
-        cancel: () => moveVoting.cancelRound(),
+        elect: (board, legal) =>
+          streaming()?.moveVoting.gateHumanMove(board, legal, rotateIsLegal(board)) ?? Promise.resolve(null),
+        cancel: () => streaming()?.moveVoting.cancelRound(),
         played(action, events, before, index) {
           if (action.type === 'rotate') {
             if (events.length === 0) return;
@@ -132,8 +135,8 @@ export function useSeats({
       }),
       // R2 — "guess the streamer": chat guesses the player's move.
       guess: withGuess(humanPlayers.white, {
-        open: (board, legal) => moveVoting.openGuessRound(board, legal, rotateIsLegal(board)),
-        cancel: () => moveVoting.cancelRound(),
+        open: (board, legal) => streaming()?.moveVoting.openGuessRound(board, legal, rotateIsLegal(board)),
+        cancel: () => streaming()?.moveVoting.cancelRound(),
       }),
     };
     const { bot, auto, chat, guess } = playersRef.current;

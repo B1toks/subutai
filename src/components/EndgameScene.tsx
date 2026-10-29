@@ -35,7 +35,7 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { beatEngine } from '../integrations/music/beatEngine';
+import { streaming } from '../integrations';
 
 export type VictoryTheme = 'red' | 'blue';
 export type EndgameKind = 'victory' | 'defeat' | 'draw';
@@ -293,9 +293,12 @@ export function EndgameScene({ kind, theme, king, prelude, onDone }: Props) {
     const ash: Spark[] = [];
 
     let beatPulse = 0; // 0..1, decays; spikes on each beat during the drop
-    const offBeat = beatEngine.onBeat(() => {
+    // The music's beat grid (STREAMING_UI only); none, and the victory
+    // makes its own beat below.
+    const beatEngine = streaming()?.beatEngine ?? null;
+    const offBeat = beatEngine?.onBeat(() => {
       beatPulse = 1;
-    });
+    }) ?? (() => {});
     let lastSynth = performance.now();
     let impactFired = false;
 
@@ -556,7 +559,7 @@ export function EndgameScene({ kind, theme, king, prelude, onDone }: Props) {
 
       // synthetic beat when no real grid is running (victory only — the
       // loss is not a party and never strobes)
-      if (win && !beatEngine.isRunning() && now - lastSynth >= SYNTH_BEAT_MS) {
+      if (win && !beatEngine?.isRunning() && now - lastSynth >= SYNTH_BEAT_MS) {
         beatPulse = 1;
         lastSynth = now;
         if (t >= T_IMPACT && t < T_DROP) spawnBurst(10, 2.4, restX, restY - 10);

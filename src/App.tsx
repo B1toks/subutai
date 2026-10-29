@@ -84,14 +84,8 @@ import { NotationParseError } from './memory/notation';
 // rotateIsLegal (R10) decides whether chat rounds accept "rotate"; it lives
 // with the replay importer, which checks rotations the same way (QA-02).
 import { replayFromNotation } from './memory/replayImport';
-import { moveVoting } from './integrations/twitch/moveVoting';
 import { busy } from './ui/busy';
-import { PerimeterEqualizer } from './components/PerimeterEqualizer';
-import { BackgroundWaveGrid } from './components/BackgroundWaveGrid';
-import { beatEngine } from './integrations/music/beatEngine';
-import { beatMode } from './integrations/music/beatMode';
-import { BeatCombo } from './components/BeatCombo';
-import { MusicScorePanel } from './components/MusicScorePanel';
+import { streaming, useStreaming } from './integrations';
 import { scaleBudgetMs } from './utils/deviceTier';
 import {
   canAnswerDraw,
@@ -194,6 +188,10 @@ const TwitchPanel = lazy(() =>
 // SP — Spotify dock, same deal.
 const MusicDock = lazy(() =>
   import('./components/MusicDock').then((m) => ({ default: m.MusicDock })),
+);
+// M.15 — the dock's sound-grid background: off unless saved on (useMusicState).
+const BackgroundWaveGrid = lazy(() =>
+  import('./components/BackgroundWaveGrid').then((m) => ({ default: m.BackgroundWaveGrid })),
 );
 // R6 — pixel victory cinematic; loaded only when a tense win triggers it.
 // importEndgameScene (in useEndgame) lets the iris warm the chunk early.
@@ -464,9 +462,13 @@ function App() {
     twitchVoteMode,
     voteRound,
     guessCloud,
-    announceGuessWinners,
+    settleGuessRound,
+    settleGuessRotate,
   } = useTwitchState();
   const { showMusicDock, setShowMusicDock, vizOn, bgGridOn } = useMusicState();
+  // The streaming integrations (music, Twitch): null until loaded, and
+  // always without STREAMING_UI.
+  const live = useStreaming();
   // S2.5 — per-side elapsed clocks: the side to move's clock accumulates
   // wall time while the game is live (useGameClocks ticks the session).
   // A new game log starts them from zero.
@@ -1400,7 +1402,7 @@ function App() {
     setSelected(null);
     setPreviewTopology(null);
     // R10 — the streamer rotated: settle the chat's guess round.
-    if (gameMode !== 'roulette') announceGuessWinners(moveVoting.resolveGuessRotate());
+    if (gameMode !== 'roulette') settleGuessRotate();
   }
 
   // In MP currentPlayer reflects whose turn it is from MY seat: 'human' when
@@ -1831,8 +1833,10 @@ function App() {
         tilePixelCenter(to, displayTopology, layout).angle === 0 &&
         tilePixelCenter(from, displayTopology, layout).angle === 0;
       const slideMs = willSlide ? BEAT_SLIDE_MS : 0;
-      const plan = beatMode.snapPlan(slideMs);
-      if (plan) {
+      const beat = streaming();
+      const plan = beat ? beat.beatMode.snapPlan(slideMs) : null;
+      if (beat && plan) {
+        const { beatEngine } = beat;
         beatSnapPendingRef.current = true;
         setBeatSnap({ from, to, ms: plan.landMs });
         // R15-bug — the hold used to be ONE fixed setTimeout computed at
@@ -1877,7 +1881,7 @@ function App() {
     function commitMove() {
     const san = computeSAN(state, resolvedMove);
     // R2 — settle the chat's "guess the streamer" round on the actual move.
-    announceGuessWinners(moveVoting.resolveGuessRound(resolvedMove, san));
+    settleGuessRound(resolvedMove, san);
     const afterMove = applyMove(state, resolvedMove);
     // The move itself (the board, the log, the roulette turn, the end of
     // the game) is step()'s: src/session/step.ts.
@@ -1933,7 +1937,7 @@ function App() {
     }
     const san = computeSAN(state, move);
     // R2 — promotion commits bypass commitMove; settle the guess round here too.
-    announceGuessWinners(moveVoting.resolveGuessRound(move, san));
+    settleGuessRound(move, san);
     const next = applyMove(state, move);
     turns.act({ type: 'promote', piece: pieceType, now: Date.now() });
     setSelected(null);
@@ -2340,7 +2344,11 @@ function App() {
       }
       ref={shellRef}
     >
-    {bgGridOn && <BackgroundWaveGrid />}
+    {bgGridOn && (
+      <Suspense fallback={null}>
+        <BackgroundWaveGrid />
+      </Suspense>
+    )}
     {flashEffect && (
       <div
         className={`screen-flash-effect screen-flash-${flashEffect}`}
@@ -2867,10 +2875,10 @@ function App() {
       >
       {/* SP — mic-driven spectrum ring; mounts only while the
           equalizer listens. Self-driving (no App re-renders). */}
-      {vizOn && <PerimeterEqualizer />}
+      {vizOn && live && <live.PerimeterEqualizer />}
       <div
         className={`board${previewTopology || previewLocked ? ' previewing' : ''}${recentRotation ? ' is-rotated' : ''}${
-          recentRotation && beatMode.isEnabled() && beatEngine.isRunning() ? ' is-rotated-beat' : ''
+          recentRotation && live?.beatMode.isEnabled() && live.beatEngine.isRunning() ? ' is-rotated-beat' : ''
         }`}
         data-topology={displayTopology}
         style={
@@ -2879,8 +2887,8 @@ function App() {
             height: boardSize,
             // M.15 — in Beat Mode the rotate "swings" in time: one beat
             // long, springy. --rotate-ms = the live beat period.
-            ...(recentRotation && beatMode.isEnabled() && beatEngine.getIntervalMs() > 0
-              ? { '--rotate-ms': `${Math.round(beatEngine.getIntervalMs())}ms` }
+            ...(recentRotation && live?.beatMode.isEnabled() && live.beatEngine.getIntervalMs() > 0
+              ? { '--rotate-ms': `${Math.round(live.beatEngine.getIntervalMs())}ms` }
               : null),
           } as React.CSSProperties
         }
@@ -4717,9 +4725,9 @@ function App() {
         </Suspense>
       )}
       {/* SP-2 — on-beat combo overlay; renders null while idle. */}
-      <BeatCombo />
+      {live && <live.BeatCombo />}
       {/* R12 — session beat-points tally (compact pill, click to expand). */}
-      <MusicScorePanel />
+      {live && <live.MusicScorePanel />}
 
       {/* R17b — the held-breath beat: a dim freeze before the cinematic. */}
       {victoryFreeze && <div className="victory-freeze" aria-hidden />}
@@ -4755,7 +4763,7 @@ function App() {
             onClose={() => {
               // Closing the overlay also stops gating AI moves —
               // otherwise the game would silently pause 15s per move.
-              moveVoting.setMode('off');
+              streaming()?.moveVoting.setMode('off');
               setShowTwitch(false);
             }}
           />
