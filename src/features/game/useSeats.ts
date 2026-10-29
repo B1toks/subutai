@@ -5,7 +5,7 @@ import { applyMove } from '../../engine/moves';
 import type { BotStrength } from '../../ai/agents';
 import { classifyAsync } from '../../analysis/classifyClient';
 import { scaleBudgetMs } from '../../utils/deviceTier';
-import { moveVoting, type VoteMode } from '../../twitch/moveVoting';
+import { moveVoting, type VoteMode } from '../../integrations/twitch/moveVoting';
 import { rotateIsLegal } from '../../memory/replayImport';
 import { createChatPlayer, withGuess } from '../../session/players/chat';
 import { bumpEvalForMove } from './position';

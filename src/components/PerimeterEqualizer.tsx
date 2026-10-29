@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef } from 'react';
-import { micEq } from '../audio/micEqualizer';
-import { eqSettings } from '../music/eqSettings';
+import { micEq } from '../integrations/music/micEqualizer';
+import { eqSettings } from '../integrations/music/eqSettings';
 
 /* M.14 — perimeter equalizer, "behind the board" edition.
  *

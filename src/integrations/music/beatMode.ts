@@ -14,7 +14,7 @@
  */
 
 import { beatEngine } from './beatEngine';
-import { localData, LOCAL_KEYS } from '../infra/localData';
+import { localData, LOCAL_KEYS } from '../../infra/localData';
 
 const KEY = LOCAL_KEYS.beatMode;
 /** Don't bother snapping if the next beat is basically now — avoids a

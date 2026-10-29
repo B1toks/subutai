@@ -14,7 +14,7 @@
  * Tap-tempo works in both bases: taps record the current source-time;
  * 4+ taps lock BPM from the mean interval and phase from the last tap.
  */
-import { localData, LOCAL_KEYS } from '../infra/localData';
+import { localData, LOCAL_KEYS } from '../../infra/localData';
 
 export type BeatScore = 'perfect' | 'good' | 'off';
 export type BeatListener = (index: number) => void;

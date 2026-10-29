@@ -10,7 +10,7 @@
 import { useEffect, useState } from 'react';
 import { Music2, RotateCcw } from 'lucide-react';
 import { Icon } from './Icon';
-import { beatBridge, comboTier, type BeatSessionStats } from '../music/beatBridge';
+import { beatBridge, comboTier, type BeatSessionStats } from '../integrations/music/beatBridge';
 
 export function MusicScorePanel() {
   const [stats, setStats] = useState<BeatSessionStats>(() => beatBridge.getStats());

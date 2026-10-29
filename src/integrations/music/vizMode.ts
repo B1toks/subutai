@@ -6,7 +6,7 @@
  * canvas). Tiny singleton like beatMode/eqSettings so the dock can toggle
  * it and App can mount the canvas reactively.
  */
-import { localData, LOCAL_KEYS } from '../infra/localData';
+import { localData, LOCAL_KEYS } from '../../infra/localData';
 
 const KEY = LOCAL_KEYS.bgGrid;
 const PULSE_KEY = LOCAL_KEYS.pulseMode;

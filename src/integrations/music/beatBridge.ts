@@ -14,7 +14,7 @@
 
 import { beatEngine, type BeatScore } from './beatEngine';
 import { vizMode } from './vizMode';
-import { localData, LOCAL_KEYS } from '../infra/localData';
+import { localData, LOCAL_KEYS } from '../../infra/localData';
 
 export type ComboTier = 'none' | 'good' | 'great' | 'awesome' | 'master';
 

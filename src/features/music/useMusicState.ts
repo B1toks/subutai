@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { micEq } from '../../audio/micEqualizer';
-import { vizMode } from '../../music/vizMode';
-import { beatEngine } from '../../music/beatEngine';
-import { liveBpm } from '../../music/liveBpm';
-import { beatBridge } from '../../music/beatBridge';
+import { micEq } from '../../integrations/music/micEqualizer';
+import { vizMode } from '../../integrations/music/vizMode';
+import { beatEngine } from '../../integrations/music/beatEngine';
+import { liveBpm } from '../../integrations/music/liveBpm';
+import { beatBridge } from '../../integrations/music/beatBridge';
 
 /**
  * The music layer around the board: whether the dock is open, the mic

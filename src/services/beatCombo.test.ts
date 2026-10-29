@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { beatBridge } from '../music/beatBridge';
+import { beatBridge } from '../integrations/music/beatBridge';
 import { beatComboOnEvents } from './beatCombo';
 import { isPlayed } from './played';
 import type { Actor, SessionEvent } from '../session/types';

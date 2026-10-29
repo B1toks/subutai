@@ -14,7 +14,7 @@
  * the user can accept or override.
  */
 
-import { micEq } from '../audio/micEqualizer';
+import { micEq } from './micEqualizer';
 
 const BASS_BANDS = 8;
 // M.16 — shorter history + fewer min onsets so the estimate REACTS to a

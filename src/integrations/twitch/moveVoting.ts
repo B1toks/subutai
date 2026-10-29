@@ -24,8 +24,8 @@
  * end-of-game leaderboard (result calls from predictions.ts add +3).
  */
 
-import type { BoardState, Move } from '../engine';
-import { computeSAN } from '../recording/log';
+import type { BoardState, Move } from '../../engine';
+import { computeSAN } from '../../recording/log';
 import { twitchChat, type TwitchChatMessage } from './chat';
 
 export type VoteMode = 'off' | 'predict' | 'chat' | 'chatvsbot' | 'guess';

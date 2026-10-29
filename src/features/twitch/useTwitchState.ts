@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { moveVoting, type VoteMode, type VoteRound, type GuessWinner } from '../../twitch/moveVoting';
+import { moveVoting, type VoteMode, type VoteRound, type GuessWinner } from '../../integrations/twitch/moveVoting';
 
 /**
  * The Twitch layer as the board sees it: whether the panel is open, the

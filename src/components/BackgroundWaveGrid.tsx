@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef } from 'react';
-import { micEq } from '../audio/micEqualizer';
+import { micEq } from '../integrations/music/micEqualizer';
 
 /**
  * M.15 — full-screen sound-reactive dot mesh.

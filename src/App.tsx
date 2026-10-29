@@ -84,12 +84,12 @@ import { NotationParseError } from './memory/notation';
 // rotateIsLegal (R10) decides whether chat rounds accept "rotate"; it lives
 // with the replay importer, which checks rotations the same way (QA-02).
 import { replayFromNotation } from './memory/replayImport';
-import { moveVoting } from './twitch/moveVoting';
+import { moveVoting } from './integrations/twitch/moveVoting';
 import { busy } from './ui/busy';
 import { PerimeterEqualizer } from './components/PerimeterEqualizer';
 import { BackgroundWaveGrid } from './components/BackgroundWaveGrid';
-import { beatEngine } from './music/beatEngine';
-import { beatMode } from './music/beatMode';
+import { beatEngine } from './integrations/music/beatEngine';
+import { beatMode } from './integrations/music/beatMode';
 import { BeatCombo } from './components/BeatCombo';
 import { MusicScorePanel } from './components/MusicScorePanel';
 import { scaleBudgetMs } from './utils/deviceTier';

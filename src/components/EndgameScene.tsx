@@ -35,7 +35,7 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { beatEngine } from '../music/beatEngine';
+import { beatEngine } from '../integrations/music/beatEngine';
 
 export type VictoryTheme = 'red' | 'blue';
 export type EndgameKind = 'victory' | 'defeat' | 'draw';

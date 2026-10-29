@@ -13,7 +13,8 @@ Firestore rules are the only trust boundary (see `FIRESTORE-RULES.md`).
 | `src/firebase` | Every Firestore read and write. The document shapes here are what the rules check; `npm run test:rules` runs this code against the emulator. |
 | `src/infra` | The app's side of storage: `repos.ts` names the Firestore functions the app calls as interfaces (games, the live match, the lobby, presence, the profile name, the leaderboard, feedback), `firestore/*` hands each call to its `src/firebase` function, `localData.ts` holds every localStorage key and the calls that touch them, and `fakes/*` are in-memory versions for unit tests only. |
 | `src/services` | What reacts to the game or works on it outside React: the board's sound and effects bus, the beat combo, the save queue (`saveQueue.ts`, over a `GamesRepo`). |
-| `src/audio`, `src/music`, `src/twitch`, `src/spotify` | Browser integrations with no UI of their own. |
+| `src/audio` | The game's sound: synths, the controller, ambient music. |
+| `src/integrations/music`, `src/integrations/twitch` | The streaming integrations behind `STREAMING_UI` (`?streaming=1`): the beat grid and its tempo detection, the mic equalizer, the Spotify playlists; Twitch chat, its votes and predictions. |
 | `src/memory` | Saved games: storage, notation, replay import, the Memory panel, and the hooks that autosave a game and resume one. |
 | `src/components` | Components that several parts of the app use (Toast, Tooltip, modals, NamePicker, ClockFace, PlayerRow), and the screens that predate the feature folders (GameReview, MusicDock, Leaderboard, FriendLobby, TwitchPanel, StatsPage, ShowcaseView). |
 | `src/app` | The shell: `App.tsx` lives in `src/`, its app-wide hooks here (URL modes, board size and UI scale, phone drawers, welcome and tour, the guards on leaving a game, the room's colours, the adaptive theme), and the styles of the whole page in `src/app/styles`. |

@@ -1,4 +1,4 @@
-import { beatBridge } from '../music/beatBridge';
+import { beatBridge } from '../integrations/music/beatBridge';
 import type { SessionEvent } from '../session/types';
 import { isPlayed } from './played';
 

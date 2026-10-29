@@ -8,7 +8,7 @@
  * read it every frame with zero React overhead, and the dock slider can
  * write + persist it.
  */
-import { localData, LOCAL_KEYS } from '../infra/localData';
+import { localData, LOCAL_KEYS } from '../../infra/localData';
 
 const KEY = LOCAL_KEYS.eqSensitivity;
 // M.20 — MIN dropped 0.3 → 0.05: the bottom of the range is now truly

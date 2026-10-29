@@ -10,7 +10,7 @@
  * Stored in localStorage; small enough that the whole library lives in
  * one key.
  */
-import { localData, LOCAL_KEYS } from '../infra/localData';
+import { localData, LOCAL_KEYS } from '../../infra/localData';
 
 export interface PlaylistTrack {
   /** Original Spotify track URL the user pasted. */

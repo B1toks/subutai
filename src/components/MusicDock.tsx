@@ -6,21 +6,21 @@ import {
   Trash2, Waves, X,
 } from 'lucide-react';
 import { Icon } from './Icon';
-import { beatEngine } from '../music/beatEngine';
-import { lookupBpm, analyzeTrack } from '../music/autoBpm';
-import { analyzeAudioBuffer } from '../music/fileBpm';
-import { analyzeWithEssentia } from '../music/essentiaBpm';
-import { liveEssentia } from '../music/liveEssentia';
-import { beatPll } from '../music/beatPll';
-import { liveBpm } from '../music/liveBpm';
-import { beatMode } from '../music/beatMode';
-import { eqSettings, EQ_SENS_MIN, EQ_SENS_MAX } from '../music/eqSettings';
-import { vizMode } from '../music/vizMode';
+import { beatEngine } from '../integrations/music/beatEngine';
+import { lookupBpm, analyzeTrack } from '../integrations/music/autoBpm';
+import { analyzeAudioBuffer } from '../integrations/music/fileBpm';
+import { analyzeWithEssentia } from '../integrations/music/essentiaBpm';
+import { liveEssentia } from '../integrations/music/liveEssentia';
+import { beatPll } from '../integrations/music/beatPll';
+import { liveBpm } from '../integrations/music/liveBpm';
+import { beatMode } from '../integrations/music/beatMode';
+import { eqSettings, EQ_SENS_MIN, EQ_SENS_MAX } from '../integrations/music/eqSettings';
+import { vizMode } from '../integrations/music/vizMode';
 import {
   loadPlaylists, savePlaylist, deletePlaylist, setTrackBpm, newPlaylistId,
   type SavedPlaylist, type PlaylistTrack,
-} from '../music/playlists';
-import { micEq, type MicStartResult } from '../audio/micEqualizer';
+} from '../integrations/music/playlists';
+import { micEq, type MicStartResult } from '../integrations/music/micEqualizer';
 import { dockLayout, DOCK_WIDTH } from '../ui/dockLayout';
 import { localData, LOCAL_KEYS, musicTutorialKey } from '../infra/localData';
 

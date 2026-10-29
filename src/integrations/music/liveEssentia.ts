@@ -19,7 +19,7 @@
  * PLL keeps gluing it between passes.
  */
 
-import { micEq } from '../audio/micEqualizer';
+import { micEq } from './micEqualizer';
 import type { TempoCnnResult } from './essentiaBpm.worker';
 
 export interface LiveBeatResult {
