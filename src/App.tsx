@@ -7753,7 +7753,9 @@ function App() {
                 if (gameMode === 'classic') return;
                 setGameMode('classic');
                 setAllowedPieceTypes(null);
-                setIsRouletteSpinning(false);
+                // A spin still landing is dropped with its timers: they
+                // used to land the bag after the switch, in Classic.
+                cancelRouletteReveal();
                 setRouletteActionsLeft(0);
                 setUsedRouletteSlots([]);
               }}
@@ -7777,7 +7779,9 @@ function App() {
                 if (gameMode === 'roulette') return;
                 setGameMode('roulette');
                 setAllowedPieceTypes(null);
-                setIsRouletteSpinning(false);
+                // A spin still landing is dropped with its timers: they
+                // used to land the bag after the switch, in Classic.
+                cancelRouletteReveal();
                 setRouletteActionsLeft(0);
                 setUsedRouletteSlots([]);
               }}
