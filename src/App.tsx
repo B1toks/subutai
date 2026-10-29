@@ -4714,9 +4714,8 @@ function App() {
         <TutorialOverlay onClose={closeTutorial} />
       )}
 
-      {/* T3 — Twitch chat + predictions overlay. gameKey resets the
-          vote round per game; the result is derived once the status
-          leaves 'active'. */}
+      {/* T3 — Twitch chat + predictions overlay. What chat does in the
+          game follows the session (integrations/twitch/game.ts). */}
       {/* SP — Spotify dock: embed player + tap-tempo beat sync + mic
           equalizer controls. */}
       {STREAMING_UI && showMusicDock && (
@@ -4748,18 +4747,6 @@ function App() {
       {STREAMING_UI && showTwitch && (
         <Suspense fallback={null}>
           <TwitchPanel
-            gameKey={sess.log.id}
-            gameResult={(() => {
-              if (gameStatus === 'checkmate') {
-                return state.sideToMove === 'white' ? 'black' : 'white';
-              }
-              if (gameStatus === 'king_captured_white_wins') return 'white';
-              if (gameStatus === 'king_captured_black_wins') return 'black';
-              if (gameStatus === 'resigned_white') return 'black';
-              if (gameStatus === 'resigned_black') return 'white';
-              if (gameStatus.startsWith('draw')) return 'draw';
-              return null;
-            })()}
             onClose={() => {
               // Closing the overlay also stops gating AI moves —
               // otherwise the game would silently pause 15s per move.

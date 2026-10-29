@@ -1,6 +1,7 @@
 import { session } from '../session/session';
 import { beatComboOnEvents } from '../services/beatCombo';
 import { startBoardPulse } from './music/boardPulse';
+import { twitchGame } from './twitch/game';
 
 /**
  * The streaming integrations, loaded only with STREAMING_UI and only after
@@ -21,10 +22,12 @@ export { PerimeterEqualizer } from '../components/PerimeterEqualizer';
 let connected = false;
 
 /** Hooks the integrations to the game, once: the beat combo scores the
- *  moves made here, and the board pulses on the beat. */
+ *  moves made here, the board pulses on the beat, and chat's game (its
+ *  result calls and leaderboard) follows the game on the board. */
 export function connect(): void {
   if (connected) return;
   connected = true;
   session.onEvents(beatComboOnEvents);
   startBoardPulse();
+  twitchGame.follow(session);
 }

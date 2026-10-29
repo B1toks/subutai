@@ -3,14 +3,7 @@ import { createPortal } from 'react-dom';
 import { Cast, GripVertical, PanelRight, X } from 'lucide-react';
 import { Icon } from './Icon';
 import { twitchChat, type TwitchChatMessage, type TwitchChatStatus } from '../integrations/twitch/chat';
-import {
-  applyPrediction,
-  emptyPredictions,
-  tally,
-  winnersFor,
-  type GameResult,
-  type PredictionState,
-} from '../integrations/twitch/predictions';
+import { twitchGame } from '../integrations/twitch/game';
 import {
   moveVoting,
   type GuessLevel,
@@ -28,10 +21,6 @@ const MAX_MESSAGES = 60;
 const LEADERBOARD_SIZE = 10;
 
 interface TwitchPanelProps {
-  /** Changes on every new game — clears votes + the leaderboard. */
-  gameKey: string;
-  /** Null while the game runs; set once when it ends. */
-  gameResult: GameResult | null;
   onClose: () => void;
 }
 
@@ -97,7 +86,10 @@ const TwitchMessageRow = memo(function TwitchMessageRow({
  * match leaderboard. Freely draggable by the header — the first brick
  * of the stream-layout constructor.
  */
-export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) {
+/** Chat, its result calls and votes. What chat does in the game (the calls,
+ *  the leaderboard, a new game clearing them) is twitchGame's, which
+ *  follows the session; the panel shows it. */
+export function TwitchPanel({ onClose }: TwitchPanelProps) {
   const [channelInput, setChannelInput] = useState(() => {
     try {
       return localData.get(CHANNEL_KEY) ?? '';
@@ -108,18 +100,18 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
   const [status, setStatus] = useState<TwitchChatStatus>(twitchChat.getStatus());
   const [statusDetail, setStatusDetail] = useState<string>('');
   const [messages, setMessages] = useState<TwitchChatMessage[]>([]);
-  const [counts, setCounts] = useState({ white: 0, black: 0, draw: 0 });
+  const [counts, setCounts] = useState(() => twitchGame.counts());
   const [voteMode, setVoteMode] = useState<VoteMode>(() => moveVoting.getMode());
   const [round, setRound] = useState<VoteRound | null>(() => moveVoting.getRound());
   const [roundNow, setRoundNow] = useState(() => Date.now());
   const [scores, setScores] = useState<ViewerScore[]>(() => moveVoting.getScores());
-  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  // Shown once the game has ended, until the next one.
+  const [showLeaderboard, setShowLeaderboard] = useState(() => twitchGame.getResult() !== null);
   const [emotes, setEmotes] = useState<EmoteMap | null>(null);
   // M.13 — dock to the RIGHT edge (Spotify left, chat right stream layout).
   const [dockedRight, setDockedRight] = useState(() => {
     try { return localData.get(LOCAL_KEYS.twitchDocked) === '1'; } catch { return false; }
   });
-  const predictionsRef = useRef<PredictionState>(emptyPredictions());
   const feedRef = useRef<HTMLDivElement | null>(null);
 
   // R3 — reserve a right column in the app layout while docked on desktop
@@ -144,7 +136,6 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
       if (pendingRef.current.length > MAX_MESSAGES) {
         pendingRef.current = pendingRef.current.slice(-MAX_MESSAGES);
       }
-      applyPrediction(predictionsRef.current, msg);
     });
     const offStatus = twitchChat.onStatus((s, detail) => {
       setStatus(s);
@@ -158,7 +149,7 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
         const next = [...cur, ...batch];
         return next.length > MAX_MESSAGES ? next.slice(next.length - MAX_MESSAGES) : next;
       });
-      setCounts(tally(predictionsRef.current));
+      setCounts(twitchGame.counts());
     }, 300);
     return () => {
       offMsg();
@@ -184,27 +175,16 @@ export function TwitchPanel({ gameKey, gameResult, onClose }: TwitchPanelProps) 
     return () => clearInterval(id);
   }, [round]);
 
-  // New game — votes, scores and banners reset; chat history stays.
-  // setState-in-effect is intentional: this fires once per game change
-  // (rare), and the reset must also touch refs + the external voting
-  // store, so the render-phase "adjust state from props" pattern can't
-  // express it without double-mutating the store under StrictMode.
-  useEffect(() => {
-    predictionsRef.current = emptyPredictions();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setCounts({ white: 0, black: 0, draw: 0 });
-    setShowLeaderboard(false);
-    moveVoting.resetScores();
-  }, [gameKey]);
-
-  // Game ended — award result calls (+3) and show the leaderboard.
-  // Same rationale as above: a once-per-game external-store mutation.
-  useEffect(() => {
-    if (!gameResult) return;
-    moveVoting.awardResultCall(winnersFor(predictionsRef.current, gameResult));
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setShowLeaderboard(true);
-  }, [gameResult]);
+  // New game: the calls and the leaderboard are cleared (twitchGame), chat
+  // history stays. Game ended: the result calls are scored, the board shown.
+  useEffect(
+    () =>
+      twitchGame.onChange((what) => {
+        setCounts(twitchGame.counts());
+        setShowLeaderboard(what === 'ended');
+      }),
+    [],
+  );
 
   // 7TV emotes for the connected channel.
   useEffect(() => {
