@@ -2092,13 +2092,25 @@ function App() {
     // split-brain. The Leaderboard disables Watch in that case; this is
     // the backstop.
     if (isMultiplayer) return;
+    // A game that cannot be shown says so on the board, as a broken
+    // ?game=<id> link does (the same banner), instead of nothing at all.
+    const refuse = (message: string) => {
+      setSharedGameError(message);
+      setView('game');
+    };
     try {
       const saved = await fetchSavedGame(gameId);
       if (!saved) {
         console.warn('[watch] game not found', gameId);
+        refuse('Game not found.');
         return;
       }
       const replayLog = deserializeGameLog(saved);
+      // Every frame is projected again as the replay is stepped through
+      // (seekWatchTo, inside a state update), where a log entry the board
+      // cannot be built from threw in render and took the app to the error
+      // screen. Build the whole replay once, here, where that is caught.
+      replayBoardAt(replayLog, replayLog.moves.length);
 
       // Snapshot current game so Stop can restore it exactly.
       gameBackupRef.current = {
@@ -2147,6 +2159,7 @@ function App() {
       });
     } catch (err) {
       console.error('[watch] startWatching failed', err);
+      refuse('Could not load this game.');
     }
   }
 
