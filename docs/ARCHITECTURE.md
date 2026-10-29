@@ -12,9 +12,9 @@ Firestore rules are the only trust boundary (see `FIRESTORE-RULES.md`).
 | `src/session/players` | Who plays each side: the seats, the turns that ask the side to move (`turns.ts`), and the players (here, bot, chat, remote). |
 | `src/firebase` | Every Firestore read and write. The document shapes here are what the rules check; `npm run test:rules` runs this code against the emulator. |
 | `src/infra` | The app's side of storage: `repos.ts` names the Firestore functions the app calls as interfaces (games, the live match, the lobby, presence, the profile name, the leaderboard, feedback), `firestore/*` hands each call to its `src/firebase` function, `localData.ts` holds every localStorage key and the calls that touch them, and `fakes/*` are in-memory versions for unit tests only. |
-| `src/services` | What reacts to the game or works on it outside React: the board's sound and effects bus, the beat combo, the save queue (`saveQueue.ts`, over a `GamesRepo`). |
+| `src/services` | What reacts to the game or works on it outside React: the board's sound and effects bus, the beat combo (started with the streaming integrations), the save queue (`saveQueue.ts`, over a `GamesRepo`). |
 | `src/audio` | The game's sound: synths, the controller, ambient music. |
-| `src/integrations/music`, `src/integrations/twitch` | The streaming integrations behind `STREAMING_UI` (`?streaming=1`): the beat grid and its tempo detection, the mic equalizer, the Spotify playlists; Twitch chat, its votes and predictions. |
+| `src/integrations` | The streaming integrations behind `STREAMING_UI` (`?streaming=1`), loaded only with it and after the first load: `music` (the beat grid and its tempo detection, the mic equalizer, the Spotify playlists), `twitch` (chat, its votes, chat's game). The rest of the app reaches them through `index.ts` only. |
 | `src/memory` | Saved games: storage, notation, replay import, the Memory panel, and the hooks that autosave a game and resume one. |
 | `src/components` | Components that several parts of the app use (Toast, Tooltip, modals, NamePicker, ClockFace, PlayerRow), and the screens that predate the feature folders (GameReview, MusicDock, Leaderboard, FriendLobby, TwitchPanel, StatsPage, ShowcaseView). |
 | `src/app` | The shell: `App.tsx` lives in `src/`, its app-wide hooks here (URL modes, board size and UI scale, phone drawers, welcome and tour, the guards on leaving a game, the room's colours, the adaptive theme), and the styles of the whole page in `src/app/styles`. |
@@ -68,6 +68,8 @@ function declaration (`startNewGame`) or, for a state setter declared later
  session (src/session): step(state, action) ◄── session.dispatch(action)
         │ useSession        │ the turns (players/turns.ts)      ▲
         │                   └─► the bot, chat: onTurn ─────────┤
+        │ events, state ──► services; integrations (STREAMING_UI, lazy):
+        │                   beat combo, chat's game (twitchGame)
         ▼                                                      │
  App.tsx: the game on the board (state, log, legalMoves)       │
         │                                                      │
@@ -96,8 +98,9 @@ A move, from the click to the record. A click on a square calls
 dispatches `{ type: 'move' }`: `step()` applies it, appends it to the log,
 runs the roulette turn and asks whether the game is over, and says what
 happened as events (move, capture, check, rotation, promotion, game end).
-The services hear them (`src/services`, started in `main.tsx`): the
-beat combo scores the move at once; the move sound and `useCaptureFx`
+The services hear them (`src/services`, started in `main.tsx`), and with
+`?streaming=1` the integrations too: the beat combo scores the move at once;
+the move sound and `useCaptureFx`
 (spark, strobe, dust) act after the render that shows the move
 (`useBoardEventsAfterCommit`), so they are timed from what is on screen. A watched replay stepping one move on
 plays that move out too, as a replayed event (actor `replay`) that
@@ -214,6 +217,28 @@ reveal by `since`, so a late one for a reveal that is gone is refused.
 `services/spinSounds.ts` plays the beat of each `rouletteSlot` event; App
 only draws the slots that have landed.
 
+### The streaming integrations
+
+Music and Twitch are `src/integrations`, and nothing of them is in the first
+load: `main.tsx` calls `loadStreaming()` (`src/integrations/index.ts`), which
+with `STREAMING_UI` fetches `integrations/streaming.ts` as a chunk of its own
+and calls its `connect()`, and without the flag does nothing. The rest of
+the app reaches them only through `index.ts`: `streaming()` in a handler,
+`useStreaming()` in a render (it re-renders once they have loaded), both
+null before and without the flag, and every caller then does what the app
+did with the flag off. For example, the bot's move in a solo game: the bot
+player asks `vote` (`useSeats`), which is `streaming()?.moveVoting.gate(...)`,
+and without the integrations its own move; with them, Twitch Predict may
+hold it for chat's vote. The music dock and the Twitch panel are lazy
+screens that import the integrations' modules directly.
+
+Twitch takes part in the game in two ways, both through the session: chat
+can hold a seat (`session/players/chat.ts`, seated by `useSeats` in the
+'chatvsbot' mode, or wrapping the player here in 'guess'), and chat's game
+(`integrations/twitch/game.ts`) follows the session from `connect()`: a
+new log clears the result calls and the leaderboard, the end of the game
+scores the calls. The panel only shows it.
+
 ## Where to add things
 
 - A new feature: a folder `src/features/<name>` with its hook, helpers and
@@ -232,6 +257,13 @@ only draws the slots that have landed.
   so no Firestore code moves into the first load).
 - A new localStorage setting: its key in `LOCAL_KEYS`
   (`src/infra/localData.ts`), read and written through `localData`.
+- Something for streamers (music, Twitch, an overlay): its code in
+  `src/integrations/<name>`, what the app needs of it exported from
+  `integrations/streaming.ts` (and hooked to the game in its `connect()`),
+  and every call from elsewhere through `streaming()` / `useStreaming()`
+  with what happens when it is null. Never import it from a first-load
+  module: it would put it in everyone's first load (check with the build's
+  first-load size).
 
 ## Styles
 
