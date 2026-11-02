@@ -202,8 +202,8 @@ spin and only the session sees them all:
   state changes and the turn opens with the bag.
 - **A new game is a clean board.** `newGame`, `load` and the mode click
   reset the roulette state, the reveal with it, so nothing of an
-  interrupted spin can land on the next board. (In v1.1.6 App a mode click
-  mid-spin still landed the bag in Classic; here it is dropped.)
+  interrupted spin can land on the next board. (v1.1.6 landed the bag in
+  Classic after a mode click mid-spin; v1.1.7 fixed that in App.)
 - **Online and solo look the same.** `follow` opens the reveal when the
   document's bag goes from none to one; one already there when the match
   is joined or rejoined is shown as it is.

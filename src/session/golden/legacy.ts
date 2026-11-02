@@ -166,13 +166,16 @@ export class LegacyApp {
     });
   }
 
-  /** The mode cards (disabled={modeToggleLocked}, so a locked click never lands). */
+  /** The mode cards (disabled={modeToggleLocked}, so a locked click never lands).
+   *  v1.1.7: a click while a bag lands cancels it with its timers
+   *  (cancelRouletteReveal); v1.1.6 landed it after the switch. */
   setMode(mode: GameMode) {
     this.act((r) => {
       if (r.logLocal.moves.length > 0 || r.stateLocal.fullmoveNumber > 1) return;
       if (r.gameModeLocal === mode) return;
       this.set('gameModeLocal', mode);
       this.set('allowedPieceTypesLocal', null);
+      this.pendingSpin = null;
       this.set('isRouletteSpinning', false);
       this.set('rouletteActionsLeftLocal', 0);
       this.set('usedRouletteSlotsLocal', []);
