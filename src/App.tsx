@@ -39,11 +39,11 @@ import { EvalBar } from './features/game/EvalBar';
 import { HelpDialog } from './app/HelpDialog';
 import { ScreenFlash } from './features/game/ScreenFlash';
 import { WatchBanner } from './features/review/WatchBanner';
+import { MatchBanners } from './features/online/MatchBanners';
 import { Tooltip } from './components/Tooltip';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import {
-  AlarmClock,
   AlertTriangle,
   ArrowRight,
   BarChart3,
@@ -2521,50 +2521,12 @@ function App() {
         />
       )}
 
-      {sharedGameError && (
-        <div className="mp-banner mp-banner-error" role="status">
-          {sharedGameError}{' '}
-          <button
-            type="button"
-            className="mp-back-btn"
-            style={{ marginLeft: 8 }}
-            onClick={() => setSharedGameError(null)}
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-
-      {/* Sprint 4.0 — persistent "Your turn / Waiting" MP banner removed
-          again (re-grew during the post-3.0 rewrites). Whose turn it is
-          reads from the board + opponent panel; the local AFK alert
-          covers the attention case. The waiting-for-opponent spinner
-          is kept as a slim, non-text indicator so users still know the
-          other side is acting — without the heavy banner. */}
-      {isMultiplayer
-        && mpSync
-        && mpSync.matchState.status === 'active'
-        && !mpSync.isMyTurn && (
-        <div className="mp-banner mp-banner-wait">
-          <span className="mp-spinner" aria-hidden />
-          {mpSync.isRouletteMode && mpSync.rouletteSlots
-            ? `${mpSync.opponentDisplayName} is acting…`
-            : `Waiting for ${mpSync.opponentDisplayName}…`}
-        </div>
-      )}
-
-      {isMultiplayer &&
-        mpSync &&
-        mpSync.selfAfkWarning &&
-        mpSync.matchState.status === 'active' && (
-          <div className="mp-banner mp-banner-warn">
-            <Icon icon={AlarmClock} size="sm" aria-hidden /> Make a move soon — auto-forfeit in ~30s.
-          </div>
-        )}
-
-      {isMultiplayer && mpSync && mpSync.error && (
-        <div className="mp-banner mp-banner-error">{mpSync.error}</div>
-      )}
+      <MatchBanners
+        sharedGameError={sharedGameError}
+        onDismissSharedError={() => setSharedGameError(null)}
+        isMultiplayer={isMultiplayer}
+        mpSync={mpSync}
+      />
 
       {/* Sprint 4.1 / V1 — the hot-seat turn banner that used to float
           above the board now lives INSIDE each player's own button row
