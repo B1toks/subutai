@@ -43,6 +43,7 @@ import { LocalTopActions } from './features/local/LocalTopActions';
 import { AppDialogs } from './app/AppDialogs';
 import { MatchCompleteDialog } from './features/online/MatchCompleteDialog';
 import { BoardActions } from './features/game/BoardActions';
+import { BoardCoords } from './features/game/BoardCoords';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import type { GameReviewMeta } from './components/GameReview';
@@ -2921,45 +2922,14 @@ function App() {
           </div>
         )}
       </div>
-      {/* Sprint 4.2 — coords overlay lives OUTSIDE .board so the labels
-          stay still while the board itself can rotate / preview-rotate.
-          Earlier attempts kept the labels inside the tiles, which meant
-          the .board rotation transform dragged them along. */}
-      {(() => {
-        const flip = myColor === 'black';
-        const previewing = !!(previewTopology || previewLocked);
-        return (
-          <div
-            className={`board-coords-overlay${previewing ? ' previewing' : ''}`}
-            data-topology={displayTopology}
-            aria-hidden
-            style={{ width: boardSize, height: boardSize }}
-          >
-            {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => {
-              const rankChar = flip ? String(i + 1) : String(8 - i);
-              const fileChar = flip
-                ? String.fromCharCode('a'.charCodeAt(0) + (7 - i))
-                : String.fromCharCode('a'.charCodeAt(0) + i);
-              return (
-                <span key={`coord-row-${i}`}>
-                  <span
-                    className="board-coord board-coord-rank"
-                    style={{ top: i * tileBase + 3, left: 4 }}
-                  >
-                    {rankChar}
-                  </span>
-                  <span
-                    className="board-coord board-coord-file"
-                    style={{ left: (i + 1) * tileBase - 12, bottom: 3 }}
-                  >
-                    {fileChar}
-                  </span>
-                </span>
-              );
-            })}
-          </div>
-        );
-      })()}
+      <BoardCoords
+        myColor={myColor}
+        previewTopology={previewTopology}
+        previewLocked={previewLocked}
+        displayTopology={displayTopology}
+        boardSize={boardSize}
+        tileBase={tileBase}
+      />
       </div>
       </div>
 
