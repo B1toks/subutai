@@ -40,6 +40,7 @@ import { HelpDialog } from './app/HelpDialog';
 import { ScreenFlash } from './features/game/ScreenFlash';
 import { WatchBanner } from './features/review/WatchBanner';
 import { MatchBanners } from './features/online/MatchBanners';
+import { StatusBar } from './app/StatusBar';
 import { Tooltip } from './components/Tooltip';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -4115,59 +4116,14 @@ function App() {
         </div>
       )}
 
-      {/* V1 — the status bar used to say "Ready" / "In play" and a raw move,
-          which told the player nothing they could act on. It now answers the
-          one question a status bar should: whose move is it, and how far
-          along are we. */}
-      <footer className="app-status-bar">
-        {(() => {
-          const lastEntry = log.moves[log.moves.length - 1];
-          const lastText = lastEntry
-            ? lastEntry.san ?? `${lastEntry.move.from ?? ''}→${lastEntry.move.to ?? ''}`
-            : null;
-          const fullMoves = Math.ceil(log.moves.length / 2);
-          let tone: 'over' | 'mine' | 'theirs' | 'idle' = 'idle';
-          let text: string;
-          if (gameStatus !== 'active') {
-            tone = 'over';
-            text = gameOverMessage ?? 'Game over';
-          } else if (watchingGame) {
-            text = `Watching ${watchingGame.playerName}'s game`;
-          } else if (isMultiplayer && mpSync) {
-            tone = mpSync.isMyTurn ? 'mine' : 'theirs';
-            text = mpSync.isMyTurn
-              ? 'Your move'
-              : `${mpSync.opponentDisplayName} is thinking`;
-          } else if (isLocalMode) {
-            tone = 'mine';
-            text = `${state.sideToMove === 'white' ? 'White' : 'Black'} to move`;
-          } else if (currentPlayer === 'human') {
-            tone = 'mine';
-            text = log.moves.length === 0 ? 'Your move: make the first one' : 'Your move';
-          } else {
-            tone = 'theirs';
-            text = 'Bot is thinking';
-          }
-          return (
-            <>
-              <span className={`status-chip status-chip-${tone}`}>
-                <span className="status-dot" aria-hidden />
-                {text}
-              </span>
-              <span className="status-meta">
-                <span className="status-meta-item">
-                  Move <strong>{fullMoves}</strong>
-                </span>
-                {lastText && (
-                  <span className="status-meta-item">
-                    Last <strong className="status-mono">{lastText}</strong>
-                  </span>
-                )}
-              </span>
-            </>
-          );
-        })()}
-      </footer>
+      <StatusBar
+        isMultiplayer={isMultiplayer}
+        mpSync={mpSync}
+        watchingGame={watchingGame}
+        isLocalMode={isLocalMode}
+        currentPlayer={currentPlayer}
+        gameOverMessage={gameOverMessage}
+      />
 
       {!isMultiplayer && (
         <MemoryPanel
