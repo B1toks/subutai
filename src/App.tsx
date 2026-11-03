@@ -49,6 +49,7 @@ import { MaterialScore } from './features/game/MaterialScore';
 import { RoulettePanel } from './features/game/RoulettePanel';
 import { NO_SLOTS } from './features/game/boardView';
 import { GameSetupPanel } from './features/game/GameSetupPanel';
+import { PositionCodeRow } from './features/game/PositionCodeRow';
 import { Tooltip } from './components/Tooltip';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -66,13 +67,11 @@ import {
   Lightbulb,
   Lock,
   MessageSquare,
-  Pencil,
   Menu,
   RotateCw,
   SlidersHorizontal,
   Trophy,
   Cast,
-  Upload,
 } from 'lucide-react';
 import type { GameReviewMeta } from './components/GameReview';
 import { mpResignCause } from './firebase/matchEnd';
@@ -3502,81 +3501,22 @@ function App() {
         <MaterialScore materialScore={materialScore} materialBreakdown={materialBreakdown} />
       </div>
 
-      <div className="position-label-wrap">
-        {/* S2.1 — Replay import and formation editing clobber local game
-            state, which in MP would split-brain against the Firestore
-            board, and while watching would corrupt the stop-restore
-            backup. Both controls are live-local-game-only. */}
-        {!isMultiplayer && !watchingGame && (
-        <button
-          type="button"
-          className="position-replay-btn"
-          onClick={() =>
-            guardLeave('Load a replay', true, () => {
-              setReplayError(null);
-              setShowReplayDialog(true);
-            })
-          }
-          title="Paste a move log to replay a game"
-        >
-          <Icon icon={Upload} size={12} aria-hidden /> Load replay
-        </button>
-        )}
-        {/* V1 rev 3 — the code IS the control.
-            It used to be a read-only label with a separate "Set position"
-            button next to it, which put two objects on screen for one
-            idea. The code now sits quiet and flat until you touch it;
-            clicking it grows the chip and turns the code itself into the
-            field you type in. Nothing else on the row changes size, so
-            the growth is the whole affordance. */}
-        {isMultiplayer || watchingGame ? (
-          <span className="position-code is-static" title="This game's Chess960 starting rank">
-            <span className="position-label-key">960</span>
-            <span className="position-code-value">{positionLabel}</span>
-          </span>
-        ) : formationInputMode ? (
-          <span className="position-code is-editing">
-            <span className="position-label-key">960</span>
-            <input
-              ref={formationInputRef}
-              type="text"
-              className="position-input"
-              value={formationInputValue}
-              onChange={(e) => setFormationInputValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') applyFormationCode();
-                if (e.key === 'Escape') cancelFormationInput();
-              }}
-              onBlur={commitFormationOnBlur}
-              placeholder="RQKRNBBN"
-              maxLength={8}
-              aria-label="Chess960 starting rank"
-              spellCheck={false}
-              autoComplete="off"
-              autoCapitalize="characters"
-            />
-            {formationInputValue && !isValidChess960Key(formationInputValue.trim().toUpperCase()) && (
-              <span className="position-input-error">Invalid 960 code</span>
-            )}
-          </span>
-        ) : (
-          <button
-            type="button"
-            className="position-code"
-            onClick={() =>
-              guardLeave('Set a new position', true, () => {
-                setFormationInputValue(positionLabel);
-                setFormationInputMode(true);
-              })
-            }
-            title="Click to start from a specific Chess960 position"
-          >
-            <span className="position-label-key">960</span>
-            <span className="position-code-value">{positionLabel}</span>
-            <Icon icon={Pencil} size={11} className="position-code-pencil" aria-hidden />
-          </button>
-        )}
-      </div>
+      <PositionCodeRow
+        isMultiplayer={isMultiplayer}
+        watchingGame={watchingGame}
+        guardLeave={guardLeave}
+        setReplayError={setReplayError}
+        setShowReplayDialog={setShowReplayDialog}
+        positionLabel={positionLabel}
+        formationInputMode={formationInputMode}
+        setFormationInputMode={setFormationInputMode}
+        formationInputRef={formationInputRef}
+        formationInputValue={formationInputValue}
+        setFormationInputValue={setFormationInputValue}
+        applyFormationCode={applyFormationCode}
+        cancelFormationInput={cancelFormationInput}
+        commitFormationOnBlur={commitFormationOnBlur}
+      />
       </div>
       <aside className="right-sidebar">
         {/* fix/mobile-ui — the player's name and "Change name" at the top
