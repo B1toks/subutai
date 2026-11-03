@@ -38,6 +38,7 @@ import { DrawOfferPrompt } from './features/game/DrawOfferPrompt';
 import { EvalBar } from './features/game/EvalBar';
 import { HelpDialog } from './app/HelpDialog';
 import { ScreenFlash } from './features/game/ScreenFlash';
+import { WatchBanner } from './features/review/WatchBanner';
 import { Tooltip } from './components/Tooltip';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -2512,50 +2513,12 @@ function App() {
       </header>
 
       {watchingGame && (
-        <div className="watch-banner">
-          <span className="watch-banner-label">
-            <Icon icon={Eye} size="sm" aria-hidden /> Watching <strong>{watchingGame.playerName}</strong>’s game ·
-            move {Math.floor((watchingGame.currentMoveIdx + 1) / 2)}/
-            {Math.floor(watchingGame.log.moves.length / 2)}
-          </span>
-          <div className="watch-banner-controls">
-            <button
-              type="button"
-              className="watch-btn"
-              onClick={() => seekWatchTo(watchingGame.currentMoveIdx - 1)}
-              disabled={watchingGame.currentMoveIdx === 0}
-              title="Previous move"
-            >
-              ← Prev
-            </button>
-            <button
-              type="button"
-              className="watch-btn"
-              onClick={() => seekWatchTo(watchingGame.currentMoveIdx + 1)}
-              disabled={watchingGame.currentMoveIdx >= watchingGame.log.moves.length}
-              title="Next move"
-            >
-              Next →
-            </button>
-            <button
-              type="button"
-              className={`watch-btn${watchingGame.autoplay ? ' watch-btn-active' : ''}`}
-              onClick={toggleWatchAutoplay}
-              disabled={watchingGame.currentMoveIdx >= watchingGame.log.moves.length}
-              title="Auto play"
-            >
-              {watchingGame.autoplay ? '⏸ Pause' : '▶ Auto'}
-            </button>
-            <button
-              type="button"
-              className="watch-btn watch-btn-stop"
-              onClick={stopWatching}
-              title="Stop and return to your game"
-            >
-              ✕ Stop
-            </button>
-          </div>
-        </div>
+        <WatchBanner
+          watchingGame={watchingGame}
+          onSeek={seekWatchTo}
+          onToggleAutoplay={toggleWatchAutoplay}
+          onStop={stopWatching}
+        />
       )}
 
       {sharedGameError && (
