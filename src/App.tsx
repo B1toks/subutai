@@ -33,6 +33,9 @@ import { Effects3DToggle } from './components/Effects3DToggle';
 import { AudioToggle } from './components/AudioToggle';
 import { MusicToggle } from './components/MusicToggle';
 import { Icon } from './components/Icon';
+import { LocalTurnSlot } from './features/local/LocalTurnSlot';
+import { DrawOfferPrompt } from './features/game/DrawOfferPrompt';
+import { EvalBar } from './features/game/EvalBar';
 import { Tooltip } from './components/Tooltip';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -206,64 +209,6 @@ const NO_SLOTS: number[] = [];
 // M.14 — beat-mode glide length. MUST match the .piece-slide-in CSS
 // animation duration so the slide lands exactly on the beat.
 const BEAT_SLIDE_MS = 260;
-
-// S2.5 — mm:ss elapsed-time display for the per-side clocks.
-/**
- * V1 — the hot-seat turn indicator, as part of a player's own row.
- *
- * Each player gets one, in the row of buttons in front of them (black's
- * row is drawn upside down, so black reads theirs upright). It lights and
- * says "Your move" for the side that is to play; the other one dims and
- * names whose turn it is instead.
- */
-function LocalTurnSlot({ side, toMove }: { side: 'white' | 'black'; toMove: 'white' | 'black' }) {
-  const mine = side === toMove;
-  return (
-    <span
-      className={`local-turn-slot is-${side}${mine ? ' is-to-move' : ''}`}
-      role="status"
-      aria-live={mine ? 'polite' : undefined}
-    >
-      <span className="local-turn-lamp" aria-hidden />
-      {mine ? 'Your move' : `${toMove === 'white' ? 'White' : 'Black'} to move`}
-    </span>
-  );
-}
-
-/** A draw offer as the player it is made to sees it: in place of that
- *  player's own row, so the board does not move when it appears. */
-function DrawOfferPrompt({
-  text,
-  onAnswer,
-  disabled = false,
-}: {
-  text: string;
-  onAnswer: (accept: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <div className="draw-offer-prompt" role="group" aria-label="Draw offer">
-      <Icon icon={Handshake} size="md" aria-hidden />
-      <span className="draw-offer-text" role="status">{text}</span>
-      <button
-        type="button"
-        className="mp-btn mp-btn-primary"
-        onClick={() => onAnswer(true)}
-        disabled={disabled}
-      >
-        Accept
-      </button>
-      <button
-        type="button"
-        className="mp-btn mp-btn-secondary"
-        onClick={() => onAnswer(false)}
-        disabled={disabled}
-      >
-        Decline
-      </button>
-    </div>
-  );
-}
 
 function App() {
   const { isAutoMode, maxGames, isStatsMode, sharedGameId } = useUrlModes();
@@ -4772,54 +4717,6 @@ function App() {
       )}
 
     </div>
-    </div>
-  );
-}
-
-function EvalBar({
-  evalCp,
-  mateInPlies,
-  isPending,
-}: {
-  /** VIEWER-perspective centipawn score. Positive = "I'm winning". App
-   *  inverts this for the black seat before passing it in (T5) — keeps
-   *  this component dumb: always fill the bottom (my-side) of the bar. */
-  evalCp: number;
-  mateInPlies: number | null;
-  /** True while we're showing the static-eval fallback waiting on the worker. */
-  isPending: boolean;
-}) {
-  const isMate = mateInPlies !== null;
-  let mySidePercent: number;
-  let display: string;
-  if (isMate) {
-    // Snap to the winning edge so the bar visually screams "the game is
-    // ending" — bypass the smooth tanh curve.
-    mySidePercent = evalCp > 0 ? 95 : 5;
-    const sign = evalCp > 0 ? '' : '−';
-    const moves = Math.ceil((mateInPlies as number) / 2);
-    display = moves <= 0 ? `${sign}#` : `${sign}M${moves}`;
-  } else {
-    // 50% baseline + tanh-shaped scale so big advantages don't peg the bar
-    // to 0/100 and tiny ones still register. Clamp so the loser always
-    // shows a sliver — fully empty looks broken.
-    const t = Math.tanh(evalCp / 400);
-    mySidePercent = Math.max(5, Math.min(95, 50 + t * 45));
-    display = `${evalCp >= 0 ? '+' : '−'}${(Math.abs(evalCp) / 100).toFixed(1)}`;
-  }
-  // Text sits on the side opposite to my fill so it stays legible.
-  const textOnBottom = mySidePercent < 50;
-  return (
-    <div
-      className={`eval-bar${isMate ? ' is-mate' : ''}${isPending ? ' is-pending' : ''}`}
-      aria-label={`Evaluation ${display}`}
-    >
-      <div className="eval-bar-white" style={{ height: `${mySidePercent}%` }} />
-      <span
-        className={`eval-bar-text${textOnBottom ? ' eval-bar-text-bottom' : ' eval-bar-text-top'}`}
-      >
-        {display}
-      </span>
     </div>
   );
 }
