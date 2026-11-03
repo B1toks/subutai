@@ -13,11 +13,9 @@ import {
 } from './ai/agents';
 import { clearSearchTable, searchAsync } from './ai/searchClient';
 import { classifyAsync } from './analysis/classifyClient';
-import { NamePicker } from './components/NamePicker';
 import { useToast } from './components/Toast';
 import type { EndgameKind, KingOrigin, VictoryTheme } from './components/EndgameScene';
 import { GameSummary } from './components/GameSummary';
-import { ConfirmDialog } from './components/ConfirmDialog';
 import { STREAMING_UI } from './featureFlags';
 import { FeedbackModal } from './components/FeedbackModal';
 import { MilestoneModal } from './components/MilestoneModal';
@@ -46,6 +44,7 @@ import { GameSetupPanel } from './features/game/GameSetupPanel';
 import { PositionCodeRow } from './features/game/PositionCodeRow';
 import { AppHeader } from './app/AppHeader';
 import { LocalTopActions } from './features/local/LocalTopActions';
+import { AppDialogs } from './app/AppDialogs';
 import { Tooltip } from './components/Tooltip';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -3357,80 +3356,25 @@ function App() {
         />
       )}
 
-      {/* The name prompt waits its turn behind BOTH the welcome screen and
-          the tour. It used to wait only for the welcome screen, so taking
-          the "start the tour" button dropped a modal straight on top of
-          the first tour step — the field sat over the tooltip and neither
-          could be read. The tour teaches; the name is what you pick once
-          you have decided to stay, so it comes after. Skipping the tour
-          still brings it up immediately. */}
-      {!authLoading && user && !displayName && !showWelcome && !showTutorial && (
-        <NamePicker
-          mode="initial"
-          uid={user.uid}
-          onComplete={(name) => {
-            setDisplayName(name);
-          }}
-        />
-      )}
-
-      {showNameModal && user && displayName && (
-        <NamePicker
-          mode="change"
-          uid={user.uid}
-          currentName={displayName}
-          onComplete={(name) => {
-            setDisplayName(name);
-            setShowNameModal(false);
-          }}
-          onCancel={() => setShowNameModal(false)}
-        />
-      )}
-
-      {confirmingResign && (
-        <ConfirmDialog
-          title="Resign this game?"
-          message="Resigning only earns half move points and no capture or outcome bonus. Are you sure?"
-          confirmLabel="Resign anyway"
-          cancelLabel="Cancel"
-          danger
-          onConfirm={confirmResign}
-          onCancel={() => setConfirmingResign(null)}
-        />
-      )}
-
-      {pendingLeave && (
-        <ConfirmDialog
-          title={pendingLeave.title}
-          message={pendingLeave.message}
-          confirmLabel={pendingLeave.confirmLabel}
-          cancelLabel="Keep playing"
-          danger
-          onConfirm={() => {
-            const go = pendingLeave.run;
-            setPendingLeave(null);
-            go();
-          }}
-          onCancel={() => setPendingLeave(null)}
-        />
-      )}
-
-      {pendingOpponentChange && (
-        <ConfirmDialog
-          title="Abandon current game?"
-          message="Switching opponent will end the game in progress and start fresh."
-          confirmLabel="Abandon game"
-          cancelLabel="Keep playing"
-          danger
-          onConfirm={() => {
-            const next = pendingOpponentChange;
-            setPendingOpponentChange(null);
-            applyOpponentChange(next);
-            startNewGame();
-          }}
-          onCancel={() => setPendingOpponentChange(null)}
-        />
-      )}
+      <AppDialogs
+        authLoading={authLoading}
+        user={user}
+        displayName={displayName}
+        setDisplayName={setDisplayName}
+        showWelcome={showWelcome}
+        showTutorial={showTutorial}
+        showNameModal={showNameModal}
+        setShowNameModal={setShowNameModal}
+        confirmingResign={confirmingResign}
+        setConfirmingResign={setConfirmingResign}
+        confirmResign={confirmResign}
+        pendingLeave={pendingLeave}
+        setPendingLeave={setPendingLeave}
+        pendingOpponentChange={pendingOpponentChange}
+        setPendingOpponentChange={setPendingOpponentChange}
+        applyOpponentChange={applyOpponentChange}
+        startNewGame={startNewGame}
+      />
 
       {isMultiplayer && mpSync && mpEndOutcome && !endgameSceneActive && (() => {
         const myView = translateOutcomeForPlayer(
