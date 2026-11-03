@@ -45,13 +45,13 @@ import { PositionCodeRow } from './features/game/PositionCodeRow';
 import { AppHeader } from './app/AppHeader';
 import { LocalTopActions } from './features/local/LocalTopActions';
 import { AppDialogs } from './app/AppDialogs';
+import { MatchCompleteDialog } from './features/online/MatchCompleteDialog';
 import { Tooltip } from './components/Tooltip';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import {
   AlertTriangle,
   ArrowRight,
-  BarChart3,
   Dices,
   Eye,
   Flag,
@@ -62,11 +62,7 @@ import {
   RotateCw,
 } from 'lucide-react';
 import type { GameReviewMeta } from './components/GameReview';
-import { mpResignCause } from './firebase/matchEnd';
 import type { MatchDoc, MatchOutcome } from './firebase/matches';
-import {
-  translateOutcomeForPlayer,
-} from './firebase/multiplayerGames';
 import { useAuth } from './firebase/useAuth';
 import { deserializeGameLog } from './firebase/games';
 import { gamesRepo } from './infra/firestore/games';
@@ -106,7 +102,6 @@ import { colorFromMouseEvent, type AnnotationColor, type ArrowAnnotation } from 
 import { recentPlies } from './features/game/boardMarks';
 import { soloOutcome } from './features/endgame/result';
 import { drawOfferTitle } from './features/game/drawOfferTitle';
-import { deriveMpLog } from './features/online/matchLog';
 import { useUrlModes } from './app/useUrlModes';
 import { useOnlineMatch } from './features/online/useOnlineMatch';
 import { useMobileDrawers } from './app/useMobileDrawers';
@@ -3376,139 +3371,23 @@ function App() {
         startNewGame={startNewGame}
       />
 
-      {isMultiplayer && mpSync && mpEndOutcome && !endgameSceneActive && (() => {
-        const myView = translateOutcomeForPlayer(
-          mpEndOutcome,
-          {
-            uid: mpSync.myUid,
-            displayName: '',
-            color: mpSync.myColor,
-          },
-          mpSync.matchState.host.uid,
-        );
-        const opp = mpSync.opponentDisplayName;
-        // QA-04 — a flag fall or an inactivity forfeit is not a resignation.
-        // The match says which it was (endReason); one ended by an older
-        // client does not, and falls back to the clock and this tab.
-        const endReason = mpSync.matchState.endReason;
-        const resignCause =
-          endReason === 'flag'
-            ? 'timeout'
-            : endReason === 'inactive' || endReason === 'resign'
-              ? endReason
-              : myView === 'human-resign' && mpSelfResignedRef.current === mpSync.matchState.code
-                ? 'resign'
-                : mpResignCause({ ...mpSync.matchState, outcome: mpEndOutcome });
-        const headline =
-          myView === 'human-win'
-            ? `You won vs ${opp}!`
-            : myView === 'human-resign'
-              ? resignCause === 'timeout'
-                ? `You ran out of time vs ${opp}.`
-                : resignCause === 'resign'
-                  ? `You resigned vs ${opp}.`
-                  : resignCause === 'inactive'
-                    ? `You left the game vs ${opp}.`
-                    : `You lost vs ${opp}.`
-              : myView === 'ai-win'
-                ? `You lost vs ${opp}.`
-                : `Draw vs ${opp}.`;
-        const loserName =
-          mpEndOutcome === 'host-resign'
-            ? mpSync.matchState.host.displayName
-            : mpSync.matchState.guest?.displayName ?? 'Guest';
-        const subline =
-          mpEndOutcome === 'host-resign' || mpEndOutcome === 'guest-resign'
-            ? resignCause === 'timeout'
-              ? `${loserName} ran out of time.`
-              : resignCause === 'resign'
-                ? `${loserName} resigned.`
-                : resignCause === 'inactive'
-                  ? `${loserName} left the game.`
-                  : `${loserName} resigned or left the game.`
-            : mpEndOutcome === 'draw'
-              ? endReason === 'agreement'
-                ? 'Draw by agreement.'
-                : 'Match drawn.'
-              : `${mpEndOutcome === 'white-win' ? 'White' : 'Black'} wins by checkmate.`;
-        function dismiss() {
-          busy.navigate('Back to the board', () => {
-            setMpEndOutcome(null);
-            setActiveMatch(null);
-            setOpponentMode('ai');
-            setView('game');
-          });
-        }
-        function backToLobby() {
-          busy.navigate('Opening the lobby', () => {
-            setMobilePanel('none');
-            setMpEndOutcome(null);
-            setActiveMatch(null);
-            mpSavedGameIdRef.current = null;
-            mpWroteOutcomeRef.current = null;
-            setView('friend-lobby');
-          });
-        }
-        function reviewMatch() {
-          if (!mpSync) return;
-          // Snapshot the match log so leaving the live match doesn't pull
-          // the data out from under the review screen. classifyAsync will
-          // populate per-move analysis on the fly inside GameReview.
-          // Snapshot NOW, before the deferred switch: the live match is
-          // torn down inside it.
-          const snapshot = deriveMpLog(mpSync.matchState);
-          const meta = {
-            playerName: displayName ?? 'You',
-            opponentName: mpSync.opponentDisplayName,
-            outcome: myView,
-          };
-          busy.navigate('Opening review', () => {
-            setActiveReviewLog(snapshot);
-            setActiveReviewMeta(meta);
-            setMpEndOutcome(null);
-            setActiveMatch(null);
-            setView('review');
-          });
-        }
-        return (
-          <div className="mp-completion-backdrop" onClick={dismiss}>
-            <div
-              className="mp-completion-dialog"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h2 className="mp-completion-title">Match complete</h2>
-              <p className="mp-completion-headline">{headline}</p>
-              <p className="mp-completion-subline">{subline}</p>
-              <div className="mp-completion-actions">
-                <button
-                  type="button"
-                  className="mp-btn mp-btn-primary"
-                  onClick={reviewMatch}
-                >
-                  <Icon icon={BarChart3} size="md" aria-hidden /> Review this game
-                </button>
-                <button
-                  type="button"
-                  className="mp-btn mp-btn-secondary"
-                  onClick={dismiss}
-                >
-                  Back to AI
-                </button>
-                <button
-                  type="button"
-                  className="mp-btn mp-btn-secondary"
-                  onClick={backToLobby}
-                >
-                  Find opponent
-                </button>
-              </div>
-              <p className="mp-completion-footnote">
-                Online games don&apos;t affect leaderboard points.
-              </p>
-            </div>
-          </div>
-        );
-      })()}
+      {isMultiplayer && mpSync && mpEndOutcome && !endgameSceneActive && (
+        <MatchCompleteDialog
+          mpSync={mpSync}
+          mpEndOutcome={mpEndOutcome}
+          selfResigned={mpSelfResignedRef.current === mpSync.matchState.code}
+          displayName={displayName}
+          setMpEndOutcome={setMpEndOutcome}
+          setActiveMatch={setActiveMatch}
+          setOpponentMode={setOpponentMode}
+          setView={setView}
+          setMobilePanel={setMobilePanel}
+          mpSavedGameIdRef={mpSavedGameIdRef}
+          mpWroteOutcomeRef={mpWroteOutcomeRef}
+          setActiveReviewLog={setActiveReviewLog}
+          setActiveReviewMeta={setActiveReviewMeta}
+        />
+      )}
 
       {isLocalMode && gameStatus !== 'active' && !localGameOverDismissed && !endgameSceneActive && log.moves.length > 0 && (
         <LocalGameOver
