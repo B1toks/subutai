@@ -46,6 +46,7 @@ import { AnalysisPanel } from './features/game/AnalysisPanel';
 import { ReplayDialog } from './memory/ReplayDialog';
 import { LocalGameOver } from './features/local/LocalGameOver';
 import { PromotionDialog } from './features/game/PromotionDialog';
+import { MaterialScore } from './features/game/MaterialScore';
 import { Tooltip } from './components/Tooltip';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -386,7 +387,6 @@ function App() {
   // <App/>, so it exists on every screen, not only the board.
   const beginBusy = useCallback((label: string) => busy.begin(label), []);
 
-  const [showMaterialPopup, setShowMaterialPopup] = useState(false);
   const [copied, setCopied] = useState(false);
   // Sprint 3.7 (rev 2) — Threat / Support toggles restored after the
   // 3.6 hover-insight experiment didn't stick. Manual toggles read
@@ -3573,58 +3573,7 @@ function App() {
             )}
           </button>
         </Tooltip>
-        <div
-          className="material-score-wrap"
-          onMouseEnter={() => setShowMaterialPopup(true)}
-          onMouseLeave={() => setShowMaterialPopup(false)}
-        >
-          <span
-            className={`material-score ${materialScore > 0 ? 'positive' : materialScore < 0 ? 'negative' : 'zero'}`}
-          >
-            {materialScore > 0 ? '+' : ''}
-            {(materialScore / 100).toFixed(1)}
-          </span>
-          {showMaterialPopup && (
-            <div className="material-score-popup" role="tooltip">
-              <div className="material-captured-section">
-                <div className="material-captured-label">Captured by White</div>
-                {materialBreakdown.capturedByWhite.length === 0 ? (
-                  <div className="material-captured-list">—</div>
-                ) : (
-                  <div className="material-captured-list">
-                    {materialBreakdown.capturedByWhite
-                      .map(({ type, count, value }) => {
-                        const label = type === 'knight' ? 'N' : type[0].toUpperCase();
-                        return `${label}×${count} (${(value / 100).toFixed(1)})`;
-                      })
-                      .join(', ')}
-                    <span className="material-captured-total">
-                      {' → '}{(materialBreakdown.capturedByWhiteTotal / 100).toFixed(1)}
-                    </span>
-                  </div>
-                )}
-              </div>
-              <div className="material-captured-section">
-                <div className="material-captured-label">Captured by Black</div>
-                {materialBreakdown.capturedByBlack.length === 0 ? (
-                  <div className="material-captured-list">—</div>
-                ) : (
-                  <div className="material-captured-list">
-                    {materialBreakdown.capturedByBlack
-                      .map(({ type, count, value }) => {
-                        const label = type === 'knight' ? 'N' : type[0].toUpperCase();
-                        return `${label}×${count} (${(value / 100).toFixed(1)})`;
-                      })
-                      .join(', ')}
-                    <span className="material-captured-total">
-                      {' → '}{(materialBreakdown.capturedByBlackTotal / 100).toFixed(1)}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+        <MaterialScore materialScore={materialScore} materialBreakdown={materialBreakdown} />
       </div>
 
       <div className="position-label-wrap">
