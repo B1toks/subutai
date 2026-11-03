@@ -45,6 +45,7 @@ import { MovesPanel } from './features/game/MovesPanel';
 import { AnalysisPanel } from './features/game/AnalysisPanel';
 import { ReplayDialog } from './memory/ReplayDialog';
 import { LocalGameOver } from './features/local/LocalGameOver';
+import { PromotionDialog } from './features/game/PromotionDialog';
 import { Tooltip } from './components/Tooltip';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -3313,30 +3314,11 @@ function App() {
           the layout past the board's frame. */}
 
       {pendingPromotion && (
-        <div className="promotion-backdrop" onClick={cancelPromotion}>
-          <div className="promotion-dialog" onClick={(e) => e.stopPropagation()}>
-            <div className="promotion-title">Promote pawn to:</div>
-            <div className="promotion-options">
-              {(['queen', 'rook', 'bishop', 'knight'] as const).map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  className="promotion-option"
-                  onClick={() => handlePromotion(type)}
-                  title={type}
-                >
-                  {/* DEF-12: the promoting side owns the pawn on the last
-                      rank = the side to move while the dialog is open. The
-                      old code hardcoded white, so Black's picker showed white
-                      glyphs (cosmetic; the committed piece was always right). */}
-                  <span className={`piece piece-${state.sideToMove}`}>
-                    {glyphForPiece(state.sideToMove, type)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+        <PromotionDialog
+          isMultiplayer={isMultiplayer}
+          handlePromotion={handlePromotion}
+          cancelPromotion={cancelPromotion}
+        />
       )}
 
       {gameOverMessage && (
