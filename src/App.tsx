@@ -41,6 +41,8 @@ import { MatchBanners } from './features/online/MatchBanners';
 import { StatusBar } from './app/StatusBar';
 import { AutoBoard } from './features/autoplay/AutoBoard';
 import { GameClocks } from './features/game/GameClocks';
+import { MovesPanel } from './features/game/MovesPanel';
+import { AnalysisPanel } from './features/game/AnalysisPanel';
 import { Tooltip } from './components/Tooltip';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -3933,85 +3935,28 @@ function App() {
           )}
         </section>
 
-        <section className="sidebar-panel sidebar-moves">
-          <h2 className="sidebar-panel-title">
-            Moves ({Math.ceil(log.moves.length / 2)})
-          </h2>
-          {log.moves.length === 0 ? (
-            <div className="move-log-empty">No moves yet.</div>
-          ) : (
-            <pre ref={moveLogScrollRef} className="move-log-text">
-              {notationString}
-            </pre>
-          )}
-          <button
-            type="button"
-            className="copy-btn"
-            onClick={copyNotation}
-            disabled={log.moves.length === 0}
-          >
-            {copied ? 'Copied!' : 'Copy to clipboard'}
-          </button>
-        </section>
+        <MovesPanel
+          isMultiplayer={isMultiplayer}
+          notationString={notationString}
+          copyNotation={copyNotation}
+          copied={copied}
+          logRef={moveLogScrollRef}
+        />
 
-        <section className="sidebar-panel sidebar-analysis" data-tour="analysis">
-          <h2 className="sidebar-panel-title">Analysis</h2>
-          {(() => {
-            if (searchMateInPlies != null) {
-              const movesToMate = Math.ceil(Math.abs(searchMateInPlies) / 2);
-              const fromMy =
-                myColor === 'white' ? searchMateInPlies : -searchMateInPlies;
-              const cls = fromMy > 0 ? 'positive' : 'negative';
-              return (
-                <div className={`analysis-eval ${cls}`}>
-                  {fromMy > 0 ? '+' : '-'}M{movesToMate}
-                </div>
-              );
-            }
-            if (!isMultiplayer && searchEvalFromWhite === null) {
-              return <div className="analysis-eval">…</div>;
-            }
-            const cp = myPerspectiveEval;
-            const cls = cp > 30 ? 'positive' : cp < -30 ? 'negative' : '';
-            return (
-              <div className={`analysis-eval ${cls}`}>
-                {cp >= 0 ? '+' : ''}
-                {(cp / 100).toFixed(2)}
-              </div>
-            );
-          })()}
-          {log.moves.length > 0 && (
-            <div className="analysis-last">
-              Last move:&nbsp;
-              <span style={{ fontFamily: 'var(--font-mono, ui-monospace, monospace)' }}>
-                {log.moves[log.moves.length - 1]?.san ??
-                  `${log.moves[log.moves.length - 1]?.move.from ?? ''}→${log.moves[log.moves.length - 1]?.move.to ?? ''}`}
-              </span>
-            </div>
-          )}
-          {/* Sprint 3.4.1 — Review CTA moved out of the board-actions
-              row into the Analysis panel, where it reads as the natural
-              next step after viewing the eval. */}
-          {/* S2.1 — mid-match the local `log` belongs to the previous
-              single-player game, so Review here would open the wrong
-              game. Finished matches review via the end-of-match dialog. */}
-          <button
-            type="button"
-            className="panel-action-btn"
-            onClick={() =>
-              busy.navigate('Opening review', () => {
-                // fix/v1.1.4 — the drawer would still be open on the way back.
-                setMobilePanel('none');
-                setView('review');
-              })
-            }
-            disabled={log.moves.length === 0 || isMultiplayer}
-            title={isMultiplayer ? 'Review opens from the end-of-match screen' : undefined}
-          >
-            <Icon icon={BarChart3} size="md" aria-hidden />
-            Review {isMultiplayer ? '(after the match)' : log.moves.length > 0 ? 'this game' : '(no moves yet)'}
-          </button>
-        </section>
+        <AnalysisPanel
+          isMultiplayer={isMultiplayer}
+          myColor={myColor}
+          searchMateInPlies={searchMateInPlies}
+          searchEvalFromWhite={searchEvalFromWhite}
+          myPerspectiveEval={myPerspectiveEval}
+          onReview={() =>
+            busy.navigate('Opening review', () => {
+              // fix/v1.1.4 — the drawer would still be open on the way back.
+              setMobilePanel('none');
+              setView('review');
+            })
+          }
+        />
       </aside>
       </div>
 
