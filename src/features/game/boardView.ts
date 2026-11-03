@@ -48,3 +48,7 @@ export const rouletteActionsLeftOf = (isMultiplayer: boolean) => (s: SessionStat
 
 export const usedRouletteSlotsOf = (isMultiplayer: boolean) => (s: SessionState): number[] =>
   (isMultiplayer && s.online?.game ? s.online.game.used : s.roulette.bag?.used ?? NO_SLOTS) as number[];
+
+/** The first spin of the game is the player's click; later ones are auto. */
+export const firstRouletteSpinDoneOf = (isMultiplayer: boolean) => (s: SessionState): boolean =>
+  isMultiplayer && s.online?.game ? s.online.game.firstSpinDone : s.roulette.firstSpinDone;
