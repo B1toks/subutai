@@ -43,6 +43,7 @@ import { AutoBoard } from './features/autoplay/AutoBoard';
 import { GameClocks } from './features/game/GameClocks';
 import { MovesPanel } from './features/game/MovesPanel';
 import { AnalysisPanel } from './features/game/AnalysisPanel';
+import { ReplayDialog } from './memory/ReplayDialog';
 import { Tooltip } from './components/Tooltip';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -3961,36 +3962,13 @@ function App() {
       </div>
 
       {showReplayDialog && (
-        <div className="help-backdrop" onClick={() => setShowReplayDialog(false)}>
-          <div className="help-dialog replay-dialog" onClick={(e) => e.stopPropagation()}>
-            <h2>Replay from log</h2>
-            <p>Paste a move log in the same format as “Copy to clipboard”.</p>
-            <textarea
-              className="replay-textarea"
-              value={replayText}
-              onChange={(e) => setReplayText(e.target.value)}
-              placeholder='[Chess960 "RQKRNBBN"]\n[Seed "123"]\n\n1. e2→e4  e7→e5\n2. A→B  g8→f6\n…'
-              rows={10}
-              aria-label="Move log to replay"
-              spellCheck={false}
-              autoComplete="off"
-              autoCapitalize="off"
-            />
-            {replayError && <div className="replay-error">{replayError}</div>}
-            <div className="replay-actions">
-              <button type="button" className="help-close-btn" onClick={importReplayFromNotation}>
-                Load replay
-              </button>
-              <button
-                type="button"
-                className="help-close-btn"
-                onClick={() => setShowReplayDialog(false)}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
+        <ReplayDialog
+          replayText={replayText}
+          setReplayText={setReplayText}
+          replayError={replayError}
+          importReplayFromNotation={importReplayFromNotation}
+          setShowReplayDialog={setShowReplayDialog}
+        />
       )}
 
       <StatusBar
