@@ -41,6 +41,7 @@ import { ScreenFlash } from './features/game/ScreenFlash';
 import { WatchBanner } from './features/review/WatchBanner';
 import { MatchBanners } from './features/online/MatchBanners';
 import { StatusBar } from './app/StatusBar';
+import { AutoBoard } from './features/autoplay/AutoBoard';
 import { Tooltip } from './components/Tooltip';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -2107,55 +2108,16 @@ function App() {
         : null;
     const currentFullMoves = Math.floor(log.moves.length / 2);
     const autoBoard = (
-      <div
-        className={`board${recentRotation ? ' is-rotated' : ''}`}
-        style={{ width: boardSize, height: boardSize }}
-      >
-        {squares.map((sq) => {
-          const piece = state.pieces[sq as SquareId];
-          const isDark =
-            ((sq.charCodeAt(0) - 'a'.charCodeAt(0)) +
-              (Number(sq[1]) - 1)) %
-              2 ===
-            1;
-          const isLastFrom = lastMove?.from === sq;
-          const isLastTo = lastMove?.to === sq;
-          const { cx, cy, angle } = tilePixelCenter(
-            sq as SquareId,
-            displayTopology,
-            layout,
-          );
-          const tx = cx - tileBase / 2;
-          const ty = cy - tileBase / 2;
-          return (
-            <div
-              key={sq}
-              className={[
-                'tile',
-                isDark ? 'dark' : 'light',
-                isLastFrom ? 'last-from' : '',
-                isLastTo ? 'last-to' : '',
-              ]
-                .filter(Boolean)
-                .join(' ')}
-              style={{
-                width: tileBase,
-                height: tileBase,
-                transform: `translate(${tx}px, ${ty}px) rotate(${angle}deg) scale(${scale})`,
-              }}
-            >
-              {piece && (
-                <span
-                  className={`piece piece-${piece.color}`}
-                  style={angle ? { transform: `rotate(${-angle}deg)` } : undefined}
-                >
-                  {glyphForPiece(piece.color, piece.type)}
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      <AutoBoard
+        isMultiplayer={isMultiplayer}
+        squares={squares}
+        recentRotation={recentRotation}
+        boardSize={boardSize}
+        displayTopology={displayTopology}
+        layout={layout}
+        tileBase={tileBase}
+        scale={scale}
+      />
     );
     return (
       <div className="app-shell auto-shell-root" ref={shellRef}>

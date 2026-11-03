@@ -1,6 +1,6 @@
 import type { BoardState } from '../../engine';
 import type { GameLog } from '../../recording/log';
-import type { SessionState } from '../../session/types';
+import type { LastMove, SessionState } from '../../session/types';
 
 /**
  * The game on the board as App reads it (App.tsx: `online`, `state`,
@@ -15,3 +15,6 @@ export const boardOf = (isMultiplayer: boolean) => (s: SessionState): BoardState
 
 export const logOf = (isMultiplayer: boolean) => (s: SessionState): GameLog =>
   isMultiplayer && s.online?.game ? s.online.game.log : s.log;
+
+export const lastMoveOf = (isMultiplayer: boolean) => (s: SessionState): LastMove | null =>
+  isMultiplayer && s.online?.game ? s.online.game.lastMove : s.lastMove;
