@@ -45,6 +45,7 @@ import { NO_SLOTS } from './features/game/boardView';
 import { GameSetupPanel } from './features/game/GameSetupPanel';
 import { PositionCodeRow } from './features/game/PositionCodeRow';
 import { AppHeader } from './app/AppHeader';
+import { LocalTopActions } from './features/local/LocalTopActions';
 import { Tooltip } from './components/Tooltip';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -2324,84 +2325,21 @@ function App() {
         (allowedPieceTypes || isRouletteSpinning) && (
         <RoulettePanel isMultiplayer={isMultiplayer} mpSync={mpSync} />
       )}
-      {/* Sprint 4.2 — per-side action rows in local 2P mode. Top row
-          mirrors the bottom one but is visually flipped 180° so the
-          opposite-sitting player sees it upright. Buttons mirror the
-          subset of the main action row that matters during a hot-seat
-          game (resign / draw offer / preview rotation / commit rotation).
-          A draw offer made to black takes the place of black's turn chip
-          and Offer button until black answers it or a move retires it;
-          the rest of the row stays, so black can still resign, or rotate
-          if it is black's turn. */}
+      {/* Sprint 4.2 — black's hot-seat row (features/local/LocalTopActions). */}
       {isLocalMode && gameStatus === 'active' && (
-        <div
-          className="local-actions local-actions-top"
-          aria-hidden={state.sideToMove !== 'black' && !localBlackAnswers}
-        >
-          {localBlackAnswers ? (
-            <DrawOfferPrompt
-              text="White offers a draw"
-              onAnswer={(accept) => answerLocalDraw('black', accept)}
-            />
-          ) : (
-            <LocalTurnSlot side="black" toMove={state.sideToMove} />
-          )}
-          <button
-            type="button"
-            className="action-btn resign-btn"
-            onClick={() => requestResign('black')}
-            disabled={log.moves.length === 0}
-            aria-label="Resign (black)"
-            title="Resign"
-          >
-            <Icon icon={Flag} size="md" aria-hidden />
-          </button>
-          {!localBlackAnswers && (
-            <button
-              type="button"
-              className={`action-btn draw-offer-btn${localBlackBlock === 'offered' ? ' is-pending' : ''}`}
-              onClick={() => offerLocalDraw('black')}
-              disabled={localBlackBlock !== null}
-              aria-label="Offer a draw (black)"
-              title={drawOfferTitle(localBlackBlock, 'White')}
-            >
-              <Icon icon={Handshake} size="md" aria-hidden />
-            </button>
-          )}
-          <button
-            type="button"
-            className={`action-btn preview-btn${previewLocked ? ' active' : ''}`}
-            onClick={() => {
-              if (previewLocked) {
-                setPreviewLocked(false);
-                setLockedPreviewTopology(null);
-              } else {
-                setPreviewLocked(true);
-                setLockedPreviewTopology(state.topologyState === 'A' ? 'B' : 'A');
-              }
-            }}
-            aria-label={previewLocked ? 'Unlock rotation preview' : 'Preview rotation'}
-            title={previewLocked ? 'Unlock preview' : 'Preview rotation'}
-          >
-            <Icon icon={Eye} size="md" aria-hidden />
-          </button>
-          <button
-            type="button"
-            className={`rotate-btn-icon${encourageRotate && canRotate && state.sideToMove === 'black' ? ' is-hint-pulsing' : ''}`}
-            onClick={handleRotate}
-            // Black's own move only: handleRotate rotates for the side to
-            // move, and this row is lit on white's turn too while black
-            // has a draw offer to answer.
-            disabled={!canRotate || state.sideToMove !== 'black'}
-            aria-label={`Rotate ${state.topologyState} to ${state.topologyState === 'A' ? 'B' : 'A'}`}
-            title="Rotate board"
-          >
-            <Icon icon={RotateCw} size="md" aria-hidden />
-            <span className="rotate-label-text" aria-hidden>
-              {state.topologyState}{' → '}{state.topologyState === 'A' ? 'B' : 'A'}
-            </span>
-          </button>
-        </div>
+        <LocalTopActions
+          localBlackAnswers={localBlackAnswers}
+          localBlackBlock={localBlackBlock}
+          answerLocalDraw={answerLocalDraw}
+          requestResign={requestResign}
+          offerLocalDraw={offerLocalDraw}
+          previewLocked={previewLocked}
+          setPreviewLocked={setPreviewLocked}
+          setLockedPreviewTopology={setLockedPreviewTopology}
+          encourageRotate={encourageRotate}
+          canRotate={canRotate}
+          handleRotate={handleRotate}
+        />
       )}
       <div className="board-with-eval">
         <EvalBar
