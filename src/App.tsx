@@ -44,6 +44,7 @@ import { GameClocks } from './features/game/GameClocks';
 import { MovesPanel } from './features/game/MovesPanel';
 import { AnalysisPanel } from './features/game/AnalysisPanel';
 import { ReplayDialog } from './memory/ReplayDialog';
+import { LocalGameOver } from './features/local/LocalGameOver';
 import { Tooltip } from './components/Tooltip';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -4197,42 +4198,12 @@ function App() {
         );
       })()}
 
-      {/* R13/BUG-5 kept local hot-seat OUT of finishGame/GameSummary on
-          purpose (a 2-humans-one-device game has no "human" to attribute
-          a personal-best/leaderboard entry to) - but that meant its ending
-          was just a text banner with no modal and no explicit "new game"
-          prompt, unlike every other mode. Reuses the MP completion dialog's
-          styling (mp-completion-*) - same shape, no scoring, just the
-          outcome + a clear way to start again. */}
       {isLocalMode && gameStatus !== 'active' && !localGameOverDismissed && !endgameSceneActive && log.moves.length > 0 && (
-        <div
-          className="mp-completion-backdrop"
-          onClick={() => setLocalGameOverDismissed(true)}
-        >
-          <div className="mp-completion-dialog" onClick={(e) => e.stopPropagation()}>
-            <h2 className="mp-completion-title">Game over</h2>
-            <p className="mp-completion-headline">{gameOverMessage}</p>
-            <div className="mp-completion-actions">
-              <button
-                type="button"
-                className="mp-btn mp-btn-primary"
-                onClick={() => {
-                  setLocalGameOverDismissed(true);
-                  startNewGame();
-                }}
-              >
-                Start new game
-              </button>
-              <button
-                type="button"
-                className="mp-btn mp-btn-secondary"
-                onClick={() => setLocalGameOverDismissed(true)}
-              >
-                Keep viewing board
-              </button>
-            </div>
-          </div>
-        </div>
+        <LocalGameOver
+          gameOverMessage={gameOverMessage}
+          setLocalGameOverDismissed={setLocalGameOverDismissed}
+          startNewGame={startNewGame}
+        />
       )}
 
       {summaryOpen && lastGamePoints && gameOutcome && !endgameSceneActive && (
