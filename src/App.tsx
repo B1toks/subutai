@@ -37,6 +37,7 @@ import { LocalTurnSlot } from './features/local/LocalTurnSlot';
 import { DrawOfferPrompt } from './features/game/DrawOfferPrompt';
 import { EvalBar } from './features/game/EvalBar';
 import { HelpDialog } from './app/HelpDialog';
+import { ScreenFlash } from './features/game/ScreenFlash';
 import { Tooltip } from './components/Tooltip';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -61,7 +62,6 @@ import {
   Menu,
   RotateCw,
   SlidersHorizontal,
-  Sparkles,
   Trophy,
   Cast,
   Upload,
@@ -2308,30 +2308,7 @@ function App() {
         <BackgroundWaveGrid />
       </Suspense>
     )}
-    {flashEffect && (
-      <div
-        className={`screen-flash-effect screen-flash-${flashEffect}`}
-        aria-hidden
-      />
-    )}
-    {flashEffect === 'brilliant' && (
-      <div className="brilliant-sparkles" aria-hidden>
-        {sparklePositions.map((s, i) => (
-          <span
-            key={i}
-            className="brilliant-sparkle"
-            style={{
-              left: `${s.x}vw`,
-              top: `${s.y}vh`,
-              animationDelay: `${s.delay}ms`,
-              ['--sparkle-rot' as string]: `${s.rot}deg`,
-            } as React.CSSProperties}
-          >
-            <Icon icon={Sparkles} size="md" aria-hidden />
-          </span>
-        ))}
-      </div>
-    )}
+    <ScreenFlash flashEffect={flashEffect} sparklePositions={sparklePositions} />
     <div
       className="app-root"
       data-mobile-panel={mobilePanel}
