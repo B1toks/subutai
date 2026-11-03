@@ -47,6 +47,8 @@ import { ReplayDialog } from './memory/ReplayDialog';
 import { LocalGameOver } from './features/local/LocalGameOver';
 import { PromotionDialog } from './features/game/PromotionDialog';
 import { MaterialScore } from './features/game/MaterialScore';
+import { RoulettePanel } from './features/game/RoulettePanel';
+import { NO_SLOTS } from './features/game/boardView';
 import { Tooltip } from './components/Tooltip';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -108,11 +110,7 @@ import {
   type DrawTable,
 } from './utils/drawOffer';
 import { HUMAN_COLOR, type GameMode, type GameStatus } from './shared/game';
-import {
-  ROULETTE_MAX_ACTIONS,
-  ROULETTE_SLOT_COUNT,
-  isPieceMovableInRoulette,
-} from './features/game/roulette';
+import { isPieceMovableInRoulette } from './features/game/roulette';
 import {
   backRankString,
   bumpEvalForMove,
@@ -210,10 +208,6 @@ const BackgroundWaveGrid = lazy(() =>
 const EndgameScene = lazy(() =>
   importEndgameScene().then((m) => ({ default: m.EndgameScene })),
 );
-
-/** The roulette turn's used slots when no bag is spun: one array, so a
- *  hook that depends on it sees no change while nothing changes. */
-const NO_SLOTS: number[] = [];
 
 // M.14 — beat-mode glide length. MUST match the .piece-slide-in CSS
 // animation duration so the slide lands exactly on the beat.
@@ -2517,70 +2511,7 @@ function App() {
         gameStatus === 'active' &&
         !watchingGame &&
         (allowedPieceTypes || isRouletteSpinning) && (
-        <div className="roulette-panel">
-          <div className="roulette-display">
-            {rouletteReveal ? (
-              rouletteReveal.slots.map((t, i) => {
-                const owner: 'white' | 'black' = isMultiplayer && mpSync
-                  ? (mpSync.isMyTurn
-                      ? mpSync.myColor
-                      : (mpSync.myColor === 'white' ? 'black' : 'white'))
-                  : state.sideToMove;
-                return i < rouletteReveal.shown ? (
-                  <span key={i} className={`roulette-face roulette-face-${t} roulette-face-landed`}>
-                    <span className={`piece piece-${owner}`}>{glyphForPiece(owner, t)}</span>
-                  </span>
-                ) : (
-                  <span key={i} className="roulette-face roulette-face-rolling">?</span>
-                );
-              })
-            ) : allowedPieceTypes ? (
-              allowedPieceTypes.map((t, i) => {
-                const isUsed = usedRouletteSlots.includes(i);
-                // Sprint 4.0 — render the piece in the *turn-owner's*
-                // colour, not in state.sideToMove. During action 2 of
-                // an MP roulette turn the local engine flips
-                // sideToMove only on the active client (Q.D.3 override
-                // in the `state` IIFE above); on the opposite client
-                // sideToMove still reads as the just-flipped value,
-                // so the bag visualised in the wrong colour. Deriving
-                // owner from mpSync.isMyTurn + myColor keeps both
-                // clients in sync.
-                const rouletteOwner: 'white' | 'black' = isMultiplayer && mpSync
-                  ? (mpSync.isMyTurn
-                      ? mpSync.myColor
-                      : (mpSync.myColor === 'white' ? 'black' : 'white'))
-                  : state.sideToMove;
-                return (
-                  <span
-                    key={i}
-                    className={`roulette-face roulette-face-${t}${isUsed ? ' slot-used' : ''}`}
-                  >
-                    <span className={`piece piece-${rouletteOwner}`}>
-                      {glyphForPiece(rouletteOwner, t)}
-                    </span>
-                  </span>
-                );
-              })
-            ) : (
-              Array.from({ length: ROULETTE_SLOT_COUNT }, (_, i) => (
-                <span key={i} className="roulette-face roulette-face-rolling">?</span>
-              ))
-            )}
-          </div>
-
-          {allowedPieceTypes && !rouletteReveal && (
-            <div className="roulette-actions" aria-label="Actions remaining">
-              <span className="roulette-actions-label">Actions:</span>
-              {Array.from({ length: ROULETTE_MAX_ACTIONS }, (_, i) => (
-                <span
-                  key={i}
-                  className={`roulette-action-dot${i < rouletteActionsLeft ? ' active' : ' spent'}`}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+        <RoulettePanel isMultiplayer={isMultiplayer} mpSync={mpSync} />
       )}
       {/* Sprint 4.2 — per-side action rows in local 2P mode. Top row
           mirrors the bottom one but is visually flipped 180° so the
