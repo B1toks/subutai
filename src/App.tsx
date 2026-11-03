@@ -19,9 +19,7 @@ import { useToast } from './components/Toast';
 import type { EndgameKind, KingOrigin, VictoryTheme } from './components/EndgameScene';
 import { GameSummary } from './components/GameSummary';
 import { ConfirmDialog } from './components/ConfirmDialog';
-import { ClockFace } from './components/ClockFace';
 import { STREAMING_UI } from './featureFlags';
-import { serverNow } from './firebase/serverClock';
 import { FeedbackModal } from './components/FeedbackModal';
 import { MilestoneModal } from './components/MilestoneModal';
 import { AutoPlayView } from './components/AutoPlayView';
@@ -42,6 +40,7 @@ import { WatchBanner } from './features/review/WatchBanner';
 import { MatchBanners } from './features/online/MatchBanners';
 import { StatusBar } from './app/StatusBar';
 import { AutoBoard } from './features/autoplay/AutoBoard';
+import { GameClocks } from './features/game/GameClocks';
 import { Tooltip } from './components/Tooltip';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -418,10 +417,6 @@ function App() {
   // The streaming integrations (music, Twitch): null until loaded, and
   // always without STREAMING_UI.
   const live = useStreaming();
-  // S2.5 — per-side elapsed clocks: the side to move's clock accumulates
-  // wall time while the game is live (useGameClocks ticks the session).
-  // A new game log starts them from zero.
-  const clockMs = sess.clock;
   // Stitch layout: optional solo time control in seconds.
   // null = free play (chips keep showing elapsed). With a value the chips
   // show remaining = tc - elapsed, floored at 0. Display-only in solo.
@@ -2507,32 +2502,7 @@ function App() {
           how a DGT reads in the hall — the housing is the analogue part,
           not the numbers. */}
       {gameStatus === 'active' && !watchingGame && (
-        <div className="tournament-clock" aria-label="Game clocks">
-          {(['white', 'black'] as const).map((side) => {
-            const soloCountdown = mpClock === null && soloTcSec !== null;
-            // V1 — the running half is lit in the theme accent when it is
-            // YOUR clock and in the opponent accent when it is not, so the
-            // two are never confusable at a glance. Online it follows the
-            // colour you were actually dealt; in hot-seat nobody is "you",
-            // so the two seats simply get the two colours.
-            const mine = side === myColor;
-            return (
-              <ClockFace
-                key={side}
-                side={side}
-                running={state.sideToMove === side}
-                mine={mine}
-                countdown={mpClock ? mpClock.countdown : soloCountdown}
-                ms={
-                  soloCountdown
-                    ? Math.max(0, soloTcSec * 1000 - clockMs[side])
-                    : clockMs[side]
-                }
-                mp={mpClock ? { clock: mpClock, now: serverNow } : null}
-              />
-            );
-          })}
-        </div>
+        <GameClocks isMultiplayer={isMultiplayer} mpClock={mpClock} myColor={myColor} />
       )}
       {/* Sprint 2.7.1 — the roulette panel now only renders when there
           is actual slot or spinning state to show. Pre-spin attention
