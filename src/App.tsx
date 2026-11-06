@@ -36,6 +36,8 @@ import { LocalGameOver } from './features/local/LocalGameOver';
 import { PromotionDialog } from './features/game/PromotionDialog';
 import { RoulettePanel } from './features/game/RoulettePanel';
 import { NO_SLOTS } from './features/game/boardView';
+import { nowMs } from './utils/nowMs';
+import { newLiveSnapshotId } from './memory/liveSnapshotId';
 import { GameSetupPanel } from './features/game/GameSetupPanel';
 import { PositionCodeRow } from './features/game/PositionCodeRow';
 import { AppHeader } from './app/AppHeader';
@@ -185,7 +187,10 @@ function App() {
   const [autoStopped, setAutoStopped] = useState(false);
   const [autoStoppedReason, setAutoStoppedReason] = useState<string | null>(null);
   const autoNextGameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const autoLastMoveAtRef = useRef<number>(Date.now());
+  // When App mounted: what the timers below start from (a lazy state, so
+  // the clock is read once, not on every render).
+  const [mountedAt] = useState(() => Date.now());
+  const autoLastMoveAtRef = useRef<number>(mountedAt);
   // Each completed game-id is processed exactly once by the auto-save effect.
   const autoSavedLogIdRef = useRef<string | null>(null);
 
@@ -233,7 +238,7 @@ function App() {
   // is a UX nag that surfaces a pulsing banner when the player's been
   // idle on their own turn for 20s. Resets on any pointer / key activity.
   const [showAfkAlert, setShowAfkAlert] = useState(false);
-  const lastActivityRef = useRef<number>(Date.now());
+  const lastActivityRef = useRef<number>(mountedAt);
   const completedLogIdRef = useRef<string | null>(null);
   // QA-02 — the log id of a game that came from Load replay (or a Memory
   // entry marked imported). Such a game is never ranked.
@@ -465,11 +470,12 @@ function App() {
   // Stage P addendum 7: wall-clock when the current game began. Used to
   // compute durationMs on save. Set in startNewGame (and on initial mount
   // for the first game).
-  const gameStartedAtRef = useRef<number>(Date.now());
+  const gameStartedAtRef = useRef<number>(mountedAt);
   const savedForLogIdRef = useRef<string | null>(null);
-  const liveSavedGameIdRef = useRef<string>(
-    `live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-  );
+  // The live snapshot's id (Memory's autosave): a lazy state, so the
+  // first one is made once, on mount.
+  const [initialLiveSnapshotId] = useState(newLiveSnapshotId);
+  const liveSavedGameIdRef = useRef<string>(initialLiveSnapshotId);
 
   const {
     searchEvalFromWhite,
@@ -556,6 +562,18 @@ function App() {
     liveSavedGameIdRef,
   });
 
+  // Sprint 4.1 — `local` opponent mode means both colours are played
+  // from this device, so the engine should never schedule an AI turn.
+  // Cached here so the AI scheduler, classifier, and downstream UI
+  // can short-circuit on a single flag.
+  // V1 — a replay is nobody's hot-seat game. Without `!watchingGame`, a
+  // replay started while "Local" was selected rendered the mirrored top
+  // controls and flipped the board for "black's turn" in someone else's
+  // game. The opponent choice is kept, so stopping the replay brings the
+  // hot-seat UI straight back.
+  // Declared here, before the completion handler below reads it.
+  const isLocalMode = opponentMode === 'local' && !isMultiplayer && !watchingGame;
+
   // Game-completion pipeline: the session's gameEnd event, handled after the
   // render that shows the ending, computes points, opens the GameSummary
   // modal, and kicks the async Firestore save.
@@ -627,7 +645,7 @@ function App() {
     setLastGameResumed(resumed);
     const points: GamePoints =
       rankedLevel && !imported && !resumed ? computed : { ...computed, counted: false };
-    const durationMs = Date.now() - gameStartedAtRef.current;
+    const durationMs = nowMs() - gameStartedAtRef.current;
     setGameOutcome(outcome);
     setLastGamePoints(points);
     setLastGameDurationMs(durationMs);
@@ -1043,7 +1061,7 @@ function App() {
     }
     const initial = createPositionFromBackRankKey(raw);
     // A new log, named after now; the seed stays (the code names the board).
-    session.dispatch({ type: 'newGame', initial, now: Date.now() });
+    session.dispatch({ type: 'newGame', initial, now: nowMs() });
     setSelected(null);
     setPreviewTopology(null);
     setFormationLocked(true);
@@ -1055,7 +1073,7 @@ function App() {
     resetGameEndState();
 
     // New play session => new live snapshot id.
-    liveSavedGameIdRef.current = `live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    liveSavedGameIdRef.current = newLiveSnapshotId();
   }
 
   function cancelFormationInput() {
@@ -1135,7 +1153,7 @@ function App() {
     // Reset the transposition table so positions from the previous game can't
     // bias the new search. (TT is reused across moves WITHIN one game.)
     clearSearchTable();
-    const newSeed = Date.now();
+    const newSeed = nowMs();
     const initial =
       formationLocked && lockedFormationKey
         ? createPositionFromBackRankKey(lockedFormationKey)
@@ -1148,10 +1166,10 @@ function App() {
     setSearchMateInPlies(null);
     resetGameEndState();
     autoSavedLogIdRef.current = null;
-    autoLastMoveAtRef.current = Date.now();
+    autoLastMoveAtRef.current = nowMs();
 
     // New play session => new live snapshot id.
-    liveSavedGameIdRef.current = `live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    liveSavedGameIdRef.current = newLiveSnapshotId();
   }
 
   /**
@@ -1326,17 +1344,6 @@ function App() {
   // In MP currentPlayer reflects whose turn it is from MY seat: 'human' when
   // I can act, 'ai' otherwise. Keeping the same vocabulary lets the existing
   // canRotate / scheduler / UI-disable code work unchanged.
-  // Sprint 4.1 — `local` opponent mode means both colours are played
-  // from this device, so the engine should never schedule an AI turn.
-  // Cached here so the AI scheduler, classifier, and downstream UI
-  // can short-circuit on a single flag.
-  // V1 — a replay is nobody's hot-seat game. Without `!watchingGame`, a
-  // replay started while "Local" was selected rendered the mirrored top
-  // controls and flipped the board for "black's turn" in someone else's
-  // game. The opponent choice is kept, so stopping the replay brings the
-  // hot-seat UI straight back.
-  const isLocalMode = opponentMode === 'local' && !isMultiplayer && !watchingGame;
-
   // Hot-seat draw offers: what each seat's button says, and whose row the
   // answer prompt replaces while an offer stands. Only while the game
   // runs: an accepted offer is still "standing" on the final ply.
