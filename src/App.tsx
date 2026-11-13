@@ -50,6 +50,7 @@ import { useFormation } from './features/game/useFormation';
 import { useCoachTools } from './features/game/useCoachTools';
 import { useRotate } from './features/game/useRotate';
 import { useReplayImport } from './memory/useReplayImport';
+import { drawRows } from './features/game/drawRows';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import type { GameReviewMeta } from './components/GameReview';
@@ -64,11 +65,6 @@ import { MemoryPanel } from './memory/MemoryPanel';
 // with the replay importer, which checks rotations the same way (QA-02).
 import { busy } from './ui/busy';
 import { streaming, useStreaming } from './integrations';
-import {
-  drawOfferBlock,
-  standingDrawOffer,
-  type DrawOfferBlock,
-} from './utils/drawOffer';
 import { HUMAN_COLOR, type GameMode, type GameStatus } from './shared/game';
 import {
   backRankString,
@@ -1016,53 +1012,17 @@ function App() {
     settleGuessRotate,
   });
 
-  // Hot-seat draw offers: what each seat's button says, and whose row the
-  // answer prompt replaces while an offer stands. Only while the game
-  // runs: an accepted offer is still "standing" on the final ply.
-  const localDrawOpen = isLocalMode && gameStatus === 'active';
-  const localStandingDraw = localDrawOpen
-    ? standingDrawOffer(localDrawTable().offer, log.moves.length)
-    : null;
-  const localWhiteAnswers = localStandingDraw?.by === 'black';
-  const localBlackAnswers = localStandingDraw?.by === 'white';
-  const localWhiteBlock = localDrawOpen ? drawOfferBlock(localDrawTable(), 'white', log.moves.length) : null;
-  const localBlackBlock = localDrawOpen ? drawOfferBlock(localDrawTable(), 'black', log.moves.length) : null;
-
-  // The draw offer of the bottom row: white's seat in hot-seat, my own
-  // seat online (the match doc holds the offer, the hook my lock).
-  const mpDrawOpen =
-    isMultiplayer && !!mpSync && mpSync.matchState.status === 'active' && !mpSync.matchState.outcome;
-  const mpPlies = mpSync?.matchState.log.moves.length ?? 0;
-  const mpStandingDraw = mpDrawOpen ? standingDrawOffer(mpSync!.drawTable.offer, mpPlies) : null;
-  const rowDraw: {
-    open: boolean;
-    block: DrawOfferBlock | null;
-    answers: boolean;
-    opponent: string;
-    busy: boolean;
-    offer: () => void;
-    answer: (accept: boolean) => void;
-  } | null = isLocalMode
-    ? {
-        open: localDrawOpen,
-        block: localWhiteBlock,
-        answers: localWhiteAnswers,
-        opponent: 'Black',
-        busy: false,
-        offer: () => offerLocalDraw('white'),
-        answer: (accept) => answerLocalDraw('white', accept),
-      }
-    : isMultiplayer && mpSync
-      ? {
-          open: mpDrawOpen,
-          block: mpDrawOpen ? drawOfferBlock(mpSync.drawTable, mpSync.myUid, mpPlies) : null,
-          answers: !!mpStandingDraw && mpStandingDraw.by !== mpSync.myUid,
-          opponent: mpSync.opponentDisplayName,
-          busy: mpSync.drawBusy,
-          offer: () => void mpSync.offerDraw(),
-          answer: (accept) => void mpSync.answerDraw(accept),
-        }
-      : null;
+  // Draw offers in each player's row (drawRows): the hot-seat seats', and mine online.
+  const { localBlackAnswers, localBlackBlock, rowDraw } = drawRows({
+    isLocalMode,
+    isMultiplayer,
+    mpSync,
+    gameStatus,
+    log,
+    localDrawTable,
+    offerLocalDraw,
+    answerLocalDraw,
+  });
 
   useSoloFlagFall({
     isAutoMode,

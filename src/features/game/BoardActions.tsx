@@ -5,7 +5,6 @@ import { Tooltip } from '../../components/Tooltip';
 import type { Color, SquareId, TopologyState } from '../../engine';
 import { statusOf } from '../../session/step';
 import { useSession } from '../../session/useSession';
-import type { DrawOfferBlock } from '../../utils/drawOffer';
 import { LocalTurnSlot } from '../local/LocalTurnSlot';
 import type { WatchingGame } from '../review/watching';
 import {
@@ -17,6 +16,7 @@ import {
   modeOf,
 } from './boardView';
 import { DrawOfferPrompt } from './DrawOfferPrompt';
+import type { RowDraw } from './drawRows';
 import { drawOfferTitle } from './drawOfferTitle';
 import type { MaterialBreakdown } from './material';
 import { MaterialScore } from './MaterialScore';
@@ -30,15 +30,7 @@ interface BoardActionsProps {
   currentPlayer: 'human' | 'ai';
   botThinking: boolean;
   /** This row's draw offer: white's in hot-seat, mine online (App). */
-  rowDraw: {
-    open: boolean;
-    block: DrawOfferBlock | null;
-    answers: boolean;
-    opponent: string;
-    busy: boolean;
-    offer: () => void;
-    answer: (accept: boolean) => void;
-  } | null;
+  rowDraw: RowDraw | null;
   guardLeave: (what: string, destroys: boolean, run: () => void) => void;
   startNewGame: () => void;
   formationLocked: boolean;
