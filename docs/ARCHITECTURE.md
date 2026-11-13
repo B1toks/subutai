@@ -17,7 +17,7 @@ Firestore rules are the only trust boundary (see `FIRESTORE-RULES.md`).
 | `src/integrations` | The streaming integrations behind `STREAMING_UI` (`?streaming=1`), loaded only with it and after the first load: `music` (the beat grid and its tempo detection, the mic equalizer, the Spotify playlists), `twitch` (chat, its votes, chat's game). The rest of the app reaches them through `index.ts` only. |
 | `src/memory` | Saved games: storage, notation, replay import, the Memory panel, and the hooks that autosave a game and resume one. |
 | `src/components` | Components that several parts of the app use (Toast, Tooltip, modals, NamePicker, ClockFace, PlayerRow), and the screens that predate the feature folders (GameReview, MusicDock, Leaderboard, FriendLobby, TwitchPanel, StatsPage, ShowcaseView). |
-| `src/app` | The shell: `App.tsx` lives in `src/`, its app-wide hooks here (URL modes, board size and UI scale, phone drawers, welcome and tour, the guards on leaving a game, the room's colours, the adaptive theme), and the styles of the whole page in `src/app/styles`. |
+| `src/app` | The shell: `App.tsx` lives in `src/`, its app-wide hooks here (URL modes, board size and UI scale, phone drawers, welcome and tour, the guards on leaving a game, the room's colours, the adaptive theme, the way back from a screen), the page-wide components (header, status bar, Help, the small dialogs), and the styles of the whole page in `src/app/styles`. |
 | `src/features/<name>` | What `App.tsx` used to hold, one folder per feature: hooks, pure helpers with their tests, and CSS. |
 | `src/shared` | Types and helpers that two or more features use. |
 
@@ -55,6 +55,36 @@ them in deps arrays where the linter asks; it changes nothing at run time.
 Something App declares further down reaches a hook either as a hoisted
 function declaration (`startNewGame`) or, for a state setter declared later
 (`setMobilePanel`), as a small wrapper that is only called from callbacks.
+
+### What is on screen, and what a click does
+
+The game view's markup is components, each a block that stood in App's
+JSX, moved as it was and rendered where it stood: the header
+(`src/app/AppHeader`), the banners, the clocks and the roulette panel, the
+board (`features/game/BoardTiles`, `BoardOverlays`, `BoardCoords`), the
+row under it (`BoardActions`), the right column (`GameSetupPanel`,
+`MovesPanel`, `AnalysisPanel`), the status bar and the dialogs. A
+component reads the game from the session itself, with `useSession` and the
+selectors of `features/game/boardView.ts`, which pick the game App shows
+(an online match's while one is played here, else the solo game); what is
+not in the session (who is to act, App's own state, a hook's values, a
+handler) comes as a prop. None adds an element: the board's tiles and
+overlays are fragments, so `.board` keeps its children and the CSS that
+targets them. The screens' shells (`key={view}`, `shellRef`) and every lazy
+screen with its `Suspense` stay in App.
+
+What a click does is a handler hook: `useBoardInput` (a tile, a promotion,
+right-drag arrows), `useRotate`, `useCoachTools`, `useFormation`,
+`useResignAndDraw`, `useWatching`, `useReplayImport`,
+`useScreenNavigation`. These hold no React hooks, only functions over what
+App passes from its render, so where App calls them changes no effect
+order: App calls each after everything it reads is declared, the ones that
+read late values (`layout`, `canRotate`) just before the view switch.
+Example path, a move on the board: a tile's click in `BoardTiles` calls
+`onSquareClick` from `useBoardInput`, which finds the move among the legal
+ones and acts it into the session (`turns.act`); the session's new state
+re-renders App and every component reading it, `BoardTiles` included, and
+the move's sound and effects follow its events (How data flows).
 
 ## How data flows
 
@@ -245,6 +275,11 @@ scores the calls. The panel only shows it.
   tests. Call the hook from App after everything it reads is declared, and
   return only what the rest of App needs. Its stylesheet goes into the
   `src/App.css` index at the place in the cascade its rules need.
+- Something new on the game screen: a component in the feature's folder,
+  reading the game with `useSession` (`features/game/boardView.ts` for the
+  game on the board) and taking as props only what is not in the session.
+  Its handlers go in the feature's handler hook (or a new one), not inline
+  in App's JSX.
 - A new screen: a component, behind `lazy()` if it is heavy, chosen in
   App's view switch. Anything that must outlive the screen stays in a hook
   called before the switch. A failed chunk load is handled by
