@@ -51,6 +51,7 @@ import { useCoachTools } from './features/game/useCoachTools';
 import { useRotate } from './features/game/useRotate';
 import { useReplayImport } from './memory/useReplayImport';
 import { drawRows } from './features/game/drawRows';
+import { useScreenNavigation } from './app/useScreenNavigation';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import type { GameReviewMeta } from './components/GameReview';
@@ -59,7 +60,6 @@ import { useAuth } from './firebase/useAuth';
 import { computeGamePoints, type GameOutcome, type GamePoints } from './analysis/points';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
-import { unclassifiedMoveIndexes } from './recording/log';
 import { MemoryPanel } from './memory/MemoryPanel';
 // rotateIsLegal (R10) decides whether chat rounds accept "rotate"; it lives
 // with the replay importer, which checks rotations the same way (QA-02).
@@ -1264,6 +1264,24 @@ function App() {
     resetGameEndState,
   });
 
+  // Leaving the review, and a match starting from the lobby (useScreenNavigation).
+  const { backFromReview, startMatchFromLobby } = useScreenNavigation({
+    isMultiplayer,
+    watchingGame,
+    log,
+    activeReviewLog,
+    setActiveReviewLog,
+    setActiveReviewMeta,
+    classifyImportedLog,
+    startNewGame,
+    setActiveMatch,
+    setMobilePanel,
+    setMpEndOutcome,
+    mpSavedGameIdRef,
+    mpWroteOutcomeRef,
+    setView,
+  });
+
   // Load replay: a pasted log becomes the game on the board (useReplayImport).
   const { importReplayFromNotation } = useReplayImport({
     gameMode,
@@ -1415,41 +1433,7 @@ function App() {
           log={activeReviewLog ?? liveReviewLog}
           meta={activeReviewMeta ?? undefined}
           gameId={sharedGameId ?? lastGameId ?? null}
-          onBack={() =>
-            // V1 — leaving the review rebuilds the whole board view in one
-            // commit: the board, 64 tiles, the panels and whatever
-            // analysis was mid-flight. On a long game that is a few
-            // hundred milliseconds during which the tab stops repainting,
-            // which reads as a hang with no explanation. busy.navigate
-            // paints the spinner FIRST and runs the switch after.
-            busy.navigate('Back to the board', () => {
-              setView('game');
-              // F7 — moves of the game on the board that are not classified yet
-              // (the review took the classifier for a while, or dropped some
-              // of its requests when it started or closed) are classified
-              // now, with no action from the player.
-              if (
-                !activeReviewLog &&
-                !isMultiplayer &&
-                !watchingGame &&
-                unclassifiedMoveIndexes(log).length > 0
-              ) {
-                classifyImportedLog(log);
-              }
-              // Drop the snapshot so the next plain Review opens the live log.
-              setActiveReviewLog(null);
-              setActiveReviewMeta(null);
-              // Strip ?game= so a refresh won't re-open the shared review.
-              if (
-                typeof window !== 'undefined' &&
-                new URLSearchParams(window.location.search).get('game')
-              ) {
-                const url = new URL(window.location.href);
-                url.searchParams.delete('game');
-                window.history.replaceState(null, '', url.toString());
-              }
-            })
-          }
+          onBack={backFromReview}
         />
         </Suspense>
       </div>
@@ -1486,27 +1470,7 @@ function App() {
               setOpponentMode('ai');
             })
           }
-          onMatchReady={(match) => {
-            // Q.B.2: hand the live match over to the regular game view.
-            // The board / log / header all reuse the single-player UI,
-            // sourcing their data from useMultiplayerSync.
-            //
-            // R15-bug — reset the solo world FIRST: a finished solo game
-            // leaves a terminal gameStatus behind, and the MP UI reads it
-            // (its "Checkmate!" banner covered the fresh match and hid
-            // the clock strip, which is gated on gameStatus==='active').
-            startNewGame();
-            setActiveMatch(match);
-            // fix/v1.1.4 — the drawer state outlives the lobby screen, so
-            // a drawer left open when the lobby was entered came back
-            // over the board of the new match. Close it on the way in.
-            setMobilePanel('none');
-            setView('game');
-            // Reset any stale completion state from a previous match.
-            setMpEndOutcome(null);
-            mpSavedGameIdRef.current = null;
-            mpWroteOutcomeRef.current = null;
-          }}
+          onMatchReady={startMatchFromLobby}
         />
         </Suspense>
       </div>
