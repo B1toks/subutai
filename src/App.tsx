@@ -3,10 +3,7 @@ import type { BoardState, Color, Move, PieceType, SquareId, TopologyState } from
 import { createStartingPosition, createPositionFromBackRankKey } from './engine';
 import {
   generateLegalMoves,
-  isSquareAttacked,
-  findKing,
 } from './engine/moves';
-import { toggleTopology } from './engine/auxetic';
 import {
   BOT_STRENGTH_LABEL,
 } from './ai/agents';
@@ -51,6 +48,7 @@ import { useWatching } from './features/review/useWatching';
 import { useResignAndDraw } from './features/game/useResignAndDraw';
 import { useFormation } from './features/game/useFormation';
 import { useCoachTools } from './features/game/useCoachTools';
+import { useRotate } from './features/game/useRotate';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import type { GameReviewMeta } from './components/GameReview';
@@ -126,7 +124,7 @@ import { useNotation } from './features/game/useNotation';
 import { useGameSaveQueue, type FinishedGameSave } from './features/endgame/useGameSaveQueue';
 import { useMaterial } from './features/game/useMaterial';
 import { useCanRotate } from './features/game/useCanRotate';
-import { session, turns } from './session/session';
+import { session } from './session/session';
 import { useSession, useSessionFatal } from './session/useSession';
 import { useSessionEventsAfterCommit } from './session/useSessionEvents';
 import { statusOf } from './session/step';
@@ -1001,64 +999,25 @@ function App() {
     gameStatus,
   });
 
-  function toggleFormationLock() {
-    setFormationLocked((v) => {
-      if (!v) setLockedFormationKey(backRankString(initialState));
-      else setLockedFormationKey(null);
-      return !v;
-    });
-  }
-
-  function handleRotate() {
-    if (watchingGame) return;
-    if (currentPlayer !== 'human') return;
-    if (state.lastMoveWasRotation) return;
-    // Sprint 4.1 — first actual rotation dismisses the hint for good.
-    if (!rotateHintShown) dismissRotateHint();
-
-    // Multiplayer: send a topologyToggle move through Firestore — the
-    // opponent's listener re-derives the board (rebuildBoardFromMatch
-    // skips toggle entries today; T1 unblocks them once Q.B.2 picks them
-    // up via the same applyRotationMove path). King-safety check first
-    // so we don't push an illegal rotation across the wire.
-    if (isMultiplayer && mpSync) {
-      if (mpSync.matchState.status !== 'active') return;
-      if (!mpSync.isMyTurn) return;
-      if (rouletteReveal) return; // the bag is still landing
-      const toggledMp = toggleTopology(state);
-      const ourKingMp = findKing(toggledMp, state.sideToMove);
-      if (!ourKingMp) return;
-      const oppMp = state.sideToMove === 'white' ? 'black' : 'white';
-      if (
-        isSquareAttacked(
-          toggledMp,
-          ourKingMp,
-          oppMp as 'white' | 'black',
-          toggledMp.topologyState,
-        )
-      ) {
-        return;
-      }
-      // Q.D.3: in MP roulette rotate burns an action without consuming a
-      // slot — handled by sendRotate. In classic MP rotate is a whole
-      // turn — also routes through sendRotate which delegates to sendMove.
-      void mpSync.sendRotate();
-      setPreviewTopology(null);
-      setSelected(null);
-      return;
-    }
-
-    if (gameStatus !== 'active') return;
-    // Classic: the king must stay safe and the rotation is the whole turn.
-    // Roulette: it costs one action of the spun bag and spends no slot.
-    // The rules are step()'s (src/session/step.ts rotate).
-    const events = turns.act({ type: 'rotate', actor: 'human', now: Date.now() });
-    if (events.length === 0) return;
-    setSelected(null);
-    setPreviewTopology(null);
-    // R10 — the streamer rotated: settle the chat's guess round.
-    if (gameMode !== 'roulette') settleGuessRotate();
-  }
+  // Locking the formation, and the Rotate button (useRotate).
+  const { toggleFormationLock, handleRotate } = useRotate({
+    isMultiplayer,
+    mpSync,
+    watchingGame,
+    currentPlayer,
+    gameStatus,
+    gameMode,
+    state,
+    initialState,
+    rouletteReveal,
+    setSelected,
+    setPreviewTopology,
+    setFormationLocked,
+    setLockedFormationKey,
+    rotateHintShown,
+    dismissRotateHint,
+    settleGuessRotate,
+  });
 
   // Hot-seat draw offers: what each seat's button says, and whose row the
   // answer prompt replaces while an offer stands. Only while the game
