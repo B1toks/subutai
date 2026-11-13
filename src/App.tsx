@@ -1,6 +1,6 @@
 import './App.css';
 import type { BoardState, Color, Move, PieceType, SquareId, TopologyState } from './engine';
-import { createStartingPosition, createPositionFromBackRankKey, isValidChess960Key } from './engine';
+import { createStartingPosition, createPositionFromBackRankKey } from './engine';
 import {
   generateLegalMoves,
   isSquareAttacked,
@@ -49,6 +49,7 @@ import { BoardTiles } from './features/game/BoardTiles';
 import { useBoardInput } from './features/game/useBoardInput';
 import { useWatching } from './features/review/useWatching';
 import { useResignAndDraw } from './features/game/useResignAndDraw';
+import { useFormation } from './features/game/useFormation';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import type { GameReviewMeta } from './components/GameReview';
@@ -878,58 +879,6 @@ function App() {
     sacrificeTimerRef,
   });
 
-  function applyFormationCode() {
-    const raw = formationInputValue.trim().toUpperCase();
-    if (!raw) {
-      setFormationInputMode(false);
-      setFormationInputValue('');
-      return;
-    }
-    if (!isValidChess960Key(raw)) {
-      setFormationInputValue(raw);
-      return;
-    }
-    const initial = createPositionFromBackRankKey(raw);
-    // A new log, named after now; the seed stays (the code names the board).
-    session.dispatch({ type: 'newGame', initial, now: nowMs() });
-    setSelected(null);
-    setPreviewTopology(null);
-    setFormationLocked(true);
-    setLockedFormationKey(raw);
-    setFormationInputMode(false);
-    setFormationInputValue('');
-    setSearchEvalFromWhite(null);
-    setSearchMateInPlies(null);
-    resetGameEndState();
-
-    // New play session => new live snapshot id.
-    liveSavedGameIdRef.current = newLiveSnapshotId();
-  }
-
-  function cancelFormationInput() {
-    setFormationInputMode(false);
-    setFormationInputValue('');
-  }
-
-  /**
-   * V1 — blur means "I'm done", so it must always leave the editor.
-   *
-   * `applyFormationCode` returns early on an invalid code without
-   * clearing the mode, which used to keep the field open forever. That
-   * was survivable while a separate "Set position" button existed; now
-   * that the code chip IS the control and the only place the starting
-   * rank is shown, a stuck editor hides the position behind a half-typed
-   * string. Clicking away on garbage just gives up, like Escape.
-   */
-  function commitFormationOnBlur() {
-    const raw = formationInputValue.trim().toUpperCase();
-    if (raw && !isValidChess960Key(raw)) {
-      cancelFormationInput();
-      return;
-    }
-    applyFormationCode();
-  }
-
   const tileBase = boardSize / 8;
 
   /** V1 — the rook's half of the last castle, so it glides like the king
@@ -1521,6 +1470,21 @@ function App() {
     log,
     positionLabel,
     notationSeed,
+  });
+
+  // The 960 code chip's editor: apply, cancel, leave (useFormation).
+  const { applyFormationCode, cancelFormationInput, commitFormationOnBlur } = useFormation({
+    formationInputValue,
+    setFormationInputMode,
+    setFormationInputValue,
+    setFormationLocked,
+    setLockedFormationKey,
+    setSelected,
+    setPreviewTopology,
+    setSearchEvalFromWhite,
+    setSearchMateInPlies,
+    resetGameEndState,
+    liveSavedGameIdRef,
   });
 
   // The board's input: a click on a tile, a promotion, right-click
