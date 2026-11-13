@@ -23,6 +23,11 @@ type Fx = ReturnType<typeof useBoardFxState>;
 type Endgame = ReturnType<typeof useEndgame>;
 
 interface BoardTilesProps {
+  /** The board's marks (useBoardMarks), effects (useBoardFxState) and the
+   *  tiles' layout with the checkmate sequence (useEndgame), as App holds them. */
+  marks: Marks;
+  fx: Fx;
+  endgame: Endgame;
   isMultiplayer: boolean;
   /** The 64 squares, a8..h1 (App). */
   squares: string[];
@@ -43,20 +48,7 @@ interface BoardTilesProps {
   recentPlyHighlights: ReturnType<typeof recentPlies>;
   castleRookSlide: { from: SquareId; to: SquareId } | null;
   /** The board's marks (useBoardMarks) and effects (useBoardFxState). */
-  highlightedTargets: Marks['highlightedTargets'];
-  enPassantTargets: Marks['enPassantTargets'];
-  checkSquares: Marks['checkSquares'];
-  threatenedSquares: Marks['threatenedSquares'];
-  threateningPieceSquares: Marks['threateningPieceSquares'];
-  displayTopology: Marks['displayTopology'];
-  enPassantExplosionSquare: Fx['enPassantExplosionSquare'];
-  captureFxSquare: Fx['captureFxSquare'];
   /** The tiles' layout and scale, and the checkmate sequence (useEndgame). */
-  layout: Endgame['layout'];
-  scale: Endgame['scale'];
-  mateSeq: Endgame['mateSeq'];
-  irisKingPos: Endgame['irisKingPos'];
-  mateKingPos: Endgame['mateKingPos'];
   boardSize: number;
   tileBase: number;
   /** Input on a tile (App): click to select and move, right-drag to annotate. */
@@ -92,19 +84,6 @@ export function BoardTiles({
   myColor,
   recentPlyHighlights,
   castleRookSlide,
-  highlightedTargets,
-  enPassantTargets,
-  checkSquares,
-  threatenedSquares,
-  threateningPieceSquares,
-  displayTopology,
-  enPassantExplosionSquare,
-  captureFxSquare,
-  layout,
-  scale,
-  mateSeq,
-  irisKingPos,
-  mateKingPos,
   boardSize,
   tileBase,
   onSquareClick,
@@ -112,7 +91,13 @@ export function BoardTiles({
   handleTileMouseDown,
   handleTileMouseUp,
   setHoveredSquare,
+  marks,
+  fx,
+  endgame,
 }: BoardTilesProps) {
+  const { highlightedTargets, enPassantTargets, checkSquares, threatenedSquares, threateningPieceSquares, displayTopology } = marks;
+  const { enPassantExplosionSquare, captureFxSquare } = fx;
+  const { layout, scale, mateSeq, irisKingPos, mateKingPos } = endgame;
   const state = useSession(boardOf(isMultiplayer));
   const lastMove = useSession(lastMoveOf(isMultiplayer));
   const gameMode = useSession(modeOf(isMultiplayer));

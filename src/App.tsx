@@ -421,25 +421,21 @@ function App() {
   // short delay. Online, my spin count off the match doc, so both players
   // track independently across reloads.
   const firstRouletteSpinDone = online ? online.firstSpinDone : sess.roulette.firstSpinDone;
+  const boardFx = useBoardFxState();
   const {
-    captureFxSquare,
     setCaptureFxSquare,
     captureShake,
     setCaptureShake,
-    captureStrobe,
     setCaptureStrobe,
-    rotationDust,
     setRotationDust,
-    checkVignette,
     setCheckVignette,
     fxIntensity,
     registerFx,
     victoryFreeze,
     setVictoryFreeze,
     victoryFreezeTimer,
-    enPassantExplosionSquare,
     setEnPassantExplosionSquare,
-  } = useBoardFxState();
+  } = boardFx;
 
   const formationInputRef = useRef<HTMLInputElement>(null);
   // SP-3 — true while a Beat-Mode move is queued to land on the next
@@ -1127,16 +1123,7 @@ function App() {
     toast,
   });
 
-  const {
-    highlightedTargets,
-    enPassantTargets,
-    checkSquares,
-    displayTopology,
-    threatenedSquares,
-    supportPairs,
-    threateningPieceSquares,
-    hoverSupporters,
-  } = useBoardMarks({
+  const boardMarks = useBoardMarks({
     watchingGame,
     selected,
     previewTopology,
@@ -1150,6 +1137,10 @@ function App() {
     state,
     legalMoves,
   });
+  const {
+    checkSquares,
+    displayTopology,
+  } = boardMarks;
 
   // Sprint 3.7 (rev 2) — Sprint 3.6's hoverInsights useMemo and the
   // .attacker-of-hovered / .defender-of-hovered tile classes are
@@ -1195,15 +1186,7 @@ function App() {
     canRotate,
   });
 
-  const {
-    layout,
-    scale,
-    mateKingPos,
-    irisKingPos,
-    mateSeq,
-    mateSeqActive,
-    endgameSceneActive,
-  } = useEndgame({
+  const endgame = useEndgame({
     isAutoMode,
     mpEndOutcome,
     isMultiplayer,
@@ -1223,6 +1206,11 @@ function App() {
     displayTopology,
     checkSquares,
   });
+  const {
+    layout,
+    scale,
+    endgameSceneActive,
+  } = endgame;
 
   const recentPlyHighlights = useMemo(() => recentPlies(log.moves, gameMode), [log.moves, gameMode]);
 
@@ -1644,19 +1632,6 @@ function App() {
           myColor={myColor}
           recentPlyHighlights={recentPlyHighlights}
           castleRookSlide={castleRookSlide}
-          highlightedTargets={highlightedTargets}
-          enPassantTargets={enPassantTargets}
-          checkSquares={checkSquares}
-          threatenedSquares={threatenedSquares}
-          threateningPieceSquares={threateningPieceSquares}
-          displayTopology={displayTopology}
-          enPassantExplosionSquare={enPassantExplosionSquare}
-          captureFxSquare={captureFxSquare}
-          layout={layout}
-          scale={scale}
-          mateSeq={mateSeq}
-          irisKingPos={irisKingPos}
-          mateKingPos={mateKingPos}
           boardSize={boardSize}
           tileBase={tileBase}
           onSquareClick={onSquareClick}
@@ -1664,28 +1639,22 @@ function App() {
           handleTileMouseDown={handleTileMouseDown}
           handleTileMouseUp={handleTileMouseUp}
           setHoveredSquare={setHoveredSquare}
+          marks={boardMarks}
+          fx={boardFx}
+          endgame={endgame}
         />
         <BoardOverlays
           showSupport={showSupport}
           hoveredSquare={hoveredSquare}
-          supportPairs={supportPairs}
-          hoverSupporters={hoverSupporters}
           arrowAnnotations={arrowAnnotations}
           voteRound={voteRound}
           guessCloud={guessCloud}
-          checkVignette={checkVignette}
-          captureStrobe={captureStrobe}
-          rotationDust={rotationDust}
-          fxIntensity={fxIntensity}
-          irisKingPos={irisKingPos}
-          mateSeqActive={mateSeqActive}
-          mateKingPos={mateKingPos}
-          mateSeq={mateSeq}
           myColor={myColor}
-          displayTopology={displayTopology}
-          layout={layout}
           boardSize={boardSize}
           tileBase={tileBase}
+          marks={boardMarks}
+          fx={boardFx}
+          endgame={endgame}
         />
       </div>
       <BoardCoords

@@ -12,29 +12,22 @@ type Endgame = ReturnType<typeof useEndgame>;
 type Twitch = ReturnType<typeof useTwitchState>;
 
 interface BoardOverlaysProps {
+  /** The board's marks (useBoardMarks), effects (useBoardFxState) and the
+   *  tiles' layout with the checkmate sequence (useEndgame), as App holds them. */
+  marks: Marks;
+  fx: Fx;
+  endgame: Endgame;
   /** The support map (a coaching tool): on, the square hovered, and who backs whom (useBoardMarks). */
   showSupport: boolean;
   hoveredSquare: string | null;
-  supportPairs: Marks['supportPairs'];
-  hoverSupporters: Marks['hoverSupporters'];
   /** The player's right-drag arrows (App). */
   arrowAnnotations: ArrowAnnotation[];
   /** Twitch: chat's live vote round (its arrows) and the guessers' cloud (useTwitchState). */
   voteRound: Twitch['voteRound'];
   guessCloud: Twitch['guessCloud'];
   /** The board's effects (useBoardFxState) and the checkmate sequence (useEndgame). */
-  checkVignette: Fx['checkVignette'];
-  captureStrobe: Fx['captureStrobe'];
-  rotationDust: Fx['rotationDust'];
-  fxIntensity: Fx['fxIntensity'];
-  irisKingPos: Endgame['irisKingPos'];
-  mateSeqActive: Endgame['mateSeqActive'];
-  mateKingPos: Endgame['mateKingPos'];
-  mateSeq: Endgame['mateSeq'];
   /** The board's geometry: the seat's side, the topology drawn, the tiles' layout and size. */
   myColor: 'white' | 'black';
-  displayTopology: Marks['displayTopology'];
-  layout: Endgame['layout'];
   boardSize: number;
   tileBase: number;
 }
@@ -51,25 +44,19 @@ interface BoardOverlaysProps {
 export function BoardOverlays({
   showSupport,
   hoveredSquare,
-  supportPairs,
-  hoverSupporters,
   arrowAnnotations,
   voteRound,
   guessCloud,
-  checkVignette,
-  captureStrobe,
-  rotationDust,
-  fxIntensity,
-  irisKingPos,
-  mateSeqActive,
-  mateKingPos,
-  mateSeq,
   myColor,
-  displayTopology,
-  layout,
   boardSize,
   tileBase,
+  marks,
+  fx,
+  endgame,
 }: BoardOverlaysProps) {
+  const { supportPairs, hoverSupporters, displayTopology } = marks;
+  const { checkVignette, captureStrobe, rotationDust, fxIntensity } = fx;
+  const { irisKingPos, mateSeqActive, mateKingPos, mateSeq, layout } = endgame;
   return (
     <>
       {showSupport && (
