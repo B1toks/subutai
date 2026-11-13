@@ -49,6 +49,7 @@ import { useResignAndDraw } from './features/game/useResignAndDraw';
 import { useFormation } from './features/game/useFormation';
 import { useCoachTools } from './features/game/useCoachTools';
 import { useRotate } from './features/game/useRotate';
+import { useReplayImport } from './memory/useReplayImport';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import type { GameReviewMeta } from './components/GameReview';
@@ -58,13 +59,9 @@ import { computeGamePoints, type GameOutcome, type GamePoints } from './analysis
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
 import { unclassifiedMoveIndexes } from './recording/log';
-import { buildSavedGameSnapshot } from './memory/build';
-import { localStorageAdapter } from './memory/storage';
 import { MemoryPanel } from './memory/MemoryPanel';
-import { NotationParseError } from './memory/notation';
 // rotateIsLegal (R10) decides whether chat rounds accept "rotate"; it lives
 // with the replay importer, which checks rotations the same way (QA-02).
-import { replayFromNotation } from './memory/replayImport';
 import { busy } from './ui/busy';
 import { streaming, useStreaming } from './integrations';
 import {
@@ -1307,59 +1304,27 @@ function App() {
     resetGameEndState,
   });
 
-  function importReplayFromNotation() {
-    try {
-      // QA-02 — strict: every entry has to be a move the live game would
-      // have allowed at that point, or the whole log is refused with the
-      // move it failed on. See replayFromNotation.
-      const replay = replayFromNotation(replayText, { roulette: gameMode === 'roulette' });
-      const { initial, final: current, log: replayLog } = replay;
-
-      const id = `replay-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const snapshot = buildSavedGameSnapshot(replayLog, id, true);
-      if (localStorageAdapter.saveOrUpdateGame) {
-        localStorageAdapter.saveOrUpdateGame(snapshot);
-      } else {
-        localStorageAdapter.saveGame(snapshot);
-      }
-
-      // Load into the board as an unfinished game so it can be continued.
-      liveSavedGameIdRef.current = id;
-      setFormationLocked(true);
-      setLockedFormationKey(replay.config960);
-      // A log that already ends the game loads as over (settle).
-      session.dispatch({
-        type: 'load',
-        game: { initial, board: current, log: replayLog, lastMove: null },
-        fresh: true,
-        settle: { lastWasRotation: replay.lastWasRotation },
-      });
-      setSelected(null);
-      setPreviewTopology(null);
-      savedForLogIdRef.current = null;
-      setSearchEvalFromWhite(null);
-      setSearchMateInPlies(null);
-      resetGameEndState();
-      // QA-02 — an imported game is never ranked, whatever the bot level.
-      // The mark lives here and in the Memory entry (never in /games), so a
-      // resume from Memory keeps it.
-      importedLogIdRef.current = replayLog.id;
-      // A log that already ends the game loads as over. That ending is not
-      // one the player just reached, so it gets no summary and no save.
-      if (boardEnding(current, replay.lastWasRotation)) completedLogIdRef.current = replayLog.id;
-      classifyImportedLog(replayLog);
-
-      setReplayError(null);
-      setShowReplayDialog(false);
-      setReplayText('');
-    } catch (e) {
-      if (e instanceof NotationParseError) {
-        setReplayError(e.message);
-      } else {
-        setReplayError('Could not parse replay log.');
-      }
-    }
-  }
+  // Load replay: a pasted log becomes the game on the board (useReplayImport).
+  const { importReplayFromNotation } = useReplayImport({
+    gameMode,
+    replayText,
+    setReplayText,
+    setReplayError,
+    setShowReplayDialog,
+    setSelected,
+    setPreviewTopology,
+    setFormationLocked,
+    setLockedFormationKey,
+    setSearchEvalFromWhite,
+    setSearchMateInPlies,
+    boardEnding,
+    resetGameEndState,
+    classifyImportedLog,
+    importedLogIdRef,
+    completedLogIdRef,
+    savedForLogIdRef,
+    liveSavedGameIdRef,
+  });
 
   const { notationString, copyNotation, liveReviewLog, gameOverMessage } = useNotation({
     gameStatus,
