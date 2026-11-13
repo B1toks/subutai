@@ -6,11 +6,11 @@ import {
   isSquareAttacked,
   findKing,
 } from './engine/moves';
-import { applyRotationMove, toggleTopology } from './engine/auxetic';
+import { toggleTopology } from './engine/auxetic';
 import {
   BOT_STRENGTH_LABEL,
 } from './ai/agents';
-import { clearSearchTable, searchAsync } from './ai/searchClient';
+import { clearSearchTable } from './ai/searchClient';
 import { useToast } from './components/Toast';
 import type { EndgameKind, KingOrigin, VictoryTheme } from './components/EndgameScene';
 import { GameSummary } from './components/GameSummary';
@@ -50,6 +50,7 @@ import { useBoardInput } from './features/game/useBoardInput';
 import { useWatching } from './features/review/useWatching';
 import { useResignAndDraw } from './features/game/useResignAndDraw';
 import { useFormation } from './features/game/useFormation';
+import { useCoachTools } from './features/game/useCoachTools';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import type { GameReviewMeta } from './components/GameReview';
@@ -1000,67 +1001,6 @@ function App() {
     gameStatus,
   });
 
-  function toggleHelpTools() {
-    setHelpToolsEnabled((v) => {
-      const next = !v;
-      try {
-        localData.set(LOCAL_KEYS.helpTools, next ? '1' : '0');
-      } catch { /* private mode */ }
-      if (!next) {
-        setShowSupport(false);
-        setShowThreats(false);
-        setHintMove(null);
-      }
-      return next;
-    });
-  }
-
-  // S2.4 — engine hint. A short search (~0.5s) on the search worker, for a
-  // deliberate button press. Classic mode only: roulette's slot
-  // restrictions aren't modeled by the bare search, so its "best move"
-  // could be illegal this turn.
-  async function computeHint() {
-    if (currentPlayer !== 'human' || gameStatus !== 'active' || watchingGame) return;
-    if (gameMode !== 'classic') return;
-    // The board may move on while the worker thinks (a new game, a
-    // resume): a hint for another position is dropped.
-    const asked = session.getState().board;
-    const stillAsked = () => session.getState().board === asked;
-    const result = await searchAsync(state, {
-      budgetMs: 500,
-      maxDepth: 5,
-      lastMoveWasRotation: state.lastMoveWasRotation,
-    });
-    const best = result.bestMove;
-    if (!best || !stillAsked()) return;
-    if (best.kind === 'topologyToggle') {
-      setHintMove({ rotate: true });
-      return;
-    }
-    // B4 — the search explores rotation but its eval rarely ranks it
-    // strictly #1, so the hint never showed the signature move. Probe
-    // the rotation line explicitly: if it's at least as good as the
-    // best piece move (within 30cp), recommend the rotate — it's the
-    // mechanic worth teaching.
-    if (canRotate && !state.lastMoveWasRotation) {
-      const rotated = applyRotationMove(state);
-      const reply = await searchAsync(rotated, {
-        budgetMs: 300,
-        maxDepth: 4,
-        lastMoveWasRotation: true,
-      });
-      if (!stillAsked()) return;
-      const rotationScore = -reply.score; // negamax: reply is opponent-side
-      if (rotationScore >= result.score - 30) {
-        setHintMove({ rotate: true });
-        return;
-      }
-    }
-    if (best.from && best.to) {
-      setHintMove({ from: best.from, to: best.to });
-    }
-  }
-
   function toggleFormationLock() {
     setFormationLocked((v) => {
       if (!v) setLockedFormationKey(backRankString(initialState));
@@ -1470,6 +1410,20 @@ function App() {
     log,
     positionLabel,
     notationSeed,
+  });
+
+  // The coaching tools' switch and the engine hint (useCoachTools).
+  const { toggleHelpTools, computeHint } = useCoachTools({
+    watchingGame,
+    currentPlayer,
+    gameStatus,
+    gameMode,
+    state,
+    canRotate,
+    setHelpToolsEnabled,
+    setShowSupport,
+    setShowThreats,
+    setHintMove,
   });
 
   // The 960 code chip's editor: apply, cancel, leave (useFormation).
