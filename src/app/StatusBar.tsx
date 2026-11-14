@@ -1,7 +1,6 @@
 import type { MultiplayerSyncHandle } from '../components/MultiplayerGameView';
-import { boardOf, logOf } from '../features/game/boardView';
+import { boardOf, logOf, gameStatusOf } from '../features/game/boardView';
 import type { WatchingGame } from '../features/review/watching';
-import { statusOf } from '../session/step';
 import { useSession } from '../session/useSession';
 
 interface StatusBarProps {
@@ -35,7 +34,7 @@ export function StatusBar({
 }: StatusBarProps) {
   const log = useSession(logOf(isMultiplayer));
   const state = useSession(boardOf(isMultiplayer));
-  const gameStatus = useSession(statusOf);
+  const gameStatus = useSession(gameStatusOf);
   return (
     <footer className="app-status-bar">
       {(() => {

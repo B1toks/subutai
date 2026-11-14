@@ -3,7 +3,6 @@ import { AlertTriangle, ArrowRight, Dices, Eye, Flag, GraduationCap, Handshake, 
 import { Icon } from '../../components/Icon';
 import { Tooltip } from '../../components/Tooltip';
 import type { Color, SquareId, TopologyState } from '../../engine';
-import { statusOf } from '../../session/step';
 import { useSession } from '../../session/useSession';
 import { LocalTurnSlot } from '../local/LocalTurnSlot';
 import type { WatchingGame } from '../review/watching';
@@ -14,6 +13,7 @@ import {
   isRouletteSpinningOf,
   logOf,
   modeOf,
+  gameStatusOf,
 } from './boardView';
 import { DrawOfferPrompt } from './DrawOfferPrompt';
 import type { RowDraw } from './drawRows';
@@ -108,7 +108,7 @@ export function BoardActions({
 }: BoardActionsProps) {
   const state = useSession(boardOf(isMultiplayer));
   const log = useSession(logOf(isMultiplayer));
-  const gameStatus = useSession(statusOf);
+  const gameStatus = useSession(gameStatusOf);
   const gameMode = useSession(modeOf(isMultiplayer));
   const allowedPieceTypes = useSession(allowedPieceTypesOf(isMultiplayer));
   const isRouletteSpinning = useSession(isRouletteSpinningOf(isMultiplayer));

@@ -1,7 +1,6 @@
 import type { MouseEvent } from 'react';
 import type { SquareId } from '../../engine';
 import { tilePixelCenter, toTileFrame } from '../../engine/auxetic';
-import { statusOf } from '../../session/step';
 import { useSession } from '../../session/useSession';
 import type { useEndgame } from '../endgame/useEndgame';
 import type { AnnotationColor } from './annotations';
@@ -12,6 +11,7 @@ import {
   lastMoveOf,
   modeOf,
   usedRouletteSlotsOf,
+  gameStatusOf,
 } from './boardView';
 import { glyphForPiece } from './pieceGlyph';
 import { isPieceMovableInRoulette } from './roulette';
@@ -101,7 +101,7 @@ export function BoardTiles({
   const state = useSession(boardOf(isMultiplayer));
   const lastMove = useSession(lastMoveOf(isMultiplayer));
   const gameMode = useSession(modeOf(isMultiplayer));
-  const gameStatus = useSession(statusOf);
+  const gameStatus = useSession(gameStatusOf);
   const allowedPieceTypes = useSession(allowedPieceTypesOf(isMultiplayer));
   const usedRouletteSlots = useSession(usedRouletteSlotsOf(isMultiplayer));
   return (

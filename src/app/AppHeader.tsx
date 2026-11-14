@@ -11,8 +11,7 @@ import { ThemeToggle } from '../components/ThemeToggle';
 import { Tooltip } from '../components/Tooltip';
 import { UserMenu } from '../components/UserMenu';
 import { STREAMING_UI } from '../featureFlags';
-import { logOf, modeOf } from '../features/game/boardView';
-import { statusOf } from '../session/step';
+import { logOf, modeOf, gameStatusOf } from '../features/game/boardView';
 import { useSession } from '../session/useSession';
 import { busy } from '../ui/busy';
 
@@ -70,7 +69,7 @@ export function AppHeader({
   guardLeave,
   setView,
 }: AppHeaderProps) {
-  const gameStatus = useSession(statusOf);
+  const gameStatus = useSession(gameStatusOf);
   const log = useSession(logOf(isMultiplayer));
   const seed = useSession((s) => s.seed);
   const gameMode = useSession(modeOf(isMultiplayer));

@@ -1,7 +1,7 @@
 import type { BoardState, PieceType } from '../../engine';
 import type { GameLog } from '../../recording/log';
 import type { LastMove, RouletteReveal, SessionState } from '../../session/types';
-import type { GameMode } from '../../shared/game';
+import type { GameMode, GameStatus } from '../../shared/game';
 
 /**
  * The game on the board as App reads it (App.tsx: `online`, `state`,
@@ -52,3 +52,8 @@ export const usedRouletteSlotsOf = (isMultiplayer: boolean) => (s: SessionState)
 /** The first spin of the game is the player's click; later ones are auto. */
 export const firstRouletteSpinDoneOf = (isMultiplayer: boolean) => (s: SessionState): boolean =>
   isMultiplayer && s.online?.game ? s.online.game.firstSpinDone : s.roulette.firstSpinDone;
+
+/** statusOf (session/step.ts), read off the phase here: the components that
+ *  show the status import this module, not step.ts; an import of step.ts from
+ *  them split recording/log.ts into one more first-load file (log.js, 531a987). */
+export const gameStatusOf = (s: SessionState): GameStatus => (s.phase.tag === 'ended' ? s.phase.status : 'active');
