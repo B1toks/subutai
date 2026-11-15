@@ -4,16 +4,14 @@ import { createStartingPosition, createPositionFromBackRankKey } from './engine'
 import {
   generateLegalMoves,
 } from './engine/moves';
-import {
-  BOT_STRENGTH_LABEL,
-} from './ai/agents';
 import { clearSearchTable } from './ai/searchClient';
 import { useToast } from './components/Toast';
 import type { EndgameKind, KingOrigin, VictoryTheme } from './components/EndgameScene';
-import { GameSummary } from './components/GameSummary';
 import { STREAMING_UI } from './featureFlags';
 import { FeedbackModal } from './components/FeedbackModal';
-import { MilestoneModal } from './components/MilestoneModal';
+import { MilestoneDialog } from './features/endgame/MilestoneDialog';
+import { SoloSummary } from './features/endgame/SoloSummary';
+import { useGameResult } from './features/endgame/useGameResult';
 import { PlayerRow } from './components/PlayerRow';
 import { EvalBar } from './features/game/EvalBar';
 import { HelpDialog } from './app/HelpDialog';
@@ -55,7 +53,6 @@ import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import type { MatchDoc, MatchOutcome } from './firebase/matches';
 import { useAuth } from './firebase/useAuth';
-import { computeGamePoints, type GameOutcome, type GamePoints } from './analysis/points';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
 import { MemoryPanel } from './memory/MemoryPanel';
@@ -63,14 +60,13 @@ import { MemoryPanel } from './memory/MemoryPanel';
 // with the replay importer, which checks rotations the same way (QA-02).
 import { busy } from './ui/busy';
 import { streaming, useStreaming } from './integrations';
-import { HUMAN_COLOR, type GameMode, type GameStatus } from './shared/game';
+import { type GameMode, type GameStatus } from './shared/game';
 import {
   backRankString,
   gameEnding,
 } from './features/game/position';
 import { type AnnotationColor, type ArrowAnnotation } from './features/game/annotations';
 import { recentPlies } from './features/game/boardMarks';
-import { soloOutcome } from './features/endgame/result';
 import { useUrlModes } from './app/useUrlModes';
 import { useOnlineMatch } from './features/online/useOnlineMatch';
 import { useMobileDrawers } from './app/useMobileDrawers';
@@ -91,7 +87,6 @@ import { useAutoPlay } from './features/autoplay/useAutoPlay';
 import { useRoomGradient } from './app/useRoomGradient';
 import { useClassifyGuards } from './features/game/useClassifyGuards';
 import { useAdaptiveTheme } from './app/useAdaptiveTheme';
-import { useMoveMilestones } from './features/game/useMoveMilestones';
 import { useAdaptiveMusic } from './features/music/useAdaptiveMusic';
 import { useMoveLogScroll } from './features/game/useMoveLogScroll';
 import { useRotateHint } from './features/game/useRotateHint';
@@ -110,7 +105,6 @@ import { useEndgame, importEndgameScene } from './features/endgame/useEndgame';
 import { useGameStartPing } from './features/game/useGameStartPing';
 import { useResumeGame } from './memory/useResumeGame';
 import { useNotation } from './features/game/useNotation';
-import { useGameSaveQueue, type FinishedGameSave } from './features/endgame/useGameSaveQueue';
 import { useMaterial } from './features/game/useMaterial';
 import { useCanRotate } from './features/game/useCanRotate';
 import { session } from './session/session';
@@ -163,15 +157,6 @@ function App() {
 
   const { user, displayName, loading: authLoading, setDisplayName } = useAuth();
   const [showNameModal, setShowNameModal] = useState(false);
-  const [summaryOpen, setSummaryOpen] = useState(false);
-  const [lastGamePoints, setLastGamePoints] = useState<GamePoints | null>(null);
-  // Stage P addendum 7: captured at finishGame so the GameSummary modal
-  // keeps the previous game's duration even after Play Again resets the
-  // running start-time ref.
-  const [lastGameDurationMs, setLastGameDurationMs] = useState<number | null>(
-    null,
-  );
-  const [gameOutcome, setGameOutcome] = useState<GameOutcome | null>(null);
   // QA-11 — WHO is resigning while the confirmation is up. In hot-seat
   // either seat has a Resign button, so it is not always the side to move.
   const [confirmingResign, setConfirmingResign] = useState<Color | null>(null);
@@ -191,21 +176,15 @@ function App() {
   const [pendingOpponentChange, setPendingOpponentChange] = useState<
     'ai' | 'friend' | 'local' | null
   >(null);
-  const [savingGame, setSavingGame] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [currentRank, setCurrentRank] = useState<number | null>(null);
-  const [isNewBest, setIsNewBest] = useState(false);
-  const [personalBest, setPersonalBest] = useState<number | null>(null);
-  const [lastGameId, setLastGameId] = useState<string | null>(null);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
-  const [milestoneShown, setMilestoneShown] = useState(false);
-  const [showMilestoneModal, setShowMilestoneModal] = useState(false);
   // Sprint 2.5 — local AFK detector. Independent of the MP afk-watchdog
   // (mpSync.selfAfkWarning) which forfeits the match after 30s; this one
   // is a UX nag that surfaces a pulsing banner when the player's been
   // idle on their own turn for 20s. Resets on any pointer / key activity.
   const [showAfkAlert, setShowAfkAlert] = useState(false);
   const lastActivityRef = useRef<number>(mountedAt);
+  // The log id whose ending has been handled (useGameResult); Watch, Resign,
+  // the flag fall and Load replay stamp it too.
   const completedLogIdRef = useRef<string | null>(null);
   // QA-02 — the log id of a game that came from Load replay (or a Memory
   // entry marked imported). Such a game is never ranked.
@@ -217,9 +196,6 @@ function App() {
   // separate because the Memory entry's `imported` flag must keep meaning
   // "pasted from a log" — the summary says which of the two it was.
   const resumedLogIdRef = useRef<string | null>(null);
-  // Whether the game the summary is about was imported (for its wording).
-  const [lastGameImported, setLastGameImported] = useState(false);
-  const [lastGameResumed, setLastGameResumed] = useState(false);
   // Which screen is up, and the Review's own game (useScreens).
   const {
     view, setView, activeReviewLog, setActiveReviewLog,
@@ -573,35 +549,36 @@ function App() {
   const botThinking =
     !isMultiplayer && !isLocalMode && gameStatus === 'active' && currentPlayer === 'ai';
 
-  // Game-completion pipeline: the session's gameEnd event, handled after the
-  // render that shows the ending, computes points, opens the GameSummary
-  // modal, and kicks the async Firestore save.
-  // The ref guards against double-fires (StrictMode, a game ending twice).
-  // Auto mode handles completion via its own effect — never enters this path.
-  useSessionEventsAfterCommit((events) => {
-    if (!events.some((e) => e.type === 'gameEnd')) return;
-    if (isAutoMode) return;
-    if (isMultiplayer) return; // MP completion runs through a separate effect
-    // R13/BUG-5 — local hot-seat is two humans on one device: its results
-    // must never reach finishGame (solo leaderboard, personal best,
-    // "human-win" attribution are all meaningless there). The game-over
-    // banner is the whole ending.
-    if (isLocalMode) return;
-    if (gameStatus === 'active') return;
-    if (log.moves.length === 0) return;
-    // One completion per game, keyed by the log id alone. Resign stamps the
-    // id itself before flipping the status, so it is skipped here too. This
-    // used to also bail on any gameOutcome, which leaked the previous
-    // game's ending into the next one (QA-01).
-    if (completedLogIdRef.current === log.id) return;
-    completedLogIdRef.current = log.id;
+  // QA-09 — online, the position and seed are the MATCH's (log is derived
+  // from the match doc); initialState / seed still hold the last solo game,
+  // which is what the chip and the copied header used to show.
+  const positionLabel = backRankString(isMultiplayer ? log.initialState : initialState);
 
-    // The handler runs after the commit, through useEffectEvent (useSessionEventsAfterCommit),
-    // always with this render's finishGame; declared above, finishGame would only move the
-    // same report onto what it reads (positionLabel, queueSave), declared below it.
-    // eslint-disable-next-line react-hooks/immutability -- see the three lines above
-    void finishGame(soloOutcome(gameStatus, state.sideToMove));
+  // The end of a solo game: the summary, the save, the 50-move dialog
+  // (useGameResult). Its completion handler runs here, before useSoloFlagFall.
+  const result = useGameResult({
+    isAutoMode,
+    isMultiplayer,
+    isLocalMode,
+    opponentMode,
+    watchingGame,
+    gameStatus,
+    state,
+    log,
+    gameMode,
+    seed,
+    positionLabel,
+    botLevel,
+    authLoading,
+    user,
+    displayName,
+    toast,
+    gameStartedAtRef,
+    completedLogIdRef,
+    importedLogIdRef,
+    resumedLogIdRef,
   });
+  const { finishGame, setGameOutcome } = result;
 
   // A spin with nothing to do passes the turn as it lands: drop the
   // selection it left (it used to be dropped in doSpinRouletteNow's timer).
@@ -621,72 +598,6 @@ function App() {
   });
 
   useDrawDeclinedToast({ isMultiplayer, mpSync, toast });
-
-  async function finishGame(outcome: GameOutcome) {
-    const computed = computeGamePoints(log, outcome, HUMAN_COLOR, gameMode);
-    // V1 — only full-strength games are ranked. Practice levels still get
-    // the full breakdown on screen and are saved (with their level) for the
-    // data pipeline, but never touch personal best / leaderboard stats.
-    const rankedLevel = botLevel === 'strong';
-    // QA-02 — nor is a game loaded from a pasted log, at any level: its
-    // moves were never played here. counted: false also keeps strongWins
-    // (gated on counted in saveCompletedGame) from growing.
-    const imported = importedLogIdRef.current === log.id;
-    setLastGameImported(imported);
-    // N-1 — nor is a game restored from Memory. A Memory entry does not say
-    // who the moves were played against: a position played out for both
-    // sides in Local can be resumed against the bot and won in a move.
-    const resumed = resumedLogIdRef.current === log.id;
-    setLastGameResumed(resumed);
-    const points: GamePoints =
-      rankedLevel && !imported && !resumed ? computed : { ...computed, counted: false };
-    const durationMs = nowMs() - gameStartedAtRef.current;
-    setGameOutcome(outcome);
-    setLastGamePoints(points);
-    setLastGameDurationMs(durationMs);
-    setSummaryOpen(true);
-    setSaveError(null);
-    setIsNewBest(false);
-    setCurrentRank(null);
-
-    const job: FinishedGameSave = {
-      outcome,
-      points,
-      durationMs,
-      log,
-      gameMode,
-      botLevel,
-      chess960Id: positionLabel,
-      seed,
-    };
-    if (!user || !displayName) {
-      // N-6 — the page has only just opened (a reload, a new tab) and the
-      // sign-in has not answered yet: the game on the board came back from
-      // Memory in ~0.2 s, the user takes a moment longer, and a game that
-      // ends in between used to show its summary and never be saved (this
-      // runs once per game). Keep the finished game and save it as soon as
-      // the sign-in resolves. Signed out for good / no name yet: show the
-      // summary locally and skip Firestore, as before.
-      if (authLoading) {
-        pendingSaveRef.current.push(job);
-        setSavingGame(true);
-      }
-      return;
-    }
-    await queueSave(job, user.uid, displayName);
-  }
-  const { queueSave, pendingSaveRef } = useGameSaveQueue({
-    authLoading,
-    user,
-    displayName,
-    setSavingGame,
-    setSaveError,
-    setCurrentRank,
-    setIsNewBest,
-    setPersonalBest,
-    setLastGameId,
-    completedLogIdRef,
-  });
 
   // The self-play run (?auto) and its state (useAutoPlay).
   const auto = useAutoPlay({
@@ -751,19 +662,6 @@ function App() {
     const t = setTimeout(() => setRecentRotation(false), 2500);
     return () => clearTimeout(t);
   }, [state.topologyState]);
-
-  useMoveMilestones({
-    isAutoMode,
-    milestoneShown,
-    setMilestoneShown,
-    setShowMilestoneModal,
-    opponentMode,
-    isMultiplayer,
-    watchingGame,
-    gameStatus,
-    log,
-    toast,
-  });
 
   // Square to pulse-highlight after a blunder/brilliant. Cleared after the
   // animation duration (4 cycles × 600ms = 2.4s, rounded to 2500).
@@ -915,21 +813,9 @@ function App() {
     setEndgameCut(null);
     if (victoryFreezeTimer.current) clearTimeout(victoryFreezeTimer.current);
     setVictoryFreeze(false);
-    setSummaryOpen(false);
-    setLastGamePoints(null);
-    setGameOutcome(null);
-    setSavingGame(false);
-    setSaveError(null);
-    setCurrentRank(null);
-    setIsNewBest(false);
-    setPersonalBest(null);
-    setLastGameId(null);
-    setMilestoneShown(false);
-    setShowMilestoneModal(false);
-    setLastGameImported(false);
-    setLastGameResumed(false);
+    result.reset();
     completedLogIdRef.current = null;
-    gameStartedAtRef.current = Date.now();
+    gameStartedAtRef.current = nowMs();
   }
 
   // S2.4 — any change to the position invalidates a shown hint.
@@ -1171,10 +1057,7 @@ function App() {
 
   const recentPlyHighlights = useMemo(() => recentPlies(log.moves, gameMode), [log.moves, gameMode]);
 
-  // QA-09 — online, the position and seed are the MATCH's (log is derived
-  // from the match doc); initialState / seed still hold the last solo game,
-  // which is what the chip and the copied header used to show.
-  const positionLabel = backRankString(isMultiplayer ? log.initialState : initialState);
+  // QA-09 — online the seed is the MATCH's, like positionLabel above.
   const notationSeed = isMultiplayer ? log.randomSeed : seed;
 
   useGameStartPing({
@@ -1352,7 +1235,7 @@ function App() {
         <GameReview
           log={activeReviewLog ?? liveReviewLog}
           meta={activeReviewMeta ?? undefined}
-          gameId={sharedGameId ?? lastGameId ?? null}
+          gameId={sharedGameId ?? result.lastGameId ?? null}
           onBack={backFromReview}
         />
         </Suspense>
@@ -1779,6 +1662,9 @@ function App() {
         <MatchCompleteDialog
           mpSync={mpSync}
           mpEndOutcome={mpEndOutcome}
+          // The ref is written in the Resign click; this render, the match's end arriving in a later
+          // snapshot, only reads it. As state it would be the online match end's (group 2), not moved here.
+          // eslint-disable-next-line react-hooks/refs -- see the two lines above
           selfResigned={mpSelfResignedRef.current === mpSync.matchState.code}
           displayName={displayName}
           setMpEndOutcome={setMpEndOutcome}
@@ -1801,36 +1687,15 @@ function App() {
         />
       )}
 
-      {summaryOpen && lastGamePoints && gameOutcome && !endgameSceneActive && (
-        <GameSummary
-          points={lastGamePoints}
-          outcome={gameOutcome}
-          personalBest={personalBest}
-          isNewPersonalBest={isNewBest}
-          currentRank={currentRank}
-          saving={savingGame}
-          saveError={saveError}
-          chess960Id={positionLabel}
-          gameId={lastGameId}
-          playerId={user?.uid ?? null}
-          playerName={displayName}
-          durationMs={lastGameDurationMs ?? undefined}
+      {!endgameSceneActive && (
+        <SoloSummary
+          result={result}
+          positionLabel={positionLabel}
+          user={user}
+          displayName={displayName}
           gameMode={gameMode}
-          uncountedReason={
-            lastGameImported
-              ? 'Loaded from a replay log. Imported games are never ranked.'
-              : lastGameResumed
-                ? 'Resumed from a saved position. Only games played from the first move against the Strong bot are ranked.'
-                : botLevel !== 'strong'
-                  ? `Played vs the ${BOT_STRENGTH_LABEL[botLevel]} bot. Only Strong-bot games are ranked.`
-                  : undefined
-          }
-          uncountedTitle={lastGameImported ? 'Imported game' : undefined}
-          onClose={() => setSummaryOpen(false)}
-          onPlayAgain={() => {
-            setSummaryOpen(false);
-            startNewGame();
-          }}
+          botLevel={botLevel}
+          startNewGame={startNewGame}
         />
       )}
 
@@ -1842,20 +1707,7 @@ function App() {
         />
       )}
 
-      {showMilestoneModal && (
-        <MilestoneModal
-          fullMoves={Math.floor(log.moves.length / 2)}
-          currentScoreEstimate={Math.floor(log.moves.length / 2) * 5}
-          onKeepPlaying={() => setShowMilestoneModal(false)}
-          onResignNow={() => {
-            setShowMilestoneModal(false);
-            // The modal already explained the consequence — go straight to
-            // the resign-confirmation dialog so the player can change their
-            // mind without an extra click.
-            requestResign();
-          }}
-        />
-      )}
+      <MilestoneDialog result={result} isMultiplayer={isMultiplayer} requestResign={requestResign} />
 
       {showHelp && (
         <HelpDialog
