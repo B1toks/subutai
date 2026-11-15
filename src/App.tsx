@@ -53,7 +53,6 @@ import { drawRows } from './features/game/drawRows';
 import { useScreenNavigation } from './app/useScreenNavigation';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
-import type { GameReviewMeta } from './components/GameReview';
 import type { MatchDoc, MatchOutcome } from './firebase/matches';
 import { useAuth } from './firebase/useAuth';
 import { computeGamePoints, type GameOutcome, type GamePoints } from './analysis/points';
@@ -87,7 +86,7 @@ import { useConsoleSeams } from './features/game/useConsoleSeams';
 import { useMemoryAutosave } from './memory/useMemoryAutosave';
 import { useOnlineMatchEnd } from './features/online/useOnlineMatchEnd';
 import { useDrawDeclinedToast } from './features/online/useDrawDeclinedToast';
-import { useSharedGame } from './features/review/useSharedGame';
+import { useScreens } from './app/useScreens';
 import { useAutoPlay } from './features/autoplay/useAutoPlay';
 import { useRoomGradient } from './app/useRoomGradient';
 import { useClassifyGuards } from './features/game/useClassifyGuards';
@@ -221,9 +220,11 @@ function App() {
   // Whether the game the summary is about was imported (for its wording).
   const [lastGameImported, setLastGameImported] = useState(false);
   const [lastGameResumed, setLastGameResumed] = useState(false);
-  const [view, setView] = useState<
-    'game' | 'review' | 'leaderboard' | 'friend-lobby'
-  >('game');
+  // Which screen is up, and the Review's own game (useScreens).
+  const {
+    view, setView, activeReviewLog, setActiveReviewLog,
+    activeReviewMeta, setActiveReviewMeta, sharedGameError, setSharedGameError,
+  } = useScreens({ sharedGameId });
   // Stage Q.A: opponent selector in the header. 'ai' keeps the existing
   // solo flow; 'friend' opens the PvP lobby. Once a match starts it just
   // overlays the existing 'game' view — the board/log/header reuse the
@@ -253,14 +254,6 @@ function App() {
   // QA-04 — the match code this player resigned themselves (the Resign
   // button, not a flag fall), so their own end text can say so.
   const mpSelfResignedRef = useRef<string | null>(null);
-  // T2: review can be entered for the LIVE game (default — reads the `log`
-  // alias) OR with a snapshot loaded via the MP completion modal or the
-  // ?game=<id> URL. activeReviewLog overrides when set; meta gives the
-  // review header context ("Alex vs AI", "won/lost/drew").
-  const [activeReviewLog, setActiveReviewLog] = useState<GameLog | null>(null);
-  const [activeReviewMeta, setActiveReviewMeta] =
-    useState<GameReviewMeta | null>(null);
-  const [sharedGameError, setSharedGameError] = useState<string | null>(null);
   const { mpSync, isMultiplayer } = useOnlineMatch({
     user,
     setView,
@@ -628,14 +621,6 @@ function App() {
   });
 
   useDrawDeclinedToast({ isMultiplayer, mpSync, toast });
-
-  useSharedGame({
-    sharedGameId,
-    setView,
-    setActiveReviewLog,
-    setActiveReviewMeta,
-    setSharedGameError,
-  });
 
   async function finishGame(outcome: GameOutcome) {
     const computed = computeGamePoints(log, outcome, HUMAN_COLOR, gameMode);
