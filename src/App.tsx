@@ -14,7 +14,6 @@ import { GameSummary } from './components/GameSummary';
 import { STREAMING_UI } from './featureFlags';
 import { FeedbackModal } from './components/FeedbackModal';
 import { MilestoneModal } from './components/MilestoneModal';
-import { AutoPlayView } from './components/AutoPlayView';
 import { PlayerRow } from './components/PlayerRow';
 import { EvalBar } from './features/game/EvalBar';
 import { HelpDialog } from './app/HelpDialog';
@@ -22,7 +21,7 @@ import { ScreenFlash } from './features/game/ScreenFlash';
 import { WatchBanner } from './features/review/WatchBanner';
 import { MatchBanners } from './features/online/MatchBanners';
 import { StatusBar } from './app/StatusBar';
-import { AutoBoard } from './features/autoplay/AutoBoard';
+import { AutoRun } from './features/autoplay/AutoRun';
 import { GameClocks } from './features/game/GameClocks';
 import { MovesPanel } from './features/game/MovesPanel';
 import { AnalysisPanel } from './features/game/AnalysisPanel';
@@ -161,19 +160,9 @@ const EndgameScene = lazy(() =>
 function App() {
   const { isAutoMode, maxGames, isStatsMode, sharedGameId } = useUrlModes();
 
-  const [autoGamesCompleted, setAutoGamesCompleted] = useState(0);
-  const [autoLastOutcome, setAutoLastOutcome] = useState<GameOutcome | null>(null);
-  // Rolling history of full-move counts so the panel can show an average.
-  const [autoMoveHistory, setAutoMoveHistory] = useState<number[]>([]);
-  const [autoStopped, setAutoStopped] = useState(false);
-  const [autoStoppedReason, setAutoStoppedReason] = useState<string | null>(null);
-  const autoNextGameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // When App mounted: what the timers below start from (a lazy state, so
   // the clock is read once, not on every render).
   const [mountedAt] = useState(() => Date.now());
-  const autoLastMoveAtRef = useRef<number>(mountedAt);
-  // Each completed game-id is processed exactly once by the auto-save effect.
-  const autoSavedLogIdRef = useRef<string | null>(null);
 
   const { user, displayName, loading: authLoading, setDisplayName } = useAuth();
   const [showNameModal, setShowNameModal] = useState(false);
@@ -690,19 +679,11 @@ function App() {
     completedLogIdRef,
   });
 
-  const { stopAuto } = useAutoPlay({
+  // The self-play run (?auto) and its state (useAutoPlay).
+  const auto = useAutoPlay({
     isAutoMode,
     maxGames,
-    setAutoGamesCompleted,
-    autoGamesCompleted,
-    setAutoLastOutcome,
-    setAutoMoveHistory,
-    autoStopped,
-    setAutoStopped,
-    setAutoStoppedReason,
-    autoNextGameTimerRef,
-    autoLastMoveAtRef,
-    autoSavedLogIdRef,
+    mountedAt,
     seed,
     initialState,
     gameStatus,
@@ -711,6 +692,7 @@ function App() {
     gameStartedAtRef,
     startNewGame,
   });
+  const { autoStopped, autoLastMoveAtRef, autoSavedLogIdRef } = auto;
 
   // Watching a leaderboard game (useWatching): start, step, auto play, stop.
   const { startWatching, seekWatchTo, toggleWatchAutoplay, stopWatching } = useWatching({
@@ -1377,37 +1359,12 @@ function App() {
   }
 
   if (isAutoMode) {
-    const avgMoves =
-      autoMoveHistory.length > 0
-        ? Math.round(
-            autoMoveHistory.reduce((s, n) => s + n, 0) / autoMoveHistory.length,
-          )
-        : null;
-    const currentFullMoves = Math.floor(log.moves.length / 2);
-    const autoBoard = (
-      <AutoBoard
-        isMultiplayer={isMultiplayer}
-        squares={squares}
-        recentRotation={recentRotation}
-        boardSize={boardSize}
-        displayTopology={displayTopology}
-        layout={layout}
-        tileBase={tileBase}
-        scale={scale}
-      />
-    );
     return (
       <div className="app-shell auto-shell-root" ref={shellRef}>
-        <AutoPlayView
-          gamesCompleted={autoGamesCompleted}
+        <AutoRun
+          auto={auto}
           maxGames={maxGames}
-          currentGameFullMoves={currentFullMoves}
-          lastOutcome={autoLastOutcome}
-          avgGameMoves={avgMoves}
-          stopped={autoStopped}
-          stoppedReason={autoStoppedReason}
-          onStop={stopAuto}
-          board={autoBoard}
+          board={{ isMultiplayer, squares, recentRotation, boardSize, displayTopology, layout, tileBase, scale }}
         />
       </div>
     );

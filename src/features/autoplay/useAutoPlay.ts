@@ -1,4 +1,4 @@
-import { useEffect, type Dispatch, type SetStateAction, type RefObject } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { GameOutcome } from '../../analysis/points';
 import { HUMAN_COLOR, type GameStatus } from '../../shared/game';
 import { evaluate } from '../../ai/evaluate';
@@ -18,16 +18,8 @@ const AUTO_WATCHDOG_MS = 60_000;
 interface UseAutoPlayArgs {
   isAutoMode: boolean;
   maxGames: number;
-  setAutoGamesCompleted: Dispatch<SetStateAction<number>>;
-  autoGamesCompleted: number;
-  setAutoLastOutcome: Dispatch<SetStateAction<GameOutcome | null>>;
-  setAutoMoveHistory: Dispatch<SetStateAction<number[]>>;
-  autoStopped: boolean;
-  setAutoStopped: Dispatch<SetStateAction<boolean>>;
-  setAutoStoppedReason: Dispatch<SetStateAction<string | null>>;
-  autoNextGameTimerRef: RefObject<number | null>;
-  autoLastMoveAtRef: RefObject<number>;
-  autoSavedLogIdRef: RefObject<string | null>;
+  /** When App mounted: the watchdog's first "last move". */
+  mountedAt: number;
   seed: number;
   initialState: BoardState;
   gameStatus: GameStatus;
@@ -38,24 +30,18 @@ interface UseAutoPlayArgs {
 }
 
 /**
- * The self-play run (?auto=1): saves each finished game to
+ * The self-play run (?auto=1) and its state: how many games it has played,
+ * the last result, whether it has stopped. Saves each finished game to
  * /training_games and starts the next, stops at ?max=N, restarts a game
  * the bot has stalled in, clears its timers on unmount, and stopAuto ends
- * the run. The moves themselves come from scheduleAutoMove in App.
+ * the run. The moves themselves come from the run's bot (useSeats), which
+ * stamps autoLastMoveAtRef; a new game (App's startNewGame) resets that
+ * and autoSavedLogIdRef.
  */
 export function useAutoPlay({
   isAutoMode,
   maxGames,
-  setAutoGamesCompleted,
-  autoGamesCompleted,
-  setAutoLastOutcome,
-  setAutoMoveHistory,
-  autoStopped,
-  setAutoStopped,
-  setAutoStoppedReason,
-  autoNextGameTimerRef,
-  autoLastMoveAtRef,
-  autoSavedLogIdRef,
+  mountedAt,
   seed,
   initialState,
   gameStatus,
@@ -64,6 +50,17 @@ export function useAutoPlay({
   gameStartedAtRef,
   startNewGame,
 }: UseAutoPlayArgs) {
+  const [autoGamesCompleted, setAutoGamesCompleted] = useState(0);
+  const [autoLastOutcome, setAutoLastOutcome] = useState<GameOutcome | null>(null);
+  // Rolling history of full-move counts so the panel can show an average.
+  const [autoMoveHistory, setAutoMoveHistory] = useState<number[]>([]);
+  const [autoStopped, setAutoStopped] = useState(false);
+  const [autoStoppedReason, setAutoStoppedReason] = useState<string | null>(null);
+  const autoNextGameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoLastMoveAtRef = useRef<number>(mountedAt);
+  // Each completed game-id is processed exactly once by the auto-save effect.
+  const autoSavedLogIdRef = useRef<string | null>(null);
+
   // Auto-mode completion: when a self-play game ends, save to
   // /training_games (separate collection from the human leaderboard) and
   // queue the next game. Bypasses the regular finishGame path entirely.
@@ -172,5 +169,14 @@ export function useAutoPlay({
       window.location.href = url.toString();
     }, 400);
   }
-  return { stopAuto };
+  return {
+    autoGamesCompleted,
+    autoLastOutcome,
+    autoMoveHistory,
+    autoStopped,
+    autoStoppedReason,
+    autoLastMoveAtRef,
+    autoSavedLogIdRef,
+    stopAuto,
+  };
 }
