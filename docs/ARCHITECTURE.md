@@ -17,7 +17,7 @@ Firestore rules are the only trust boundary (see `FIRESTORE-RULES.md`).
 | `src/integrations` | The streaming integrations behind `STREAMING_UI` (`?streaming=1`), loaded only with it and after the first load: `music` (the beat grid and its tempo detection, the mic equalizer, the Spotify playlists), `twitch` (chat, its votes, chat's game). The rest of the app reaches them through `index.ts` only. |
 | `src/memory` | Saved games: storage, notation, replay import, the Memory panel, and the hooks that autosave a game and resume one. |
 | `src/components` | Components that several parts of the app use (Toast, Tooltip, modals, NamePicker, ClockFace, PlayerRow), and the screens that predate the feature folders (GameReview, MusicDock, Leaderboard, FriendLobby, TwitchPanel, StatsPage, ShowcaseView). |
-| `src/app` | The shell: `App.tsx` lives in `src/`, its app-wide hooks here (URL modes, board size and UI scale, phone drawers, welcome and tour, the guards on leaving a game, the room's colours, the adaptive theme, the way back from a screen), the page-wide components (header, status bar, Help, the small dialogs), and the styles of the whole page in `src/app/styles`. |
+| `src/app` | The shell: `App.tsx` lives in `src/`, its app-wide hooks here (URL modes, which screen is up, board size and UI scale, phone drawers, welcome and tour, the guards on leaving a game, the room's colours, the adaptive theme, the way back from a screen), the page-wide components (header, status bar, Help, the small dialogs), and the styles of the whole page in `src/app/styles`. |
 | `src/features/<name>` | What `App.tsx` used to hold, one folder per feature: hooks, pure helpers with their tests, and CSS. |
 | `src/shared` | Types and helpers that two or more features use. |
 
@@ -38,12 +38,34 @@ the clocks and presence keep running while the leaderboard is open. Game
 state never goes into a component that unmounts with its view.
 
 Each hook is a block that stood in App, moved as it was and called where it
-stood, so React still runs the effects in the same order. Two things still
+stood, so React still runs the effects in the same order. Three things still
 depend on that order:
 
 - `useOnlineMatch`, which reseats a reloaded online match and clears its
   resume code, runs before `useResumeGame` checks that code.
 - `useGameClocks` resets the flag for a new match before the flag check.
+- `useGameResult`, whose completion handler drains the session's events,
+  runs before `useSoloFlagFall`, which dispatches the flag fall inside its
+  effect: the other way round, a loss on time could be handled with the
+  render before it and never reach `finishGame`.
+
+Four groups of App's state live in the hook of the feature that owns them,
+with their effects and handlers: the self-play run
+(`features/autoplay/useAutoPlay`), the watched game
+(`features/review/useWatching`), the screen and the Review's own game
+(`app/useScreens`), and the end of a solo game
+(`features/endgame/useGameResult`: the summary, the save, the 50-move
+dialog). Such a hook declares the group's `useState`s and refs and returns
+the group as one object, which App hands whole to the components that show
+it (`AutoRun`, `SoloSummary`, `MilestoneDialog`) and reads single names
+from where another hook needs them. An effect went with its group only
+where it commutes with every effect it crossed: none of them reads or
+writes the same state or ref in its body, and neither dispatches to the
+session there. Five effects moved that way (the watch autoplay, the
+shared-game load, the save queue's and the milestones' two); each commit's
+message names the effects crossed and why they commute. What a later hook
+must stamp before the group's hook can be called stays App's ref and goes
+in as an argument: the three log ids (completed, imported, resumed).
 
 What a move sets off no longer depends on it: the board's sound and effects
 listen to events (see How data flows), and `window.subutaiFX` is one object
@@ -145,9 +167,10 @@ its answer, which it finds after a pause on the search worker
 still follow state run: `commitAnalysis` from `useClassifier` records the
 classifier's verdict, `useMemoryAutosave` snapshots the game. When a move,
 a flag fall, a resignation or an agreed draw ends the game, the session's
-`gameEnd` event reaches App after the render that shows the ending
-(`useSessionEventsAfterCommit`), and App calls `finishGame`, which scores
-it and hands the save to `useGameSaveQueue`, which runs the save queue
+`gameEnd` event reaches `useGameResult` after the render that shows the
+ending (`useSessionEventsAfterCommit`), and it calls `finishGame`, which
+scores the game, opens the summary and hands the save to
+`useGameSaveQueue`, which runs the save queue
 (`src/services/saveQueue.ts`) over `gamesRepo`: one save at a time,
 `saveCompletedGame` in `src/firebase/games.ts` writing the game to `/games`
 and updates the player's `/users` profile in a transaction. Online, the
