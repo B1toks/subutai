@@ -69,7 +69,6 @@ import {
   backRankString,
   gameEnding,
 } from './features/game/position';
-import type { GameBackup, WatchingGame } from './features/review/watching';
 import { type AnnotationColor, type ArrowAnnotation } from './features/game/annotations';
 import { recentPlies } from './features/game/boardMarks';
 import { soloOutcome } from './features/endgame/result';
@@ -92,7 +91,6 @@ import { useSharedGame } from './features/review/useSharedGame';
 import { useAutoPlay } from './features/autoplay/useAutoPlay';
 import { useRoomGradient } from './app/useRoomGradient';
 import { useClassifyGuards } from './features/game/useClassifyGuards';
-import { useWatchAutoplay } from './features/review/useWatchAutoplay';
 import { useAdaptiveTheme } from './app/useAdaptiveTheme';
 import { useMoveMilestones } from './features/game/useMoveMilestones';
 import { useAdaptiveMusic } from './features/music/useAdaptiveMusic';
@@ -280,9 +278,6 @@ function App() {
     startNewGame,
   });
 
-  const [watchingGame, setWatchingGame] = useState<WatchingGame | null>(null);
-  const watchAutoplayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const gameBackupRef = useRef<GameBackup | null>(null);
   // V1 — every visit starts from a fresh chess960 position (FIRST_SEED in
   // src/session/session.ts).
   const seed = sess.seed;
@@ -528,6 +523,35 @@ function App() {
     liveSavedGameIdRef,
   });
 
+  // Watching a leaderboard game (useWatching): its state, start, step, auto
+  // play, stop. Before isLocalMode, which reads watchingGame.
+  const { watchingGame, startWatching, seekWatchTo, toggleWatchAutoplay, stopWatching } = useWatching({
+    isMultiplayer,
+    seed,
+    state,
+    initialState,
+    legalMoves,
+    log,
+    gameStatus,
+    lastMove,
+    searchEvalFromWhite,
+    searchMateInPlies,
+    setSearchEvalFromWhite,
+    setSearchMateInPlies,
+    formationLocked,
+    setFormationLocked,
+    lockedFormationKey,
+    setLockedFormationKey,
+    setSelected,
+    setPreviewTopology,
+    setSharedGameError,
+    setView,
+    beginBusy,
+    liveSavedGameIdRef,
+    savedForLogIdRef,
+    completedLogIdRef,
+  });
+
   // Sprint 4.1 — `local` opponent mode means both colours are played
   // from this device, so the engine should never schedule an AI turn.
   // Cached here so the AI scheduler, classifier, and downstream UI
@@ -694,38 +718,6 @@ function App() {
   });
   const { autoStopped, autoLastMoveAtRef, autoSavedLogIdRef } = auto;
 
-  // Watching a leaderboard game (useWatching): start, step, auto play, stop.
-  const { startWatching, seekWatchTo, toggleWatchAutoplay, stopWatching } = useWatching({
-    isMultiplayer,
-    watchingGame,
-    setWatchingGame,
-    seed,
-    state,
-    initialState,
-    legalMoves,
-    log,
-    gameStatus,
-    lastMove,
-    searchEvalFromWhite,
-    searchMateInPlies,
-    setSearchEvalFromWhite,
-    setSearchMateInPlies,
-    formationLocked,
-    setFormationLocked,
-    lockedFormationKey,
-    setLockedFormationKey,
-    setSelected,
-    setPreviewTopology,
-    setSharedGameError,
-    setView,
-    beginBusy,
-    gameBackupRef,
-    watchAutoplayRef,
-    liveSavedGameIdRef,
-    savedForLogIdRef,
-    completedLogIdRef,
-  });
-
   // Resigning, and hot-seat draw offers (useResignAndDraw).
   const { requestResign, confirmResign, localDrawTable, offerLocalDraw, answerLocalDraw } = useResignAndDraw({
     isMultiplayer,
@@ -759,8 +751,6 @@ function App() {
   });
 
   const { logIdRef, classifyRunRef } = useClassifyGuards({ log, logLengthRef });
-
-  useWatchAutoplay({ watchingGame, setWatchingGame, watchAutoplayRef, seekWatchTo });
 
   useAdaptiveTheme({ state });
 

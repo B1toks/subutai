@@ -1,17 +1,16 @@
-import type { Dispatch, RefObject, SetStateAction } from 'react';
+import { useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import { deserializeGameLog } from '../../firebase/games';
 import { gamesRepo } from '../../infra/firestore/games';
 import { session } from '../../session/session';
 import type { TopologyState } from '../../engine';
 import { replayBoardAt } from '../game/position';
+import { useWatchAutoplay } from './useWatchAutoplay';
 import type { GameBackup, WatchingGame } from './watching';
 
 type View = 'game' | 'review' | 'leaderboard' | 'friend-lobby';
 
 interface UseWatchingArgs {
   isMultiplayer: boolean;
-  watchingGame: WatchingGame | null;
-  setWatchingGame: Dispatch<SetStateAction<WatchingGame | null>>;
   /** The player's own game, put aside while watching and put back after
    *  (App's aliases and state, as GameBackup holds them). */
   seed: GameBackup['seed'];
@@ -36,8 +35,6 @@ interface UseWatchingArgs {
   setView: Dispatch<SetStateAction<View>>;
   /** The busy overlay while the own game is put back (ui/busy). */
   beginBusy: (label: string) => void;
-  gameBackupRef: RefObject<GameBackup | null>;
-  watchAutoplayRef: RefObject<ReturnType<typeof setTimeout> | null>;
   /** Memory's autosave markers, put back with the game (useMemoryAutosave). */
   liveSavedGameIdRef: RefObject<string>;
   savedForLogIdRef: RefObject<string | null>;
@@ -45,19 +42,19 @@ interface UseWatchingArgs {
 }
 
 /**
- * Watching a leaderboard game, as App had it: Watch puts the player's own
- * game aside (gameBackupRef), builds the whole replay first (v1.1.7: a game
+ * Watching a leaderboard game, and its state (the watched game, the own
+ * game put aside, the autoplay timer): Watch puts the player's own game
+ * aside (gameBackupRef), builds the whole replay first (v1.1.7: a game
  * that cannot be shown says so instead of reaching the error screen) and
  * loads its first position into the session; Prev / Next / Auto step
- * through it; Stop puts the own game back, with its autosave markers.
- * Plain handlers, no React hooks inside: what they read is passed in from
- * App's render, as their closures read it, so the call's position changes
- * no effect order. The autoplay timer itself stays in App.
+ * through it (the autoplay effect: useWatchAutoplay); Stop puts the own
+ * game back, with its autosave markers. What the handlers read of the own
+ * game is passed in from App's render, as their closures read it. App
+ * calls this before it works out whose game is on the board (isLocalMode
+ * reads watchingGame).
  */
 export function useWatching({
   isMultiplayer,
-  watchingGame,
-  setWatchingGame,
   seed,
   state,
   initialState,
@@ -78,12 +75,14 @@ export function useWatching({
   setSharedGameError,
   setView,
   beginBusy,
-  gameBackupRef,
-  watchAutoplayRef,
   liveSavedGameIdRef,
   savedForLogIdRef,
   completedLogIdRef,
 }: UseWatchingArgs) {
+  const [watchingGame, setWatchingGame] = useState<WatchingGame | null>(null);
+  const watchAutoplayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gameBackupRef = useRef<GameBackup | null>(null);
+
   async function startWatching(gameId: string, playerName: string) {
     // S2.1 — while a multiplayer match is live, the board is driven by
     // mpSync.boardState, so the replay projection below would clobber
@@ -229,5 +228,7 @@ export function useWatching({
     gameBackupRef.current = null;
   }
 
-  return { startWatching, seekWatchTo, toggleWatchAutoplay, stopWatching };
+  useWatchAutoplay({ watchingGame, setWatchingGame, watchAutoplayRef, seekWatchTo });
+
+  return { watchingGame, startWatching, seekWatchTo, toggleWatchAutoplay, stopWatching };
 }
