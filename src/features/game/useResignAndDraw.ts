@@ -2,14 +2,14 @@ import type { Dispatch, RefObject, SetStateAction } from 'react';
 import type { GameOutcome } from '../../analysis/points';
 import type { MultiplayerSyncHandle } from '../../components/MultiplayerGameView';
 import type { useToast } from '../../components/Toast';
-import type { BoardState, Color } from '../../engine';
-import type { GameLog } from '../../recording/log';
+import type { Color } from '../../engine';
 import { session } from '../../session/session';
 import { drawTableOf } from '../../session/step';
-import type { SessionState } from '../../session/types';
-import { HUMAN_COLOR, type GameStatus } from '../../shared/game';
+import { HUMAN_COLOR } from '../../shared/game';
 import { canAnswerDraw, canOfferDraw, type DrawTable } from '../../utils/drawOffer';
 import type { WatchingGame } from '../review/watching';
+import { useSession } from '../../session/useSession';
+import { gameStatusOf, boardOf, logOf } from './boardView';
 
 interface UseResignAndDrawArgs {
   isMultiplayer: boolean;
@@ -18,11 +18,6 @@ interface UseResignAndDrawArgs {
   watchingGame: WatchingGame | null;
   /** QA-11 — solo only: the bot's move is in flight (App). */
   botThinking: boolean;
-  gameStatus: GameStatus;
-  /** The session as App rendered it (its draw table), and the game on the board. */
-  sess: SessionState;
-  state: BoardState;
-  log: GameLog;
   /** Resign asked for, by this side, waiting for its confirm (App state). */
   confirmingResign: Color | null;
   setConfirmingResign: Dispatch<SetStateAction<Color | null>>;
@@ -41,9 +36,10 @@ interface UseResignAndDrawArgs {
 /**
  * Resigning (QA-11: the seat whose Resign was pressed; solo, hot-seat or
  * online, after a confirm) and the hot-seat draw offers (each seat offers
- * and answers in its own row). Plain handlers, no React hooks inside: what
- * they read is passed in from App's render, as their closures read it, so
- * the call's position changes no effect order.
+ * and answers in its own row). Plain handlers: the only React hook inside is useSession (the
+ * game on the board, read in this render, as App's aliases are), with no
+ * effect of its own; the rest of what they read is passed in from App's
+ * render, so the call's position changes no effect order.
  */
 export function useResignAndDraw({
   isMultiplayer,
@@ -51,10 +47,6 @@ export function useResignAndDraw({
   isLocalMode,
   watchingGame,
   botThinking,
-  gameStatus,
-  sess,
-  state,
-  log,
   confirmingResign,
   setConfirmingResign,
   setGameOutcome,
@@ -65,6 +57,10 @@ export function useResignAndDraw({
   completedLogIdRef,
   setMpSelfResigned,
 }: UseResignAndDrawArgs) {
+  const gameStatus = useSession(gameStatusOf);
+  const sess = useSession((s) => s);
+  const state = useSession(boardOf(isMultiplayer));
+  const log = useSession(logOf(isMultiplayer));
   /** QA-11 — `side` is the seat whose Resign was pressed (hot-seat has
    *  one per player). Solo it is always the human; online the match knows. */
   function requestResign(side?: Color) {
