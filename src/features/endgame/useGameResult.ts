@@ -3,15 +3,15 @@ import type { User } from 'firebase/auth';
 import type { BotStrength } from '../../ai/agents';
 import { computeGamePoints, type GameOutcome, type GamePoints } from '../../analysis/points';
 import type { ToastContextValue } from '../../components/Toast';
-import type { BoardState } from '../../engine';
-import type { GameLog } from '../../recording/log';
 import { useSessionEventsAfterCommit } from '../../session/useSessionEvents';
-import { HUMAN_COLOR, type GameMode, type GameStatus } from '../../shared/game';
+import { HUMAN_COLOR } from '../../shared/game';
 import { nowMs } from '../../utils/nowMs';
 import { useMoveMilestones } from '../game/useMoveMilestones';
 import type { WatchingGame } from '../review/watching';
 import { soloOutcome } from './result';
 import { useGameSaveQueue, type FinishedGameSave } from './useGameSaveQueue';
+import { useSession } from '../../session/useSession';
+import { gameStatusOf, boardOf, logOf, modeOf } from '../game/boardView';
 
 interface UseGameResultArgs {
   isAutoMode: boolean;
@@ -19,12 +19,6 @@ interface UseGameResultArgs {
   isLocalMode: boolean;
   opponentMode: 'ai' | 'friend' | 'local';
   watchingGame: WatchingGame | null;
-  /** The game on the board (App's aliases). */
-  gameStatus: GameStatus;
-  state: BoardState;
-  log: GameLog;
-  gameMode: GameMode;
-  seed: number;
   /** The game's 960 code, as the chip shows it (App's positionLabel). */
   positionLabel: string;
   botLevel: BotStrength;
@@ -64,11 +58,6 @@ export function useGameResult({
   isLocalMode,
   opponentMode,
   watchingGame,
-  gameStatus,
-  state,
-  log,
-  gameMode,
-  seed,
   positionLabel,
   botLevel,
   authLoading,
@@ -80,6 +69,11 @@ export function useGameResult({
   importedLogIdRef,
   resumedLogIdRef,
 }: UseGameResultArgs) {
+  const gameStatus = useSession(gameStatusOf);
+  const state = useSession(boardOf(isMultiplayer));
+  const log = useSession(logOf(isMultiplayer));
+  const gameMode = useSession(modeOf(isMultiplayer));
+  const seed = useSession((s) => s.seed);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [lastGamePoints, setLastGamePoints] = useState<GamePoints | null>(null);
   // Stage P addendum 7: captured at finishGame so the GameSummary modal
