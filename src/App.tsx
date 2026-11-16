@@ -51,7 +51,6 @@ import { drawRows } from './features/game/drawRows';
 import { useScreenNavigation } from './app/useScreenNavigation';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { WelcomeScreen } from './components/WelcomeScreen';
-import type { MatchDoc, MatchOutcome } from './firebase/matches';
 import { useAuth } from './firebase/useAuth';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';
@@ -206,46 +205,17 @@ function App() {
   // overlays the existing 'game' view — the board/log/header reuse the
   // single-player UI, only the data source flips.
   const [opponentMode, setOpponentMode] = useState<'ai' | 'friend' | 'local'>('ai');
-  // Q.B.2: active PvP match handshake. When non-null, the rest of App
-  // sources its board / log / turn state from useMultiplayerSync below
-  // instead of the local engine.
-  const [activeMatch, setActiveMatch] = useState<MatchDoc | null>(null);
-  // Match-completion modal state (separate from the AI GameSummary which
-  // is points-driven and doesn't fit the PvP shape).
-  const [mpEndOutcome, setMpEndOutcome] = useState<MatchOutcome | null>(null);
-  // R13b — reconnect after a refresh. The active match code is read ONCE
-  // at mount (the persistence effect below clears the key whenever
-  // activeMatch is null, so reading it lazily later would lose the race).
-  const mpResumeCodeRef = useRef<string | null>(
-    (() => {
-      try {
-        return localData.get(LOCAL_KEYS.mpActive);
-      } catch {
-        return null;
-      }
-    })(),
-  );
-  const mpSavedGameIdRef = useRef<string | null>(null);
-  const mpWroteOutcomeRef = useRef<string | null>(null);
-  // QA-04 — the match code this player resigned themselves (the Resign
-  // button, not a flag fall), so their own end text can say so.
-  const mpSelfResignedRef = useRef<string | null>(null);
-  const { mpSync, isMultiplayer } = useOnlineMatch({
+  // The online match and its state (useOnlineMatch).
+  const mp = useOnlineMatch({
     user,
     setView,
     setOpponentMode,
-    activeMatch,
-    setActiveMatch,
-    setMpEndOutcome,
-    mpEndOutcome,
-    mpResumeCodeRef,
-    mpSavedGameIdRef,
-    mpWroteOutcomeRef,
     // Declared further down; the hook only calls it from callbacks, which
     // run after this render, so a wrapper is enough to reach it.
     setMobilePanel: (v) => setMobilePanel(v),
     startNewGame,
   });
+  const { mpSync, isMultiplayer, activeMatch, mpEndOutcome, mpResumeCodeRef } = mp;
 
   // V1 — every visit starts from a fresh chess960 position (FIRST_SEED in
   // src/session/session.ts).
@@ -586,16 +556,7 @@ function App() {
     if (events.some((e) => e.type === 'rouletteSpin' && e.slots === null)) setSelected(null);
   });
 
-  useOnlineMatchEnd({
-    user,
-    mpEndOutcome,
-    setMpEndOutcome,
-    mpSavedGameIdRef,
-    mpWroteOutcomeRef,
-    isMultiplayer,
-    mpSync,
-    toast,
-  });
+  useOnlineMatchEnd({ user, mp, toast });
 
   useDrawDeclinedToast({ isMultiplayer, mpSync, toast });
 
@@ -633,7 +594,7 @@ function App() {
     toast,
     beatSnapPendingRef,
     completedLogIdRef,
-    mpSelfResignedRef,
+    setMpSelfResigned: mp.setMpSelfResigned,
   });
 
   useRoomGradient({
@@ -658,6 +619,9 @@ function App() {
   useEffect(() => {
     if (prevTopologyRef.current === state.topologyState) return;
     prevTopologyRef.current = state.topologyState;
+    // The glow starts in the commit after the one that shows the rotation and ends on this effect's
+    // timer; worked out in render it would start one render earlier (one of App's small effects, left as it is).
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- see the two lines above
     setRecentRotation(true);
     const t = setTimeout(() => setRecentRotation(false), 2500);
     return () => clearTimeout(t);
@@ -820,6 +784,9 @@ function App() {
 
   // S2.4 — any change to the position invalidates a shown hint.
   useEffect(() => {
+    // The hint goes in the commit after the one that shows the new position, as it always has;
+    // keyed to the position in render it would go one render earlier (one of App's small effects, left as it is).
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- see the two lines above
     setHintMove(null);
   }, [sess.log.moves.length, state.topologyState, gameStatus]);
 
@@ -878,6 +845,9 @@ function App() {
   // this file (earlyTipLogIdRef etc.).
   const [localGameOverDismissed, setLocalGameOverDismissed] = useState(false);
   useEffect(() => {
+    // A new game brings the hot-seat "Game over" card back in the commit after the one that shows it;
+    // keyed to the log id in render it would be one render earlier (one of App's small effects, left as it is).
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- see the two lines above
     setLocalGameOverDismissed(false);
   }, [log.id]);
   // Sprint 4.3.1 — derived "the user has committed to this game" flag.
@@ -1102,11 +1072,8 @@ function App() {
     setActiveReviewMeta,
     classifyImportedLog,
     startNewGame,
-    setActiveMatch,
+    mp,
     setMobilePanel,
-    setMpEndOutcome,
-    mpSavedGameIdRef,
-    mpWroteOutcomeRef,
     setView,
   });
 
@@ -1662,18 +1629,11 @@ function App() {
         <MatchCompleteDialog
           mpSync={mpSync}
           mpEndOutcome={mpEndOutcome}
-          // The ref is written in the Resign click; this render, the match's end arriving in a later
-          // snapshot, only reads it. As state it would be the online match end's (group 2), not moved here.
-          // eslint-disable-next-line react-hooks/refs -- see the two lines above
-          selfResigned={mpSelfResignedRef.current === mpSync.matchState.code}
+          mp={mp}
           displayName={displayName}
-          setMpEndOutcome={setMpEndOutcome}
-          setActiveMatch={setActiveMatch}
           setOpponentMode={setOpponentMode}
           setView={setView}
           setMobilePanel={setMobilePanel}
-          mpSavedGameIdRef={mpSavedGameIdRef}
-          mpWroteOutcomeRef={mpWroteOutcomeRef}
           setActiveReviewLog={setActiveReviewLog}
           setActiveReviewMeta={setActiveReviewMeta}
         />

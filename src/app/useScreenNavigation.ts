@@ -1,6 +1,7 @@
-import type { Dispatch, RefObject, SetStateAction } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 import type { GameReviewMeta } from '../components/GameReview';
-import type { MatchDoc, MatchOutcome } from '../firebase/matches';
+import type { MatchDoc } from '../firebase/matches';
+import type { useOnlineMatch } from '../features/online/useOnlineMatch';
 import type { useClassifier } from '../features/game/useClassifier';
 import type { WatchingGame } from '../features/review/watching';
 import { unclassifiedMoveIndexes, type GameLog } from '../recording/log';
@@ -20,12 +21,10 @@ interface UseScreenNavigationArgs {
   /** F7 — classifies what the review left unclassified (useClassifier). */
   classifyImportedLog: ReturnType<typeof useClassifier>['classifyImportedLog'];
   startNewGame: () => void;
-  setActiveMatch: Dispatch<SetStateAction<MatchDoc | null>>;
+  /** The online match's state (useOnlineMatch): a match from the lobby
+   *  becomes the match, and the previous one's result and save markers go. */
+  mp: ReturnType<typeof useOnlineMatch>;
   setMobilePanel: Dispatch<SetStateAction<'none' | 'menu' | 'setup'>>;
-  setMpEndOutcome: Dispatch<SetStateAction<MatchOutcome | null>>;
-  /** The previous match's save markers (useOnlineMatchEnd). */
-  mpSavedGameIdRef: RefObject<string | null>;
-  mpWroteOutcomeRef: RefObject<string | null>;
   setView: Dispatch<SetStateAction<View>>;
 }
 
@@ -47,13 +46,11 @@ export function useScreenNavigation({
   setActiveReviewMeta,
   classifyImportedLog,
   startNewGame,
-  setActiveMatch,
+  mp,
   setMobilePanel,
-  setMpEndOutcome,
-  mpSavedGameIdRef,
-  mpWroteOutcomeRef,
   setView,
 }: UseScreenNavigationArgs) {
+  const { setActiveMatch, setMpEndOutcome, mpSavedGameIdRef, mpWroteOutcomeRef } = mp;
   function backFromReview() {
     // V1 — leaving the review rebuilds the whole board view in one
     // commit: the board, 64 tiles, the panels and whatever

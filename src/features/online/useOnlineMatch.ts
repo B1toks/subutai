@@ -1,4 +1,4 @@
-import { useEffect, type Dispatch, type SetStateAction, type RefObject } from 'react';
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import type { User } from 'firebase/auth';
 import { useMultiplayerSync } from '../../components/MultiplayerGameView';
 import type { MatchDoc, MatchOutcome } from '../../firebase/matches';
@@ -9,37 +9,53 @@ interface UseOnlineMatchArgs {
   user: User | null;
   setView: Dispatch<SetStateAction<'game' | 'review' | 'leaderboard' | 'friend-lobby'>>;
   setOpponentMode: Dispatch<SetStateAction<'ai' | 'friend' | 'local'>>;
-  activeMatch: MatchDoc | null;
-  setActiveMatch: Dispatch<SetStateAction<MatchDoc | null>>;
-  setMpEndOutcome: Dispatch<SetStateAction<MatchOutcome | null>>;
-  mpEndOutcome: MatchOutcome | null;
-  mpResumeCodeRef: RefObject<string | null>;
-  mpSavedGameIdRef: RefObject<string | null>;
-  mpWroteOutcomeRef: RefObject<string | null>;
   setMobilePanel: Dispatch<SetStateAction<'none' | 'menu' | 'setup'>>;
   startNewGame: () => void;
 }
 
 /**
- * The online match on the board: its live sync with the match doc, the
- * match code kept in localStorage while it is live, and the one reseat
- * into that match after a reload. App calls it before the board state,
- * since nearly everything after reads isMultiplayer.
+ * The online match on the board, and its state: the match (activeMatch),
+ * its live sync with the match doc, how it ended here (mpEndOutcome, the
+ * result dialog), the markers of what this tab has written for it (the
+ * outcome, the /games record), whether this tab resigned it, the match
+ * code kept in localStorage while it is live, and the one reseat into
+ * that match after a reload. App calls it before the board state, since
+ * nearly everything after reads isMultiplayer. The match's end
+ * (useOnlineMatchEnd), the lobby, the result dialog and Resign take the
+ * whole object.
  */
 export function useOnlineMatch({
   user,
   setView,
   setOpponentMode,
-  activeMatch,
-  setActiveMatch,
-  setMpEndOutcome,
-  mpEndOutcome,
-  mpResumeCodeRef,
-  mpSavedGameIdRef,
-  mpWroteOutcomeRef,
   setMobilePanel,
   startNewGame,
 }: UseOnlineMatchArgs) {
+  // Q.B.2: active PvP match handshake. When non-null, the rest of App
+  // sources its board / log / turn state from useMultiplayerSync below
+  // instead of the local engine.
+  const [activeMatch, setActiveMatch] = useState<MatchDoc | null>(null);
+  // Match-completion modal state (separate from the AI GameSummary which
+  // is points-driven and doesn't fit the PvP shape).
+  const [mpEndOutcome, setMpEndOutcome] = useState<MatchOutcome | null>(null);
+  // R13b — reconnect after a refresh. The active match code is read ONCE
+  // at mount (the persistence effect below clears the key whenever
+  // activeMatch is null, so reading it lazily later would lose the race).
+  const mpResumeCodeRef = useRef<string | null>(
+    (() => {
+      try {
+        return localData.get(LOCAL_KEYS.mpActive);
+      } catch {
+        return null;
+      }
+    })(),
+  );
+  const mpSavedGameIdRef = useRef<string | null>(null);
+  const mpWroteOutcomeRef = useRef<string | null>(null);
+  // QA-04 — the match code this player resigned themselves (the Resign
+  // button, not a flag fall), so their own end text can say so. A state,
+  // not a ref: the result dialog reads it while rendering.
+  const [mpSelfResigned, setMpSelfResigned] = useState<string | null>(null);
   // Q.B.2: PvP sync. Hook is always called (with null match before any
   // game starts) so React's hook-order rules are respected. Returns null
   // when no match — every consumer guards on isMultiplayer below.
@@ -101,5 +117,17 @@ export function useOnlineMatch({
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
-  return { mpSync, isMultiplayer };
+  return {
+    mpSync,
+    isMultiplayer,
+    activeMatch,
+    setActiveMatch,
+    mpEndOutcome,
+    setMpEndOutcome,
+    mpResumeCodeRef,
+    mpSavedGameIdRef,
+    mpWroteOutcomeRef,
+    mpSelfResigned,
+    setMpSelfResigned,
+  };
 }

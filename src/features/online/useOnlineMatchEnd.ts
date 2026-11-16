@@ -1,19 +1,15 @@
-import { useEffect, type Dispatch, type SetStateAction, type RefObject } from 'react';
+import { useEffect } from 'react';
 import type { User } from 'firebase/auth';
 import type { MatchOutcome } from '../../firebase/matches';
+import type { useOnlineMatch } from './useOnlineMatch';
 import { findKing, isCheckmate, checkDrawConditions } from '../../engine/moves';
 import { gamesRepo } from '../../infra/firestore/games';
-import type { MultiplayerSyncHandle } from '../../components/MultiplayerGameView';
 import type { ToastContextValue } from '../../components/Toast';
 
 interface UseOnlineMatchEndArgs {
   user: User | null;
-  mpEndOutcome: MatchOutcome | null;
-  setMpEndOutcome: Dispatch<SetStateAction<MatchOutcome | null>>;
-  mpSavedGameIdRef: RefObject<string | null>;
-  mpWroteOutcomeRef: RefObject<string | null>;
-  isMultiplayer: boolean;
-  mpSync: MultiplayerSyncHandle | null;
+  /** The match and what this tab has written for it (useOnlineMatch). */
+  mp: ReturnType<typeof useOnlineMatch>;
   toast: ToastContextValue;
 }
 
@@ -23,16 +19,8 @@ interface UseOnlineMatchEndArgs {
  * says completed, each player opens the result dialog and saves their own
  * /games record.
  */
-export function useOnlineMatchEnd({
-  user,
-  mpEndOutcome,
-  setMpEndOutcome,
-  mpSavedGameIdRef,
-  mpWroteOutcomeRef,
-  isMultiplayer,
-  mpSync,
-  toast,
-}: UseOnlineMatchEndArgs) {
+export function useOnlineMatchEnd({ user, mp, toast }: UseOnlineMatchEndArgs) {
+  const { mpEndOutcome, setMpEndOutcome, mpSavedGameIdRef, mpWroteOutcomeRef, isMultiplayer, mpSync } = mp;
   // ---- Q.B.2 multiplayer: terminal detection + host /games save ----------
   // Runs whenever the live match changes. If the board reached mate/draw,
   // first peer to notice writes the outcome (transaction-guarded). When

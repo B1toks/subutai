@@ -1,35 +1,32 @@
-import type { RefObject } from 'react';
 import { BarChart3 } from 'lucide-react';
 import type { GameReviewMeta } from '../../components/GameReview';
 import { Icon } from '../../components/Icon';
 import type { MultiplayerSyncHandle } from '../../components/MultiplayerGameView';
 import { mpResignCause } from '../../firebase/matchEnd';
-import type { MatchDoc, MatchOutcome } from '../../firebase/matches';
+import type { MatchOutcome } from '../../firebase/matches';
 import { translateOutcomeForPlayer } from '../../firebase/multiplayerGames';
 import type { GameLog } from '../../recording/log';
 import { busy } from '../../ui/busy';
 import { deriveMpLog } from './matchLog';
+import type { useOnlineMatch } from './useOnlineMatch';
 
 type View = 'game' | 'review' | 'leaderboard' | 'friend-lobby';
 
 interface MatchCompleteDialogProps {
-  /** The match that ended, and how (useOnlineMatch, useOnlineMatchEnd). */
+  /** The match that ended, and how: App renders the dialog only once both
+   *  are there (useOnlineMatch, useOnlineMatchEnd). */
   mpSync: MultiplayerSyncHandle;
   mpEndOutcome: MatchOutcome;
-  /** This tab resigned this match (App reads its mpSelfResignedRef in
-   *  render, as it did before, and passes the answer). */
-  selfResigned: boolean;
+  /** The match's state (useOnlineMatch): whether this tab resigned it,
+   *  and what the three exits clear (the result, the match, its save
+   *  markers). */
+  mp: ReturnType<typeof useOnlineMatch>;
   displayName: string | null;
-  /** What the three exits change in App: the result, the match, the
-   *  opponent, the view, the drawer, the match's save markers, and the
-   *  review's game. */
-  setMpEndOutcome: (outcome: MatchOutcome | null) => void;
-  setActiveMatch: (match: MatchDoc | null) => void;
+  /** What else the exits change in App: the opponent, the view, the
+   *  drawer, and the review's game. */
   setOpponentMode: (mode: 'ai' | 'friend' | 'local') => void;
   setView: (view: View) => void;
   setMobilePanel: (panel: 'none' | 'menu' | 'setup') => void;
-  mpSavedGameIdRef: RefObject<string | null>;
-  mpWroteOutcomeRef: RefObject<string | null>;
   setActiveReviewLog: (log: GameLog | null) => void;
   setActiveReviewMeta: (meta: GameReviewMeta | null) => void;
 }
@@ -44,18 +41,16 @@ interface MatchCompleteDialogProps {
 export function MatchCompleteDialog({
   mpSync,
   mpEndOutcome,
-  selfResigned,
+  mp,
   displayName,
-  setMpEndOutcome,
-  setActiveMatch,
   setOpponentMode,
   setView,
   setMobilePanel,
-  mpSavedGameIdRef,
-  mpWroteOutcomeRef,
   setActiveReviewLog,
   setActiveReviewMeta,
 }: MatchCompleteDialogProps) {
+  const { setMpEndOutcome, setActiveMatch, mpSavedGameIdRef, mpWroteOutcomeRef } = mp;
+  const selfResigned = mp.mpSelfResigned === mpSync.matchState.code;
   const myView = translateOutcomeForPlayer(
     mpEndOutcome,
     {

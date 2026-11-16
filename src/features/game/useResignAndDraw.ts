@@ -34,7 +34,8 @@ interface UseResignAndDrawArgs {
   beatSnapPendingRef: RefObject<boolean>;
   completedLogIdRef: RefObject<string | null>;
   /** The match this tab resigned (the end-of-match dialog's wording). */
-  mpSelfResignedRef: RefObject<string | null>;
+  /** Marks the match this tab resigned (useOnlineMatch's state). */
+  setMpSelfResigned: Dispatch<SetStateAction<string | null>>;
 }
 
 /**
@@ -62,7 +63,7 @@ export function useResignAndDraw({
   toast,
   beatSnapPendingRef,
   completedLogIdRef,
-  mpSelfResignedRef,
+  setMpSelfResigned,
 }: UseResignAndDrawArgs) {
   /** QA-11 — `side` is the seat whose Resign was pressed (hot-seat has
    *  one per player). Solo it is always the human; online the match knows. */
@@ -92,9 +93,9 @@ export function useResignAndDraw({
       // Remembered only if this resignation is what ended the match: a
       // failed write, or a flag fall that landed first, is not one.
       const code = mpSync.matchState.code;
-      mpSelfResignedRef.current = code;
+      setMpSelfResigned(code);
       void mpSync.resign().then((wrote) => {
-        if (!wrote && mpSelfResignedRef.current === code) mpSelfResignedRef.current = null;
+        if (!wrote) setMpSelfResigned((cur) => (cur === code ? null : cur));
       });
       return;
     }
