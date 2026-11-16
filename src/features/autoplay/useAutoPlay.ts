@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import type { GameOutcome } from '../../analysis/points';
-import { HUMAN_COLOR, type GameStatus } from '../../shared/game';
+import { HUMAN_COLOR } from '../../shared/game';
 import { evaluate } from '../../ai/evaluate';
 import { gamesRepo } from '../../infra/firestore/games';
 import { backRankString } from '../game/position';
-import type { BoardState } from '../../engine';
-import type { GameLog } from '../../recording/log';
+import { useSession } from '../../session/useSession';
+import { gameStatusOf, boardOf, logOf } from '../game/boardView';
 
 // Bumped per release so /training_games docs can be filtered by engine
 // version when we later use them for training data.
@@ -16,15 +16,11 @@ const AUTO_BETWEEN_GAMES_MS = 600;
 const AUTO_WATCHDOG_MS = 60_000;
 
 interface UseAutoPlayArgs {
+  isMultiplayer: boolean;
   isAutoMode: boolean;
   maxGames: number;
   /** When App mounted: the watchdog's first "last move". */
   mountedAt: number;
-  seed: number;
-  initialState: BoardState;
-  gameStatus: GameStatus;
-  state: BoardState;
-  log: GameLog;
   gameStartedAtRef: RefObject<number>;
   startNewGame: () => void;
 }
@@ -39,17 +35,18 @@ interface UseAutoPlayArgs {
  * and autoSavedLogIdRef.
  */
 export function useAutoPlay({
+  isMultiplayer,
   isAutoMode,
   maxGames,
   mountedAt,
-  seed,
-  initialState,
-  gameStatus,
-  state,
-  log,
   gameStartedAtRef,
   startNewGame,
 }: UseAutoPlayArgs) {
+  const seed = useSession((s) => s.seed);
+  const initialState = useSession((s) => s.initial);
+  const gameStatus = useSession(gameStatusOf);
+  const state = useSession(boardOf(isMultiplayer));
+  const log = useSession(logOf(isMultiplayer));
   const [autoGamesCompleted, setAutoGamesCompleted] = useState(0);
   const [autoLastOutcome, setAutoLastOutcome] = useState<GameOutcome | null>(null);
   // Rolling history of full-move counts so the panel can show an average.

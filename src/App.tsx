@@ -546,14 +546,10 @@ function App() {
 
   // The self-play run (?auto) and its state (useAutoPlay).
   const auto = useAutoPlay({
+    isMultiplayer,
     isAutoMode,
     maxGames,
     mountedAt,
-    seed,
-    initialState,
-    gameStatus,
-    state,
-    log,
     gameStartedAtRef,
     startNewGame,
   });
