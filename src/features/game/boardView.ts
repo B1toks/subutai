@@ -1,4 +1,4 @@
-import type { BoardState, PieceType } from '../../engine';
+import type { BoardState, Move, PieceType } from '../../engine';
 import type { GameLog } from '../../recording/log';
 import type { LastMove, RouletteReveal, SessionState } from '../../session/types';
 import type { GameMode, GameStatus } from '../../shared/game';
@@ -7,15 +7,19 @@ import type { GameMode, GameStatus } from '../../shared/game';
  * The game on the board as App reads it (App.tsx: `online`, `state`,
  * `log`): an online match's game while this page plays one
  * (isMultiplayer, which is mpSync, not session state), else the solo
- * game. Selectors for useSession(selector) in the components App renders,
- * so they show the same game App does; each returns a piece of the state
- * as it is.
+ * game. Selectors for useSession(selector) in the components App renders
+ * and in the hooks it calls, so they read the same game App does; each
+ * returns a piece of the state as it is.
  */
 export const boardOf = (isMultiplayer: boolean) => (s: SessionState): BoardState =>
   isMultiplayer && s.online?.game ? s.online.game.board : s.board;
 
 export const logOf = (isMultiplayer: boolean) => (s: SessionState): GameLog =>
   isMultiplayer && s.online?.game ? s.online.game.log : s.log;
+
+/** The moves the side to move may make (App.tsx: `legalMoves`). */
+export const legalMovesOf = (isMultiplayer: boolean) => (s: SessionState): Move[] =>
+  (isMultiplayer && s.online?.game ? s.online.game.legal : s.legal) as Move[];
 
 export const lastMoveOf = (isMultiplayer: boolean) => (s: SessionState): LastMove | null =>
   isMultiplayer && s.online?.game ? s.online.game.lastMove : s.lastMove;

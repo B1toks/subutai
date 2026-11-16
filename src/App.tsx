@@ -462,13 +462,6 @@ function App() {
   // play, stop. Before isLocalMode, which reads watchingGame.
   const { watchingGame, startWatching, seekWatchTo, toggleWatchAutoplay, stopWatching } = useWatching({
     isMultiplayer,
-    seed,
-    state,
-    initialState,
-    legalMoves,
-    log,
-    gameStatus,
-    lastMove,
     searchEvalFromWhite,
     searchMateInPlies,
     setSearchEvalFromWhite,

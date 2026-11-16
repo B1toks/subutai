@@ -6,20 +6,15 @@ import type { TopologyState } from '../../engine';
 import { replayBoardAt } from '../game/position';
 import { useWatchAutoplay } from './useWatchAutoplay';
 import type { GameBackup, WatchingGame } from './watching';
+import { useSession } from '../../session/useSession';
+import { boardOf, legalMovesOf, logOf, gameStatusOf, lastMoveOf } from '../game/boardView';
 
 type View = 'game' | 'review' | 'leaderboard' | 'friend-lobby';
 
 interface UseWatchingArgs {
   isMultiplayer: boolean;
-  /** The player's own game, put aside while watching and put back after
-   *  (App's aliases and state, as GameBackup holds them). */
-  seed: GameBackup['seed'];
-  state: GameBackup['state'];
-  initialState: GameBackup['initialState'];
-  legalMoves: GameBackup['legalMoves'];
-  log: GameBackup['log'];
-  gameStatus: GameBackup['gameStatus'];
-  lastMove: GameBackup['lastMove'];
+  /** With the game on the board (read from the session), what is put aside
+   *  while watching and put back after (App's state, as GameBackup holds it). */
   searchEvalFromWhite: number | null;
   searchMateInPlies: number | null;
   setSearchEvalFromWhite: Dispatch<SetStateAction<number | null>>;
@@ -49,19 +44,13 @@ interface UseWatchingArgs {
  * loads its first position into the session; Prev / Next / Auto step
  * through it (the autoplay effect: useWatchAutoplay); Stop puts the own
  * game back, with its autosave markers. What the handlers read of the own
- * game is passed in from App's render, as their closures read it. App
+ * game comes from the session in the hook's render, so their closures hold
+ * it as App's render had it. App
  * calls this before it works out whose game is on the board (isLocalMode
  * reads watchingGame).
  */
 export function useWatching({
   isMultiplayer,
-  seed,
-  state,
-  initialState,
-  legalMoves,
-  log,
-  gameStatus,
-  lastMove,
   searchEvalFromWhite,
   searchMateInPlies,
   setSearchEvalFromWhite,
@@ -79,6 +68,13 @@ export function useWatching({
   savedForLogIdRef,
   completedLogIdRef,
 }: UseWatchingArgs) {
+  const seed = useSession((s) => s.seed);
+  const state = useSession(boardOf(isMultiplayer));
+  const initialState = useSession((s) => s.initial);
+  const legalMoves = useSession(legalMovesOf(isMultiplayer));
+  const log = useSession(logOf(isMultiplayer));
+  const gameStatus = useSession(gameStatusOf);
+  const lastMove = useSession(lastMoveOf(isMultiplayer));
   const [watchingGame, setWatchingGame] = useState<WatchingGame | null>(null);
   const watchAutoplayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gameBackupRef = useRef<GameBackup | null>(null);
