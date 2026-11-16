@@ -3,22 +3,17 @@ import { memoryTermination } from '../features/endgame/result';
 import { buildSavedGameFromLog, buildSavedGameSnapshot } from './build';
 import { localStorageAdapter } from './storage';
 import { writeLiveSession, clearLiveSession } from './liveSession';
-import type { GameStatus, GameMode } from '../shared/game';
 import type { BotStrength } from '../ai/agents';
-import type { BoardState } from '../engine';
-import type { GameLog } from '../recording/log';
+import { useSession } from '../session/useSession';
+import { gameStatusOf, modeOf, boardOf, logOf } from '../features/game/boardView';
 
 interface UseMemoryAutosaveArgs {
   importedLogIdRef: RefObject<string | null>;
   resumedLogIdRef: RefObject<string | null>;
   opponentMode: 'ai' | 'friend' | 'local';
   isMultiplayer: boolean;
-  gameStatus: GameStatus;
   soloTcSec: number | null;
   botLevel: BotStrength;
-  gameMode: GameMode;
-  state: BoardState;
-  log: GameLog;
   savedForLogIdRef: RefObject<string | null>;
   liveSavedGameIdRef: RefObject<string>;
 }
@@ -34,15 +29,15 @@ export function useMemoryAutosave({
   resumedLogIdRef,
   opponentMode,
   isMultiplayer,
-  gameStatus,
   soloTcSec,
   botLevel,
-  gameMode,
-  state,
-  log,
   savedForLogIdRef,
   liveSavedGameIdRef,
 }: UseMemoryAutosaveArgs) {
+  const gameStatus = useSession(gameStatusOf);
+  const gameMode = useSession(modeOf(isMultiplayer));
+  const state = useSession(boardOf(isMultiplayer));
+  const log = useSession(logOf(isMultiplayer));
   useEffect(() => {
     if (isMultiplayer) return; // PvP games persist via /games, not local Memory
     if (gameStatus === 'active') return;

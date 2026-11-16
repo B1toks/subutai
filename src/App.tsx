@@ -452,12 +452,8 @@ function App() {
     resumedLogIdRef,
     opponentMode,
     isMultiplayer,
-    gameStatus,
     soloTcSec,
     botLevel,
-    gameMode,
-    state,
-    log,
     savedForLogIdRef,
     liveSavedGameIdRef,
   });
