@@ -17,12 +17,15 @@ import { isPieceMovableInRoulette } from './roulette';
 import type { useBoardFxState } from './useBoardFxState';
 import type { useBoardMarks } from './useBoardMarks';
 import type { BoardUi } from './useBoardUi';
+import type { MoveVerdicts } from './useMoveVerdicts';
 
 type Marks = ReturnType<typeof useBoardMarks>;
 type Fx = ReturnType<typeof useBoardFxState>;
 type Endgame = ReturnType<typeof useEndgame>;
 
 interface BoardTilesProps {
+  /** The classifier's marks (useMoveVerdicts). */
+  verdicts: MoveVerdicts;
   /** The board's own UI state (useBoardUi). */
   ui: BoardUi;
   /** The board's marks (useBoardMarks), effects (useBoardFxState) and the
@@ -33,11 +36,6 @@ interface BoardTilesProps {
   isMultiplayer: boolean;
   /** The 64 squares, a8..h1 (App). */
   squares: string[];
-  /** The classifier's verdict square and a sacrifice (App state); the
-   *  selection, the hint, a beat-snapped move and the right-click colours
-   *  are in ui. */
-  classifiedSquare: { square: SquareId; classification: 'blunder' | 'brilliant' } | null;
-  sacrificeSquare: SquareId | null;
   opponentMode: 'ai' | 'friend' | 'local';
   /** Whose turn from this seat, and the seat's colour (App, useEval). */
   currentPlayer: 'human' | 'ai';
@@ -68,11 +66,10 @@ interface BoardTilesProps {
  * DOM order.
  */
 export function BoardTiles({
+  verdicts,
   ui,
   isMultiplayer,
   squares,
-  classifiedSquare,
-  sacrificeSquare,
   opponentMode,
   currentPlayer,
   myColor,
@@ -88,6 +85,7 @@ export function BoardTiles({
   fx,
   endgame,
 }: BoardTilesProps) {
+  const { classifiedSquare, sacrificeSquare } = verdicts;
   const { selected, hintMove, beatSnap, squareAnnotations, setHoveredSquare } = ui;
   const { highlightedTargets, enPassantTargets, checkSquares, threatenedSquares, threateningPieceSquares, displayTopology } = marks;
   const { enPassantExplosionSquare, captureFxSquare } = fx;

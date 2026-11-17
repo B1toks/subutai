@@ -42,6 +42,7 @@ import { BoardTiles } from './features/game/BoardTiles';
 import { useBoardInput } from './features/game/useBoardInput';
 import { useBoardUi } from './features/game/useBoardUi';
 import { useCoachState } from './features/game/useCoachState';
+import { useMoveVerdicts } from './features/game/useMoveVerdicts';
 import { useWatching } from './features/review/useWatching';
 import { useResignAndDraw } from './features/game/useResignAndDraw';
 import { useFormation } from './features/game/useFormation';
@@ -548,20 +549,10 @@ function App() {
     return () => clearTimeout(t);
   }, [state.topologyState]);
 
-  // Square to pulse-highlight after a blunder/brilliant. Cleared after the
-  // animation duration (4 cycles × 600ms = 2.4s, rounded to 2500).
-  const [classifiedSquare, setClassifiedSquare] = useState<{
-    square: SquareId;
-    classification: 'blunder' | 'brilliant';
-  } | null>(null);
-  const classifyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Sprint 2.7 — separate "sacrifice" highlight, fires in parallel with
-  // the brilliant flag when analysis flags the move as a true sacrifice
-  // (piece walked onto attacked square + position still holds). Distinct
-  // visual (violet burst + sparkles) so a sacrifice reads differently
-  // from an ordinary tactical brilliancy.
-  const [sacrificeSquare, setSacrificeSquare] = useState<SquareId | null>(null);
-  const sacrificeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The classifier's marks: the blunder / brilliant pulse and the
+  // sacrifice burst, with their clearing timers (useMoveVerdicts).
+  const verdicts = useMoveVerdicts();
+  const { sacrificeSquare } = verdicts;
 
   useAdaptiveMusic({
     isMultiplayer,
@@ -582,16 +573,13 @@ function App() {
   // log-length useEffect that drove it have been removed.
 
   const { flashEffect, sparklePositions, commitAnalysis, classifyImportedLog } = useClassifier({
+    verdicts,
     setSearchEvalFromWhite,
     setSearchMateInPlies,
     shellRef,
     logLengthRef,
     logIdRef,
     classifyRunRef,
-    setClassifiedSquare,
-    classifyTimerRef,
-    setSacrificeSquare,
-    sacrificeTimerRef,
   });
 
   const tileBase = boardSize / 8;
@@ -1218,11 +1206,10 @@ function App() {
         }
       >
         <BoardTiles
+          verdicts={verdicts}
           ui={ui}
           isMultiplayer={isMultiplayer}
           squares={squares}
-          classifiedSquare={classifiedSquare}
-          sacrificeSquare={sacrificeSquare}
           opponentMode={opponentMode}
           currentPlayer={currentPlayer}
           myColor={myColor}

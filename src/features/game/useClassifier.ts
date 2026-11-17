@@ -16,20 +16,17 @@ import { applyRotationMove } from '../../engine/auxetic';
 import { applyMove } from '../../engine/moves';
 import { classifyAsync } from '../../analysis/classifyClient';
 import { scaleBudgetMs } from '../../utils/deviceTier';
+import type { MoveVerdicts } from './useMoveVerdicts';
 
 interface UseClassifierArgs {
+  /** The classifier's marks (useMoveVerdicts). */
+  verdicts: MoveVerdicts;
   setSearchEvalFromWhite: Dispatch<SetStateAction<number | null>>;
   setSearchMateInPlies: Dispatch<SetStateAction<number | null>>;
   shellRef: RefObject<HTMLDivElement | null>;
   logLengthRef: RefObject<number>;
   logIdRef: RefObject<string>;
   classifyRunRef: RefObject<number>;
-  setClassifiedSquare: Dispatch<
-    SetStateAction<{ square: SquareId; classification: 'blunder' | 'brilliant' } | null>
-  >;
-  classifyTimerRef: RefObject<number | null>;
-  setSacrificeSquare: Dispatch<SetStateAction<SquareId | null>>;
-  sacrificeTimerRef: RefObject<number | null>;
 }
 
 /**
@@ -41,17 +38,15 @@ interface UseClassifierArgs {
  * which the bot's scheduler relies on.
  */
 export function useClassifier({
+  verdicts,
   setSearchEvalFromWhite,
   setSearchMateInPlies,
   shellRef,
   logLengthRef,
   logIdRef,
   classifyRunRef,
-  setClassifiedSquare,
-  classifyTimerRef,
-  setSacrificeSquare,
-  sacrificeTimerRef,
 }: UseClassifierArgs) {
+  const { setClassifiedSquare, classifyTimerRef, setSacrificeSquare, sacrificeTimerRef } = verdicts;
   // Sprint 3.2.1 — distinctive screen-wide effect on blunder / brilliant
   // classifications. The existing generic flash overlay (--flash-opacity
   // on .app-shell::after) is kept; this adds shake + vignette for ??
