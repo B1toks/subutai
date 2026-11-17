@@ -938,10 +938,7 @@ function App() {
   useCoachNudges({
     isMultiplayer,
     watchingGame,
-    gameStatus,
     helpToolsEnabled,
-    gameMode,
-    log,
     searchEvalFromWhite,
     toast,
     encourageBadStreakRef,

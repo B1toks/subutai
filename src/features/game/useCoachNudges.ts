@@ -6,17 +6,14 @@ import {
   ROTATE_AFTERMATH_TIP,
 } from './coachTexts';
 import type { WatchingGame } from '../review/watching';
-import type { GameStatus, GameMode } from '../../shared/game';
-import type { GameLog } from '../../recording/log';
 import type { ToastContextValue } from '../../components/Toast';
+import { useSession } from '../../session/useSession';
+import { gameStatusOf, modeOf, logOf } from './boardView';
 
 interface UseCoachNudgesArgs {
   isMultiplayer: boolean;
   watchingGame: WatchingGame | null;
-  gameStatus: GameStatus;
   helpToolsEnabled: boolean;
-  gameMode: GameMode;
-  log: GameLog;
   searchEvalFromWhite: number | null;
   toast: ToastContextValue;
   encourageBadStreakRef: RefObject<number>;
@@ -39,10 +36,7 @@ interface UseCoachNudgesArgs {
 export function useCoachNudges({
   isMultiplayer,
   watchingGame,
-  gameStatus,
   helpToolsEnabled,
-  gameMode,
-  log,
   searchEvalFromWhite,
   toast,
   encourageBadStreakRef,
@@ -55,6 +49,9 @@ export function useCoachNudges({
   currentPlayer,
   canRotate,
 }: UseCoachNudgesArgs) {
+  const gameStatus = useSession(gameStatusOf);
+  const gameMode = useSession(modeOf(isMultiplayer));
+  const log = useSession(logOf(isMultiplayer));
   // R5 — nudge the player when they've been clearly behind for a couple of
   // moves, so a hard position reads as "keep fighting" rather than "resign".
   // Checked once per human turn (eval is from white's = the human's side);
