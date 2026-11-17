@@ -1,13 +1,13 @@
 import type { Dispatch, SetStateAction } from 'react';
 import type { MultiplayerSyncHandle } from '../../components/MultiplayerGameView';
-import type { BoardState, TopologyState } from '../../engine';
+import type { TopologyState } from '../../engine';
 import { toggleTopology } from '../../engine/auxetic';
 import { findKing, isSquareAttacked } from '../../engine/moves';
 import { turns } from '../../session/session';
-import type { RouletteReveal } from '../../session/types';
-import type { GameMode, GameStatus } from '../../shared/game';
 import type { WatchingGame } from '../review/watching';
 import { backRankString } from './position';
+import { useSession } from '../../session/useSession';
+import { gameStatusOf, modeOf, boardOf, rouletteRevealOf } from './boardView';
 
 interface UseRotateArgs {
   isMultiplayer: boolean;
@@ -15,13 +15,6 @@ interface UseRotateArgs {
   watchingGame: WatchingGame | null;
   /** Whose turn from this seat (App). */
   currentPlayer: 'human' | 'ai';
-  gameStatus: GameStatus;
-  gameMode: GameMode;
-  /** The game on the board and its start (App's aliases). */
-  state: BoardState;
-  initialState: BoardState;
-  /** A Roulette bag landing: nothing can be rotated until it has (session). */
-  rouletteReveal: RouletteReveal | null;
   setSelected: Dispatch<SetStateAction<string | null>>;
   setPreviewTopology: Dispatch<SetStateAction<TopologyState | null>>;
   /** The formation lock (App state). */
@@ -37,20 +30,16 @@ interface UseRotateArgs {
 /**
  * Two buttons of the board's action row: locking the formation (the next
  * game keeps this 960 start) and Rotate (the rotation is the session's:
- * step.ts checks it; online it goes to the match). Plain handlers, no React
- * hooks inside: what they read is passed in from App's render, so the
- * call's position changes no effect order.
+ * step.ts checks it; online it goes to the match). Plain handlers: the only React hook inside is useSession (the
+ * game on the board, read in this render, as App's aliases are), with no
+ * effect of its own; the rest of what they read is passed in from App's
+ * render, so the call's position changes no effect order.
  */
 export function useRotate({
   isMultiplayer,
   mpSync,
   watchingGame,
   currentPlayer,
-  gameStatus,
-  gameMode,
-  state,
-  initialState,
-  rouletteReveal,
   setSelected,
   setPreviewTopology,
   setFormationLocked,
@@ -59,6 +48,11 @@ export function useRotate({
   dismissRotateHint,
   settleGuessRotate,
 }: UseRotateArgs) {
+  const gameStatus = useSession(gameStatusOf);
+  const gameMode = useSession(modeOf(isMultiplayer));
+  const state = useSession(boardOf(isMultiplayer));
+  const initialState = useSession((s) => s.initial);
+  const rouletteReveal = useSession(rouletteRevealOf(isMultiplayer));
   function toggleFormationLock() {
     setFormationLocked((v) => {
       if (!v) setLockedFormationKey(backRankString(initialState));
