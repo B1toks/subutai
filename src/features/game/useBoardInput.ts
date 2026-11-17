@@ -5,16 +5,16 @@ import type { BoardState, Move, PieceType, SquareId, TopologyState } from '../..
 import { tilePixelCenter, type BoardLayout } from '../../engine/auxetic';
 import { applyMove } from '../../engine/moves';
 import { streaming } from '../../integrations';
-import { computeSAN, type GameLog } from '../../recording/log';
+import { computeSAN } from '../../recording/log';
 import { turns } from '../../session/session';
-import type { RouletteReveal } from '../../session/types';
-import type { GameMode, GameStatus } from '../../shared/game';
 import { scaleBudgetMs } from '../../utils/deviceTier';
 import type { WatchingGame } from '../review/watching';
 import { colorFromMouseEvent, type AnnotationColor, type ArrowAnnotation } from './annotations';
 import { bumpEvalForMove } from './position';
 import { isPieceMovableInRoulette } from './roulette';
 import type { useClassifier } from './useClassifier';
+import { useSession } from '../../session/useSession';
+import { gameStatusOf, modeOf, boardOf, legalMovesOf, logOf, allowedPieceTypesOf, usedRouletteSlotsOf, rouletteRevealOf, rouletteActionsLeftOf } from './boardView';
 
 // M.14 — beat-mode glide length. MUST match the .piece-slide-in CSS
 // animation duration so the slide lands exactly on the beat.
@@ -28,21 +28,12 @@ interface UseBoardInputArgs {
   isLocalMode: boolean;
   watchingGame: WatchingGame | null;
   currentPlayer: 'human' | 'ai';
-  gameStatus: GameStatus;
-  gameMode: GameMode;
-  /** The game on the board (App's aliases: the match's while one is played here). */
-  state: BoardState;
-  legalMoves: Move[];
-  log: GameLog;
+  /** The legal moves of a board under the mode's rules (App). */
   getLegalMoves: (s: BoardState) => Move[];
   selected: string | null;
   setSelected: Dispatch<SetStateAction<string | null>>;
   pendingPromotion: Square | null;
   setMpPendingPromotion: Dispatch<SetStateAction<Square | null>>;
-  allowedPieceTypes: PieceType[] | null;
-  usedRouletteSlots: number[];
-  rouletteReveal: RouletteReveal | null;
-  rouletteActionsLeft: number;
   /** The tiles' layout (useEndgame) and the topology drawn (useBoardMarks). */
   layout: BoardLayout;
   displayTopology: TopologyState;
@@ -64,10 +55,10 @@ interface UseBoardInputArgs {
  * The board's input, as App had it: a click on a tile (select, move, and
  * everything a played move sets off here: the Beat Mode hold, the guess
  * round, the eval bump, the classifier), the promotion picker's two
- * answers, and the right-drag annotations. Plain handlers, no React hooks
- * inside: what they read is passed in from App's render, as their closures
- * read it before, so App calls this after everything it reads is declared;
- * the call's position changes no effect order.
+ * answers, and the right-drag annotations. Plain handlers: the only React hook inside is useSession (the
+ * game on the board, read in this render, as App's aliases are), with no
+ * effect of its own; the rest of what they read is passed in from App's
+ * render, so the call's position changes no effect order.
  */
 export function useBoardInput({
   isMultiplayer,
@@ -75,20 +66,11 @@ export function useBoardInput({
   isLocalMode,
   watchingGame,
   currentPlayer,
-  gameStatus,
-  gameMode,
-  state,
-  legalMoves,
-  log,
   getLegalMoves,
   selected,
   setSelected,
   pendingPromotion,
   setMpPendingPromotion,
-  allowedPieceTypes,
-  usedRouletteSlots,
-  rouletteReveal,
-  rouletteActionsLeft,
   layout,
   displayTopology,
   beatSnapPendingRef,
@@ -101,6 +83,15 @@ export function useBoardInput({
   setSearchEvalFromWhite,
   setSearchMateInPlies,
 }: UseBoardInputArgs) {
+  const gameStatus = useSession(gameStatusOf);
+  const gameMode = useSession(modeOf(isMultiplayer));
+  const state = useSession(boardOf(isMultiplayer));
+  const legalMoves = useSession(legalMovesOf(isMultiplayer));
+  const log = useSession(logOf(isMultiplayer));
+  const allowedPieceTypes = useSession(allowedPieceTypesOf(isMultiplayer));
+  const usedRouletteSlots = useSession(usedRouletteSlotsOf(isMultiplayer));
+  const rouletteReveal = useSession(rouletteRevealOf(isMultiplayer));
+  const rouletteActionsLeft = useSession(rouletteActionsLeftOf(isMultiplayer));
   // Sprint 3.6 — right-click annotation handlers. Bound on every tile
    // alongside onClick. Left-click logic is untouched: button !== 2
    // exits these helpers immediately.

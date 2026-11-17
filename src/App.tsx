@@ -27,7 +27,6 @@ import { ReplayDialog } from './memory/ReplayDialog';
 import { LocalGameOver } from './features/local/LocalGameOver';
 import { PromotionDialog } from './features/game/PromotionDialog';
 import { RoulettePanel } from './features/game/RoulettePanel';
-import { NO_SLOTS } from './features/game/boardView';
 import { nowMs } from './utils/nowMs';
 import { newLiveSnapshotId } from './memory/liveSnapshotId';
 import { GameSetupPanel } from './features/game/GameSetupPanel';
@@ -227,7 +226,6 @@ function App() {
   const state: BoardState = online ? online.board : sess.board;
   const initialState = sess.initial;
   const [selected, setSelected] = useState<string | null>(null);
-  const legalMoves = (online ? online.legal : sess.legal) as Move[];
   const log: GameLog = online ? online.log : sess.log;
   const gameStatus = statusOf(sess);
   const [previewTopology, setPreviewTopology] = useState<TopologyState | null>(null);
@@ -337,8 +335,6 @@ function App() {
     online ? (rouletteReveal ? null : online.slots) : rouletteBag?.slots ?? null
   ) as PieceType[] | null;
   const isRouletteSpinning = rouletteReveal !== null || sess.phase.tag === 'rouletteSpin';
-  const rouletteActionsLeft = online ? online.actionsLeft : rouletteBag?.actionsLeft ?? 0;
-  const usedRouletteSlots = (online ? online.used : rouletteBag?.used ?? NO_SLOTS) as number[];
   const boardFx = useBoardFxState();
   const {
     setCaptureFxSquare,
@@ -1073,8 +1069,9 @@ function App() {
   });
 
   // The board's input: a click on a tile, a promotion, right-click
-  // annotations (useBoardInput). Pure handlers, no hooks inside: called
-  // here, after everything they read is declared (layout, displayTopology).
+  // annotations (useBoardInput). Handlers that read the game from the
+  // session and add no effect: called here, after everything else they
+  // read is declared (layout, displayTopology).
   const { handleTileContextMenu, handleTileMouseDown, handleTileMouseUp, onSquareClick, handlePromotion, cancelPromotion } =
     useBoardInput({
       isMultiplayer,
@@ -1082,20 +1079,11 @@ function App() {
       isLocalMode,
       watchingGame,
       currentPlayer,
-      gameStatus,
-      gameMode,
-      state,
-      legalMoves,
-      log,
       getLegalMoves,
       selected,
       setSelected,
       pendingPromotion,
       setMpPendingPromotion,
-      allowedPieceTypes,
-      usedRouletteSlots,
-      rouletteReveal,
-      rouletteActionsLeft,
       layout,
       displayTopology,
       beatSnapPendingRef,
