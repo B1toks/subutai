@@ -924,18 +924,15 @@ function App() {
   });
 
   const { onMemoryGameActivate } = useResumeGame({
+    ui,
     isAutoMode,
     sharedGameId,
     importedLogIdRef,
     resumedLogIdRef,
     setOpponentMode,
     mpResumeCodeRef,
-    setSelected,
-    setPreviewTopology,
     beginBusy,
     setBotLevel,
-    setFormationLocked,
-    setLockedFormationKey,
     savedForLogIdRef,
     liveSavedGameIdRef,
     setSearchEvalFromWhite,

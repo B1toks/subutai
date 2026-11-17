@@ -10,7 +10,6 @@ import type { SavedGame } from './types';
 import {
   createPositionFromBackRankKey,
   type BoardState,
-  type TopologyState,
 } from '../engine';
 import { createGameLog, computeSAN, appendMove, type GameLog } from '../recording/log';
 import { applyRotationMove } from '../engine/auxetic';
@@ -19,20 +18,19 @@ import { readLiveSession, clearLiveSession } from './liveSession';
 import { localStorageAdapter } from './storage';
 import type { BotStrength } from '../ai/agents';
 import { session } from '../session/session';
+import type { BoardUi } from '../features/game/useBoardUi';
 
 interface UseResumeGameArgs {
+  /** the board's own UI state (useBoardUi). */
+  ui: BoardUi;
   isAutoMode: boolean;
   sharedGameId: string | null;
   importedLogIdRef: RefObject<string | null>;
   resumedLogIdRef: RefObject<string | null>;
   setOpponentMode: Dispatch<SetStateAction<'ai' | 'friend' | 'local'>>;
   mpResumeCodeRef: RefObject<string | null>;
-  setSelected: Dispatch<SetStateAction<string | null>>;
-  setPreviewTopology: Dispatch<SetStateAction<TopologyState | null>>;
   beginBusy: (label: string) => void;
   setBotLevel: (next: BotStrength) => void;
-  setFormationLocked: Dispatch<SetStateAction<boolean>>;
-  setLockedFormationKey: Dispatch<SetStateAction<string | null>>;
   savedForLogIdRef: RefObject<string | null>;
   liveSavedGameIdRef: RefObject<string>;
   setSearchEvalFromWhite: Dispatch<SetStateAction<number | null>>;
@@ -49,18 +47,15 @@ interface UseResumeGameArgs {
  * code that this one checks first.
  */
 export function useResumeGame({
+  ui,
   isAutoMode,
   sharedGameId,
   importedLogIdRef,
   resumedLogIdRef,
   setOpponentMode,
   mpResumeCodeRef,
-  setSelected,
-  setPreviewTopology,
   beginBusy,
   setBotLevel,
-  setFormationLocked,
-  setLockedFormationKey,
   savedForLogIdRef,
   liveSavedGameIdRef,
   setSearchEvalFromWhite,
@@ -68,6 +63,7 @@ export function useResumeGame({
   classifyImportedLog,
   resetGameEndState,
 }: UseResumeGameArgs) {
+  const { setSelected, setPreviewTopology, setFormationLocked, setLockedFormationKey } = ui;
   // Stable callback for <MemoryPanel onGameActivate>. The wrapped function
   // closes over a ref that always points at the latest `resumeGame`, so the
   // prop reference itself never changes and React.memo on MemoryPanel can
