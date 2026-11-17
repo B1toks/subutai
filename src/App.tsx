@@ -229,9 +229,8 @@ function App() {
   const ui = useBoardUi();
   const {
     setSelected, previewTopology, setPreviewTopology, helpToolsEnabled, setHintMove,
-    previewLocked, setPreviewLocked, setLockedPreviewTopology, formationLocked,
-    lockedFormationKey, formationInputMode, showReplayDialog, mpPendingPromotion,
-    formationInputRef, beatSnapPendingRef,
+    previewLocked, formationLocked, lockedFormationKey, formationInputMode, showReplayDialog,
+    mpPendingPromotion, formationInputRef, beatSnapPendingRef,
   } = ui;
   const log: GameLog = online ? online.log : sess.log;
   const gameStatus = statusOf(sess);
@@ -1184,14 +1183,12 @@ function App() {
       {/* Sprint 4.2 — black's hot-seat row (features/local/LocalTopActions). */}
       {isLocalMode && gameStatus === 'active' && (
         <LocalTopActions
+          ui={ui}
           localBlackAnswers={localBlackAnswers}
           localBlackBlock={localBlackBlock}
           answerLocalDraw={answerLocalDraw}
           requestResign={requestResign}
           offerLocalDraw={offerLocalDraw}
-          previewLocked={previewLocked}
-          setPreviewLocked={setPreviewLocked}
-          setLockedPreviewTopology={setLockedPreviewTopology}
           encourageRotate={encourageRotate}
           canRotate={canRotate}
           handleRotate={handleRotate}

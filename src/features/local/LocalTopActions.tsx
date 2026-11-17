@@ -1,13 +1,16 @@
 import { Eye, Flag, Handshake, RotateCw } from 'lucide-react';
 import { Icon } from '../../components/Icon';
-import type { Color, TopologyState } from '../../engine';
+import type { Color } from '../../engine';
 import { useSession } from '../../session/useSession';
 import type { DrawOfferBlock } from '../../utils/drawOffer';
 import { DrawOfferPrompt } from '../game/DrawOfferPrompt';
 import { drawOfferTitle } from '../game/drawOfferTitle';
 import { LocalTurnSlot } from './LocalTurnSlot';
+import type { BoardUi } from '../game/useBoardUi';
 
 interface LocalTopActionsProps {
+  /** The board's own UI state (useBoardUi). */
+  ui: BoardUi;
   /** White has offered a draw and black is to answer it (App). */
   localBlackAnswers: boolean;
   /** Why black cannot offer a draw now, or null (App). */
@@ -15,10 +18,6 @@ interface LocalTopActionsProps {
   answerLocalDraw: (side: Color, accept: boolean) => void;
   requestResign: (side?: Color) => void;
   offerLocalDraw: (side: Color) => void;
-  /** The rotation preview lock (App state). */
-  previewLocked: boolean;
-  setPreviewLocked: (locked: boolean) => void;
-  setLockedPreviewTopology: (topology: TopologyState | null) => void;
   /** The Rotate button pulses to suggest a rotation (useRotateHint). */
   encourageRotate: boolean;
   canRotate: boolean;
@@ -37,18 +36,17 @@ interface LocalTopActionsProps {
  * hot-seat game runs. Order does not matter.
  */
 export function LocalTopActions({
+  ui,
   localBlackAnswers,
   localBlackBlock,
   answerLocalDraw,
   requestResign,
   offerLocalDraw,
-  previewLocked,
-  setPreviewLocked,
-  setLockedPreviewTopology,
   encourageRotate,
   canRotate,
   handleRotate,
 }: LocalTopActionsProps) {
+  const { previewLocked, setPreviewLocked, setLockedPreviewTopology } = ui;
   const state = useSession((s) => s.board);
   const log = useSession((s) => s.log);
   return (
