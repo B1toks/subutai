@@ -847,8 +847,7 @@ function App() {
   useAfkNudge({ setShowAfkAlert, lastActivityRef, gameStatus, currentPlayer });
 
   useMoveFeedback({
-    gameStatus,
-    log,
+    isMultiplayer,
     setSquareAnnotations,
     setArrowAnnotations,
     annotationStartRef,

@@ -1,14 +1,13 @@
 import { useEffect, type Dispatch, type SetStateAction, type RefObject } from 'react';
-import type { GameStatus } from '../../shared/game';
-import type { GameLog } from '../../recording/log';
 import type { SquareId } from '../../engine';
 import type { AnnotationColor, ArrowAnnotation } from './annotations';
 import { moveSoundsOnEvents } from '../../services/moveSounds';
 import { useBoardEventsAfterCommit } from '../../services/useBoardEventsAfterCommit';
+import { useSession } from '../../session/useSession';
+import { gameStatusOf, logOf } from './boardView';
 
 interface UseMoveFeedbackArgs {
-  gameStatus: GameStatus;
-  log: GameLog;
+  isMultiplayer: boolean;
   setSquareAnnotations: Dispatch<SetStateAction<Map<SquareId, AnnotationColor>>>;
   setArrowAnnotations: Dispatch<SetStateAction<ArrowAnnotation[]>>;
   annotationStartRef: RefObject<SquareId | null>;
@@ -21,12 +20,13 @@ interface UseMoveFeedbackArgs {
  * the board.
  */
 export function useMoveFeedback({
-  gameStatus,
-  log,
+  isMultiplayer,
   setSquareAnnotations,
   setArrowAnnotations,
   annotationStartRef,
 }: UseMoveFeedbackArgs) {
+  const gameStatus = useSession(gameStatusOf);
+  const log = useSession(logOf(isMultiplayer));
   // Sprint 3.2 — checkmate flash: brief radial whiteout via a body
   // class. Triggers whenever gameStatus transitions to 'checkmate'.
   // CSS animation handles cleanup; we still strip the class after the
