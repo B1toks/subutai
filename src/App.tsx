@@ -619,9 +619,8 @@ function App() {
   const sacrificeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useAdaptiveMusic({
+    isMultiplayer,
     watchingGame,
-    gameStatus,
-    state,
     currentEval,
     searchMateInPlies,
     myPerspectiveEval,

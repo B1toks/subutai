@@ -1,14 +1,14 @@
 import { useMemo, useEffect, useRef } from 'react';
 import { findKing, isSquareAttacked } from '../../engine/moves';
-import type { Color, BoardState, SquareId } from '../../engine';
+import type { Color, SquareId } from '../../engine';
 import { audio } from '../../audio/AudioController';
 import type { WatchingGame } from '../review/watching';
-import type { GameStatus } from '../../shared/game';
+import { useSession } from '../../session/useSession';
+import { gameStatusOf, boardOf } from '../game/boardView';
 
 interface UseAdaptiveMusicArgs {
+  isMultiplayer: boolean;
   watchingGame: WatchingGame | null;
-  gameStatus: GameStatus;
-  state: BoardState;
   currentEval: number;
   searchMateInPlies: number | null;
   myPerspectiveEval: number;
@@ -21,14 +21,15 @@ interface UseAdaptiveMusicArgs {
  * danger and sacrifice stingers. Everything is a no-op while music is off.
  */
 export function useAdaptiveMusic({
+  isMultiplayer,
   watchingGame,
-  gameStatus,
-  state,
   currentEval,
   searchMateInPlies,
   myPerspectiveEval,
   sacrificeSquare,
 }: UseAdaptiveMusicArgs) {
+  const gameStatus = useSession(gameStatusOf);
+  const state = useSession(boardOf(isMultiplayer));
   // ─── M.5: adaptive music ──────────────────────────────────────────
   // The ambient drone "нагнітає" with the position: a 0..1 tension scale
   // derived from the engine eval, forced-mate detection and check state
