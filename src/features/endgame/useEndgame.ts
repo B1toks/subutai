@@ -10,17 +10,18 @@ import {
   type SetStateAction,
 } from 'react';
 import { computeBoardLayout, tilePixelCenter } from '../../engine/auxetic';
-import type { Color, SquareId, BoardState, TopologyState } from '../../engine';
+import type { Color, SquareId, TopologyState } from '../../engine';
 import { findKing } from '../../engine/moves';
 import { winnerOf } from './result';
-import { HUMAN_COLOR, type GameStatus } from '../../shared/game';
+import { HUMAN_COLOR } from '../../shared/game';
 import type { KingOrigin, EndgameKind, VictoryTheme } from '../../components/EndgameScene';
 import { translateOutcomeForPlayer } from '../../firebase/multiplayerGames';
 import type { MatchOutcome } from '../../firebase/matches';
 import type { MultiplayerSyncHandle } from '../../components/MultiplayerGameView';
 import type { WatchingGame } from '../review/watching';
-import type { GameLog } from '../../recording/log';
 import { registerFx } from '../../services/fxSeam';
+import { useSession } from '../../session/useSession';
+import { gameStatusOf, boardOf, logOf } from '../game/boardView';
 
 /**
  * The endgame cinematic is code-split, but it is handed the screen by the
@@ -41,12 +42,9 @@ interface UseEndgameArgs {
   isMultiplayer: boolean;
   mpSync: MultiplayerSyncHandle | null;
   watchingGame: WatchingGame | null;
-  gameStatus: GameStatus;
   victoryFreezeTimer: RefObject<number | null>;
   setVictoryFreeze: Dispatch<SetStateAction<boolean>>;
   victoryFreeze: boolean;
-  state: BoardState;
-  log: GameLog;
   boardSize: number;
   setEndgameCut: Dispatch<SetStateAction<EndgameCut | null>>;
   endgameCut: EndgameCut | null;
@@ -70,12 +68,9 @@ export function useEndgame({
   isMultiplayer,
   mpSync,
   watchingGame,
-  gameStatus,
   victoryFreezeTimer,
   setVictoryFreeze,
   victoryFreeze,
-  state,
-  log,
   boardSize,
   setEndgameCut,
   endgameCut,
@@ -84,6 +79,9 @@ export function useEndgame({
   displayTopology,
   checkSquares,
 }: UseEndgameArgs) {
+  const gameStatus = useSession(gameStatusOf);
+  const state = useSession(boardOf(isMultiplayer));
+  const log = useSession(logOf(isMultiplayer));
   const layout = useMemo(
     () => computeBoardLayout(displayTopology, boardSize),
     [displayTopology, boardSize],
