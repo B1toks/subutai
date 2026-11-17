@@ -2,15 +2,12 @@ import { useCallback, useMemo, type Dispatch, type SetStateAction } from 'react'
 import { formatNotation } from './notation';
 import type { GameLog } from '../../recording/log';
 import { gameOverText } from '../endgame/result';
-import type { GameStatus, GameMode } from '../../shared/game';
-import type { BoardState } from '../../engine';
+import { useSession } from '../../session/useSession';
+import { gameStatusOf, modeOf, boardOf, logOf } from './boardView';
 
 interface UseNotationArgs {
-  gameStatus: GameStatus;
+  isMultiplayer: boolean;
   setCopied: Dispatch<SetStateAction<boolean>>;
-  gameMode: GameMode;
-  state: BoardState;
-  log: GameLog;
   positionLabel: string;
   notationSeed: number;
 }
@@ -21,14 +18,15 @@ interface UseNotationArgs {
  * Review with its game mode, and the one-line game-over message.
  */
 export function useNotation({
-  gameStatus,
+  isMultiplayer,
   setCopied,
-  gameMode,
-  state,
-  log,
   positionLabel,
   notationSeed,
 }: UseNotationArgs) {
+  const gameStatus = useSession(gameStatusOf);
+  const gameMode = useSession(modeOf(isMultiplayer));
+  const state = useSession(boardOf(isMultiplayer));
+  const log = useSession(logOf(isMultiplayer));
   const buildNotation = useCallback(
     (annotate: boolean) => formatNotation(positionLabel, notationSeed, log.moves, gameMode, annotate),
     [log.moves, positionLabel, notationSeed, gameMode],

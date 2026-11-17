@@ -1039,11 +1039,8 @@ function App() {
   });
 
   const { notationString, copyNotation, liveReviewLog, gameOverMessage } = useNotation({
-    gameStatus,
+    isMultiplayer,
     setCopied,
-    gameMode,
-    state,
-    log,
     positionLabel,
     notationSeed,
   });
