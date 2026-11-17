@@ -709,14 +709,11 @@ function App() {
 
   // Locking the formation, and the Rotate button (useRotate).
   const { toggleFormationLock, handleRotate } = useRotate({
+    ui,
     isMultiplayer,
     mpSync,
     watchingGame,
     currentPlayer,
-    setSelected,
-    setPreviewTopology,
-    setFormationLocked,
-    setLockedFormationKey,
     rotateHintShown,
     dismissRotateHint,
     settleGuessRotate,

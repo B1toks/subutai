@@ -1,6 +1,4 @@
-import type { Dispatch, SetStateAction } from 'react';
 import type { MultiplayerSyncHandle } from '../../components/MultiplayerGameView';
-import type { TopologyState } from '../../engine';
 import { toggleTopology } from '../../engine/auxetic';
 import { findKing, isSquareAttacked } from '../../engine/moves';
 import { turns } from '../../session/session';
@@ -8,18 +6,16 @@ import type { WatchingGame } from '../review/watching';
 import { backRankString } from './position';
 import { useSession } from '../../session/useSession';
 import { gameStatusOf, modeOf, boardOf, rouletteRevealOf } from './boardView';
+import type { BoardUi } from './useBoardUi';
 
 interface UseRotateArgs {
+  /** the board's own UI state (useBoardUi). */
+  ui: BoardUi;
   isMultiplayer: boolean;
   mpSync: MultiplayerSyncHandle | null;
   watchingGame: WatchingGame | null;
   /** Whose turn from this seat (App). */
   currentPlayer: 'human' | 'ai';
-  setSelected: Dispatch<SetStateAction<string | null>>;
-  setPreviewTopology: Dispatch<SetStateAction<TopologyState | null>>;
-  /** The formation lock (App state). */
-  setFormationLocked: Dispatch<SetStateAction<boolean>>;
-  setLockedFormationKey: Dispatch<SetStateAction<string | null>>;
   /** The first-game "Try rotating" bubble (useRotateHint). */
   rotateHintShown: boolean;
   dismissRotateHint: () => void;
@@ -36,18 +32,16 @@ interface UseRotateArgs {
  * render, so the call's position changes no effect order.
  */
 export function useRotate({
+  ui,
   isMultiplayer,
   mpSync,
   watchingGame,
   currentPlayer,
-  setSelected,
-  setPreviewTopology,
-  setFormationLocked,
-  setLockedFormationKey,
   rotateHintShown,
   dismissRotateHint,
   settleGuessRotate,
 }: UseRotateArgs) {
+  const { setSelected, setPreviewTopology, setFormationLocked, setLockedFormationKey } = ui;
   const gameStatus = useSession(gameStatusOf);
   const gameMode = useSession(modeOf(isMultiplayer));
   const state = useSession(boardOf(isMultiplayer));
