@@ -230,12 +230,12 @@ function App() {
   const {
     selected, setSelected, previewTopology, setPreviewTopology, showThreats, setShowThreats,
     showSupport, setShowSupport, helpToolsEnabled, hintMove, setHintMove, previewLocked,
-    setPreviewLocked, lockedPreviewTopology, setLockedPreviewTopology, hoveredSquare,
-    setHoveredSquare, formationLocked, lockedFormationKey, formationInputMode,
-    setFormationInputMode, formationInputValue, setFormationInputValue, showReplayDialog,
-    setShowReplayDialog, replayText, setReplayText, replayError, setReplayError,
-    mpPendingPromotion, formationInputRef, beatSnapPendingRef, beatSnap, squareAnnotations,
-    setSquareAnnotations, arrowAnnotations, setArrowAnnotations, annotationStartRef,
+    setPreviewLocked, setLockedPreviewTopology, hoveredSquare, setHoveredSquare,
+    formationLocked, lockedFormationKey, formationInputMode, setFormationInputMode,
+    formationInputValue, setFormationInputValue, showReplayDialog, setShowReplayDialog,
+    replayText, setReplayText, replayError, setReplayError, mpPendingPromotion,
+    formationInputRef, beatSnapPendingRef, beatSnap, squareAnnotations, setSquareAnnotations,
+    arrowAnnotations, setArrowAnnotations, annotationStartRef,
   } = ui;
   const log: GameLog = online ? online.log : sess.log;
   const gameStatus = statusOf(sess);
@@ -830,15 +830,9 @@ function App() {
   });
 
   const boardMarks = useBoardMarks({
+    ui,
     isMultiplayer,
     watchingGame,
-    selected,
-    previewTopology,
-    showThreats,
-    showSupport,
-    previewLocked,
-    lockedPreviewTopology,
-    hoveredSquare,
     registerFx,
     setCheckVignette,
   });

@@ -1,22 +1,18 @@
 import { useMemo, useRef, useEffect, type Dispatch, type SetStateAction } from 'react';
 import { checkMarks, threatCounts, supportPairsFor } from './boardMarks';
 import { audio } from '../../audio/AudioController';
-import type { SquareId, Color, TopologyState } from '../../engine';
+import type { SquareId, Color } from '../../engine';
 import { getAttackerSquares } from '../../engine/moves';
 import type { WatchingGame } from '../review/watching';
 import { useSession } from '../../session/useSession';
 import { boardOf, legalMovesOf } from './boardView';
+import type { BoardUi } from './useBoardUi';
 
 interface UseBoardMarksArgs {
+  /** The board's own UI state (useBoardUi). */
+  ui: BoardUi;
   isMultiplayer: boolean;
   watchingGame: WatchingGame | null;
-  selected: string | null;
-  previewTopology: TopologyState | null;
-  showThreats: boolean;
-  showSupport: boolean;
-  previewLocked: boolean;
-  lockedPreviewTopology: TopologyState | null;
-  hoveredSquare: string | null;
   registerFx: () => number;
   setCheckVignette: Dispatch<SetStateAction<boolean>>;
 }
@@ -29,18 +25,13 @@ interface UseBoardMarksArgs {
  * support. Also plays the pick-up sound when a piece is selected.
  */
 export function useBoardMarks({
+  ui,
   isMultiplayer,
   watchingGame,
-  selected,
-  previewTopology,
-  showThreats,
-  showSupport,
-  previewLocked,
-  lockedPreviewTopology,
-  hoveredSquare,
   registerFx,
   setCheckVignette,
 }: UseBoardMarksArgs) {
+  const { selected, previewTopology, showThreats, showSupport, previewLocked, lockedPreviewTopology, hoveredSquare } = ui;
   const state = useSession(boardOf(isMultiplayer));
   const legalMoves = useSession(legalMovesOf(isMultiplayer));
   const highlightedTargets = useMemo(() => {
