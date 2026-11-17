@@ -1,12 +1,10 @@
+import type { BoardUi } from '../features/game/useBoardUi';
+
 interface ReplayDialogProps {
-  /** The pasted log and its setter (App state). */
-  replayText: string;
-  setReplayText: (text: string) => void;
-  /** Why the last attempt was refused (replayFromNotation), or null. */
-  replayError: string | null;
+  /** The board's own UI state (useBoardUi). */
+  ui: BoardUi;
   /** Loads the pasted log onto the board (App's importReplayFromNotation). */
   importReplayFromNotation: () => void;
-  setShowReplayDialog: (open: boolean) => void;
 }
 
 /**
@@ -16,12 +14,10 @@ interface ReplayDialogProps {
  * while showReplayDialog is set. Order does not matter.
  */
 export function ReplayDialog({
-  replayText,
-  setReplayText,
-  replayError,
+  ui,
   importReplayFromNotation,
-  setShowReplayDialog,
 }: ReplayDialogProps) {
+  const { replayText, setReplayText, replayError, setShowReplayDialog } = ui;
   return (
     <div className="help-backdrop" onClick={() => setShowReplayDialog(false)}>
       <div className="help-dialog replay-dialog" onClick={(e) => e.stopPropagation()}>

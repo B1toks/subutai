@@ -230,8 +230,8 @@ function App() {
   const {
     setSelected, previewTopology, setPreviewTopology, helpToolsEnabled, setHintMove,
     previewLocked, setPreviewLocked, setLockedPreviewTopology, formationLocked,
-    lockedFormationKey, formationInputMode, showReplayDialog, setShowReplayDialog, replayText,
-    setReplayText, replayError, mpPendingPromotion, formationInputRef, beatSnapPendingRef,
+    lockedFormationKey, formationInputMode, showReplayDialog, mpPendingPromotion,
+    formationInputRef, beatSnapPendingRef,
   } = ui;
   const log: GameLog = online ? online.log : sess.log;
   const gameStatus = statusOf(sess);
@@ -1386,11 +1386,8 @@ function App() {
 
       {showReplayDialog && (
         <ReplayDialog
-          replayText={replayText}
-          setReplayText={setReplayText}
-          replayError={replayError}
+          ui={ui}
           importReplayFromNotation={importReplayFromNotation}
-          setShowReplayDialog={setShowReplayDialog}
         />
       )}
 
