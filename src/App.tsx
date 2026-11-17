@@ -890,6 +890,7 @@ function App() {
   });
 
   const boardMarks = useBoardMarks({
+    isMultiplayer,
     watchingGame,
     selected,
     previewTopology,
@@ -900,8 +901,6 @@ function App() {
     hoveredSquare,
     registerFx,
     setCheckVignette,
-    state,
-    legalMoves,
   });
   const {
     checkSquares,
