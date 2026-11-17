@@ -2,9 +2,9 @@ import type { SquareId } from '../../engine';
 import { tilePixelCenter } from '../../engine/auxetic';
 import type { useEndgame } from '../endgame/useEndgame';
 import type { useTwitchState } from '../twitch/useTwitchState';
-import type { ArrowAnnotation } from './annotations';
 import type { useBoardFxState } from './useBoardFxState';
 import type { useBoardMarks } from './useBoardMarks';
+import type { BoardUi } from './useBoardUi';
 
 type Marks = ReturnType<typeof useBoardMarks>;
 type Fx = ReturnType<typeof useBoardFxState>;
@@ -12,16 +12,13 @@ type Endgame = ReturnType<typeof useEndgame>;
 type Twitch = ReturnType<typeof useTwitchState>;
 
 interface BoardOverlaysProps {
+  /** The board's own UI state (useBoardUi). */
+  ui: BoardUi;
   /** The board's marks (useBoardMarks), effects (useBoardFxState) and the
    *  tiles' layout with the checkmate sequence (useEndgame), as App holds them. */
   marks: Marks;
   fx: Fx;
   endgame: Endgame;
-  /** The support map (a coaching tool): on, the square hovered, and who backs whom (useBoardMarks). */
-  showSupport: boolean;
-  hoveredSquare: string | null;
-  /** The player's right-drag arrows (App). */
-  arrowAnnotations: ArrowAnnotation[];
   /** Twitch: chat's live vote round (its arrows) and the guessers' cloud (useTwitchState). */
   voteRound: Twitch['voteRound'];
   guessCloud: Twitch['guessCloud'];
@@ -42,9 +39,7 @@ interface BoardOverlaysProps {
  * order above, which is the block's.
  */
 export function BoardOverlays({
-  showSupport,
-  hoveredSquare,
-  arrowAnnotations,
+  ui,
   voteRound,
   guessCloud,
   myColor,
@@ -54,6 +49,7 @@ export function BoardOverlays({
   fx,
   endgame,
 }: BoardOverlaysProps) {
+  const { showSupport, hoveredSquare, arrowAnnotations } = ui;
   const { supportPairs, hoverSupporters, displayTopology } = marks;
   const { checkVignette, captureStrobe, rotationDust, fxIntensity } = fx;
   const { irisKingPos, mateSeqActive, mateKingPos, mateSeq, layout } = endgame;

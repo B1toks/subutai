@@ -228,12 +228,11 @@ function App() {
   // formation lock and code editor, annotations, Load replay (useBoardUi).
   const ui = useBoardUi();
   const {
-    setSelected, previewTopology, setPreviewTopology, showSupport, helpToolsEnabled,
-    setHintMove, previewLocked, setPreviewLocked, setLockedPreviewTopology, hoveredSquare,
-    formationLocked, lockedFormationKey, formationInputMode, setFormationInputMode,
-    formationInputValue, setFormationInputValue, showReplayDialog, setShowReplayDialog,
-    replayText, setReplayText, replayError, setReplayError, mpPendingPromotion,
-    formationInputRef, beatSnapPendingRef, arrowAnnotations,
+    setSelected, previewTopology, setPreviewTopology, helpToolsEnabled, setHintMove,
+    previewLocked, setPreviewLocked, setLockedPreviewTopology, formationLocked,
+    lockedFormationKey, formationInputMode, setFormationInputMode, formationInputValue,
+    setFormationInputValue, showReplayDialog, setShowReplayDialog, replayText, setReplayText,
+    replayError, setReplayError, mpPendingPromotion, formationInputRef, beatSnapPendingRef,
   } = ui;
   const log: GameLog = online ? online.log : sess.log;
   const gameStatus = statusOf(sess);
@@ -1252,9 +1251,7 @@ function App() {
           endgame={endgame}
         />
         <BoardOverlays
-          showSupport={showSupport}
-          hoveredSquare={hoveredSquare}
-          arrowAnnotations={arrowAnnotations}
+          ui={ui}
           voteRound={voteRound}
           guessCloud={guessCloud}
           myColor={myColor}
