@@ -6,14 +6,14 @@ import type { useClassifier } from '../features/game/useClassifier';
 import type { WatchingGame } from '../features/review/watching';
 import { unclassifiedMoveIndexes, type GameLog } from '../recording/log';
 import { busy } from '../ui/busy';
+import { useSession } from '../session/useSession';
+import { logOf } from '../features/game/boardView';
 
 type View = 'game' | 'review' | 'leaderboard' | 'friend-lobby';
 
 interface UseScreenNavigationArgs {
   isMultiplayer: boolean;
   watchingGame: WatchingGame | null;
-  /** The game on the board (App's alias). */
-  log: GameLog;
   /** The review's own game (a match or a shared game), if not the board's (App state). */
   activeReviewLog: GameLog | null;
   setActiveReviewLog: Dispatch<SetStateAction<GameLog | null>>;
@@ -33,14 +33,14 @@ interface UseScreenNavigationArgs {
  * the Review (back to the game view, the classifier catching up, the
  * review's snapshot dropped, ?game= stripped) and a match starting from
  * the lobby (the solo world reset first, then the match, its drawer and
- * its markers). Plain handlers, no React hooks inside: what they read is
- * passed in from App's render, so the call's position changes no effect
- * order.
+ * its markers). Plain handlers: the only React hook inside is useSession (the
+ * game on the board, read in this render, as App's aliases are), with no
+ * effect of its own; the rest of what they read is passed in from App's
+ * render, so the call's position changes no effect order.
  */
 export function useScreenNavigation({
   isMultiplayer,
   watchingGame,
-  log,
   activeReviewLog,
   setActiveReviewLog,
   setActiveReviewMeta,
@@ -50,6 +50,7 @@ export function useScreenNavigation({
   setMobilePanel,
   setView,
 }: UseScreenNavigationArgs) {
+  const log = useSession(logOf(isMultiplayer));
   const { setActiveMatch, setMpEndOutcome, mpSavedGameIdRef, mpWroteOutcomeRef } = mp;
   function backFromReview() {
     // V1 — leaving the review rebuilds the whole board view in one

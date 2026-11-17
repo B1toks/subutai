@@ -1013,7 +1013,6 @@ function App() {
   const { backFromReview, startMatchFromLobby } = useScreenNavigation({
     isMultiplayer,
     watchingGame,
-    log,
     activeReviewLog,
     setActiveReviewLog,
     setActiveReviewMeta,
