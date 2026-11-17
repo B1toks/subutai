@@ -957,15 +957,8 @@ function App() {
 
   // Load replay: a pasted log becomes the game on the board (useReplayImport).
   const { importReplayFromNotation } = useReplayImport({
+    ui,
     gameMode,
-    replayText,
-    setReplayText,
-    setReplayError,
-    setShowReplayDialog,
-    setSelected,
-    setPreviewTopology,
-    setFormationLocked,
-    setLockedFormationKey,
     setSearchEvalFromWhite,
     setSearchMateInPlies,
     boardEnding,

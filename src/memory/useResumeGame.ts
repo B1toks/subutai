@@ -21,7 +21,7 @@ import { session } from '../session/session';
 import type { BoardUi } from '../features/game/useBoardUi';
 
 interface UseResumeGameArgs {
-  /** the board's own UI state (useBoardUi). */
+  /** The board's own UI state (useBoardUi). */
   ui: BoardUi;
   isAutoMode: boolean;
   sharedGameId: string | null;

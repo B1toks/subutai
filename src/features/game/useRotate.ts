@@ -9,7 +9,7 @@ import { gameStatusOf, modeOf, boardOf, rouletteRevealOf } from './boardView';
 import type { BoardUi } from './useBoardUi';
 
 interface UseRotateArgs {
-  /** the board's own UI state (useBoardUi). */
+  /** The board's own UI state (useBoardUi). */
   ui: BoardUi;
   isMultiplayer: boolean;
   mpSync: MultiplayerSyncHandle | null;

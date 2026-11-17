@@ -1,5 +1,5 @@
 import type { Dispatch, RefObject, SetStateAction } from 'react';
-import type { BoardState, TopologyState } from '../engine';
+import type { BoardState } from '../engine';
 import type { useClassifier } from '../features/game/useClassifier';
 import { session } from '../session/session';
 import type { GameMode, GameStatus } from '../shared/game';
@@ -7,18 +7,12 @@ import { buildSavedGameSnapshot } from './build';
 import { NotationParseError } from './notation';
 import { replayFromNotation } from './replayImport';
 import { localStorageAdapter } from './storage';
+import type { BoardUi } from '../features/game/useBoardUi';
 
 interface UseReplayImportArgs {
+  /** The board's own UI state (useBoardUi). */
+  ui: BoardUi;
   gameMode: GameMode;
-  /** The Load replay dialog: the pasted text, its error, open or not (App state). */
-  replayText: string;
-  setReplayText: Dispatch<SetStateAction<string>>;
-  setReplayError: Dispatch<SetStateAction<string | null>>;
-  setShowReplayDialog: Dispatch<SetStateAction<boolean>>;
-  setSelected: Dispatch<SetStateAction<string | null>>;
-  setPreviewTopology: Dispatch<SetStateAction<TopologyState | null>>;
-  setFormationLocked: Dispatch<SetStateAction<boolean>>;
-  setLockedFormationKey: Dispatch<SetStateAction<string | null>>;
   setSearchEvalFromWhite: Dispatch<SetStateAction<number | null>>;
   setSearchMateInPlies: Dispatch<SetStateAction<number | null>>;
   /** The ending the loaded board is in, under the mode's rules (App). */
@@ -43,15 +37,8 @@ interface UseReplayImportArgs {
  * call's position changes no effect order.
  */
 export function useReplayImport({
+  ui,
   gameMode,
-  replayText,
-  setReplayText,
-  setReplayError,
-  setShowReplayDialog,
-  setSelected,
-  setPreviewTopology,
-  setFormationLocked,
-  setLockedFormationKey,
   setSearchEvalFromWhite,
   setSearchMateInPlies,
   boardEnding,
@@ -62,6 +49,7 @@ export function useReplayImport({
   savedForLogIdRef,
   liveSavedGameIdRef,
 }: UseReplayImportArgs) {
+  const { replayText, setReplayText, setReplayError, setShowReplayDialog, setSelected, setPreviewTopology, setFormationLocked, setLockedFormationKey } = ui;
   function importReplayFromNotation() {
     try {
       // QA-02 — strict: every entry has to be a move the live game would

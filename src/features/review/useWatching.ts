@@ -12,7 +12,7 @@ import type { BoardUi } from '../game/useBoardUi';
 type View = 'game' | 'review' | 'leaderboard' | 'friend-lobby';
 
 interface UseWatchingArgs {
-  /** the board's own UI state (useBoardUi). */
+  /** The board's own UI state (useBoardUi). */
   ui: BoardUi;
   isMultiplayer: boolean;
   /** With the game on the board (read from the session), what is put aside
