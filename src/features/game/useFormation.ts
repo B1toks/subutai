@@ -1,19 +1,13 @@
 import type { Dispatch, RefObject, SetStateAction } from 'react';
-import { createPositionFromBackRankKey, isValidChess960Key, type TopologyState } from '../../engine';
+import { createPositionFromBackRankKey, isValidChess960Key } from '../../engine';
 import { newLiveSnapshotId } from '../../memory/liveSnapshotId';
 import { session } from '../../session/session';
 import { nowMs } from '../../utils/nowMs';
+import type { BoardUi } from './useBoardUi';
 
 interface UseFormationArgs {
-  /** The chip's edit field: its text, and whether it is open (App state). */
-  formationInputValue: string;
-  setFormationInputMode: Dispatch<SetStateAction<boolean>>;
-  setFormationInputValue: Dispatch<SetStateAction<string>>;
-  /** A typed code locks the formation for the next games too (App state). */
-  setFormationLocked: Dispatch<SetStateAction<boolean>>;
-  setLockedFormationKey: Dispatch<SetStateAction<string | null>>;
-  setSelected: Dispatch<SetStateAction<string | null>>;
-  setPreviewTopology: Dispatch<SetStateAction<TopologyState | null>>;
+  /** The board's own UI state (useBoardUi). */
+  ui: BoardUi;
   setSearchEvalFromWhite: Dispatch<SetStateAction<number | null>>;
   setSearchMateInPlies: Dispatch<SetStateAction<number | null>>;
   /** QA-01 — everything the previous game left behind (App). */
@@ -30,18 +24,13 @@ interface UseFormationArgs {
  * App's render, so the call's position changes no effect order.
  */
 export function useFormation({
-  formationInputValue,
-  setFormationInputMode,
-  setFormationInputValue,
-  setFormationLocked,
-  setLockedFormationKey,
-  setSelected,
-  setPreviewTopology,
+  ui,
   setSearchEvalFromWhite,
   setSearchMateInPlies,
   resetGameEndState,
   liveSavedGameIdRef,
 }: UseFormationArgs) {
+  const { formationInputValue, setFormationInputMode, setFormationInputValue, setFormationLocked, setLockedFormationKey, setSelected, setPreviewTopology } = ui;
   function applyFormationCode() {
     const raw = formationInputValue.trim().toUpperCase();
     if (!raw) {

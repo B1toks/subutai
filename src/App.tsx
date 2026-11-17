@@ -231,12 +231,12 @@ function App() {
     selected, setSelected, previewTopology, setPreviewTopology, showThreats, setShowThreats,
     showSupport, setShowSupport, helpToolsEnabled, hintMove, setHintMove, previewLocked,
     setPreviewLocked, lockedPreviewTopology, setLockedPreviewTopology, hoveredSquare,
-    setHoveredSquare, formationLocked, setFormationLocked, lockedFormationKey,
-    setLockedFormationKey, formationInputMode, setFormationInputMode, formationInputValue,
-    setFormationInputValue, showReplayDialog, setShowReplayDialog, replayText, setReplayText,
-    replayError, setReplayError, mpPendingPromotion, setMpPendingPromotion, formationInputRef,
-    beatSnapPendingRef, beatSnap, setBeatSnap, squareAnnotations, setSquareAnnotations,
-    arrowAnnotations, setArrowAnnotations, annotationStartRef,
+    setHoveredSquare, formationLocked, lockedFormationKey, formationInputMode,
+    setFormationInputMode, formationInputValue, setFormationInputValue, showReplayDialog,
+    setShowReplayDialog, replayText, setReplayText, replayError, setReplayError,
+    mpPendingPromotion, setMpPendingPromotion, formationInputRef, beatSnapPendingRef, beatSnap,
+    setBeatSnap, squareAnnotations, setSquareAnnotations, arrowAnnotations, setArrowAnnotations,
+    annotationStartRef,
   } = ui;
   const log: GameLog = online ? online.log : sess.log;
   const gameStatus = statusOf(sess);
@@ -987,13 +987,7 @@ function App() {
 
   // The 960 code chip's editor: apply, cancel, leave (useFormation).
   const { applyFormationCode, cancelFormationInput, commitFormationOnBlur } = useFormation({
-    formationInputValue,
-    setFormationInputMode,
-    setFormationInputValue,
-    setFormationLocked,
-    setLockedFormationKey,
-    setSelected,
-    setPreviewTopology,
+    ui,
     setSearchEvalFromWhite,
     setSearchMateInPlies,
     resetGameEndState,
