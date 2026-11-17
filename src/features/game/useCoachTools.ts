@@ -1,22 +1,20 @@
 import type { Dispatch, SetStateAction } from 'react';
 import { searchAsync } from '../../ai/searchClient';
-import type { BoardState, SquareId } from '../../engine';
+import type { SquareId } from '../../engine';
 import { applyRotationMove } from '../../engine/auxetic';
 import { localData, LOCAL_KEYS } from '../../infra/localData';
 import { session } from '../../session/session';
-import type { GameMode, GameStatus } from '../../shared/game';
 import type { WatchingGame } from '../review/watching';
+import { useSession } from '../../session/useSession';
+import { gameStatusOf, modeOf, boardOf } from './boardView';
 
 type HintMove = { from: SquareId; to: SquareId } | { rotate: true } | null;
 
 interface UseCoachToolsArgs {
+  isMultiplayer: boolean;
   watchingGame: WatchingGame | null;
   /** Whose turn from this seat (App): the hint is for the player here. */
   currentPlayer: 'human' | 'ai';
-  gameStatus: GameStatus;
-  gameMode: GameMode;
-  /** The game on the board (App's alias). */
-  state: BoardState;
   /** Rotating is a legal turn now (useCanRotate): the hint may say "rotate". */
   canRotate: boolean;
   /** S2.4 — the coaching group's switch, and the tools it hides (App state). */
@@ -30,22 +28,24 @@ interface UseCoachToolsArgs {
  * The coaching tools of the board's action row (S2.4): the switch that
  * shows or hides the group (saved, and switching off clears the support
  * map, the threat map and the hint), and the engine hint, a short search
- * on the search worker (Classic only). Plain handlers, no React hooks
- * inside: what they read is passed in from App's render, so the call's
- * position changes no effect order.
+ * on the search worker (Classic only). Plain handlers: the only React hook inside is useSession (the
+ * game on the board, read in this render, as App's aliases are), with no
+ * effect of its own; the rest of what they read is passed in from App's
+ * render, so the call's position changes no effect order.
  */
 export function useCoachTools({
+  isMultiplayer,
   watchingGame,
   currentPlayer,
-  gameStatus,
-  gameMode,
-  state,
   canRotate,
   setHelpToolsEnabled,
   setShowSupport,
   setShowThreats,
   setHintMove,
 }: UseCoachToolsArgs) {
+  const gameStatus = useSession(gameStatusOf);
+  const gameMode = useSession(modeOf(isMultiplayer));
+  const state = useSession(boardOf(isMultiplayer));
   function toggleHelpTools() {
     setHelpToolsEnabled((v) => {
       const next = !v;

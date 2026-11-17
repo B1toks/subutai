@@ -1047,11 +1047,9 @@ function App() {
 
   // The coaching tools' switch and the engine hint (useCoachTools).
   const { toggleHelpTools, computeHint } = useCoachTools({
+    isMultiplayer,
     watchingGame,
     currentPlayer,
-    gameStatus,
-    gameMode,
-    state,
     canRotate,
     setHelpToolsEnabled,
     setShowSupport,
