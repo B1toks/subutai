@@ -1,18 +1,13 @@
 import { useEffect } from 'react';
 import type { MultiplayerSyncHandle } from '../../components/MultiplayerGameView';
 import type { WatchingGame } from '../review/watching';
-import type { GameStatus, GameMode } from '../../shared/game';
-import type { PieceType } from '../../engine';
+import { useSession } from '../../session/useSession';
+import { gameStatusOf, modeOf, isRouletteSpinningOf, allowedPieceTypesOf, firstRouletteSpinDoneOf } from './boardView';
 
 interface UseRouletteAutoSpinArgs {
   isMultiplayer: boolean;
   mpSync: MultiplayerSyncHandle | null;
   watchingGame: WatchingGame | null;
-  gameStatus: GameStatus;
-  gameMode: GameMode;
-  isRouletteSpinning: boolean;
-  allowedPieceTypes: PieceType[] | null;
-  firstRouletteSpinDone: boolean;
   doSpinRouletteNow: () => void;
   currentPlayer: 'human' | 'ai';
 }
@@ -26,14 +21,14 @@ export function useRouletteAutoSpin({
   isMultiplayer,
   mpSync,
   watchingGame,
-  gameStatus,
-  gameMode,
-  isRouletteSpinning,
-  allowedPieceTypes,
-  firstRouletteSpinDone,
   doSpinRouletteNow,
   currentPlayer,
 }: UseRouletteAutoSpinArgs) {
+  const gameStatus = useSession(gameStatusOf);
+  const gameMode = useSession(modeOf(isMultiplayer));
+  const isRouletteSpinning = useSession(isRouletteSpinningOf(isMultiplayer));
+  const allowedPieceTypes = useSession(allowedPieceTypesOf(isMultiplayer));
+  const firstRouletteSpinDone = useSession(firstRouletteSpinDoneOf(isMultiplayer));
   // Auto-trigger the human's roulette spin after the first manual click of
   // the game. Conditions mirror the Spin Roulette button's enabled-state:
   // roulette mode, not currently spinning, human's turn, no roll active,

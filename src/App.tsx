@@ -339,11 +339,6 @@ function App() {
   const isRouletteSpinning = rouletteReveal !== null || sess.phase.tag === 'rouletteSpin';
   const rouletteActionsLeft = online ? online.actionsLeft : rouletteBag?.actionsLeft ?? 0;
   const usedRouletteSlots = (online ? online.used : rouletteBag?.used ?? NO_SLOTS) as number[];
-  // First roulette spin per game requires a manual click on the Spin
-  // Roulette button. Subsequent spins auto-fire via a useEffect after a
-  // short delay. Online, my spin count off the match doc, so both players
-  // track independently across reloads.
-  const firstRouletteSpinDone = online ? online.firstSpinDone : sess.roulette.firstSpinDone;
   const boardFx = useBoardFxState();
   const {
     setCaptureFxSquare,
@@ -857,11 +852,6 @@ function App() {
     isMultiplayer,
     mpSync,
     watchingGame,
-    gameStatus,
-    gameMode,
-    isRouletteSpinning,
-    allowedPieceTypes,
-    firstRouletteSpinDone,
     doSpinRouletteNow,
     currentPlayer,
   });
