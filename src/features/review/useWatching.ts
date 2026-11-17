@@ -2,16 +2,18 @@ import { useRef, useState, type Dispatch, type RefObject, type SetStateAction } 
 import { deserializeGameLog } from '../../firebase/games';
 import { gamesRepo } from '../../infra/firestore/games';
 import { session } from '../../session/session';
-import type { TopologyState } from '../../engine';
 import { replayBoardAt } from '../game/position';
 import { useWatchAutoplay } from './useWatchAutoplay';
 import type { GameBackup, WatchingGame } from './watching';
 import { useSession } from '../../session/useSession';
 import { boardOf, legalMovesOf, logOf, gameStatusOf, lastMoveOf } from '../game/boardView';
+import type { BoardUi } from '../game/useBoardUi';
 
 type View = 'game' | 'review' | 'leaderboard' | 'friend-lobby';
 
 interface UseWatchingArgs {
+  /** the board's own UI state (useBoardUi). */
+  ui: BoardUi;
   isMultiplayer: boolean;
   /** With the game on the board (read from the session), what is put aside
    *  while watching and put back after (App's state, as GameBackup holds it). */
@@ -19,12 +21,6 @@ interface UseWatchingArgs {
   searchMateInPlies: number | null;
   setSearchEvalFromWhite: Dispatch<SetStateAction<number | null>>;
   setSearchMateInPlies: Dispatch<SetStateAction<number | null>>;
-  formationLocked: boolean;
-  setFormationLocked: Dispatch<SetStateAction<boolean>>;
-  lockedFormationKey: string | null;
-  setLockedFormationKey: Dispatch<SetStateAction<string | null>>;
-  setSelected: Dispatch<SetStateAction<string | null>>;
-  setPreviewTopology: Dispatch<SetStateAction<TopologyState | null>>;
   /** A game that cannot be shown says so (the ?game=<id> banner). */
   setSharedGameError: Dispatch<SetStateAction<string | null>>;
   setView: Dispatch<SetStateAction<View>>;
@@ -50,17 +46,12 @@ interface UseWatchingArgs {
  * reads watchingGame).
  */
 export function useWatching({
+  ui,
   isMultiplayer,
   searchEvalFromWhite,
   searchMateInPlies,
   setSearchEvalFromWhite,
   setSearchMateInPlies,
-  formationLocked,
-  setFormationLocked,
-  lockedFormationKey,
-  setLockedFormationKey,
-  setSelected,
-  setPreviewTopology,
   setSharedGameError,
   setView,
   beginBusy,
@@ -68,6 +59,7 @@ export function useWatching({
   savedForLogIdRef,
   completedLogIdRef,
 }: UseWatchingArgs) {
+  const { formationLocked, setFormationLocked, lockedFormationKey, setLockedFormationKey, setSelected, setPreviewTopology } = ui;
   const seed = useSession((s) => s.seed);
   const state = useSession(boardOf(isMultiplayer));
   const initialState = useSession((s) => s.initial);

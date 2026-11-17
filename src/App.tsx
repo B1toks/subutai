@@ -421,17 +421,12 @@ function App() {
   // Watching a leaderboard game (useWatching): its state, start, step, auto
   // play, stop. Before isLocalMode, which reads watchingGame.
   const { watchingGame, startWatching, seekWatchTo, toggleWatchAutoplay, stopWatching } = useWatching({
+    ui,
     isMultiplayer,
     searchEvalFromWhite,
     searchMateInPlies,
     setSearchEvalFromWhite,
     setSearchMateInPlies,
-    formationLocked,
-    setFormationLocked,
-    lockedFormationKey,
-    setLockedFormationKey,
-    setSelected,
-    setPreviewTopology,
     setSharedGameError,
     setView,
     beginBusy,
