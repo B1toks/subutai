@@ -49,16 +49,29 @@ depend on that order:
   effect: the other way round, a loss on time could be handled with the
   render before it and never reach `finishGame`.
 
-Four groups of App's state live in the hook of the feature that owns them,
+Five groups of App's state live in the hook of the feature that owns them,
 with their effects and handlers: the self-play run
 (`features/autoplay/useAutoPlay`), the watched game
 (`features/review/useWatching`), the screen and the Review's own game
-(`app/useScreens`), and the end of a solo game
+(`app/useScreens`), the end of a solo game
 (`features/endgame/useGameResult`: the summary, the save, the 50-move
-dialog). Such a hook declares the group's `useState`s and refs and returns
-the group as one object, which App hands whole to the components that show
-it (`AutoRun`, `SoloSummary`, `MilestoneDialog`) and reads single names
-from where another hook needs them. An effect went with its group only
+dialog), and the online match (`features/online/useOnlineMatch`: the match
+followed, its outcome, the resume code, the "I resigned" mark). Such a hook
+declares the group's `useState`s and refs and returns the group as one
+object (`auto`, `result`, `mp` …), which App hands whole to the hooks and
+components that read several of its names (`AutoRun`, `SoloSummary`,
+`MilestoneDialog`, `useOnlineMatchEnd`, `MatchCompleteDialog`) and reads
+single names from where another hook needs one.
+
+Three more groups are state only, with no effects, declared where App
+declared them so React's hook slots stay in the same order: the board's own
+UI state (`features/game/useBoardUi`: the selection, the rotation preview
+and its lock, the coaching tools, the Beat Mode hold, the annotations, the
+formation lock and code editor, Load replay), the coach's memory
+(`features/game/useCoachState`) and the classifier's marks
+(`features/game/useMoveVerdicts`). App passes `ui`, `coach` and `verdicts`
+whole; the two effects that follow the board's UI state (the hint reset on
+a new position, the code editor's focus) stayed in App where they stood. An effect went with its group only
 where it commutes with every effect it crossed: none of them reads or
 writes the same state or ref in its body, and neither dispatches to the
 session there. Five effects moved that way (the watch autoplay, the
@@ -98,10 +111,16 @@ screen with its `Suspense` stay in App.
 What a click does is a handler hook: `useBoardInput` (a tile, a promotion,
 right-drag arrows), `useRotate`, `useCoachTools`, `useFormation`,
 `useResignAndDraw`, `useWatching`, `useReplayImport`,
-`useScreenNavigation`. These hold no React hooks, only functions over what
-App passes from its render, so where App calls them changes no effect
-order: App calls each after everything it reads is declared, the ones that
-read late values (`layout`, `canRotate`) just before the view switch.
+`useScreenNavigation`. These hold no effects: the only React hook inside is
+`useSession`, which reads the game App shows in the same render, as App's
+own aliases do; the rest is functions over what App passes from its render,
+so where App calls them changes no effect order. App calls each after
+everything it reads is declared, the ones that read late values (`layout`,
+`canRotate`) just before the view switch. Most of App's other hooks read
+the game the same way (`useSession` with the selectors of
+`features/game/boardView.ts`) instead of taking the board, the log, the
+status or the mode as arguments; none of them imports `session/step.ts`,
+which stays out of the chunks the lazy screens share.
 Example path, a move on the board: a tile's click in `BoardTiles` calls
 `onSquareClick` from `useBoardInput`, which finds the move among the legal
 ones and acts it into the session (`turns.act`); the session's new state
