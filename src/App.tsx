@@ -41,6 +41,7 @@ import { BoardOverlays } from './features/game/BoardOverlays';
 import { BoardTiles } from './features/game/BoardTiles';
 import { useBoardInput } from './features/game/useBoardInput';
 import { useBoardUi } from './features/game/useBoardUi';
+import { useCoachState } from './features/game/useCoachState';
 import { useWatching } from './features/review/useWatching';
 import { useResignAndDraw } from './features/game/useResignAndDraw';
 import { useFormation } from './features/game/useFormation';
@@ -358,14 +359,10 @@ function App() {
 
   // V1 — the solo time-control flag-fall effect lives further down, right
   // after `isLocalMode` is declared (TDZ: hooks here can't read it yet).
-  const encourageBadStreakRef = useRef(0);
-  const encourageLastMoveRef = useRef(-99);
-  const encourageCheckedMoveRef = useRef(-1);
-  const [encourageRotate, setEncourageRotate] = useState(false);
-  // R15 step 4-lite — one-shot-per-game coaching beats, deduped by log.id
-  // (fresh id per game, survives re-renders).
-  const earlyTipLogIdRef = useRef<string | null>(null);
-  const rotateTipLogIdRef = useRef<string | null>(null);
+  // R5 / R15 — the coach's own memory: the losing-run counters, the rotate
+  // pulse, the one-shot tips (useCoachState).
+  const coach = useCoachState();
+  const { encourageRotate, setEncourageRotate } = coach;
 
   // R6 — worst eval the human faced this game (most negative from white's
   // side). A tense, come-from-behind win triggers the victory cinematic.
@@ -856,17 +853,12 @@ function App() {
   });
 
   useCoachNudges({
+    coach,
     isMultiplayer,
     watchingGame,
     helpToolsEnabled,
     searchEvalFromWhite,
     toast,
-    encourageBadStreakRef,
-    encourageLastMoveRef,
-    encourageCheckedMoveRef,
-    setEncourageRotate,
-    earlyTipLogIdRef,
-    rotateTipLogIdRef,
     isLocalMode,
     currentPlayer,
     canRotate,

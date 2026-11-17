@@ -1,4 +1,4 @@
-import { useEffect, type RefObject, type Dispatch, type SetStateAction } from 'react';
+import { useEffect } from 'react';
 import {
   ENCOURAGE_ROTATE,
   ENCOURAGE_GENERIC,
@@ -9,19 +9,16 @@ import type { WatchingGame } from '../review/watching';
 import type { ToastContextValue } from '../../components/Toast';
 import { useSession } from '../../session/useSession';
 import { gameStatusOf, modeOf, logOf } from './boardView';
+import type { CoachState } from './useCoachState';
 
 interface UseCoachNudgesArgs {
+  /** The coach's own memory (useCoachState). */
+  coach: CoachState;
   isMultiplayer: boolean;
   watchingGame: WatchingGame | null;
   helpToolsEnabled: boolean;
   searchEvalFromWhite: number | null;
   toast: ToastContextValue;
-  encourageBadStreakRef: RefObject<number>;
-  encourageLastMoveRef: RefObject<number>;
-  encourageCheckedMoveRef: RefObject<number>;
-  setEncourageRotate: Dispatch<SetStateAction<boolean>>;
-  earlyTipLogIdRef: RefObject<string | null>;
-  rotateTipLogIdRef: RefObject<string | null>;
   isLocalMode: boolean;
   currentPlayer: 'ai' | 'human';
   canRotate: boolean;
@@ -34,21 +31,17 @@ interface UseCoachNudgesArgs {
  * right after the player's own rotation.
  */
 export function useCoachNudges({
+  coach,
   isMultiplayer,
   watchingGame,
   helpToolsEnabled,
   searchEvalFromWhite,
   toast,
-  encourageBadStreakRef,
-  encourageLastMoveRef,
-  encourageCheckedMoveRef,
-  setEncourageRotate,
-  earlyTipLogIdRef,
-  rotateTipLogIdRef,
   isLocalMode,
   currentPlayer,
   canRotate,
 }: UseCoachNudgesArgs) {
+  const { encourageBadStreakRef, encourageLastMoveRef, encourageCheckedMoveRef, setEncourageRotate, earlyTipLogIdRef, rotateTipLogIdRef } = coach;
   const gameStatus = useSession(gameStatusOf);
   const gameMode = useSession(modeOf(isMultiplayer));
   const log = useSession(logOf(isMultiplayer));
