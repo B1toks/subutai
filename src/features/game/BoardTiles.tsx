@@ -3,7 +3,6 @@ import type { SquareId } from '../../engine';
 import { tilePixelCenter, toTileFrame } from '../../engine/auxetic';
 import { useSession } from '../../session/useSession';
 import type { useEndgame } from '../endgame/useEndgame';
-import type { AnnotationColor } from './annotations';
 import type { recentPlies } from './boardMarks';
 import {
   allowedPieceTypesOf,
@@ -17,12 +16,15 @@ import { glyphForPiece } from './pieceGlyph';
 import { isPieceMovableInRoulette } from './roulette';
 import type { useBoardFxState } from './useBoardFxState';
 import type { useBoardMarks } from './useBoardMarks';
+import type { BoardUi } from './useBoardUi';
 
 type Marks = ReturnType<typeof useBoardMarks>;
 type Fx = ReturnType<typeof useBoardFxState>;
 type Endgame = ReturnType<typeof useEndgame>;
 
 interface BoardTilesProps {
+  /** The board's own UI state (useBoardUi). */
+  ui: BoardUi;
   /** The board's marks (useBoardMarks), effects (useBoardFxState) and the
    *  tiles' layout with the checkmate sequence (useEndgame), as App holds them. */
   marks: Marks;
@@ -31,15 +33,11 @@ interface BoardTilesProps {
   isMultiplayer: boolean;
   /** The 64 squares, a8..h1 (App). */
   squares: string[];
-  /** What this player has marked: the selection, the hint, a beat-snapped
-   *  move, the classifier's verdict square, a sacrifice, right-click
-   *  colours (App state). */
-  selected: string | null;
-  hintMove: { from: SquareId; to: SquareId } | { rotate: true } | null;
-  beatSnap: { from: SquareId; to: SquareId; ms: number } | null;
+  /** The classifier's verdict square and a sacrifice (App state); the
+   *  selection, the hint, a beat-snapped move and the right-click colours
+   *  are in ui. */
   classifiedSquare: { square: SquareId; classification: 'blunder' | 'brilliant' } | null;
   sacrificeSquare: SquareId | null;
-  squareAnnotations: Map<SquareId, AnnotationColor>;
   opponentMode: 'ai' | 'friend' | 'local';
   /** Whose turn from this seat, and the seat's colour (App, useEval). */
   currentPlayer: 'human' | 'ai';
@@ -56,7 +54,6 @@ interface BoardTilesProps {
   handleTileContextMenu: (e: MouseEvent) => void;
   handleTileMouseDown: (e: MouseEvent, sq: SquareId) => void;
   handleTileMouseUp: (e: MouseEvent, sq: SquareId) => void;
-  setHoveredSquare: (square: string | null) => void;
 }
 
 /**
@@ -71,14 +68,11 @@ interface BoardTilesProps {
  * DOM order.
  */
 export function BoardTiles({
+  ui,
   isMultiplayer,
   squares,
-  selected,
-  hintMove,
-  beatSnap,
   classifiedSquare,
   sacrificeSquare,
-  squareAnnotations,
   opponentMode,
   currentPlayer,
   myColor,
@@ -90,11 +84,11 @@ export function BoardTiles({
   handleTileContextMenu,
   handleTileMouseDown,
   handleTileMouseUp,
-  setHoveredSquare,
   marks,
   fx,
   endgame,
 }: BoardTilesProps) {
+  const { selected, hintMove, beatSnap, squareAnnotations, setHoveredSquare } = ui;
   const { highlightedTargets, enPassantTargets, checkSquares, threatenedSquares, threateningPieceSquares, displayTopology } = marks;
   const { enPassantExplosionSquare, captureFxSquare } = fx;
   const { layout, scale, mateSeq, irisKingPos, mateKingPos } = endgame;

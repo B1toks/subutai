@@ -228,13 +228,12 @@ function App() {
   // formation lock and code editor, annotations, Load replay (useBoardUi).
   const ui = useBoardUi();
   const {
-    selected, setSelected, previewTopology, setPreviewTopology, showSupport, helpToolsEnabled,
-    hintMove, setHintMove, previewLocked, setPreviewLocked, setLockedPreviewTopology,
-    hoveredSquare, setHoveredSquare, formationLocked, lockedFormationKey, formationInputMode,
-    setFormationInputMode, formationInputValue, setFormationInputValue, showReplayDialog,
-    setShowReplayDialog, replayText, setReplayText, replayError, setReplayError,
-    mpPendingPromotion, formationInputRef, beatSnapPendingRef, beatSnap, squareAnnotations,
-    arrowAnnotations,
+    setSelected, previewTopology, setPreviewTopology, showSupport, helpToolsEnabled,
+    setHintMove, previewLocked, setPreviewLocked, setLockedPreviewTopology, hoveredSquare,
+    formationLocked, lockedFormationKey, formationInputMode, setFormationInputMode,
+    formationInputValue, setFormationInputValue, showReplayDialog, setShowReplayDialog,
+    replayText, setReplayText, replayError, setReplayError, mpPendingPromotion,
+    formationInputRef, beatSnapPendingRef, arrowAnnotations,
   } = ui;
   const log: GameLog = online ? online.log : sess.log;
   const gameStatus = statusOf(sess);
@@ -1232,14 +1231,11 @@ function App() {
         }
       >
         <BoardTiles
+          ui={ui}
           isMultiplayer={isMultiplayer}
           squares={squares}
-          selected={selected}
-          hintMove={hintMove}
-          beatSnap={beatSnap}
           classifiedSquare={classifiedSquare}
           sacrificeSquare={sacrificeSquare}
-          squareAnnotations={squareAnnotations}
           opponentMode={opponentMode}
           currentPlayer={currentPlayer}
           myColor={myColor}
@@ -1251,7 +1247,6 @@ function App() {
           handleTileContextMenu={handleTileContextMenu}
           handleTileMouseDown={handleTileMouseDown}
           handleTileMouseUp={handleTileMouseUp}
-          setHoveredSquare={setHoveredSquare}
           marks={boardMarks}
           fx={boardFx}
           endgame={endgame}
