@@ -985,9 +985,6 @@ function App() {
     user,
     displayName,
     isMultiplayer,
-    seed,
-    gameMode,
-    log,
     positionLabel,
   });
 

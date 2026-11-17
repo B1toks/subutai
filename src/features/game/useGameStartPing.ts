@@ -1,17 +1,14 @@
 import { useRef, useEffect } from 'react';
 import type { User } from 'firebase/auth';
 import { gamesRepo } from '../../infra/firestore/games';
-import type { GameMode } from '../../shared/game';
-import type { GameLog } from '../../recording/log';
+import { useSession } from '../../session/useSession';
+import { modeOf, logOf } from './boardView';
 
 interface UseGameStartPingArgs {
   isAutoMode: boolean;
   user: User | null;
   displayName: string | null;
   isMultiplayer: boolean;
-  seed: number;
-  gameMode: GameMode;
-  log: GameLog;
   positionLabel: string;
 }
 
@@ -24,11 +21,11 @@ export function useGameStartPing({
   user,
   displayName,
   isMultiplayer,
-  seed,
-  gameMode,
-  log,
   positionLabel,
 }: UseGameStartPingArgs) {
+  const seed = useSession((s) => s.seed);
+  const gameMode = useSession(modeOf(isMultiplayer));
+  const log = useSession(logOf(isMultiplayer));
   // R15: abandonment ping — one doc per solo run, on the human's first move.
   // finishGame only fires on completed games, so without this "quit vs lost"
   // is unmeasurable. Same user/displayName gate as the save keeps the two
