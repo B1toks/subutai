@@ -228,13 +228,13 @@ function App() {
   // formation lock and code editor, annotations, Load replay (useBoardUi).
   const ui = useBoardUi();
   const {
-    selected, setSelected, previewTopology, setPreviewTopology, showThreats, setShowThreats,
-    showSupport, setShowSupport, helpToolsEnabled, hintMove, setHintMove, previewLocked,
-    setPreviewLocked, setLockedPreviewTopology, hoveredSquare, setHoveredSquare,
-    formationLocked, lockedFormationKey, formationInputMode, setFormationInputMode,
-    formationInputValue, setFormationInputValue, showReplayDialog, setShowReplayDialog,
-    replayText, setReplayText, replayError, setReplayError, mpPendingPromotion,
-    formationInputRef, beatSnapPendingRef, beatSnap, squareAnnotations, arrowAnnotations,
+    selected, setSelected, previewTopology, setPreviewTopology, showSupport, helpToolsEnabled,
+    hintMove, setHintMove, previewLocked, setPreviewLocked, setLockedPreviewTopology,
+    hoveredSquare, setHoveredSquare, formationLocked, lockedFormationKey, formationInputMode,
+    setFormationInputMode, formationInputValue, setFormationInputValue, showReplayDialog,
+    setShowReplayDialog, replayText, setReplayText, replayError, setReplayError,
+    mpPendingPromotion, formationInputRef, beatSnapPendingRef, beatSnap, squareAnnotations,
+    arrowAnnotations,
   } = ui;
   const log: GameLog = online ? online.log : sess.log;
   const gameStatus = statusOf(sess);
@@ -1301,6 +1301,7 @@ function App() {
       )}
 
       <BoardActions
+        ui={ui}
         isMultiplayer={isMultiplayer}
         isLocalMode={isLocalMode}
         opponentMode={opponentMode}
@@ -1310,21 +1311,10 @@ function App() {
         rowDraw={rowDraw}
         guardLeave={guardLeave}
         startNewGame={startNewGame}
-        formationLocked={formationLocked}
         toggleFormationLock={toggleFormationLock}
         requestResign={requestResign}
-        helpToolsEnabled={helpToolsEnabled}
         toggleHelpTools={toggleHelpTools}
-        showSupport={showSupport}
-        setShowSupport={setShowSupport}
-        showThreats={showThreats}
-        setShowThreats={setShowThreats}
-        hintMove={hintMove}
         computeHint={computeHint}
-        previewLocked={previewLocked}
-        setPreviewLocked={setPreviewLocked}
-        setLockedPreviewTopology={setLockedPreviewTopology}
-        setPreviewTopology={setPreviewTopology}
         handleSpinRoulette={handleSpinRoulette}
         canRotate={canRotate}
         showRotateHint={showRotateHint}

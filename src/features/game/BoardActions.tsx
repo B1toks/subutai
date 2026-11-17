@@ -1,8 +1,7 @@
-import type { Dispatch, SetStateAction } from 'react';
 import { AlertTriangle, ArrowRight, Dices, Eye, Flag, GraduationCap, Handshake, Lightbulb, Lock, RotateCw } from 'lucide-react';
 import { Icon } from '../../components/Icon';
 import { Tooltip } from '../../components/Tooltip';
-import type { Color, SquareId, TopologyState } from '../../engine';
+import type { Color } from '../../engine';
 import { useSession } from '../../session/useSession';
 import { LocalTurnSlot } from '../local/LocalTurnSlot';
 import type { WatchingGame } from '../review/watching';
@@ -20,8 +19,11 @@ import type { RowDraw } from './drawRows';
 import { drawOfferTitle } from './drawOfferTitle';
 import type { MaterialBreakdown } from './material';
 import { MaterialScore } from './MaterialScore';
+import type { BoardUi } from './useBoardUi';
 
 interface BoardActionsProps {
+  /** The board's own UI state (useBoardUi). */
+  ui: BoardUi;
   isMultiplayer: boolean;
   isLocalMode: boolean;
   opponentMode: 'ai' | 'friend' | 'local';
@@ -33,23 +35,11 @@ interface BoardActionsProps {
   rowDraw: RowDraw | null;
   guardLeave: (what: string, destroys: boolean, run: () => void) => void;
   startNewGame: () => void;
-  formationLocked: boolean;
   toggleFormationLock: () => void;
   requestResign: (side?: Color) => void;
-  /** S2.4 — the coaching group: its switch, the support and threat maps, the hint. */
-  helpToolsEnabled: boolean;
+  /** S2.4 — the coaching group's switch and its hint (the maps are in ui). */
   toggleHelpTools: () => void;
-  showSupport: boolean;
-  setShowSupport: Dispatch<SetStateAction<boolean>>;
-  showThreats: boolean;
-  setShowThreats: Dispatch<SetStateAction<boolean>>;
-  hintMove: { from: SquareId; to: SquareId } | { rotate: true } | null;
   computeHint: () => void;
-  /** The rotation preview: hover shows it, a click locks it (App state). */
-  previewLocked: boolean;
-  setPreviewLocked: (locked: boolean) => void;
-  setLockedPreviewTopology: (topology: TopologyState | null) => void;
-  setPreviewTopology: (topology: TopologyState | null) => void;
   handleSpinRoulette: () => void;
   canRotate: boolean;
   /** The first-game "Try rotating" bubble (useRotateHint) and the pulse. */
@@ -73,6 +63,7 @@ interface BoardActionsProps {
  * not matter.
  */
 export function BoardActions({
+  ui,
   isMultiplayer,
   isLocalMode,
   opponentMode,
@@ -82,21 +73,10 @@ export function BoardActions({
   rowDraw,
   guardLeave,
   startNewGame,
-  formationLocked,
   toggleFormationLock,
   requestResign,
-  helpToolsEnabled,
   toggleHelpTools,
-  showSupport,
-  setShowSupport,
-  showThreats,
-  setShowThreats,
-  hintMove,
   computeHint,
-  previewLocked,
-  setPreviewLocked,
-  setLockedPreviewTopology,
-  setPreviewTopology,
   handleSpinRoulette,
   canRotate,
   showRotateHint,
@@ -106,6 +86,7 @@ export function BoardActions({
   materialScore,
   materialBreakdown,
 }: BoardActionsProps) {
+  const { formationLocked, helpToolsEnabled, showSupport, setShowSupport, showThreats, setShowThreats, hintMove, previewLocked, setPreviewLocked, setLockedPreviewTopology, setPreviewTopology } = ui;
   const state = useSession(boardOf(isMultiplayer));
   const log = useSession(logOf(isMultiplayer));
   const gameStatus = useSession(gameStatusOf);
