@@ -234,9 +234,8 @@ function App() {
     setHoveredSquare, formationLocked, lockedFormationKey, formationInputMode,
     setFormationInputMode, formationInputValue, setFormationInputValue, showReplayDialog,
     setShowReplayDialog, replayText, setReplayText, replayError, setReplayError,
-    mpPendingPromotion, setMpPendingPromotion, formationInputRef, beatSnapPendingRef, beatSnap,
-    setBeatSnap, squareAnnotations, setSquareAnnotations, arrowAnnotations, setArrowAnnotations,
-    annotationStartRef,
+    mpPendingPromotion, formationInputRef, beatSnapPendingRef, beatSnap, squareAnnotations,
+    setSquareAnnotations, arrowAnnotations, setArrowAnnotations, annotationStartRef,
   } = ui;
   const log: GameLog = online ? online.log : sess.log;
   const gameStatus = statusOf(sess);
@@ -1000,23 +999,16 @@ function App() {
   // read is declared (layout, displayTopology).
   const { handleTileContextMenu, handleTileMouseDown, handleTileMouseUp, onSquareClick, handlePromotion, cancelPromotion } =
     useBoardInput({
+      ui,
       isMultiplayer,
       mpSync,
       isLocalMode,
       watchingGame,
       currentPlayer,
       getLegalMoves,
-      selected,
-      setSelected,
       pendingPromotion,
-      setMpPendingPromotion,
       layout,
       displayTopology,
-      beatSnapPendingRef,
-      setBeatSnap,
-      annotationStartRef,
-      setSquareAnnotations,
-      setArrowAnnotations,
       commitAnalysis,
       settleGuessRound,
       setSearchEvalFromWhite,

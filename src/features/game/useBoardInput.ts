@@ -1,4 +1,4 @@
-import type { Dispatch, MouseEvent as ReactMouseEvent, RefObject, SetStateAction } from 'react';
+import type { Dispatch, MouseEvent as ReactMouseEvent, SetStateAction } from 'react';
 import { classifyAsync } from '../../analysis/classifyClient';
 import type { MultiplayerSyncHandle } from '../../components/MultiplayerGameView';
 import type { BoardState, Move, PieceType, SquareId, TopologyState } from '../../engine';
@@ -9,12 +9,13 @@ import { computeSAN } from '../../recording/log';
 import { turns } from '../../session/session';
 import { scaleBudgetMs } from '../../utils/deviceTier';
 import type { WatchingGame } from '../review/watching';
-import { colorFromMouseEvent, type AnnotationColor, type ArrowAnnotation } from './annotations';
+import { colorFromMouseEvent } from './annotations';
 import { bumpEvalForMove } from './position';
 import { isPieceMovableInRoulette } from './roulette';
 import type { useClassifier } from './useClassifier';
 import { useSession } from '../../session/useSession';
 import { gameStatusOf, modeOf, boardOf, legalMovesOf, logOf, allowedPieceTypesOf, usedRouletteSlotsOf, rouletteRevealOf, rouletteActionsLeftOf } from './boardView';
+import type { BoardUi } from './useBoardUi';
 
 // M.14 — beat-mode glide length. MUST match the .piece-slide-in CSS
 // animation duration so the slide lands exactly on the beat.
@@ -23,6 +24,8 @@ const BEAT_SLIDE_MS = 260;
 type Square = { from: SquareId; to: SquareId };
 
 interface UseBoardInputArgs {
+  /** The board's own UI state (useBoardUi). */
+  ui: BoardUi;
   isMultiplayer: boolean;
   mpSync: MultiplayerSyncHandle | null;
   isLocalMode: boolean;
@@ -30,20 +33,10 @@ interface UseBoardInputArgs {
   currentPlayer: 'human' | 'ai';
   /** The legal moves of a board under the mode's rules (App). */
   getLegalMoves: (s: BoardState) => Move[];
-  selected: string | null;
-  setSelected: Dispatch<SetStateAction<string | null>>;
   pendingPromotion: Square | null;
-  setMpPendingPromotion: Dispatch<SetStateAction<Square | null>>;
   /** The tiles' layout (useEndgame) and the topology drawn (useBoardMarks). */
   layout: BoardLayout;
   displayTopology: TopologyState;
-  /** Beat Mode: a move held until the next beat (App). */
-  beatSnapPendingRef: RefObject<boolean>;
-  setBeatSnap: Dispatch<SetStateAction<(Square & { ms: number }) | null>>;
-  /** Right-drag annotations (App state). */
-  annotationStartRef: RefObject<SquareId | null>;
-  setSquareAnnotations: Dispatch<SetStateAction<Map<SquareId, AnnotationColor>>>;
-  setArrowAnnotations: Dispatch<SetStateAction<ArrowAnnotation[]>>;
   commitAnalysis: ReturnType<typeof useClassifier>['commitAnalysis'];
   /** Twitch: the streamer's move settles chat's guess round (useTwitchState). */
   settleGuessRound: (move: Move, san: string) => void;
@@ -61,28 +54,22 @@ interface UseBoardInputArgs {
  * render, so the call's position changes no effect order.
  */
 export function useBoardInput({
+  ui,
   isMultiplayer,
   mpSync,
   isLocalMode,
   watchingGame,
   currentPlayer,
   getLegalMoves,
-  selected,
-  setSelected,
   pendingPromotion,
-  setMpPendingPromotion,
   layout,
   displayTopology,
-  beatSnapPendingRef,
-  setBeatSnap,
-  annotationStartRef,
-  setSquareAnnotations,
-  setArrowAnnotations,
   commitAnalysis,
   settleGuessRound,
   setSearchEvalFromWhite,
   setSearchMateInPlies,
 }: UseBoardInputArgs) {
+  const { selected, setSelected, setMpPendingPromotion, beatSnapPendingRef, setBeatSnap, annotationStartRef, setSquareAnnotations, setArrowAnnotations } = ui;
   const gameStatus = useSession(gameStatusOf);
   const gameMode = useSession(modeOf(isMultiplayer));
   const state = useSession(boardOf(isMultiplayer));
