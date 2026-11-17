@@ -760,13 +760,7 @@ function App() {
     setHintMove(null);
   }, [sess.log.moves.length, state.topologyState, gameStatus]);
 
-  const { mpMatchLive, mpClock } = useGameClocks({
-    isMultiplayer,
-    mpSync,
-    watchingGame,
-    soloLog: sess.log,
-    gameStatus,
-  });
+  const { mpMatchLive, mpClock } = useGameClocks({ isMultiplayer, mpSync, watchingGame });
 
   // Locking the formation, and the Rotate button (useRotate).
   const { toggleFormationLock, handleRotate } = useRotate({

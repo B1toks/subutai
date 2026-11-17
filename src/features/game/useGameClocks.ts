@@ -7,17 +7,14 @@ import {
   type MultiplayerSyncHandle,
 } from '../../components/MultiplayerGameView';
 import type { WatchingGame } from '../review/watching';
-import type { GameLog } from '../../recording/log';
-import type { GameStatus } from '../../shared/game';
 import { session } from '../../session/session';
+import { useSession } from '../../session/useSession';
+import { gameStatusOf } from './boardView';
 
 interface UseGameClocksArgs {
   isMultiplayer: boolean;
   mpSync: MultiplayerSyncHandle | null;
   watchingGame: WatchingGame | null;
-  /** The solo game's log (not an online match's): its clocks arm on its first move. */
-  soloLog: GameLog;
-  gameStatus: GameStatus;
 }
 
 /**
@@ -33,9 +30,10 @@ export function useGameClocks({
   isMultiplayer,
   mpSync,
   watchingGame,
-  soloLog,
-  gameStatus,
 }: UseGameClocksArgs) {
+  // The solo game's log (not an online match's): its clocks arm on its first move.
+  const soloLog = useSession((s) => s.log);
+  const gameStatus = useSession(gameStatusOf);
 
   // V1 — the clocks arm on the FIRST MOVE, always.
   //
