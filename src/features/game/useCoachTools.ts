@@ -1,27 +1,21 @@
-import type { Dispatch, SetStateAction } from 'react';
 import { searchAsync } from '../../ai/searchClient';
-import type { SquareId } from '../../engine';
 import { applyRotationMove } from '../../engine/auxetic';
 import { localData, LOCAL_KEYS } from '../../infra/localData';
 import { session } from '../../session/session';
 import type { WatchingGame } from '../review/watching';
 import { useSession } from '../../session/useSession';
 import { gameStatusOf, modeOf, boardOf } from './boardView';
-
-type HintMove = { from: SquareId; to: SquareId } | { rotate: true } | null;
+import type { BoardUi } from './useBoardUi';
 
 interface UseCoachToolsArgs {
+  /** The board's own UI state (useBoardUi). */
+  ui: BoardUi;
   isMultiplayer: boolean;
   watchingGame: WatchingGame | null;
   /** Whose turn from this seat (App): the hint is for the player here. */
   currentPlayer: 'human' | 'ai';
   /** Rotating is a legal turn now (useCanRotate): the hint may say "rotate". */
   canRotate: boolean;
-  /** S2.4 — the coaching group's switch, and the tools it hides (App state). */
-  setHelpToolsEnabled: Dispatch<SetStateAction<boolean>>;
-  setShowSupport: Dispatch<SetStateAction<boolean>>;
-  setShowThreats: Dispatch<SetStateAction<boolean>>;
-  setHintMove: Dispatch<SetStateAction<HintMove>>;
 }
 
 /**
@@ -34,15 +28,13 @@ interface UseCoachToolsArgs {
  * render, so the call's position changes no effect order.
  */
 export function useCoachTools({
+  ui,
   isMultiplayer,
   watchingGame,
   currentPlayer,
   canRotate,
-  setHelpToolsEnabled,
-  setShowSupport,
-  setShowThreats,
-  setHintMove,
 }: UseCoachToolsArgs) {
+  const { setHelpToolsEnabled, setShowSupport, setShowThreats, setHintMove } = ui;
   const gameStatus = useSession(gameStatusOf);
   const gameMode = useSession(modeOf(isMultiplayer));
   const state = useSession(boardOf(isMultiplayer));

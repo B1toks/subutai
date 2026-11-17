@@ -229,15 +229,14 @@ function App() {
   const ui = useBoardUi();
   const {
     selected, setSelected, previewTopology, setPreviewTopology, showThreats, setShowThreats,
-    showSupport, setShowSupport, helpToolsEnabled, setHelpToolsEnabled, hintMove, setHintMove,
-    previewLocked, setPreviewLocked, lockedPreviewTopology, setLockedPreviewTopology,
-    hoveredSquare, setHoveredSquare, formationLocked, setFormationLocked,
-    lockedFormationKey, setLockedFormationKey, formationInputMode, setFormationInputMode,
-    formationInputValue, setFormationInputValue, showReplayDialog, setShowReplayDialog,
-    replayText, setReplayText, replayError, setReplayError, mpPendingPromotion,
-    setMpPendingPromotion, formationInputRef, beatSnapPendingRef, beatSnap, setBeatSnap,
-    squareAnnotations, setSquareAnnotations, arrowAnnotations, setArrowAnnotations,
-    annotationStartRef,
+    showSupport, setShowSupport, helpToolsEnabled, hintMove, setHintMove, previewLocked,
+    setPreviewLocked, lockedPreviewTopology, setLockedPreviewTopology, hoveredSquare,
+    setHoveredSquare, formationLocked, setFormationLocked, lockedFormationKey,
+    setLockedFormationKey, formationInputMode, setFormationInputMode, formationInputValue,
+    setFormationInputValue, showReplayDialog, setShowReplayDialog, replayText, setReplayText,
+    replayError, setReplayError, mpPendingPromotion, setMpPendingPromotion, formationInputRef,
+    beatSnapPendingRef, beatSnap, setBeatSnap, squareAnnotations, setSquareAnnotations,
+    arrowAnnotations, setArrowAnnotations, annotationStartRef,
   } = ui;
   const log: GameLog = online ? online.log : sess.log;
   const gameStatus = statusOf(sess);
@@ -979,14 +978,11 @@ function App() {
 
   // The coaching tools' switch and the engine hint (useCoachTools).
   const { toggleHelpTools, computeHint } = useCoachTools({
+    ui,
     isMultiplayer,
     watchingGame,
     currentPlayer,
     canRotate,
-    setHelpToolsEnabled,
-    setShowSupport,
-    setShowThreats,
-    setHintMove,
   });
 
   // The 960 code chip's editor: apply, cancel, leave (useFormation).
