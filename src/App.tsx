@@ -234,8 +234,7 @@ function App() {
     formationLocked, lockedFormationKey, formationInputMode, setFormationInputMode,
     formationInputValue, setFormationInputValue, showReplayDialog, setShowReplayDialog,
     replayText, setReplayText, replayError, setReplayError, mpPendingPromotion,
-    formationInputRef, beatSnapPendingRef, beatSnap, squareAnnotations, setSquareAnnotations,
-    arrowAnnotations, setArrowAnnotations, annotationStartRef,
+    formationInputRef, beatSnapPendingRef, beatSnap, squareAnnotations, arrowAnnotations,
   } = ui;
   const log: GameLog = online ? online.log : sess.log;
   const gameStatus = statusOf(sess);
@@ -776,10 +775,8 @@ function App() {
   useAfkNudge({ setShowAfkAlert, lastActivityRef, gameStatus, currentPlayer });
 
   useMoveFeedback({
+    ui,
     isMultiplayer,
-    setSquareAnnotations,
-    setArrowAnnotations,
-    annotationStartRef,
   });
 
   useRouletteAutoSpin({
