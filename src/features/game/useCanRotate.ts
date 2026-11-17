@@ -2,15 +2,12 @@ import { useMemo } from 'react';
 import { toggleTopology } from '../../engine/auxetic';
 import { findKing, isSquareAttacked } from '../../engine/moves';
 import type { WatchingGame } from '../review/watching';
-import type { GameMode } from '../../shared/game';
-import type { BoardState, PieceType } from '../../engine';
+import { useSession } from '../../session/useSession';
+import { modeOf, boardOf, allowedPieceTypesOf, rouletteActionsLeftOf } from './boardView';
 
 interface UseCanRotateArgs {
+  isMultiplayer: boolean;
   watchingGame: WatchingGame | null;
-  gameMode: GameMode;
-  state: BoardState;
-  allowedPieceTypes: PieceType[] | null;
-  rouletteActionsLeft: number;
   currentPlayer: 'human' | 'ai';
 }
 
@@ -20,13 +17,14 @@ interface UseCanRotateArgs {
  * it costs an action of a live spin. computeHint in App reads it on click.
  */
 export function useCanRotate({
+  isMultiplayer,
   watchingGame,
-  gameMode,
-  state,
-  allowedPieceTypes,
-  rouletteActionsLeft,
   currentPlayer,
 }: UseCanRotateArgs) {
+  const gameMode = useSession(modeOf(isMultiplayer));
+  const state = useSession(boardOf(isMultiplayer));
+  const allowedPieceTypes = useSession(allowedPieceTypesOf(isMultiplayer));
+  const rouletteActionsLeft = useSession(rouletteActionsLeftOf(isMultiplayer));
   const canRotate = useMemo(() => {
     // V1 — a replay is a recording, not a game: nothing on the board may be
     // acted on while watching (the rotate button used to stay live and the

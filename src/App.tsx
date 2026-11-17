@@ -930,11 +930,8 @@ function App() {
   }, []);
 
   const { canRotate } = useCanRotate({
+    isMultiplayer,
     watchingGame,
-    gameMode,
-    state,
-    allowedPieceTypes,
-    rouletteActionsLeft,
     currentPlayer,
   });
 
