@@ -230,9 +230,8 @@ function App() {
   const {
     setSelected, previewTopology, setPreviewTopology, helpToolsEnabled, setHintMove,
     previewLocked, setPreviewLocked, setLockedPreviewTopology, formationLocked,
-    lockedFormationKey, formationInputMode, setFormationInputMode, formationInputValue,
-    setFormationInputValue, showReplayDialog, setShowReplayDialog, replayText, setReplayText,
-    replayError, setReplayError, mpPendingPromotion, formationInputRef, beatSnapPendingRef,
+    lockedFormationKey, formationInputMode, showReplayDialog, setShowReplayDialog, replayText,
+    setReplayText, replayError, mpPendingPromotion, formationInputRef, beatSnapPendingRef,
   } = ui;
   const log: GameLog = online ? online.log : sess.log;
   const gameStatus = statusOf(sess);
@@ -1318,17 +1317,11 @@ function App() {
       />
 
       <PositionCodeRow
+        ui={ui}
         isMultiplayer={isMultiplayer}
         watchingGame={watchingGame}
         guardLeave={guardLeave}
-        setReplayError={setReplayError}
-        setShowReplayDialog={setShowReplayDialog}
         positionLabel={positionLabel}
-        formationInputMode={formationInputMode}
-        setFormationInputMode={setFormationInputMode}
-        formationInputRef={formationInputRef}
-        formationInputValue={formationInputValue}
-        setFormationInputValue={setFormationInputValue}
         applyFormationCode={applyFormationCode}
         cancelFormationInput={cancelFormationInput}
         commitFormationOnBlur={commitFormationOnBlur}

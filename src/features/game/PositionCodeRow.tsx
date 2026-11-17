@@ -1,25 +1,21 @@
-import type { RefObject } from 'react';
 import { Pencil, Upload } from 'lucide-react';
 import { Icon } from '../../components/Icon';
 import { isValidChess960Key } from '../../engine';
 import type { WatchingGame } from '../review/watching';
+import type { BoardUi } from './useBoardUi';
 
 interface PositionCodeRowProps {
+  /** The board's own UI state (useBoardUi). */
+  ui: BoardUi;
   isMultiplayer: boolean;
   watchingGame: WatchingGame | null;
   /** Asks before anything that replaces a game in progress (useNavigationGuards). */
   guardLeave: (what: string, destroys: boolean, run: () => void) => void;
-  setReplayError: (error: string | null) => void;
-  setShowReplayDialog: (open: boolean) => void;
   /** This game's Chess960 starting rank, e.g. RNBQKBNR (App). */
   positionLabel: string;
-  /** Editing the code: whether, the field (App focuses it in an effect),
-   *  its text, and what Enter, Escape and leaving the field do (App). */
-  formationInputMode: boolean;
-  setFormationInputMode: (editing: boolean) => void;
-  formationInputRef: RefObject<HTMLInputElement | null>;
-  formationInputValue: string;
-  setFormationInputValue: (value: string) => void;
+  /** Editing the code: what Enter, Escape and leaving the field do
+   *  (useFormation); whether it is open, the field (App focuses it in an
+   *  effect) and its text are in ui. */
   applyFormationCode: () => void;
   cancelFormationInput: () => void;
   commitFormationOnBlur: () => void;
@@ -35,21 +31,16 @@ interface PositionCodeRowProps {
  * that attaches it, as before. Order does not matter.
  */
 export function PositionCodeRow({
+  ui,
   isMultiplayer,
   watchingGame,
   guardLeave,
-  setReplayError,
-  setShowReplayDialog,
   positionLabel,
-  formationInputMode,
-  setFormationInputMode,
-  formationInputRef,
-  formationInputValue,
-  setFormationInputValue,
   applyFormationCode,
   cancelFormationInput,
   commitFormationOnBlur,
 }: PositionCodeRowProps) {
+  const { setReplayError, setShowReplayDialog, formationInputMode, setFormationInputMode, formationInputRef, formationInputValue, setFormationInputValue } = ui;
   return (
     <div className="position-label-wrap">
       {/* S2.1 — Replay import and formation editing clobber local game
