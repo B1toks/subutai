@@ -9,7 +9,7 @@ import { MusicToggle } from '../features/music/MusicToggle';
 import { NeonLogo } from './NeonLogo';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { Tooltip } from '../components/Tooltip';
-import { UserMenu } from '../components/UserMenu';
+import { UserMenu } from './UserMenu';
 import { STREAMING_UI } from '../featureFlags';
 import { logOf, modeOf, gameStatusOf } from '../features/game/boardView';
 import { useSession } from '../session/useSession';

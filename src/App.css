@@ -6,7 +6,7 @@
 @import './app/styles/tokens.css';
 @import './app/styles/shell.css';
 @import './app/styles/layout.css';
-@import './components/UserMenu.css';
+@import './app/UserMenu.css';
 @import './app/styles/layout-breakpoints.css';
 @import './app/styles/header.css';
 @import './features/game/board.css';
