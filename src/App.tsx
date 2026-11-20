@@ -52,7 +52,7 @@ import { useReplayImport } from './memory/useReplayImport';
 import { drawRows } from './features/game/drawRows';
 import { useScreenNavigation } from './app/useScreenNavigation';
 import { TutorialOverlay } from './components/TutorialOverlay';
-import { WelcomeScreen } from './components/WelcomeScreen';
+import { WelcomeScreen } from './app/WelcomeScreen';
 import { useAuth } from './firebase/useAuth';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameLog } from './recording/log';

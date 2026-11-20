@@ -1,5 +1,5 @@
 import { ArrowRight } from 'lucide-react';
-import { Icon } from './Icon';
+import { Icon } from '../components/Icon';
 
 interface WelcomeScreenProps {
   /** Dismiss and run the tour. The primary (and intended) path. */
