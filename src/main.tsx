@@ -5,7 +5,7 @@ import './index.css'
 import App from './App.tsx'
 import { ToastProvider } from './components/Toast'
 import { BusyOverlay } from './components/BusyOverlay'
-import { AppErrorBoundary } from './components/AppErrorBoundary'
+import { AppErrorBoundary } from './app/AppErrorBoundary'
 import { startSessionServices } from './services'
 import { loadStreaming } from './integrations'
 
