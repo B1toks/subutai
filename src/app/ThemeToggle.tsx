@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { Contrast, Sparkles, Sun, TreePine, Zap } from 'lucide-react';
-import { Icon } from './Icon';
-import { Tooltip } from './Tooltip';
-import { useToast } from './Toast';
+import { Icon } from '../components/Icon';
+import { Tooltip } from '../components/Tooltip';
+import { useToast } from '../components/Toast';
 import { audio } from '../audio/AudioController';
 import {
   THEME_CHOICES,

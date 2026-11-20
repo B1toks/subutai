@@ -7,7 +7,7 @@ import { Icon } from '../components/Icon';
 import type { MultiplayerSyncHandle } from '../components/MultiplayerGameView';
 import { MusicToggle } from '../features/music/MusicToggle';
 import { NeonLogo } from './NeonLogo';
-import { ThemeToggle } from '../components/ThemeToggle';
+import { ThemeToggle } from './ThemeToggle';
 import { Tooltip } from '../components/Tooltip';
 import { UserMenu } from './UserMenu';
 import { STREAMING_UI } from '../featureFlags';

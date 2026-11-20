@@ -48,7 +48,7 @@
 @import './components/Leaderboard.tabs.css';
 @import './components/StatsPage.css';
 @import './components/feedback.status.css';
-@import './components/ThemeToggle.css';
+@import './app/ThemeToggle.css';
 @import './app/styles/reduced-motion.css';
 @import './app/styles/themes/fantasy.css';
 @import './components/Toast.css';
