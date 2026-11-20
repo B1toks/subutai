@@ -25,7 +25,7 @@
 @import './components/MusicDock.css';
 @import './components/BeatCombo.css';
 @import './features/game/clock.css';
-@import './components/TutorialOverlay.css';
+@import './app/TutorialOverlay.css';
 @import './features/game/promotion.css';
 @import './features/game/roulette.css';
 @import './components/GameReview.css';

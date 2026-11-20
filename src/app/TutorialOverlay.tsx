@@ -13,7 +13,7 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Icon } from './Icon';
+import { Icon } from '../components/Icon';
 
 /* S2.2 — first-launch interactive tour. Five coach-mark steps spotlight
  * the elements that make Subutai different from plain chess (the rotate

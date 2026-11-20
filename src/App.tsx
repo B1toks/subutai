@@ -51,7 +51,7 @@ import { useRotate } from './features/game/useRotate';
 import { useReplayImport } from './memory/useReplayImport';
 import { drawRows } from './features/game/drawRows';
 import { useScreenNavigation } from './app/useScreenNavigation';
-import { TutorialOverlay } from './components/TutorialOverlay';
+import { TutorialOverlay } from './app/TutorialOverlay';
 import { WelcomeScreen } from './app/WelcomeScreen';
 import { useAuth } from './firebase/useAuth';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
