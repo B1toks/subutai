@@ -12,7 +12,7 @@ import { FeedbackModal } from './app/FeedbackModal';
 import { MilestoneDialog } from './features/endgame/MilestoneDialog';
 import { SoloSummary } from './features/endgame/SoloSummary';
 import { useGameResult } from './features/endgame/useGameResult';
-import { PlayerRow } from './components/PlayerRow';
+import { PlayerRow } from './features/game/PlayerRow';
 import { EvalBar } from './features/game/EvalBar';
 import { HelpDialog } from './app/HelpDialog';
 import { ScreenFlash } from './features/game/ScreenFlash';

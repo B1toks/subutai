@@ -1,5 +1,5 @@
 import { Pencil, User } from 'lucide-react';
-import { Icon } from './Icon';
+import { Icon } from '../../components/Icon';
 
 export interface PlayerRowProps {
   displayName: string;
