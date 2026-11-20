@@ -131,7 +131,7 @@ const StatsPage = lazy(() =>
 );
 // T3 — Twitch overlay is code-split: only streamers pay for it.
 const TwitchPanel = lazy(() =>
-  import('./components/TwitchPanel').then((m) => ({ default: m.TwitchPanel })),
+  import('./features/twitch/TwitchPanel').then((m) => ({ default: m.TwitchPanel })),
 );
 // SP — Spotify dock, same deal.
 const MusicDock = lazy(() =>

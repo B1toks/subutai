@@ -1,19 +1,19 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Cast, GripVertical, PanelRight, X } from 'lucide-react';
-import { Icon } from './Icon';
-import { twitchChat, type TwitchChatMessage, type TwitchChatStatus } from '../integrations/twitch/chat';
-import { twitchGame } from '../integrations/twitch/game';
+import { Icon } from '../../components/Icon';
+import { twitchChat, type TwitchChatMessage, type TwitchChatStatus } from '../../integrations/twitch/chat';
+import { twitchGame } from '../../integrations/twitch/game';
 import {
   moveVoting,
   type GuessLevel,
   type ViewerScore,
   type VoteMode,
   type VoteRound,
-} from '../integrations/twitch/moveVoting';
-import { loadEmoteMap, type EmoteMap } from '../integrations/twitch/seventv';
-import { dockLayout, DOCK_WIDTH } from '../ui/dockLayout';
-import { localData, LOCAL_KEYS } from '../infra/localData';
+} from '../../integrations/twitch/moveVoting';
+import { loadEmoteMap, type EmoteMap } from '../../integrations/twitch/seventv';
+import { dockLayout, DOCK_WIDTH } from '../../ui/dockLayout';
+import { localData, LOCAL_KEYS } from '../../infra/localData';
 
 const CHANNEL_KEY = LOCAL_KEYS.twitchChannel;
 const POS_KEY = LOCAL_KEYS.twitchPos;

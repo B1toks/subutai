@@ -18,7 +18,7 @@
 @import './features/game/move-log.css';
 @import './memory/MemoryPanel.css';
 @import './app/styles/help-dialog.css';
-@import './components/TwitchPanel.css';
+@import './features/twitch/TwitchPanel.css';
 @import './integrations/music/PerimeterEqualizer.css';
 @import './features/music/beat-board.css';
 @import './features/endgame/EndgameScene.css';
