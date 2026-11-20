@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { Frown, Heart, Meh, Smile, Sparkles } from 'lucide-react';
-import { Icon } from './Icon';
+import { Icon } from '../components/Icon';
 import { hasAnyContent, type FeedbackRating } from '../firebase/feedback';
 import { feedbackRepo } from '../infra/firestore/feedback';
 

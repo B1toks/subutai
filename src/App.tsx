@@ -8,7 +8,7 @@ import { clearSearchTable } from './ai/searchClient';
 import { useToast } from './components/Toast';
 import type { EndgameKind, KingOrigin, VictoryTheme } from './components/EndgameScene';
 import { STREAMING_UI } from './featureFlags';
-import { FeedbackModal } from './components/FeedbackModal';
+import { FeedbackModal } from './app/FeedbackModal';
 import { MilestoneDialog } from './features/endgame/MilestoneDialog';
 import { SoloSummary } from './features/endgame/SoloSummary';
 import { useGameResult } from './features/endgame/useGameResult';
