@@ -121,7 +121,7 @@ const GameReview = lazy(() =>
   import('./features/review/GameReview').then((m) => ({ default: m.GameReview })),
 );
 const Leaderboard = lazy(() =>
-  import('./components/Leaderboard').then((m) => ({ default: m.Leaderboard })),
+  import('./features/leaderboard/Leaderboard').then((m) => ({ default: m.Leaderboard })),
 );
 const FriendLobby = lazy(() =>
   import('./features/online/FriendLobby').then((m) => ({ default: m.FriendLobby })),

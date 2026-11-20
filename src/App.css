@@ -34,7 +34,7 @@
 @import './components/modal.css';
 @import './features/endgame/GameSummary.css';
 @import './features/review/watch-banner.css';
-@import './components/Leaderboard.css';
+@import './features/leaderboard/Leaderboard.css';
 @import './components/feedback.css';
 @import './features/game/board-coords.css';
 @import './features/local/local.css';
@@ -44,8 +44,8 @@
 @import './features/online/multiplayer.css';
 @import './features/online/FriendLobby.css';
 @import './features/game/capture-effects.css';
-@import './components/Leaderboard.badges.css';
-@import './components/Leaderboard.tabs.css';
+@import './features/leaderboard/Leaderboard.badges.css';
+@import './features/leaderboard/Leaderboard.tabs.css';
 @import './features/stats/StatsPage.css';
 @import './components/feedback.status.css';
 @import './app/ThemeToggle.css';
@@ -77,7 +77,7 @@
 @import './components/Tooltip.portal.css';
 @import './features/game/move-targets.css';
 @import './app/styles/mobile-drawers.css';
-@import './components/Leaderboard.mobile.css';
+@import './features/leaderboard/Leaderboard.mobile.css';
 @import './features/game/fx-intensity.css';
 @import './features/review/GameReview.key-moments.css';
 @import './features/local/turn-slot.css';

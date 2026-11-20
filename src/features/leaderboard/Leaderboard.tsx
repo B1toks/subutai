@@ -14,12 +14,12 @@ import {
   type BoardType,
   type LeaderboardCursor,
   type LeaderboardEntry,
-} from '../firebase/leaderboard';
-import { leaderboardRepo } from '../infra/firestore/leaderboard';
-import type { GameOutcome } from '../analysis/points';
-import { Icon } from './Icon';
-import { Skeleton } from './Skeleton';
-import { EmptyState } from './EmptyState';
+} from '../../firebase/leaderboard';
+import { leaderboardRepo } from '../../infra/firestore/leaderboard';
+import type { GameOutcome } from '../../analysis/points';
+import { Icon } from '../../components/Icon';
+import { Skeleton } from '../../components/Skeleton';
+import { EmptyState } from '../../components/EmptyState';
 
 interface LeaderboardProps {
   currentUid: string | null;
