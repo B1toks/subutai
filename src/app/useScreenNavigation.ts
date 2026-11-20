@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react';
-import type { GameReviewMeta } from '../components/GameReview';
+import type { GameReviewMeta } from '../features/review/GameReview';
 import type { MatchDoc } from '../firebase/matches';
 import type { useOnlineMatch } from '../features/online/useOnlineMatch';
 import type { useClassifier } from '../features/game/useClassifier';

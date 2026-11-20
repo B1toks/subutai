@@ -1,5 +1,5 @@
 import { BarChart3 } from 'lucide-react';
-import type { GameReviewMeta } from '../../components/GameReview';
+import type { GameReviewMeta } from '../review/GameReview';
 import { Icon } from '../../components/Icon';
 import type { MultiplayerSyncHandle } from './useMultiplayerSync';
 import { mpResignCause } from '../../firebase/matchEnd';

@@ -1,22 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Check, Link2 } from 'lucide-react';
-import { Icon } from './Icon';
-import { useToast } from './Toast';
-import type { GameLog } from '../recording/log';
-import { analyzeGame, type GameReviewResult } from '../analysis/analyzeGame';
-import { cancelPendingClassifications } from '../analysis/classifyClient';
-import type { MoveClass, MoveAnalysis } from '../analysis/classify';
-import { QUALITY_BONUS, type GameOutcome } from '../analysis/points';
-import { applyMove } from '../engine/moves';
+import { Icon } from '../../components/Icon';
+import { useToast } from '../../components/Toast';
+import type { GameLog } from '../../recording/log';
+import { analyzeGame, type GameReviewResult } from '../../analysis/analyzeGame';
+import { cancelPendingClassifications } from '../../analysis/classifyClient';
+import type { MoveClass, MoveAnalysis } from '../../analysis/classify';
+import { QUALITY_BONUS, type GameOutcome } from '../../analysis/points';
+import { applyMove } from '../../engine/moves';
 import {
   applyRotationMove,
   computeBoardLayout,
   tilePixelCenter,
   toTileFrame,
-} from '../engine/auxetic';
-import { allSquares } from '../engine/board';
-import type { BoardState, Color, SquareId } from '../engine/types';
-import { MATE_SCALE_CPL, pawns } from '../analysis/lossText';
+} from '../../engine/auxetic';
+import { allSquares } from '../../engine/board';
+import type { BoardState, Color, SquareId } from '../../engine/types';
+import { MATE_SCALE_CPL, pawns } from '../../analysis/lossText';
 
 // Human is always white in v1 — same convention as App.tsx.
 const HUMAN_COLOR: Color = 'white';

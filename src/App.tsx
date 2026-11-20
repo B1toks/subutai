@@ -118,7 +118,7 @@ import { statusOf } from './session/step';
 // CJS interop turns `import { lazy }` into a const at the import line,
 // so calling lazy() above it is a TDZ ReferenceError.
 const GameReview = lazy(() =>
-  import('./components/GameReview').then((m) => ({ default: m.GameReview })),
+  import('./features/review/GameReview').then((m) => ({ default: m.GameReview })),
 );
 const Leaderboard = lazy(() =>
   import('./components/Leaderboard').then((m) => ({ default: m.Leaderboard })),

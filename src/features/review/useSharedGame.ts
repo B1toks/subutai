@@ -2,7 +2,7 @@ import { useEffect, type Dispatch, type SetStateAction } from 'react';
 import { deserializeGameLog } from '../../firebase/games';
 import { gamesRepo } from '../../infra/firestore/games';
 import type { GameLog } from '../../recording/log';
-import type { GameReviewMeta } from '../../components/GameReview';
+import type { GameReviewMeta } from './GameReview';
 
 interface UseSharedGameArgs {
   sharedGameId: string | null;

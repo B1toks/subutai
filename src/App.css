@@ -28,7 +28,7 @@
 @import './app/TutorialOverlay.css';
 @import './features/game/promotion.css';
 @import './features/game/roulette.css';
-@import './components/GameReview.css';
+@import './features/review/GameReview.css';
 @import './features/endgame/GameSummary.share.css';
 @import './features/game/eval-bar.css';
 @import './components/modal.css';
@@ -68,7 +68,7 @@
 @import './memory/MemoryPanel.card.css';
 @import './app/BusyOverlay.css';
 @import './app/WelcomeScreen.css';
-@import './components/GameReview.turning-points.css';
+@import './features/review/GameReview.turning-points.css';
 @import './app/styles/header-mobile.css';
 @import './app/styles/buttons.css';
 @import './app/styles/themes/theme-swap.css';
@@ -79,7 +79,7 @@
 @import './app/styles/mobile-drawers.css';
 @import './components/Leaderboard.mobile.css';
 @import './features/game/fx-intensity.css';
-@import './components/GameReview.key-moments.css';
+@import './features/review/GameReview.key-moments.css';
 @import './features/local/turn-slot.css';
 @import './app/styles/mobile-menu-button.css';
 @import './features/game/PlayerRow.css';

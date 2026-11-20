@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { GameReviewMeta } from '../components/GameReview';
+import type { GameReviewMeta } from '../features/review/GameReview';
 import { useSharedGame } from '../features/review/useSharedGame';
 import type { GameLog } from '../recording/log';
 
