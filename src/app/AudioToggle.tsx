@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Volume2, VolumeX } from 'lucide-react';
-import { Icon } from './Icon';
-import { Tooltip } from './Tooltip';
-import { useToast } from './Toast';
+import { Icon } from '../components/Icon';
+import { Tooltip } from '../components/Tooltip';
+import { useToast } from '../components/Toast';
 import { audio } from '../audio/AudioController';
 
 /**
