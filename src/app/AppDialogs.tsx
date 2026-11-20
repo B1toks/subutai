@@ -1,6 +1,6 @@
 import type { User } from 'firebase/auth';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { NamePicker } from '../components/NamePicker';
+import { NamePicker } from './NamePicker';
 import type { Color } from '../engine';
 
 type OpponentMode = 'ai' | 'friend' | 'local';
