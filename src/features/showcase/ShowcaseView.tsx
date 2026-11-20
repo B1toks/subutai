@@ -10,7 +10,7 @@
  * is a read-only consumer of public data with a visible 1.5s ply cadence
  * so audience members can follow the game.
  */
-import '../App.css';
+import '../../App.css';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   collection,
@@ -19,19 +19,19 @@ import {
   orderBy,
   query,
 } from 'firebase/firestore';
-import { db } from '../firebase/client';
-import type { LeaderboardEntry } from '../firebase/leaderboard';
-import { leaderboardRepo } from '../infra/firestore/leaderboard';
-import { createStartingPosition } from '../engine';
-import type { BoardState, Color, PieceType, SquareId } from '../engine/types';
+import { db } from '../../firebase/client';
+import type { LeaderboardEntry } from '../../firebase/leaderboard';
+import { leaderboardRepo } from '../../infra/firestore/leaderboard';
+import { createStartingPosition } from '../../engine';
+import type { BoardState, Color, PieceType, SquareId } from '../../engine/types';
 import {
   applyMove,
   checkDrawConditions,
   generateLegalMoves,
   isInCheck,
-} from '../engine/moves';
-import { SubutaiAgent } from '../ai/agents';
-import { evaluate } from '../ai/evaluate';
+} from '../../engine/moves';
+import { SubutaiAgent } from '../../ai/agents';
+import { evaluate } from '../../ai/evaluate';
 
 type ShowcaseScreen = 'autoplay' | 'leaderboard';
 

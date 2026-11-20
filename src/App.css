@@ -56,7 +56,7 @@
 @import './components/EmptyState.css';
 @import './components/Tooltip.css';
 @import './app/styles/mobile.css';
-@import './components/ShowcaseView.css';
+@import './features/showcase/ShowcaseView.css';
 @import './features/game/strobe-and-dust.css';
 @import './features/endgame/checkmate.css';
 @import './features/online/FriendLobby.quick-match.css';

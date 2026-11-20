@@ -11,7 +11,7 @@ import { loadStreaming } from './integrations'
 
 // Sprint 4.4 — kiosk view is code-split: regular players never pay for it.
 const ShowcaseView = lazy(() =>
-  import('./components/ShowcaseView').then((m) => ({ default: m.ShowcaseView })),
+  import('./features/showcase/ShowcaseView').then((m) => ({ default: m.ShowcaseView })),
 )
 
 // Sprint 4.3 — `?showcase=1` switches the entire app to a kiosk/TV view
