@@ -1,4 +1,4 @@
-import { ClockFace } from '../../components/ClockFace';
+import { ClockFace } from './ClockFace';
 import { serverNow } from '../../firebase/serverClock';
 import { useSession } from '../../session/useSession';
 import type { MpClockState } from '../../utils/mpClock';

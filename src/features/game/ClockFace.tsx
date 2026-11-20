@@ -1,5 +1,5 @@
 import { useEffect, useReducer } from 'react';
-import { formatClockFace, mpClockAt, mpClockHeldFor, msToNextSecond, type MpClockState } from '../utils/mpClock';
+import { formatClockFace, mpClockAt, mpClockHeldFor, msToNextSecond, type MpClockState } from '../../utils/mpClock';
 
 interface ClockFaceProps {
   side: 'white' | 'black';
