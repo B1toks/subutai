@@ -1,4 +1,4 @@
-import { MilestoneModal } from '../../components/MilestoneModal';
+import { MilestoneModal } from './MilestoneModal';
 import { logOf } from '../game/boardView';
 import { useSession } from '../../session/useSession';
 import type { useGameResult } from './useGameResult';

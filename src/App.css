@@ -39,7 +39,7 @@
 @import './features/game/board-coords.css';
 @import './features/local/local.css';
 @import './features/game/rotation-pulse.css';
-@import './components/MilestoneModal.css';
+@import './features/endgame/MilestoneModal.css';
 @import './features/autoplay/AutoPlayView.css';
 @import './features/online/multiplayer.css';
 @import './components/FriendLobby.css';

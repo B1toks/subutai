@@ -1,5 +1,5 @@
 import { PartyPopper } from 'lucide-react';
-import { Icon } from './Icon';
+import { Icon } from '../../components/Icon';
 
 interface MilestoneModalProps {
   fullMoves: number;
