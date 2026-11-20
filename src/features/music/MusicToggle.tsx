@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Music, Music2 } from 'lucide-react';
-import { Icon } from './Icon';
-import { Tooltip } from './Tooltip';
-import { useToast } from './Toast';
-import { audio } from '../audio/AudioController';
-import type { AmbientTheme } from '../audio/AudioController';
-import { themeStore } from '../ui/themeStore';
+import { Icon } from '../../components/Icon';
+import { Tooltip } from '../../components/Tooltip';
+import { useToast } from '../../components/Toast';
+import { audio } from '../../audio/AudioController';
+import type { AmbientTheme } from '../../audio/AudioController';
+import { themeStore } from '../../ui/themeStore';
 
 function readCurrentTheme(): AmbientTheme {
   // The theme store owns <html data-theme> and already resolves "adaptive"
