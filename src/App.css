@@ -66,7 +66,7 @@
 @import './app/styles/status-bar.css';
 @import './features/game/position-strip.css';
 @import './memory/MemoryPanel.card.css';
-@import './components/BusyOverlay.css';
+@import './app/BusyOverlay.css';
 @import './components/WelcomeScreen.css';
 @import './components/GameReview.turning-points.css';
 @import './app/styles/header-mobile.css';
