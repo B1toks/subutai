@@ -25,3 +25,8 @@ dist-ssr
 
 # R15 local data dumps (contain player ids, large)
 data/
+
+# Claude Code local settings (machine paths, per-user)
+.claude/settings.local.json
+.claude/launch.json
+.claude/worktrees/
