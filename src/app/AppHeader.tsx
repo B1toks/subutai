@@ -2,7 +2,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import type { User } from 'firebase/auth';
 import { Cast, Disc3, HelpCircle, Menu, MessageSquare, SlidersHorizontal, Trophy } from 'lucide-react';
 import { AudioToggle } from './AudioToggle';
-import { Effects3DToggle } from '../components/Effects3DToggle';
+import { Effects3DToggle } from './Effects3DToggle';
 import { Icon } from '../components/Icon';
 import type { MultiplayerSyncHandle } from '../components/MultiplayerGameView';
 import { MusicToggle } from '../components/MusicToggle';
