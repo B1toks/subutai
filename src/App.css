@@ -19,7 +19,7 @@
 @import './memory/MemoryPanel.css';
 @import './app/styles/help-dialog.css';
 @import './components/TwitchPanel.css';
-@import './components/PerimeterEqualizer.css';
+@import './integrations/music/PerimeterEqualizer.css';
 @import './features/music/beat-board.css';
 @import './features/endgame/EndgameScene.css';
 @import './components/MusicDock.css';

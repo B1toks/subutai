@@ -17,7 +17,7 @@ export { micEq } from './music/micEqualizer';
 export { vizMode } from './music/vizMode';
 export { BeatCombo } from './music/BeatCombo';
 export { MusicScorePanel } from './music/MusicScorePanel';
-export { PerimeterEqualizer } from '../components/PerimeterEqualizer';
+export { PerimeterEqualizer } from './music/PerimeterEqualizer';
 
 let connected = false;
 
