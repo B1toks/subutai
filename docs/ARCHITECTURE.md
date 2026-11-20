@@ -14,18 +14,22 @@ Firestore rules are the only trust boundary (see `FIRESTORE-RULES.md`).
 | `src/infra` | The app's side of storage: `repos.ts` names the Firestore functions the app calls as interfaces (games, the live match, the lobby, presence, the profile name, the leaderboard, feedback), `firestore/*` hands each call to its `src/firebase` function, `localData.ts` holds every localStorage key and the calls that touch them, and `fakes/*` are in-memory versions for unit tests only. |
 | `src/services` | What reacts to the game or works on it outside React: the board's sound and effects bus, the beat combo (started with the streaming integrations), the save queue (`saveQueue.ts`, over a `GamesRepo`). |
 | `src/audio` | The game's sound: synths, the controller, ambient music. |
-| `src/integrations` | The streaming integrations behind `STREAMING_UI` (`?streaming=1`), loaded only with it and after the first load: `music` (the beat grid and its tempo detection, the mic equalizer, the Spotify playlists), `twitch` (chat, its votes, chat's game). The rest of the app reaches them through `index.ts` only. |
+| `src/integrations` | The streaming integrations behind `STREAMING_UI` (`?streaming=1`), loaded only with it and after the first load: `music` (the beat grid and its tempo detection, the mic equalizer, the Spotify playlists), `twitch` (chat, its votes, chat's game). The components they render on the board sit with them (`music/BeatCombo`, `MusicScorePanel`, `PerimeterEqualizer`), re-exported by `streaming.ts`. The rest of the app reaches them through `index.ts` only. |
 | `src/memory` | Saved games: storage, notation, replay import, the Memory panel, and the hooks that autosave a game and resume one. |
-| `src/components` | Components that several parts of the app use (Toast, Tooltip, modals, NamePicker, ClockFace, PlayerRow), and the screens that predate the feature folders (GameReview, MusicDock, Leaderboard, FriendLobby, TwitchPanel, StatsPage, ShowcaseView). |
-| `src/app` | The shell: `App.tsx` lives in `src/`, its app-wide hooks here (URL modes, which screen is up, board size and UI scale, phone drawers, welcome and tour, the guards on leaving a game, the room's colours, the adaptive theme, the way back from a screen), the page-wide components (header, status bar, Help, the small dialogs), and the styles of the whole page in `src/app/styles`. |
-| `src/features/<name>` | What `App.tsx` used to hold, one folder per feature: hooks, pure helpers with their tests, and CSS. |
+| `src/components` | Only components that several parts of the app use: `Icon`, `Toast`, `Tooltip`, `ConfirmDialog` and `modal.css`, `EmptyState` and `Skeleton` (the leaderboard and the Memory panel), and the feedback styles (`feedback.css`, `feedback.status.css`) that the feedback modal and the endgame's prompt share. A component with one owner lives next to that owner. |
+| `src/app` | The shell: `App.tsx` lives in `src/`, its app-wide hooks here (URL modes, which screen is up, board size and UI scale, phone drawers, welcome and tour, the guards on leaving a game, the room's colours, the adaptive theme, the way back from a screen), the page-wide components (header with its toggles, logo and user menu, status bar, Help, the small dialogs and the name picker, the welcome screen and the tutorial, the feedback modal, the busy overlay, the background wave grid, `AppErrorBoundary`), and the styles of the whole page in `src/app/styles`. |
+| `src/features/<name>` | What `App.tsx` used to hold, one folder per feature: hooks, pure helpers with their tests, the feature's components and screens, and their CSS. |
 | `src/shared` | Types and helpers that two or more features use. |
 
-Features: `game` (board marks, move feedback, bot, roulette, clocks, eval,
-board effects, coach, notation), `online` (the live match, its end,
-presence), `local` (hot-seat styles), `review` (watching a saved game, shared
-games), `endgame` (results, the save queue, the end-of-game sequence),
-`music`, `twitch`, `autoplay` (self-play).
+Features: `game` (board marks, move feedback, bot, roulette, clocks and
+their faces, the player rows, eval, board effects, coach, notation),
+`online` (the live match and its sync hook `useMultiplayerSync`, its end,
+presence, the lobby screen), `local` (hot-seat styles), `review` (the
+review screen, watching a saved game, shared games), `endgame` (results and
+the summary, milestones, the save queue, the end-of-game sequence and its
+scene), `music` (the dock, the header's toggle), `twitch` (the panel),
+`autoplay` (self-play and its view), and one screen each: `leaderboard`,
+`stats`, `showcase`.
 
 ## The shell
 
@@ -322,10 +326,16 @@ scores the calls. The panel only shows it.
   game on the board) and taking as props only what is not in the session.
   Its handlers go in the feature's handler hook (or a new one), not inline
   in App's JSX.
-- A new screen: a component, behind `lazy()` if it is heavy, chosen in
-  App's view switch. Anything that must outlive the screen stays in a hook
-  called before the switch. A failed chunk load is handled by
-  `AppErrorBoundary`.
+- A new screen: a component in its feature's folder (a new one,
+  `src/features/<name>`, if it belongs to none), behind `lazy()` if it is
+  heavy, chosen in App's view switch. Anything that must outlive the screen
+  stays in a hook called before the switch. A failed chunk load is handled
+  by `AppErrorBoundary` (`src/app`).
+- A component: next to its one owner (a feature folder, `src/app` for the
+  shell, `src/integrations/<name>` for a streaming one); in
+  `src/components` only once two or more parts of the app use it. Moving a
+  file keeps its basename where it is a lazy chunk, so the chunk keeps its
+  name, and its stylesheet's `@import` keeps its place in `src/App.css`.
 - A new Firestore record: its reads and writes in `src/firebase/<name>.ts`,
   its rules in `firestore.rules` with tests in `tests/rules`, and rules that
   allow it deployed before any client writes it. The app calls it through a
