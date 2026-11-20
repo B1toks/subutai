@@ -139,7 +139,7 @@ const MusicDock = lazy(() =>
 );
 // M.15 — the dock's sound-grid background: off unless saved on (useMusicState).
 const BackgroundWaveGrid = lazy(() =>
-  import('./components/BackgroundWaveGrid').then((m) => ({ default: m.BackgroundWaveGrid })),
+  import('./app/BackgroundWaveGrid').then((m) => ({ default: m.BackgroundWaveGrid })),
 );
 // R6 — pixel victory cinematic; loaded only when a tense win triggers it.
 // importEndgameScene (in useEndgame) lets the iris warm the chunk early.
