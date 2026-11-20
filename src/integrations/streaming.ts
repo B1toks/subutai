@@ -15,7 +15,7 @@ export { beatMode } from './music/beatMode';
 export { eqSettings } from './music/eqSettings';
 export { micEq } from './music/micEqualizer';
 export { vizMode } from './music/vizMode';
-export { BeatCombo } from '../components/BeatCombo';
+export { BeatCombo } from './music/BeatCombo';
 export { MusicScorePanel } from '../components/MusicScorePanel';
 export { PerimeterEqualizer } from '../components/PerimeterEqualizer';
 

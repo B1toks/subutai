@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { beatBridge, type BeatMoveEvent } from '../integrations/music/beatBridge';
+import { beatBridge, type BeatMoveEvent } from './beatBridge';
 
 /* SP-2 — on-beat combo overlay. Self-subscribed to beatBridge so App
  * never re-renders for it; shows the score of the latest human move
