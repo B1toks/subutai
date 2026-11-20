@@ -14,7 +14,7 @@ import type { Color, SquareId, TopologyState } from '../../engine';
 import { findKing } from '../../engine/moves';
 import { winnerOf } from './result';
 import { HUMAN_COLOR } from '../../shared/game';
-import type { KingOrigin, EndgameKind, VictoryTheme } from '../../components/EndgameScene';
+import type { KingOrigin, EndgameKind, VictoryTheme } from './EndgameScene';
 import { translateOutcomeForPlayer } from '../../firebase/multiplayerGames';
 import type { MatchOutcome } from '../../firebase/matches';
 import type { MultiplayerSyncHandle } from '../../components/MultiplayerGameView';
@@ -31,7 +31,7 @@ import { gameStatusOf, boardOf, logOf } from '../game/boardView';
  * iris kicks it off the moment it starts closing — by the time it hands
  * over, the module is in cache and React's lazy resolves in a microtask.
  */
-export const importEndgameScene = () => import('../../components/EndgameScene');
+export const importEndgameScene = () => import('./EndgameScene');
 
 /** The cut on screen, as App keeps it in its endgameCut state. */
 type EndgameCut = { kind: EndgameKind; theme: VictoryTheme; king: KingOrigin | null; prelude: number };

@@ -35,7 +35,7 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { streaming } from '../integrations';
+import { streaming } from '../../integrations';
 
 export type VictoryTheme = 'red' | 'blue';
 export type EndgameKind = 'victory' | 'defeat' | 'draw';

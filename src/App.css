@@ -21,7 +21,7 @@
 @import './components/TwitchPanel.css';
 @import './components/PerimeterEqualizer.css';
 @import './features/music/beat-board.css';
-@import './components/EndgameScene.css';
+@import './features/endgame/EndgameScene.css';
 @import './components/MusicDock.css';
 @import './components/BeatCombo.css';
 @import './features/game/clock.css';

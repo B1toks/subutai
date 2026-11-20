@@ -6,7 +6,7 @@ import {
 } from './engine/moves';
 import { clearSearchTable } from './ai/searchClient';
 import { useToast } from './components/Toast';
-import type { EndgameKind, KingOrigin, VictoryTheme } from './components/EndgameScene';
+import type { EndgameKind, KingOrigin, VictoryTheme } from './features/endgame/EndgameScene';
 import { STREAMING_UI } from './featureFlags';
 import { FeedbackModal } from './app/FeedbackModal';
 import { MilestoneDialog } from './features/endgame/MilestoneDialog';
