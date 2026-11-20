@@ -3,7 +3,7 @@ import { Check, Link2 } from 'lucide-react';
 import { Icon } from './Icon';
 import { useToast } from './Toast';
 import type { GameOutcome, GamePoints, MoveQualityCounts } from '../analysis/points';
-import { FeedbackPrompt } from './FeedbackPrompt';
+import { FeedbackPrompt } from '../features/endgame/FeedbackPrompt';
 
 interface GameSummaryProps {
   points: GamePoints;
