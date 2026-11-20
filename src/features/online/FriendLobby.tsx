@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Dices, Users, Zap } from 'lucide-react';
-import { Icon } from './Icon';
+import { Icon } from '../../components/Icon';
 import {
   normalizeMatchCode,
   type MatchDoc,
   type MatchGameMode,
-} from '../firebase/matches';
-import type { QuickMatchHandle } from '../firebase/quickMatch';
-import { noteServerStampSeen } from '../firebase/serverClock';
-import { lobbyRepo } from '../infra/firestore/lobby';
+} from '../../firebase/matches';
+import type { QuickMatchHandle } from '../../firebase/quickMatch';
+import { noteServerStampSeen } from '../../firebase/serverClock';
+import { lobbyRepo } from '../../infra/firestore/lobby';
 
 interface FriendLobbyProps {
   uid: string | null;

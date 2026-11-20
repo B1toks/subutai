@@ -42,7 +42,7 @@
 @import './features/endgame/MilestoneModal.css';
 @import './features/autoplay/AutoPlayView.css';
 @import './features/online/multiplayer.css';
-@import './components/FriendLobby.css';
+@import './features/online/FriendLobby.css';
 @import './features/game/capture-effects.css';
 @import './components/Leaderboard.badges.css';
 @import './components/Leaderboard.tabs.css';
@@ -59,7 +59,7 @@
 @import './components/ShowcaseView.css';
 @import './features/game/strobe-and-dust.css';
 @import './features/endgame/checkmate.css';
-@import './components/FriendLobby.quick-match.css';
+@import './features/online/FriendLobby.quick-match.css';
 @import './app/styles/themes/neon.css';
 @import './app/styles/rail-layout.css';
 @import './app/styles/launch-layout.css';

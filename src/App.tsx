@@ -124,7 +124,7 @@ const Leaderboard = lazy(() =>
   import('./components/Leaderboard').then((m) => ({ default: m.Leaderboard })),
 );
 const FriendLobby = lazy(() =>
-  import('./components/FriendLobby').then((m) => ({ default: m.FriendLobby })),
+  import('./features/online/FriendLobby').then((m) => ({ default: m.FriendLobby })),
 );
 const StatsPage = lazy(() =>
   import('./components/StatsPage').then((m) => ({ default: m.StatsPage })),
