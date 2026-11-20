@@ -29,10 +29,10 @@
 @import './features/game/promotion.css';
 @import './features/game/roulette.css';
 @import './components/GameReview.css';
-@import './components/GameSummary.share.css';
+@import './features/endgame/GameSummary.share.css';
 @import './features/game/eval-bar.css';
 @import './components/modal.css';
-@import './components/GameSummary.css';
+@import './features/endgame/GameSummary.css';
 @import './features/review/watch-banner.css';
 @import './components/Leaderboard.css';
 @import './components/feedback.css';

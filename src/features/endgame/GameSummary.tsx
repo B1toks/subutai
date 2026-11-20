@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Check, Link2 } from 'lucide-react';
-import { Icon } from './Icon';
-import { useToast } from './Toast';
-import type { GameOutcome, GamePoints, MoveQualityCounts } from '../analysis/points';
-import { FeedbackPrompt } from '../features/endgame/FeedbackPrompt';
+import { Icon } from '../../components/Icon';
+import { useToast } from '../../components/Toast';
+import type { GameOutcome, GamePoints, MoveQualityCounts } from '../../analysis/points';
+import { FeedbackPrompt } from './FeedbackPrompt';
 
 interface GameSummaryProps {
   points: GamePoints;

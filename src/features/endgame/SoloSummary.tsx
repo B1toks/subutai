@@ -1,6 +1,6 @@
 import type { User } from 'firebase/auth';
 import { BOT_STRENGTH_LABEL, type BotStrength } from '../../ai/agents';
-import { GameSummary } from '../../components/GameSummary';
+import { GameSummary } from './GameSummary';
 import type { GameMode } from '../../shared/game';
 import type { useGameResult } from './useGameResult';
 
