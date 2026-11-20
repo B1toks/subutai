@@ -5,24 +5,24 @@ import {
   Minus, MonitorSpeaker, Music2, PanelLeft, Play, Plus, SkipForward, Square,
   Trash2, Waves, X,
 } from 'lucide-react';
-import { Icon } from './Icon';
-import { beatEngine } from '../integrations/music/beatEngine';
-import { lookupBpm, analyzeTrack } from '../integrations/music/autoBpm';
-import { analyzeAudioBuffer } from '../integrations/music/fileBpm';
-import { analyzeWithEssentia } from '../integrations/music/essentiaBpm';
-import { liveEssentia } from '../integrations/music/liveEssentia';
-import { beatPll } from '../integrations/music/beatPll';
-import { liveBpm } from '../integrations/music/liveBpm';
-import { beatMode } from '../integrations/music/beatMode';
-import { eqSettings, EQ_SENS_MIN, EQ_SENS_MAX } from '../integrations/music/eqSettings';
-import { vizMode } from '../integrations/music/vizMode';
+import { Icon } from '../../components/Icon';
+import { beatEngine } from '../../integrations/music/beatEngine';
+import { lookupBpm, analyzeTrack } from '../../integrations/music/autoBpm';
+import { analyzeAudioBuffer } from '../../integrations/music/fileBpm';
+import { analyzeWithEssentia } from '../../integrations/music/essentiaBpm';
+import { liveEssentia } from '../../integrations/music/liveEssentia';
+import { beatPll } from '../../integrations/music/beatPll';
+import { liveBpm } from '../../integrations/music/liveBpm';
+import { beatMode } from '../../integrations/music/beatMode';
+import { eqSettings, EQ_SENS_MIN, EQ_SENS_MAX } from '../../integrations/music/eqSettings';
+import { vizMode } from '../../integrations/music/vizMode';
 import {
   loadPlaylists, savePlaylist, deletePlaylist, setTrackBpm, newPlaylistId,
   type SavedPlaylist, type PlaylistTrack,
-} from '../integrations/music/playlists';
-import { micEq, type MicStartResult } from '../integrations/music/micEqualizer';
-import { dockLayout, DOCK_WIDTH } from '../ui/dockLayout';
-import { localData, LOCAL_KEYS, musicTutorialKey } from '../infra/localData';
+} from '../../integrations/music/playlists';
+import { micEq, type MicStartResult } from '../../integrations/music/micEqualizer';
+import { dockLayout, DOCK_WIDTH } from '../../ui/dockLayout';
+import { localData, LOCAL_KEYS, musicTutorialKey } from '../../infra/localData';
 
 /* SP-2 — the Spotify dock, IFrame-API edition.
  *

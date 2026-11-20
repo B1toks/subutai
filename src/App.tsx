@@ -135,7 +135,7 @@ const TwitchPanel = lazy(() =>
 );
 // SP — Spotify dock, same deal.
 const MusicDock = lazy(() =>
-  import('./components/MusicDock').then((m) => ({ default: m.MusicDock })),
+  import('./features/music/MusicDock').then((m) => ({ default: m.MusicDock })),
 );
 // M.15 — the dock's sound-grid background: off unless saved on (useMusicState).
 const BackgroundWaveGrid = lazy(() =>

@@ -22,7 +22,7 @@
 @import './integrations/music/PerimeterEqualizer.css';
 @import './features/music/beat-board.css';
 @import './features/endgame/EndgameScene.css';
-@import './components/MusicDock.css';
+@import './features/music/MusicDock.css';
 @import './integrations/music/BeatCombo.css';
 @import './features/game/clock.css';
 @import './app/TutorialOverlay.css';
