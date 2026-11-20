@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Bot } from 'lucide-react';
-import { Icon } from './Icon';
-import type { GameOutcome } from '../analysis/points';
+import { Icon } from '../../components/Icon';
+import type { GameOutcome } from '../../analysis/points';
 
 interface AutoPlayViewProps {
   gamesCompleted: number;

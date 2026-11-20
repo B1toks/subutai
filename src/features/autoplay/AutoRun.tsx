@@ -1,5 +1,5 @@
 import type { ComponentProps } from 'react';
-import { AutoPlayView } from '../../components/AutoPlayView';
+import { AutoPlayView } from './AutoPlayView';
 import { logOf } from '../game/boardView';
 import { useSession } from '../../session/useSession';
 import { AutoBoard } from './AutoBoard';

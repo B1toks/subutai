@@ -40,7 +40,7 @@
 @import './features/local/local.css';
 @import './features/game/rotation-pulse.css';
 @import './components/MilestoneModal.css';
-@import './components/AutoPlayView.css';
+@import './features/autoplay/AutoPlayView.css';
 @import './features/online/multiplayer.css';
 @import './components/FriendLobby.css';
 @import './features/game/capture-effects.css';
