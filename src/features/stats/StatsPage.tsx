@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { BarChart3 } from 'lucide-react';
-import { Icon } from './Icon';
+import { Icon } from '../../components/Icon';
 import {
   collection,
   getCountFromServer,
@@ -10,8 +10,8 @@ import {
   query,
   type Timestamp,
 } from 'firebase/firestore';
-import { db } from '../firebase/client';
-import { ensureSignedIn } from '../firebase/auth';
+import { db } from '../../firebase/client';
+import { ensureSignedIn } from '../../firebase/auth';
 
 interface Stats {
   totalGames: number;

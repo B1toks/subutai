@@ -127,7 +127,7 @@ const FriendLobby = lazy(() =>
   import('./features/online/FriendLobby').then((m) => ({ default: m.FriendLobby })),
 );
 const StatsPage = lazy(() =>
-  import('./components/StatsPage').then((m) => ({ default: m.StatsPage })),
+  import('./features/stats/StatsPage').then((m) => ({ default: m.StatsPage })),
 );
 // T3 — Twitch overlay is code-split: only streamers pay for it.
 const TwitchPanel = lazy(() =>

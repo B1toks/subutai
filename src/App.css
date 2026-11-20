@@ -46,7 +46,7 @@
 @import './features/game/capture-effects.css';
 @import './components/Leaderboard.badges.css';
 @import './components/Leaderboard.tabs.css';
-@import './components/StatsPage.css';
+@import './features/stats/StatsPage.css';
 @import './components/feedback.status.css';
 @import './app/ThemeToggle.css';
 @import './app/styles/reduced-motion.css';
