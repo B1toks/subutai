@@ -6,7 +6,7 @@ import { Effects3DToggle } from './Effects3DToggle';
 import { Icon } from '../components/Icon';
 import type { MultiplayerSyncHandle } from '../components/MultiplayerGameView';
 import { MusicToggle } from '../components/MusicToggle';
-import { NeonLogo } from '../components/NeonLogo';
+import { NeonLogo } from './NeonLogo';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { Tooltip } from '../components/Tooltip';
 import { UserMenu } from '../components/UserMenu';
