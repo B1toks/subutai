@@ -1,4 +1,4 @@
-import type { MultiplayerSyncHandle } from '../../components/MultiplayerGameView';
+import type { MultiplayerSyncHandle } from '../online/useMultiplayerSync';
 import { toggleTopology } from '../../engine/auxetic';
 import { findKing, isSquareAttacked } from '../../engine/moves';
 import { turns } from '../../session/session';

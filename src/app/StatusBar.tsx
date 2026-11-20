@@ -1,4 +1,4 @@
-import type { MultiplayerSyncHandle } from '../components/MultiplayerGameView';
+import type { MultiplayerSyncHandle } from '../features/online/useMultiplayerSync';
 import { boardOf, logOf, gameStatusOf } from '../features/game/boardView';
 import type { WatchingGame } from '../features/review/watching';
 import { useSession } from '../session/useSession';

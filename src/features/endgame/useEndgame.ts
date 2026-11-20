@@ -17,7 +17,7 @@ import { HUMAN_COLOR } from '../../shared/game';
 import type { KingOrigin, EndgameKind, VictoryTheme } from './EndgameScene';
 import { translateOutcomeForPlayer } from '../../firebase/multiplayerGames';
 import type { MatchOutcome } from '../../firebase/matches';
-import type { MultiplayerSyncHandle } from '../../components/MultiplayerGameView';
+import type { MultiplayerSyncHandle } from '../online/useMultiplayerSync';
 import type { WatchingGame } from '../review/watching';
 import { registerFx } from '../../services/fxSeam';
 import { useSession } from '../../session/useSession';

@@ -1,6 +1,6 @@
 import { AlarmClock } from 'lucide-react';
 import { Icon } from '../../components/Icon';
-import type { MultiplayerSyncHandle } from '../../components/MultiplayerGameView';
+import type { MultiplayerSyncHandle } from './useMultiplayerSync';
 
 interface MatchBannersProps {
   /** A shared game (?game=<id>) or a watched one that could not be shown. */

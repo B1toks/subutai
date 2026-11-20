@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from 'react';
 import { evaluateFromWhite } from './position';
-import type { MultiplayerSyncHandle } from '../../components/MultiplayerGameView';
+import type { MultiplayerSyncHandle } from '../online/useMultiplayerSync';
 import type { BoardState } from '../../engine';
 
 interface UseEvalArgs {

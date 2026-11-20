@@ -5,7 +5,7 @@ import { drawOfferHolds, turnStartedMs } from '../../firebase/matchEnd';
 import {
   OPPONENT_OFFLINE_FORFEIT_MS,
   type MultiplayerSyncHandle,
-} from '../../components/MultiplayerGameView';
+} from '../online/useMultiplayerSync';
 import type { WatchingGame } from '../review/watching';
 import { session } from '../../session/session';
 import { useSession } from '../../session/useSession';

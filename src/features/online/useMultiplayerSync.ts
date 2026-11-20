@@ -5,29 +5,29 @@ import {
   runTransaction,
   serverTimestamp,
 } from 'firebase/firestore';
-import { db } from '../firebase/client';
-import type { MatchDoc, MatchEndReason, MatchOutcome } from '../firebase/matches';
-import { matchesRepo } from '../infra/firestore/matches';
+import { db } from '../../firebase/client';
+import type { MatchDoc, MatchEndReason, MatchOutcome } from '../../firebase/matches';
+import { matchesRepo } from '../../infra/firestore/matches';
 import {
   type BoardState,
   type Move,
   type PieceType,
-} from '../engine';
-import { isInCheck } from '../engine/moves';
-import { rebuildBoardFromMatch } from '../features/online/matchLog';
-import { session } from '../session/session';
-import { useSession } from '../session/useSession';
-import { computeSAN } from '../recording/log';
-import { drawOfferHolds, inactivityForfeitApplies, turnStartedMs } from '../firebase/matchEnd';
-import { noteOwnWriteSeen, noteServerStampSeen, serverNow, takeJoinSent } from '../firebase/serverClock';
-import { startClockProbes } from '../firebase/clockProbe';
+} from '../../engine';
+import { isInCheck } from '../../engine/moves';
+import { rebuildBoardFromMatch } from './matchLog';
+import { session } from '../../session/session';
+import { useSession } from '../../session/useSession';
+import { computeSAN } from '../../recording/log';
+import { drawOfferHolds, inactivityForfeitApplies, turnStartedMs } from '../../firebase/matchEnd';
+import { noteOwnWriteSeen, noteServerStampSeen, serverNow, takeJoinSent } from '../../firebase/serverClock';
+import { startClockProbes } from '../../firebase/clockProbe';
 import {
   canAnswerDraw,
   canOfferDraw,
   drawOfferBlock,
   standingDrawOffer,
   type DrawTable,
-} from '../utils/drawOffer';
+} from '../../utils/drawOffer';
 
 const ROULETTE_PIECE_BAG: PieceType[] = [
   'pawn',
@@ -186,7 +186,7 @@ function nextMoveTimestamp(moves: MatchDoc['log']['moves']): number {
 
 /** Lives in features/online/matchLog.ts; still exported from here, where
  *  scripts (scripts/test-mp-draws.ts) import it. */
-export { rebuildBoardFromMatch } from '../features/online/matchLog';
+export { rebuildBoardFromMatch } from './matchLog';
 
 /**
  * Subscribes to /matches/{code} and exposes the live doc + write helpers.

@@ -4,7 +4,7 @@ import { Cast, Disc3, HelpCircle, Menu, MessageSquare, SlidersHorizontal, Trophy
 import { AudioToggle } from './AudioToggle';
 import { Effects3DToggle } from './Effects3DToggle';
 import { Icon } from '../components/Icon';
-import type { MultiplayerSyncHandle } from '../components/MultiplayerGameView';
+import type { MultiplayerSyncHandle } from '../features/online/useMultiplayerSync';
 import { MusicToggle } from '../features/music/MusicToggle';
 import { NeonLogo } from './NeonLogo';
 import { ThemeToggle } from './ThemeToggle';

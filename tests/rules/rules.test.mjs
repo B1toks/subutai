@@ -34,7 +34,7 @@ const { saveCompletedGame } = await import('../../src/firebase/games.ts');
 const { buildMatchDocPayload, createMatch, joinMatch } = await import('../../src/firebase/matches.ts');
 const { saveMultiplayerGameToGames } = await import('../../src/firebase/multiplayerGames.ts');
 const { useMultiplayerSync, writeInactivityForfeit } = await import(
-  '../../src/components/MultiplayerGameView.tsx'
+  '../../src/features/online/useMultiplayerSync.ts'
 );
 const { generateLegalMoves } = await import('../../src/engine/moves.ts');
 const { drawOfferBlock } = await import('../../src/utils/drawOffer.ts');

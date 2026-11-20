@@ -1,6 +1,6 @@
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 import type { GameOutcome } from '../../analysis/points';
-import type { MultiplayerSyncHandle } from '../../components/MultiplayerGameView';
+import type { MultiplayerSyncHandle } from '../online/useMultiplayerSync';
 import type { useToast } from '../../components/Toast';
 import type { Color } from '../../engine';
 import { session } from '../../session/session';

@@ -35,7 +35,7 @@ import { PROJECT_ID, actAs, firestoreFor, terminateAll } from './client-stub.mjs
 const { claimDisplayName, changeDisplayName } = await import('../../src/firebase/auth.ts');
 const { saveCompletedGame } = await import('../../src/firebase/games.ts');
 const { createMatch, joinMatch } = await import('../../src/firebase/matches.ts');
-const { useMultiplayerSync, writeInactivityForfeit } = await import('../../src/components/MultiplayerGameView.tsx');
+const { useMultiplayerSync, writeInactivityForfeit } = await import('../../src/features/online/useMultiplayerSync.ts');
 const { generateLegalMoves } = await import('../../src/engine/moves.ts');
 const { logReaching, stampLog } = await import('./positions.mjs');
 

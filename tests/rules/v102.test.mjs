@@ -22,7 +22,7 @@ const { useMultiplayerSync } = await from('components/MultiplayerGameView.tsx');
 const { generateLegalMoves } = await from('engine/moves.ts');
 // The current client, for the opponent's side of a match (R-7: v1.0.2 cannot join one).
 const { joinMatch: joinMatchNow } = await import('../../src/firebase/matches.ts');
-const { useMultiplayerSync: useSyncNow } = await import('../../src/components/MultiplayerGameView.tsx');
+const { useMultiplayerSync: useSyncNow } = await import('../../src/features/online/useMultiplayerSync.ts');
 
 let env;
 before(async () => {

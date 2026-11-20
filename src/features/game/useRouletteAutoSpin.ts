@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import type { MultiplayerSyncHandle } from '../../components/MultiplayerGameView';
+import type { MultiplayerSyncHandle } from '../online/useMultiplayerSync';
 import type { WatchingGame } from '../review/watching';
 import { useSession } from '../../session/useSession';
 import { gameStatusOf, modeOf, isRouletteSpinningOf, allowedPieceTypesOf, firstRouletteSpinDoneOf } from './boardView';

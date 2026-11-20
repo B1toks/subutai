@@ -5,7 +5,7 @@
  *
  * Run: npx tsx scripts/test-mp-draws.ts
  */
-import { rebuildBoardFromMatch } from '../src/components/MultiplayerGameView';
+import { rebuildBoardFromMatch } from '../src/features/online/useMultiplayerSync';
 import { checkDrawConditions } from '../src/engine/moves';
 import type { MatchDoc } from '../src/firebase/matches';
 import type { Move } from '../src/engine';

@@ -1,4 +1,4 @@
-import type { MultiplayerSyncHandle } from '../../components/MultiplayerGameView';
+import type { MultiplayerSyncHandle } from '../online/useMultiplayerSync';
 import { useSession } from '../../session/useSession';
 import {
   allowedPieceTypesOf,

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import type { User } from 'firebase/auth';
-import { useMultiplayerSync } from '../../components/MultiplayerGameView';
+import { useMultiplayerSync } from './useMultiplayerSync';
 import type { MatchDoc, MatchOutcome } from '../../firebase/matches';
 import { matchesRepo } from '../../infra/firestore/matches';
 import { localData, LOCAL_KEYS } from '../../infra/localData';

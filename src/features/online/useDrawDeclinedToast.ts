@@ -1,6 +1,6 @@
 import { useRef, useEffect } from 'react';
 import { standingDrawOffer } from '../../utils/drawOffer';
-import type { MultiplayerSyncHandle } from '../../components/MultiplayerGameView';
+import type { MultiplayerSyncHandle } from './useMultiplayerSync';
 import type { ToastContextValue } from '../../components/Toast';
 
 interface UseDrawDeclinedToastArgs {

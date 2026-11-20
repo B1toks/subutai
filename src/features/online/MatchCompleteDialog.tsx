@@ -1,7 +1,7 @@
 import { BarChart3 } from 'lucide-react';
 import type { GameReviewMeta } from '../../components/GameReview';
 import { Icon } from '../../components/Icon';
-import type { MultiplayerSyncHandle } from '../../components/MultiplayerGameView';
+import type { MultiplayerSyncHandle } from './useMultiplayerSync';
 import { mpResignCause } from '../../firebase/matchEnd';
 import type { MatchOutcome } from '../../firebase/matches';
 import { translateOutcomeForPlayer } from '../../firebase/multiplayerGames';

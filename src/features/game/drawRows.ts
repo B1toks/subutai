@@ -1,4 +1,4 @@
-import type { MultiplayerSyncHandle } from '../../components/MultiplayerGameView';
+import type { MultiplayerSyncHandle } from '../online/useMultiplayerSync';
 import type { Color } from '../../engine';
 import type { GameLog } from '../../recording/log';
 import type { GameStatus } from '../../shared/game';

@@ -1,6 +1,6 @@
 import type { Dispatch, MouseEvent as ReactMouseEvent, SetStateAction } from 'react';
 import { classifyAsync } from '../../analysis/classifyClient';
-import type { MultiplayerSyncHandle } from '../../components/MultiplayerGameView';
+import type { MultiplayerSyncHandle } from '../online/useMultiplayerSync';
 import type { BoardState, Move, PieceType, SquareId, TopologyState } from '../../engine';
 import { tilePixelCenter, type BoardLayout } from '../../engine/auxetic';
 import { applyMove } from '../../engine/moves';

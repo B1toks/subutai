@@ -13,7 +13,7 @@ import { Timestamp, doc, getDoc, serverTimestamp, updateDoc } from 'firebase/fir
 import { PROJECT_ID, actAs, firestoreFor, terminateAll } from './client-stub.mjs';
 
 const { createMatch, joinMatch } = await import('../../src/firebase/matches.ts');
-const { useMultiplayerSync } = await import('../../src/components/MultiplayerGameView.tsx');
+const { useMultiplayerSync } = await import('../../src/features/online/useMultiplayerSync.ts');
 const { generateLegalMoves } = await import('../../src/engine/moves.ts');
 
 let env;
