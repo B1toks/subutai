@@ -45,8 +45,8 @@ describe('classifier worker that fails', () => {
     const first = fake.FakeWorker.made[0];
     expect(first.sent).toHaveLength(2);
     first.onerror?.({ type: 'error' }); // a worker file that 404s
-    await expect(a).rejects.toThrow('classifier worker failed');
-    await expect(b).rejects.toThrow('classifier worker failed');
+    await expect(a).rejects.toBeInstanceOf(Error);
+    await expect(b).rejects.toBeInstanceOf(Error);
     expect(first.terminated).toBe(true);
 
     const c = classifyAsync(before, move, after);

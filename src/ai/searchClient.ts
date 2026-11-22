@@ -22,8 +22,11 @@ const isWorkerFailure = (err: unknown): err is SearchWorkerError =>
 let worker: Worker | null = null;
 let nextId = 1;
 const waiting = new Map<number, { resolve: (r: SearchResult | undefined) => void; reject: (e: Error) => void }>();
-/** The page is reloading: what is asked meanwhile waits for it. */
-let reloading = false;
+/** The worker file did not load and the page's one reload is spent (or
+ *  under way): this page searches on the main thread from now on, rather
+ *  than fetching a file that is not there before every move, or reloading
+ *  again once utils/chunkReload's window has passed. */
+let mainThreadOnly = false;
 
 function getWorker(): Worker {
   if (worker) return worker;
@@ -45,8 +48,9 @@ function getWorker(): Worker {
     // Every request still waiting is refused (none is left hanging), and
     // the next one builds a new worker.
     if (worker !== w) return;
-    const message = (e as Partial<ErrorEvent>).message || 'search worker failed';
-    console.error('[search] worker crashed', message);
+    // A file that did not load raises a bare Event, with no message.
+    const message = (e as Partial<ErrorEvent>).message;
+    console.error('[search] worker crashed', message ?? e);
     w.terminate();
     worker = null;
     const refused = [...waiting.values()];
@@ -70,18 +74,19 @@ function post(req: Unsent): Promise<SearchResult | undefined> {
 /**
  * A search the worker could not answer. A worker file that did not load
  * reloads the page once (utils/chunkReload.ts, as the error boundary does
- * for a lazy screen): the reload fetches the deploy's own files. Already
- * reloaded, or the worker crashed later on: the search runs here, on the
- * main thread, as the bot's did before it had a worker. An error of one
- * search inside a working worker is passed on as before.
+ * for a lazy screen): the reload fetches the deploy's own files, and the
+ * search that asked for it waits for the reload. Already reloaded, or the
+ * worker crashed later on: the search runs here, on the main thread, as
+ * the bot's did before it had a worker; after a load failure, every later
+ * one too (mainThreadOnly). An error of one search inside a working worker
+ * is passed on as before.
  */
 function recover(err: unknown, state: BoardState, options: SearchOptions): Promise<SearchResult> {
   if (!isWorkerFailure(err)) return Promise.reject(err);
-  if (reloading) return new Promise<SearchResult>(() => {});
-  if (err.loadFailed) {
+  if (err.loadFailed && !mainThreadOnly) {
+    mainThreadOnly = true;
     const now = Date.now();
     if (canAutoReload(now) && markAutoReload(now)) {
-      reloading = true;
       window.location.reload();
       return new Promise<SearchResult>(() => {});
     }
@@ -95,6 +100,7 @@ function recover(err: unknown, state: BoardState, options: SearchOptions): Promi
 /** searchPosition (search.ts), on the search worker; on the main thread
  *  if the worker fails (see recover). */
 export async function searchAsync(state: BoardState, options: SearchOptions): Promise<SearchResult> {
+  if (mainThreadOnly) return searchPosition(state, options);
   try {
     const result = await post({ kind: 'search', state, options });
     return result!;
@@ -108,7 +114,7 @@ export async function searchAsync(state: BoardState, options: SearchOptions): Pr
 export function clearSearchTable(): void {
   // A worker that fails here is built again for the next search, which
   // recovers on its own.
-  post({ kind: 'clear' }).catch(() => {});
+  if (!mainThreadOnly) post({ kind: 'clear' }).catch(() => {});
 }
 
 /** SubutaiAgent.chooseMove (agents.ts), its search on the search worker:

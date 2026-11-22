@@ -71,10 +71,14 @@ afterEach(() => {
 describe('search worker that fails', () => {
   it('refuses every waiting request, ends the worker, and the next request builds a new one', async () => {
     const { searchAsync } = await import('./searchClient');
+    // A worker that has answered once, then crashes with two requests waiting.
+    const warm = searchAsync(board, options);
+    const first = fake.FakeWorker.made[0];
+    first.answer(first.sent[0].id, { bestMove: null, score: 0, pv: [] });
+    await warm;
     const a = searchAsync(board, options);
     const b = searchAsync(board, options);
-    const first = fake.FakeWorker.made[0];
-    expect(first.sent).toHaveLength(2);
+    expect(first.sent).toHaveLength(3);
     first.fail('boom');
     // Both were refused and searched here instead: neither is left hanging.
     const [ra, rb] = await Promise.all([a, b]);
@@ -90,14 +94,15 @@ describe('search worker that fails', () => {
     await expect(c).resolves.toEqual(answer);
   });
 
-  it('a worker file that did not load reloads the page once, and the requests wait for it', async () => {
+  it('a worker file that did not load reloads the page once; the search that asked waits for it', async () => {
     fake.reload.can = true;
     const { searchAsync } = await import('./searchClient');
     const a = searchAsync(board, options);
     const b = searchAsync(board, options);
     fake.FakeWorker.made[0].fail();
     expect(await pendingState(a)).toBe('pending');
-    expect(await pendingState(b)).toBe('pending');
+    // Should the reload not navigate, nothing else is left hanging.
+    expect((await b).bestMove).not.toBeNull();
     expect(fake.reload.marked).toBe(1);
     expect(reload).toHaveBeenCalledTimes(1);
   });
@@ -109,6 +114,21 @@ describe('search worker that fails', () => {
     fake.FakeWorker.made[0].fail();
     const r = await a;
     expect(r.bestMove).not.toBeNull();
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('after a file that did not load, the page stays on the main thread: no refetch, no later reload', async () => {
+    fake.reload.can = false;
+    const { searchAsync, clearSearchTable } = await import('./searchClient');
+    const a = searchAsync(board, options);
+    fake.FakeWorker.made[0].fail();
+    await a;
+    // utils/chunkReload's window has passed: a reload would be allowed again.
+    fake.reload.can = true;
+    clearSearchTable();
+    const r = await searchAsync(board, options);
+    expect(r.bestMove).not.toBeNull();
+    expect(fake.FakeWorker.made).toHaveLength(1);
     expect(reload).not.toHaveBeenCalled();
   });
 

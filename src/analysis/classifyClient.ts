@@ -48,8 +48,9 @@ function getWorker(): Worker {
     // every request still waiting is refused (none is left hanging; the
     // move goes without a verdict), and the next one builds a new worker.
     if (worker !== w) return;
-    const message = (e as Partial<ErrorEvent>).message || 'classifier worker failed';
-    console.error('[classifier] worker crashed', message);
+    // A file that did not load raises a bare Event, with no message.
+    const message = (e as Partial<ErrorEvent>).message;
+    console.error('[classifier] worker crashed', message ?? e);
     w.terminate();
     worker = null;
     const refused = [...failed.values()];
