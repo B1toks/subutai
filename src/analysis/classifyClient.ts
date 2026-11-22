@@ -6,7 +6,7 @@ import type { ClassifyResponse } from './classify.worker';
 let worker: Worker | null = null;
 let nextId = 1;
 const pending = new Map<number, (a: MoveAnalysis) => void>();
-const failed = new Map<number, (err: string) => void>();
+const failed = new Map<number, (err: unknown) => void>();
 
 /** V1 (DEF-6) — neutral result handed to callers whose request was
  *  superseded. Resolving rather than rejecting keeps every call site on its
@@ -25,8 +25,9 @@ const NEUTRAL: MoveAnalysis = {
  */
 function getWorker(): Worker {
   if (worker) return worker;
-  worker = new ClassifyWorker();
-  worker.onmessage = (e: MessageEvent<ClassifyResponse>) => {
+  const w = new ClassifyWorker();
+  worker = w;
+  w.onmessage = (e: MessageEvent<ClassifyResponse>) => {
     const { id, ok, analysis, error } = e.data;
     if (ok && analysis) {
       const cb = pending.get(id);
@@ -42,17 +43,28 @@ function getWorker(): Worker {
       errCb?.(error ?? 'classify failed');
     }
   };
-  worker.onerror = (e) => {
-     
-    console.error('[classifier] worker crashed', e.message);
+  w.onerror = (e) => {
+    // The worker failed as a whole (its file did not load, or it crashed):
+    // every request still waiting is refused (none is left hanging; the
+    // move goes without a verdict), and the next one builds a new worker.
+    if (worker !== w) return;
+    const message = (e as Partial<ErrorEvent>).message || 'classifier worker failed';
+    console.error('[classifier] worker crashed', message);
+    w.terminate();
+    worker = null;
+    const refused = [...failed.values()];
+    pending.clear();
+    failed.clear();
+    const err = new Error(message);
+    for (const reject of refused) reject(err);
   };
-  return worker;
+  return w;
 }
 
 /**
  * Classify a move on the worker thread. Resolves with the MoveAnalysis once
- * the worker comes back. Rejects only on worker-side errors (the search
- * itself never throws, so this is unusual).
+ * the worker comes back. Rejects on worker-side errors (the search itself
+ * never throws, so this is unusual) and when the worker fails as a whole.
  */
 export function classifyAsync(
   stateBefore: BoardState,

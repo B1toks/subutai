@@ -138,7 +138,9 @@ export function createBotPlayer(opts: BotPlayerOptions): Player {
       const next = rotation ? applyRotationMove(p.before) : applyMove(p.before, p.move);
       const settle = () => opts.dispatch({ type: 'settle', board: next, lastWasRotation: rotation });
       if (rotation) settle();
-      else void opts.analyse(p.before, p.move, next, p.index).then(settle);
+      // A classifier that failed leaves the move without a verdict; the
+      // end of the game is asked all the same.
+      else void opts.analyse(p.before, p.move, next, p.index).then(settle, settle);
     },
   };
 }

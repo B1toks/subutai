@@ -260,7 +260,11 @@ export function useClassifier({
               budgetMs: scaleBudgetMs(1000),
               maxDepth: 7,
               allowSelfCheck: loadedLog.gameMode === 'roulette',
-            });
+            }).catch(() => null);
+            // The classifier failed: this run ends here, its moves go
+            // without verdicts (the catch-up run after a Game Review asks
+            // again).
+            if (!r) return;
             if (!r.superseded) {
               a = r;
               break;

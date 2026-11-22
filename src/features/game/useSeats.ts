@@ -127,9 +127,12 @@ export function useSeats({
             budgetMs: scaleBudgetMs(1000),
             maxDepth: 7,
             allowSelfCheck: false,
-          }).then((analysis) => {
-            commitRef.current(index, analysis, move.to);
-          });
+          }).then(
+            (analysis) => {
+              commitRef.current(index, analysis, move.to);
+            },
+            () => {}, // the classifier failed: the move goes without a verdict
+          );
           setSelected(null);
         },
       }),

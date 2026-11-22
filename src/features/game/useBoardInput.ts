@@ -375,9 +375,12 @@ export function useBoardInput({
         maxDepth: 7,
         allowSelfCheck: gameMode === 'roulette',
       })
-        .then((analysis) => {
-          commitAnalysis(moveIdx, analysis, resolvedMove.to);
-        });
+        .then(
+          (analysis) => {
+            commitAnalysis(moveIdx, analysis, resolvedMove.to);
+          },
+          () => {}, // the classifier failed: the move goes without a verdict
+        );
     }
 
     setSelected(null);
@@ -416,9 +419,12 @@ export function useBoardInput({
       budgetMs: scaleBudgetMs(1000),
       maxDepth: 7,
       allowSelfCheck: gameMode === 'roulette',
-    }).then((analysis) => {
-      commitAnalysis(moveIdx, analysis, move.to);
-    });
+    }).then(
+      (analysis) => {
+        commitAnalysis(moveIdx, analysis, move.to);
+      },
+      () => {}, // the classifier failed: the move goes without a verdict
+    );
   }
 
   function cancelPromotion() {
