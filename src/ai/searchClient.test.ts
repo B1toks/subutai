@@ -28,35 +28,20 @@ const fake = vi.hoisted(() => {
       this.onerror?.(message === undefined ? { type: 'error' } : { type: 'error', message });
     }
   }
-  return { FakeWorker, reload: { can: false, marked: 0 } };
+  return { FakeWorker };
 });
 
 vi.mock('./search.worker.ts?worker', () => ({ default: fake.FakeWorker }));
-vi.mock('../utils/chunkReload', () => ({
-  canAutoReload: () => fake.reload.can,
-  markAutoReload: () => {
-    fake.reload.marked++;
-    return true;
-  },
-}));
 
 const board = createPositionFromBackRankKey('RNBQKBNR');
 const options = { budgetMs: 40, maxDepth: 2 };
 const flush = () => new Promise((r) => setTimeout(r, 0));
-const pendingState = async <T>(p: Promise<T>) => {
-  let settled = false;
-  p.then(() => (settled = true), () => (settled = true));
-  await flush();
-  return settled ? 'settled' : 'pending';
-};
 
 let reload: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.resetModules();
   fake.FakeWorker.made = [];
-  fake.reload.can = false;
-  fake.reload.marked = 0;
   reload = vi.fn();
   vi.stubGlobal('window', { location: { reload } });
   vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -69,7 +54,7 @@ afterEach(() => {
 });
 
 describe('search worker that fails', () => {
-  it('refuses every waiting request, ends the worker, and the next request builds a new one', async () => {
+  it('refuses every waiting request, ends the worker, and the page searches on the main thread from then on', async () => {
     const { searchAsync } = await import('./searchClient');
     // A worker that has answered once, then crashes with two requests waiting.
     const warm = searchAsync(board, options);
@@ -79,72 +64,35 @@ describe('search worker that fails', () => {
     const a = searchAsync(board, options);
     const b = searchAsync(board, options);
     expect(first.sent).toHaveLength(3);
-    first.fail('boom');
+    first.fail('out of memory');
     // Both were refused and searched here instead: neither is left hanging.
     const [ra, rb] = await Promise.all([a, b]);
     expect(ra.bestMove).not.toBeNull();
     expect(rb.bestMove).not.toBeNull();
     expect(first.terminated).toBe(true);
 
-    const c = searchAsync(board, options);
-    expect(fake.FakeWorker.made).toHaveLength(2);
-    const second = fake.FakeWorker.made[1];
-    const answer = { bestMove: null, score: 7, pv: [] };
-    second.answer(second.sent[0].id, answer);
-    await expect(c).resolves.toEqual(answer);
-  });
-
-  it('a worker file that did not load reloads the page once; the search that asked waits for it', async () => {
-    fake.reload.can = true;
-    const { searchAsync } = await import('./searchClient');
-    const a = searchAsync(board, options);
-    const b = searchAsync(board, options);
-    fake.FakeWorker.made[0].fail();
-    expect(await pendingState(a)).toBe('pending');
-    // Should the reload not navigate, nothing else is left hanging.
-    expect((await b).bestMove).not.toBeNull();
-    expect(fake.reload.marked).toBe(1);
-    expect(reload).toHaveBeenCalledTimes(1);
-  });
-
-  it('already reloaded: the search runs on the main thread', async () => {
-    fake.reload.can = false;
-    const { searchAsync } = await import('./searchClient');
-    const a = searchAsync(board, options);
-    fake.FakeWorker.made[0].fail();
-    const r = await a;
-    expect(r.bestMove).not.toBeNull();
-    expect(reload).not.toHaveBeenCalled();
-  });
-
-  it('after a file that did not load, the page stays on the main thread: no refetch, no later reload', async () => {
-    fake.reload.can = false;
-    const { searchAsync, clearSearchTable } = await import('./searchClient');
-    const a = searchAsync(board, options);
-    fake.FakeWorker.made[0].fail();
-    await a;
-    // utils/chunkReload's window has passed: a reload would be allowed again.
-    fake.reload.can = true;
-    clearSearchTable();
-    const r = await searchAsync(board, options);
-    expect(r.bestMove).not.toBeNull();
+    // No new worker: the next search runs here too.
+    const c = await searchAsync(board, options);
+    expect(c.bestMove).not.toBeNull();
     expect(fake.FakeWorker.made).toHaveLength(1);
     expect(reload).not.toHaveBeenCalled();
   });
 
-  it('a worker that crashes after it has answered is not a stale file: no reload, main thread', async () => {
-    fake.reload.can = true;
-    const { searchAsync } = await import('./searchClient');
-    const first = searchAsync(board, options);
-    const w = fake.FakeWorker.made[0];
-    w.answer(w.sent[0].id, { bestMove: null, score: 0, pv: [] });
-    await first;
-    const next = searchAsync(board, options);
-    w.fail('out of memory');
-    const r = await next;
-    expect(r.bestMove).not.toBeNull();
+  it('a worker file that did not load: no reload, the search runs on the main thread, and so does every later one', async () => {
+    const { searchAsync, clearSearchTable } = await import('./searchClient');
+    const a = searchAsync(board, options);
+    const b = searchAsync(board, options);
+    fake.FakeWorker.made[0].fail(); // a worker file that 404s raises a bare Event
+    expect((await a).bestMove).not.toBeNull();
+    expect((await b).bestMove).not.toBeNull();
     expect(reload).not.toHaveBeenCalled();
-    expect(fake.reload.marked).toBe(0);
+
+    // A new game, then its first search: the file is not fetched again.
+    clearSearchTable();
+    expect((await searchAsync(board, options)).bestMove).not.toBeNull();
+    expect(fake.FakeWorker.made).toHaveLength(1);
+    expect(fake.FakeWorker.made[0].sent).toHaveLength(2);
+    expect(reload).not.toHaveBeenCalled();
   });
 
   it('one search failing inside a working worker is passed on, as before', async () => {
@@ -154,6 +102,10 @@ describe('search worker that fails', () => {
     w.onmessage?.({ data: { id: w.sent[0].id, ok: false, error: 'bad position' } });
     await expect(a).rejects.toThrow('bad position');
     expect(w.terminated).toBe(false);
+    // The worker is still used for the next search.
+    void searchAsync(board, options);
+    expect(fake.FakeWorker.made).toHaveLength(1);
+    expect(w.sent).toHaveLength(2);
   });
 
   it('the bot still moves: chooseBotMove answers with a legal move', async () => {
@@ -164,16 +116,19 @@ describe('search worker that fails', () => {
     const chosen = await move;
     expect(chosen).not.toBeNull();
     expect(legal.some((m) => m.from === chosen!.from && m.to === chosen!.to && m.kind === chosen!.kind)).toBe(true);
+    expect(reload).not.toHaveBeenCalled();
   });
 
   // Vitest fails the run on an unhandled rejection, so settling is the check.
   it('a new game clearing the table does not leave a rejection behind', async () => {
-    const { clearSearchTable } = await import('./searchClient');
+    const { clearSearchTable, searchAsync } = await import('./searchClient');
     clearSearchTable();
     fake.FakeWorker.made[0].fail();
     await flush();
     await flush();
     expect(fake.FakeWorker.made[0].terminated).toBe(true);
+    expect((await searchAsync(board, options)).bestMove).not.toBeNull();
+    expect(fake.FakeWorker.made).toHaveLength(1);
     expect(reload).not.toHaveBeenCalled();
   });
 });
