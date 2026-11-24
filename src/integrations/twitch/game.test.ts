@@ -59,4 +59,10 @@ describe('twitchGame', () => {
     expect(resultOf(s)).toBeNull();
     expect(resultOf(step(s, { type: 'resign', side: 'black' }).state)).toBe('white');
   });
+
+  it('a loss on time is a result too (P6)', () => {
+    const s = createSession({ initial: createStartingPosition(7), seed: 7, now: 0 });
+    expect(resultOf(step(s, { type: 'flag', side: 'white' }).state)).toBe('black');
+    expect(resultOf(step(s, { type: 'flag', side: 'black' }).state)).toBe('white');
+  });
 });

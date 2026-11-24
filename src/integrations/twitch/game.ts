@@ -1,3 +1,4 @@
+import { winnerOf } from '../../features/endgame/result';
 import type { Store } from '../../session/store';
 import type { Action, SessionEvent, SessionState } from '../../session/types';
 import { twitchChat } from './chat';
@@ -14,22 +15,17 @@ import {
 type SessionStore = Store<SessionState, Action, SessionEvent>;
 export type TwitchGameChange = 'newGame' | 'ended';
 
-/** How the game on the board ended, as chat predicts it; null while it runs. */
+/** How the game on the board ended, as chat predicts it; null while it runs.
+ *  Who won is winnerOf's (features/endgame/result.ts, as the board's own
+ *  line under it), so every decisive ending counts, a loss on time too. */
 export function resultOf(s: SessionState): GameResult | null {
   // statusOf (session/step.ts), read off the phase here: this module is in
   // the lazy streaming chunk, and an import of step.ts from it splits
   // step.ts out of the entry chunk into one more first-load file (+0.8 KB).
-  const status = s.phase.tag === 'ended' ? s.phase.status : 'active';
-  if (status === 'checkmate') {
-    const board = s.online?.game?.board ?? s.board;
-    return board.sideToMove === 'white' ? 'black' : 'white';
-  }
-  if (status === 'king_captured_white_wins') return 'white';
-  if (status === 'king_captured_black_wins') return 'black';
-  if (status === 'resigned_white') return 'black';
-  if (status === 'resigned_black') return 'white';
-  if (status.startsWith('draw')) return 'draw';
-  return null;
+  if (s.phase.tag !== 'ended') return null;
+  const status = s.phase.status;
+  const board = s.online?.game?.board ?? s.board;
+  return winnerOf(status, board.sideToMove) ?? (status.startsWith('draw') ? 'draw' : null);
 }
 
 /**
