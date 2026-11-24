@@ -547,6 +547,10 @@ export function GameReview({ log: liveLog, onBack, meta, gameId }: Props) {
 
   const [result, setResult] = useState<GameReviewResult | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  // The classifier failed (its worker did not load, or crashed): the review
+  // says so and offers another try, instead of "Analyzing" for good.
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [progress, setProgress] = useState<{ done: number; total: number }>({
     done: 0,
     total: log.moves.length,
@@ -667,6 +671,7 @@ export function GameReview({ log: liveLog, onBack, meta, gameId }: Props) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setFailed(false);
     setResult(null);
     setProgress({ done: 0, total: log.moves.length });
     let finished = false;
@@ -674,12 +679,21 @@ export function GameReview({ log: liveLog, onBack, meta, gameId }: Props) {
       onProgress: (done, total) => {
         if (!cancelled) setProgress({ done, total });
       },
-    }).then((out) => {
-      finished = true;
-      if (cancelled) return;
-      setResult(out);
-      setLoading(false);
-    });
+    }).then(
+      (out) => {
+        finished = true;
+        if (cancelled) return;
+        setResult(out);
+        setLoading(false);
+      },
+      (err) => {
+        finished = true;
+        if (cancelled) return;
+        console.warn('[review] analysis failed', err);
+        setLoading(false);
+        setFailed(true);
+      },
+    );
     return () => {
       cancelled = true;
       // F7 — leaving a review that is still running used to leave its whole
@@ -687,7 +701,7 @@ export function GameReview({ log: liveLog, onBack, meta, gameId }: Props) {
       // the game on the board waited behind it for minutes.
       if (!finished) cancelPendingClassifications();
     };
-  }, [log]);
+  }, [log, attempt]);
 
   // Keyboard navigation: arrow keys + Home/End. Ignored when typing in
   // an input — the review screen doesn't have any, but defensive.
@@ -835,6 +849,14 @@ export function GameReview({ log: liveLog, onBack, meta, gameId }: Props) {
               <span>
                 Analyzing {progress.done}/{progress.total} moves…
               </span>
+            </div>
+          )}
+          {failed && (
+            <div className="game-review-loading" role="alert">
+              <span>The analysis could not run.</span>
+              <button type="button" className="game-review-share" onClick={() => setAttempt((n) => n + 1)}>
+                Try again
+              </button>
             </div>
           )}
 
