@@ -6,7 +6,7 @@ import { tilePixelCenter, type BoardLayout } from '../../engine/auxetic';
 import { applyMove } from '../../engine/moves';
 import { streaming } from '../../integrations';
 import { computeSAN } from '../../recording/log';
-import { turns } from '../../session/session';
+import { session, turns } from '../../session/session';
 import { scaleBudgetMs } from '../../utils/deviceTier';
 import type { WatchingGame } from '../review/watching';
 import { colorFromMouseEvent } from './annotations';
@@ -346,13 +346,26 @@ export function useBoardInput({
 
     // ── commit closure ──────────────────────────────────────────────
     function commitMove() {
+    // P5 — what a move sets off here (chat's guess round, the eval bar, the
+    // classifier) is for a move the session takes. Beat Mode holds the move
+    // up to ~1.6 beats, in which the flag can fall or another game come in:
+    // a board that has changed, or a game that has ended, takes no move.
+    const cur = session.getState();
+    if (cur.board !== state || cur.phase.tag === 'ended') {
+      setSelected(null);
+      return;
+    }
     const san = computeSAN(state, resolvedMove);
-    // R2 — settle the chat's "guess the streamer" round on the actual move.
+    // R2 — settle the chat's "guess the streamer" round on the actual move,
+    // before it is played: the turn's end would drop the round unrevealed.
     settleGuessRound(resolvedMove, san);
     const afterMove = applyMove(state, resolvedMove);
     // The move itself (the board, the log, the roulette turn, the end of
     // the game) is step()'s: src/session/step.ts.
-    turns.act({ type: 'move', move: resolvedMove, actor: 'human', now: Date.now() });
+    if (turns.act({ type: 'move', move: resolvedMove, actor: 'human', now: Date.now() }).length === 0) {
+      setSelected(null);
+      return;
+    }
     // Defer classify so the click feels instant — main thread is still
     // single-threaded but the DOM paints first, then the analysis lands
     // ~300 ms later as if the engine is "thinking".
@@ -406,12 +419,20 @@ export function useBoardInput({
       void mpSync.sendMove(move);
       return;
     }
+    // P5 — as commitMove: only a promotion the session can still take sets
+    // anything off (the flag may have fallen while the picker was open).
+    const cur = session.getState();
+    if (cur.board !== state || cur.phase.tag !== 'promotion') {
+      setSelected(null);
+      return;
+    }
     const san = computeSAN(state, move);
     // R2 — promotion commits bypass commitMove; settle the guess round here too.
     settleGuessRound(move, san);
     const next = applyMove(state, move);
-    turns.act({ type: 'promote', piece: pieceType, now: Date.now() });
+    const played = turns.act({ type: 'promote', piece: pieceType, now: Date.now() });
     setSelected(null);
+    if (played.length === 0) return;
     // B3 — material-delta bump instead of static-fallback flicker.
     setSearchEvalFromWhite((prev) => bumpEvalForMove(prev, state, move));
     setSearchMateInPlies(null);
