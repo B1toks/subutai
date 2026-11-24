@@ -77,7 +77,7 @@ export interface BotPlayerOptions {
   readonly vote: (board: BoardState, legal: Move[], chosen: Move) => Promise<Move>;
   /** A classic move is on the board (`index` in the log): whatever comes
    *  before the game's end is asked (the classifier's verdict). */
-  readonly analyse: (before: BoardState, move: Move, after: BoardState, index: number) => Promise<void>;
+  readonly analyse: (before: BoardState, move: Move, after: BoardState, index: number, logId: string) => Promise<void>;
   /** A classic or self-play move of the bot has just run. */
   readonly moved: () => void;
 }
@@ -141,7 +141,7 @@ export function createBotPlayer(opts: BotPlayerOptions): Player {
       if (rotation) settle();
       // A classifier that failed leaves the move without a verdict; the
       // end of the game is asked all the same.
-      else void opts.analyse(p.before, p.move, next, p.index).then(settle, settle);
+      else void opts.analyse(p.before, p.move, next, p.index, p.logId).then(settle, settle);
     },
   };
 }

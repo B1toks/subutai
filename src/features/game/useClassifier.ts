@@ -193,11 +193,14 @@ export function useClassifier({
   /** V1 (DEF-6) — record a finished classification and play its visuals.
    *  A superseded result (its batch was cancelled when a Game Review
    *  started) carries placeholder numbers: writing them would snap the
-   *  eval bar to 0.00 and log the move as plain "good", so it is dropped. */
+   *  eval bar to 0.00 and log the move as plain "good", so it is dropped.
+   *  So is one for a game no longer on the board (`logId`, the game the
+   *  move was played in): a Memory resume or Load replay in between would
+   *  otherwise take the verdict, and its flash, on its own move. */
   const commitAnalysis = useCallback(
-    (moveIdx: number, analysis: MoveAnalysis, moveTo: SquareId | undefined) => {
-      if (analysis.superseded) return;
-      session.dispatch({ type: 'analysis', index: moveIdx, analysis });
+    (moveIdx: number, analysis: MoveAnalysis, moveTo: SquareId | undefined, logId: string) => {
+      if (analysis.superseded || session.getState().log.id !== logId) return;
+      session.dispatch({ type: 'analysis', index: moveIdx, analysis, logId });
       applyClassifyVisuals(moveIdx, analysis, moveTo);
     },
     [applyClassifyVisuals],

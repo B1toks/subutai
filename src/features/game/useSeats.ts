@@ -38,7 +38,7 @@ interface UseSeatsArgs {
   setSearchEvalFromWhite: Dispatch<SetStateAction<number | null>>;
   setSearchMateInPlies: Dispatch<SetStateAction<number | null>>;
   setPreviewTopology: Dispatch<SetStateAction<TopologyState | null>>;
-  commitAnalysis: (moveIdx: number, analysis: MoveAnalysis, moveTo: SquareId | undefined) => void;
+  commitAnalysis: (moveIdx: number, analysis: MoveAnalysis, moveTo: SquareId | undefined, logId: string) => void;
   autoLastMoveAtRef: RefObject<number>;
 }
 
@@ -86,7 +86,7 @@ export function useSeats({
         strength: () => botLevelRef.current,
         // Twitch Predict / chat vote; without the integrations, the bot's own move.
         vote: (board, legal, chosen) => streaming()?.moveVoting.gate(board, legal, chosen) ?? Promise.resolve(chosen),
-        async analyse(before, move, after, index) {
+        async analyse(before, move, after, index, logId) {
           // B3 — material-delta bump instead of static-fallback flicker.
           setSearchEvalFromWhite((prev) => bumpEvalForMove(prev, before, move));
           setSearchMateInPlies(null);
@@ -96,7 +96,7 @@ export function useSeats({
             maxDepth: 7,
             allowSelfCheck: false,
           });
-          commitRef.current(index, analysis, move.to);
+          commitRef.current(index, analysis, move.to, logId);
         },
         moved: () => setSelected(null),
       }),
@@ -121,6 +121,7 @@ export function useSeats({
           if (action.type !== 'move') return;
           const move = action.move;
           const afterMove = applyMove(before, move);
+          const logId = session.getState().log.id;
           setSearchEvalFromWhite((prev) => bumpEvalForMove(prev, before, move));
           setSearchMateInPlies(null);
           void classifyAsync(before, move, afterMove, {
@@ -129,7 +130,7 @@ export function useSeats({
             allowSelfCheck: false,
           }).then(
             (analysis) => {
-              commitRef.current(index, analysis, move.to);
+              commitRef.current(index, analysis, move.to, logId);
             },
             () => {}, // the classifier failed: the move goes without a verdict
           );

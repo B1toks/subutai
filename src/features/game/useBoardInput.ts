@@ -365,6 +365,7 @@ export function useBoardInput({
     setSearchEvalFromWhite((prev) => bumpEvalForMove(prev, state, resolvedMove));
     setSearchMateInPlies(null);
     const moveIdx = log.moves.length;
+    const logId = log.id;
     // Sprint 4.1 — local hot-seat skips the classifier worker. The
     // analysis pipeline is tied to leaderboard / review of solo games
     // vs the AI; in local 2P play there's no scoring and both sides
@@ -377,7 +378,7 @@ export function useBoardInput({
       })
         .then(
           (analysis) => {
-            commitAnalysis(moveIdx, analysis, resolvedMove.to);
+            commitAnalysis(moveIdx, analysis, resolvedMove.to, logId);
           },
           () => {}, // the classifier failed: the move goes without a verdict
         );
@@ -415,13 +416,14 @@ export function useBoardInput({
     setSearchEvalFromWhite((prev) => bumpEvalForMove(prev, state, move));
     setSearchMateInPlies(null);
     const moveIdx = log.moves.length;
+    const logId = log.id;
     classifyAsync(state, move, next, {
       budgetMs: scaleBudgetMs(1000),
       maxDepth: 7,
       allowSelfCheck: gameMode === 'roulette',
     }).then(
       (analysis) => {
-        commitAnalysis(moveIdx, analysis, move.to);
+        commitAnalysis(moveIdx, analysis, move.to, logId);
       },
       () => {}, // the classifier failed: the move goes without a verdict
     );
