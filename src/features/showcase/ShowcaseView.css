@@ -178,6 +178,31 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* v1.2.1 — on a phone (390 px) the four stats asked for 440 px (80 px each,
+   40 px apart) inside the 310 px the padding leaves, and the last one was
+   cut off ("Whit"; since v1.1.7). A narrow screen shares the row out
+   evenly, with closer gaps and smaller type; wide screens are unchanged. */
+@media (max-width: 520px) {
+  .showcase-stats {
+    width: 100%;
+    gap: var(--space-2);
+  }
+
+  .showcase-stat {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .showcase-stat-label {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+  }
+
+  .showcase-stat-value {
+    font-size: 20px;
+  }
+}
+
 /* --- Leaderboard interrupt screen --- */
 
 .showcase-leaderboard {
