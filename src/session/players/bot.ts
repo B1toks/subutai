@@ -181,7 +181,9 @@ export function createAutoPlayer(opts: Pick<BotPlayerOptions, 'color' | 'dispatc
       // Label the resulting position with a shallow search score, on the
       // search worker: it runs before the next move's search, which waits
       // behind it there. A labeller failure must never stall the run.
-      void searchAsync(next, { budgetMs: AUTO_SEARCH_LABEL_BUDGET_MS, maxDepth: AUTO_SEARCH_LABEL_DEPTH })
+      // A label waiting when the worker fails is dropped (wanted: never),
+      // not run on the main thread ahead of the next move's search.
+      void searchAsync(next, { budgetMs: AUTO_SEARCH_LABEL_BUDGET_MS, maxDepth: AUTO_SEARCH_LABEL_DEPTH }, () => false)
         .then((labelled) => {
           const scoreFromWhite = next.sideToMove === 'white' ? labelled.score : -labelled.score;
           opts.dispatch({ type: 'searchScore', scoreFromWhite });

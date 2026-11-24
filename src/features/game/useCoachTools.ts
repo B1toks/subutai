@@ -7,6 +7,12 @@ import { useSession } from '../../session/useSession';
 import { gameStatusOf, modeOf, boardOf } from './boardView';
 import type { BoardUi } from './useBoardUi';
 
+/** A hint search that did not answer: said in the console, no hint shown. */
+const noHint = (err: unknown) => {
+  console.warn('[hint] search failed', err);
+  return null;
+};
+
 interface UseCoachToolsArgs {
   /** The board's own UI state (useBoardUi). */
   ui: BoardUi;
@@ -64,14 +70,15 @@ export function useCoachTools({
     // resume): a hint for another position is dropped.
     const asked = session.getState().board;
     const stillAsked = () => session.getState().board === asked;
-    // A hint dropped when the worker failed (its board had moved on) is no hint.
+    // A hint dropped when the worker failed (its board had moved on), or a
+    // search that failed, is no hint.
     const result = await searchAsync(
       state,
       { budgetMs: 500, maxDepth: 5, lastMoveWasRotation: state.lastMoveWasRotation },
       stillAsked,
-    ).catch(() => null);
+    ).catch(noHint);
     const best = result?.bestMove;
-    if (!result || !best || !stillAsked()) return;
+    if (!best || !stillAsked()) return;
     if (best.kind === 'topologyToggle') {
       setHintMove({ rotate: true });
       return;
@@ -84,7 +91,7 @@ export function useCoachTools({
     if (canRotate && !state.lastMoveWasRotation) {
       const rotated = applyRotationMove(state);
       const reply = await searchAsync(rotated, { budgetMs: 300, maxDepth: 4, lastMoveWasRotation: true }, stillAsked).catch(
-        () => null,
+        noHint,
       );
       if (!reply || !stillAsked()) return;
       const rotationScore = -reply.score; // negamax: reply is opponent-side

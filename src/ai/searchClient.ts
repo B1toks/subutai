@@ -63,11 +63,20 @@ function post(req: Unsent): Promise<SearchResult | undefined> {
     const id = nextId++;
     waiting.set(id, { resolve, reject });
     // A Worker that cannot be built (a worker-src policy, no module
-    // workers) or a request it cannot be sent fails it as a crash does.
+    // workers) fails as a crash does. One request that cannot be sent
+    // (it cannot be cloned) is refused alone: the worker is fine.
+    let w: Worker;
     try {
-      getWorker().postMessage({ ...req, id });
+      w = getWorker();
     } catch (err) {
       fail(err);
+      return;
+    }
+    try {
+      w.postMessage({ ...req, id });
+    } catch (err) {
+      waiting.delete(id);
+      reject(err);
     }
   });
 }

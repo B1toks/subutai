@@ -16,7 +16,12 @@ const fake = vi.hoisted(() => {
       if (FakeWorker.throwOnBuild) throw new Error('SecurityError: worker-src');
       FakeWorker.made.push(this);
     }
+    static throwOnPost = 0;
     postMessage(msg: { id: number; kind: string }) {
+      if (FakeWorker.throwOnPost > 0) {
+        FakeWorker.throwOnPost--;
+        throw new Error('DataCloneError: could not be cloned');
+      }
       this.sent.push(msg);
     }
     terminate() {
@@ -55,6 +60,7 @@ beforeEach(() => {
   vi.resetModules();
   fake.FakeWorker.made = [];
   fake.FakeWorker.throwOnBuild = false;
+  fake.FakeWorker.throwOnPost = 0;
   fake.mainThreadClears = 0;
   reload = vi.fn();
   vi.stubGlobal('window', { location: { reload } });
@@ -174,5 +180,19 @@ describe('search worker that fails', () => {
     expect((await searchAsync(board, options)).bestMove).not.toBeNull();
     expect(fake.FakeWorker.made).toHaveLength(0);
     expect(fake.mainThreadClears).toBe(1);
+  });
+
+  it('one request that cannot be sent is refused alone; the worker goes on', async () => {
+    const { searchAsync } = await import('./searchClient');
+    const first = searchAsync(board, options);
+    const w = fake.FakeWorker.made[0];
+    fake.FakeWorker.throwOnPost = 1;
+    await expect(searchAsync(board, options)).rejects.toThrow('DataCloneError');
+    expect(w.terminated).toBe(false);
+    w.answer(w.sent[0].id, { bestMove: null, score: 1, pv: [] });
+    await expect(first).resolves.toMatchObject({ score: 1 });
+    void searchAsync(board, options);
+    expect(fake.FakeWorker.made).toHaveLength(1);
+    expect(w.sent).toHaveLength(2);
   });
 });

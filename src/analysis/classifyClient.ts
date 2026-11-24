@@ -67,7 +67,14 @@ export function classifyAsync(
   return new Promise((resolve, reject) => {
     const id = nextId++;
     waiting.set(id, { resolve, reject });
-    getWorker().postMessage({ id, stateBefore, move, stateAfter, opts });
+    // A Worker that cannot be built, or a request it cannot be sent: this
+    // request is refused, and nothing of it is left waiting.
+    try {
+      getWorker().postMessage({ id, stateBefore, move, stateAfter, opts });
+    } catch (err) {
+      waiting.delete(id);
+      reject(err);
+    }
   });
 }
 
