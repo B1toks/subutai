@@ -22,6 +22,19 @@ const waiting = new Map<number, { resolve: (r: SearchResult | undefined) => void
  *  does not bring back. */
 let mainThreadOnly = false;
 
+/** The worker failed as a whole, or could not be had at all: every
+ *  request still waiting is refused (none is left hanging) and searched on
+ *  the main thread, as is every later one. */
+function fail(why: unknown): void {
+  console.error('[search] worker failed', why);
+  worker?.terminate();
+  worker = null;
+  mainThreadOnly = true;
+  const refused = [...waiting.values()];
+  waiting.clear();
+  for (const p of refused) p.reject(workerFailed);
+}
+
 function getWorker(): Worker {
   if (worker) return worker;
   const w = new SearchWorker();
@@ -36,19 +49,10 @@ function getWorker(): Worker {
       p?.reject(new Error(error ?? 'search failed'));
     }
   };
+  // A crash raises an ErrorEvent (its message shows in the console); a
+  // file that did not load, a bare Event.
   w.onerror = (e) => {
-    // Every request still waiting is refused (none is left hanging) and
-    // searched on the main thread, as is every later one.
-    if (worker !== w) return;
-    // A crash raises an ErrorEvent (its message shows in the console); a
-    // file that did not load, a bare Event.
-    console.error('[search] worker crashed', e);
-    w.terminate();
-    worker = null;
-    mainThreadOnly = true;
-    const refused = [...waiting.values()];
-    waiting.clear();
-    for (const p of refused) p.reject(workerFailed);
+    if (worker === w) fail(e);
   };
   return w;
 }
@@ -59,7 +63,13 @@ function post(req: Unsent): Promise<SearchResult | undefined> {
   return new Promise((resolve, reject) => {
     const id = nextId++;
     waiting.set(id, { resolve, reject });
-    getWorker().postMessage({ ...req, id });
+    // A Worker that cannot be built (a worker-src policy, no module
+    // workers) or a request it cannot be sent fails it as a crash does.
+    try {
+      getWorker().postMessage({ ...req, id });
+    } catch (err) {
+      fail(err);
+    }
   });
 }
 

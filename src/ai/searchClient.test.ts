@@ -165,4 +165,14 @@ describe('search worker that fails', () => {
     await expect(stale).rejects.toBeInstanceOf(Error);
     expect((await live).bestMove).not.toBeNull();
   });
+  it('a Worker that cannot even be built: the search runs on the main thread, and so does every later one', async () => {
+    fake.FakeWorker.throwOnBuild = true;
+    const { searchAsync, clearSearchTable } = await import('./searchClient');
+    expect((await searchAsync(board, options)).bestMove).not.toBeNull();
+    clearSearchTable();
+    fake.FakeWorker.throwOnBuild = false;
+    expect((await searchAsync(board, options)).bestMove).not.toBeNull();
+    expect(fake.FakeWorker.made).toHaveLength(0);
+    expect(fake.mainThreadClears).toBe(1);
+  });
 });
