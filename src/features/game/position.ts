@@ -37,11 +37,15 @@ export function samePieces(a: BoardState['pieces'], b: BoardState['pieces']): bo
 
 /** The piece `move` takes where it lands (en passant aside), if any. A
  *  Chess960 castle can take the king onto its own rook's square: that rook
- *  is not taken (P7), nor is any piece of the mover's own. The capture
- *  events (session/events.ts) and the eval bump below both read it. */
+ *  is not taken (P7), nor is any piece of the moving piece's own colour
+ *  (read off the piece, not the side to move: a Roulette bag's second
+ *  action is played on a board that already shows the other side to
+ *  move). The capture events (session/events.ts) and the eval bump below
+ *  both read it. */
 export function takenBy(before: BoardState, move: Move): Piece | undefined {
   const target = move.to && move.kind !== 'castle' ? before.pieces[move.to] : undefined;
-  return target && target.color !== before.sideToMove ? target : undefined;
+  const mover = move.from ? before.pieces[move.from] : undefined;
+  return target && target.color !== mover?.color ? target : undefined;
 }
 
 // B3 — eval-bar stability. Dropping the search eval to null between

@@ -5,7 +5,7 @@ import { applyRotationMove } from '../../engine/auxetic';
 import { PIECE_VALUE } from '../../ai/evaluate';
 import { appendMove, createGameLog } from '../../recording/log';
 import { replayFromNotation } from '../../memory/replayImport';
-import { backRankString, bumpEvalForMove, evaluateFromWhite, gameEnding, replayBoardAt, samePieces } from './position';
+import { backRankString, bumpEvalForMove, evaluateFromWhite, gameEnding, replayBoardAt, samePieces, takenBy } from './position';
 
 const start = createPositionFromBackRankKey('RNBQKBNR');
 const piece = (color: Piece['color'], type: Piece['type'], id = `${color}-${type}`): Piece => ({ id, color, type });
@@ -118,5 +118,16 @@ describe('bumpEvalForMove (P7: a Chess960 castle is not a capture)', () => {
     const castle = generateLegalMoves(before).find((m) => m.kind === 'castle')!;
     expect(castle.to).toBe(castle.castleRookFrom);
     expect(bumpEvalForMove(30, before, castle)).toBe(30);
+  });
+});
+
+describe('takenBy (whose piece is taken is read off the mover, not the side to move)', () => {
+  it('a Roulette second action, the board already showing the other side to move, still takes', () => {
+    const before = withPieces(
+      { e1: piece('white', 'king'), d4: piece('white', 'queen'), d7: piece('black', 'rook'), e8: piece('black', 'king') },
+      'black',
+    );
+    const take: Move = { kind: 'normal', from: 'd4', to: 'd7' };
+    expect(takenBy(before, take)?.type).toBe('rook');
   });
 });
