@@ -350,8 +350,7 @@ export function useBoardInput({
     // classifier) is for a move the session takes. Beat Mode holds the move
     // up to ~1.6 beats, in which the flag can fall or another game come in:
     // a board that has changed, or a game that has ended, takes no move.
-    const cur = session.getState();
-    if (cur.board !== state || cur.phase.tag === 'ended') {
+    if (!stillPlayable(state, false)) {
       setSelected(null);
       return;
     }
@@ -401,6 +400,20 @@ export function useBoardInput({
     } // end commitMove
   }
 
+  /** P5 — whether a move chosen on `board` can still be played here: that
+   *  board is still the one on the table, the game is on (`promotion`: its
+   *  picker is still open), and the side to move is seated here, as a
+   *  person or as chat (turns.act's own check). */
+  function stillPlayable(board: BoardState, promotion: boolean): boolean {
+    const cur = session.getState();
+    const seat = turns.toMove();
+    return (
+      cur.board === board &&
+      (promotion ? cur.phase.tag === 'promotion' : cur.phase.tag !== 'ended') &&
+      (seat?.kind === 'human' || seat?.kind === 'chat')
+    );
+  }
+
   function handlePromotion(pieceType: PieceType) {
     if (!pendingPromotion) return;
     const move = legalMoves.find(
@@ -421,8 +434,7 @@ export function useBoardInput({
     }
     // P5 — as commitMove: only a promotion the session can still take sets
     // anything off (the flag may have fallen while the picker was open).
-    const cur = session.getState();
-    if (cur.board !== state || cur.phase.tag !== 'promotion') {
+    if (!stillPlayable(state, true)) {
       setSelected(null);
       return;
     }

@@ -118,7 +118,8 @@ export function useSeats({
             setPreviewTopology(null);
             return;
           }
-          if (action.type !== 'move') return;
+          // A move the session refused (no events) sets nothing off.
+          if (action.type !== 'move' || events.length === 0) return;
           const move = action.move;
           const afterMove = applyMove(before, move);
           const logId = session.getState().log.id;

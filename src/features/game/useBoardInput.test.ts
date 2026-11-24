@@ -93,6 +93,16 @@ describe('a move the session refuses sets nothing off (P5)', () => {
     expect(seen.classified).toBe(0);
   });
 
+  it('a promotion nobody here may play (the seats changed): no guess round either', () => {
+    turns.seat(null);
+    const settled: string[] = [];
+    const evals: unknown[] = [];
+    useInputOutsideReact(settled, evals).handlePromotion('queen');
+    expect(session.getState().log.moves).toHaveLength(0);
+    expect(settled).toEqual([]);
+    expect(seen.classified).toBe(0);
+  });
+
   it('a promotion the session takes sets all of it off, as before', () => {
     const settled: string[] = [];
     const evals: unknown[] = [];

@@ -130,10 +130,11 @@ export function createBotPlayer(opts: BotPlayerOptions): Player {
       // classification (onPlayed), as it always was.
       return { type: 'move', move, actor: 'bot', now: Date.now(), settle: false };
     },
-    onPlayed(action) {
+    onPlayed(action, events) {
       const p = pendingSettle;
       pendingSettle = null;
-      if (action.type !== 'move' || action.settle !== false || !p) return;
+      // A move the session refused (events: none) sets nothing off.
+      if (action.type !== 'move' || action.settle !== false || !p || events.length === 0) return;
       opts.moved();
       const rotation = p.move.kind === 'topologyToggle';
       const next = rotation ? applyRotationMove(p.before) : applyMove(p.before, p.move);

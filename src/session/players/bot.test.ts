@@ -53,9 +53,9 @@ describe('bot whose move the classifier cannot judge', () => {
     await vi.advanceTimersByTimeAsync(1000);
     const action = await answer;
     expect(action.type).toBe('move');
-    store.dispatch(action);
+    const played = store.dispatch(action);
     expect(statusOf(store.getState())).toBe('active');
-    bot.onPlayed?.(action, []);
+    bot.onPlayed?.(action, played);
     await vi.advanceTimersByTimeAsync(0);
     expect(analysed).toEqual([0]);
     expect(statusOf(store.getState())).toBe('checkmate');
@@ -80,8 +80,8 @@ describe('bot whose mate is classified after the game has changed (P1)', () => {
     const answer = bot.onTurn(s, new AbortController().signal);
     await vi.advanceTimersByTimeAsync(1000);
     const action = await answer;
-    store.dispatch(action);
-    bot.onPlayed?.(action, []);
+    const played = store.dispatch(action);
+    bot.onPlayed?.(action, played);
     // New game, while the classifier is still on the mating move.
     store.dispatch({ type: 'newGame', initial: blackToMate().initial, now: 1, seed: 8 });
     expect(statusOf(store.getState())).toBe('active');
@@ -107,10 +107,43 @@ describe('bot whose mate is classified after the game has changed (P1)', () => {
     const answer = bot.onTurn(s, new AbortController().signal);
     await vi.advanceTimersByTimeAsync(1000);
     const action = await answer;
-    store.dispatch(action);
-    bot.onPlayed?.(action, []);
+    const played = store.dispatch(action);
+    bot.onPlayed?.(action, played);
     verdict();
     await vi.advanceTimersByTimeAsync(0);
     expect(statusOf(store.getState())).toBe('checkmate');
+  });
+});
+
+describe('bot whose move the session refused (P5)', () => {
+  it('sets nothing off: no classifier, no settle', async () => {
+    vi.useFakeTimers();
+    const store = createStore<SessionState, Action, SessionEvent>(blackToMate(), step);
+    const s = store.getState();
+    chosen.move = s.legal.find((m) => m.from === 'd4' && m.to === 'f3');
+    const analysed: number[] = [];
+    let moved = 0;
+    const bot = createBotPlayer({
+      color: 'black',
+      dispatch: store.dispatch,
+      strength: () => 'strong',
+      vote: (_b, _l, m) => Promise.resolve(m),
+      analyse: (_b, _m, _a, index) => {
+        analysed.push(index);
+        return Promise.resolve();
+      },
+      moved: () => moved++,
+    });
+    const answer = bot.onTurn(s, new AbortController().signal);
+    await vi.advanceTimersByTimeAsync(1000);
+    const action = await answer;
+    // The session refused it (the flag fell first): no events.
+    store.dispatch({ type: 'flag', side: 'black' });
+    const events = store.dispatch(action);
+    expect(events).toEqual([]);
+    bot.onPlayed?.(action, events);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(analysed).toEqual([]);
+    expect(moved).toBe(0);
   });
 });
