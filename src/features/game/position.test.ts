@@ -111,3 +111,12 @@ describe('gameEnding', () => {
     expect(gameEnding('classic', withPieces({ e1: piece('white', 'king'), e8: piece('black', 'king') }))).toBe('draw_material');
   });
 });
+
+describe('bumpEvalForMove (P7: a Chess960 castle is not a capture)', () => {
+  it('a castle whose king lands on its own rook leaves the eval where it was', () => {
+    const before = createPositionFromBackRankKey('RNBBQKRN');
+    const castle = generateLegalMoves(before).find((m) => m.kind === 'castle')!;
+    expect(castle.to).toBe(castle.castleRookFrom);
+    expect(bumpEvalForMove(30, before, castle)).toBe(30);
+  });
+});

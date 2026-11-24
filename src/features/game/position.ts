@@ -48,7 +48,10 @@ export function bumpEvalForMove(
   if (prevEval === null) return null;
   if (move.kind === 'topologyToggle' || !move.to) return prevEval;
   let delta = 0;
-  const victim = stateBefore.pieces[move.to];
+  // A Chess960 castle can take the king onto its own rook's square: that
+  // rook is not taken (P7), nor is any piece of the mover's own.
+  const target = move.kind === 'castle' ? undefined : stateBefore.pieces[move.to];
+  const victim = target && target.color !== stateBefore.sideToMove ? target : undefined;
   if (victim) {
     delta += PIECE_VALUE[victim.type] * (victim.color === 'black' ? 1 : -1);
   } else if (move.kind === 'enPassant') {
