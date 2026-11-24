@@ -11,7 +11,9 @@ const fake = vi.hoisted(() => {
     terminated = false;
     onmessage: ((e: { data: unknown }) => void) | null = null;
     onerror: ((e: unknown) => void) | null = null;
+    static throwOnBuild = false;
     constructor() {
+      if (FakeWorker.throwOnBuild) throw new Error('SecurityError: worker-src');
       FakeWorker.made.push(this);
     }
     postMessage(msg: { id: number; kind: string }) {
@@ -52,6 +54,7 @@ let reload: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   vi.resetModules();
   fake.FakeWorker.made = [];
+  fake.FakeWorker.throwOnBuild = false;
   fake.mainThreadClears = 0;
   reload = vi.fn();
   vi.stubGlobal('window', { location: { reload } });
@@ -150,5 +153,16 @@ describe('search worker that fails', () => {
     expect((await searchAsync(board, options)).bestMove).not.toBeNull();
     expect(fake.FakeWorker.made).toHaveLength(1);
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('a search waiting when the worker fails, which nobody wants any more, is not run on the main thread', async () => {
+    const { searchAsync } = await import('./searchClient');
+    let abandoned = false;
+    const stale = searchAsync(board, options, () => !abandoned);
+    const live = searchAsync(board, options, () => true);
+    abandoned = true; // its bot turn was aborted (a new game came in)
+    fake.FakeWorker.made[0].fail();
+    await expect(stale).rejects.toBeInstanceOf(Error);
+    expect((await live).bestMove).not.toBeNull();
   });
 });

@@ -108,11 +108,12 @@ export function createBotPlayer(opts: BotPlayerOptions): Player {
       }
       await pause(THINK_MS, signal);
       const legal = s.legal as Move[];
-      const chosen = await chooseBotMove(s.board, legal, {
-        lastMoveWasRotation: lastWasRotation(s),
-        allowSelfCheck: false,
-        strength: opts.strength(),
-      });
+      const chosen = await chooseBotMove(
+        s.board,
+        legal,
+        { lastMoveWasRotation: lastWasRotation(s), allowSelfCheck: false, strength: opts.strength() },
+        () => !signal.aborted,
+      );
       signal.throwIfAborted();
       if (!chosen) return stall(signal);
       if (chosen.kind === 'topologyToggle' && s.board.lastMoveWasRotation) {
@@ -159,10 +160,12 @@ export function createAutoPlayer(opts: Pick<BotPlayerOptions, 'color' | 'dispatc
     kind: 'bot',
     async onTurn(s, signal) {
       await pause(AUTO_MOVE_DELAY_MS, signal);
-      const move = await chooseBotMove(s.board, s.legal as Move[], {
-        lastMoveWasRotation: lastWasRotation(s),
-        allowSelfCheck: false,
-      });
+      const move = await chooseBotMove(
+        s.board,
+        s.legal as Move[],
+        { lastMoveWasRotation: lastWasRotation(s), allowSelfCheck: false },
+        () => !signal.aborted,
+      );
       signal.throwIfAborted();
       if (!move) return stall(signal);
       if (move.kind === 'topologyToggle' && s.board.lastMoveWasRotation) return stall(signal);

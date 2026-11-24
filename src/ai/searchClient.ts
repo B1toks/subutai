@@ -65,13 +65,21 @@ function post(req: Unsent): Promise<SearchResult | undefined> {
 
 /** searchPosition (search.ts), on the search worker; on the main thread
  *  once the worker has failed (mainThreadOnly). An error of one search
- *  inside a working worker is passed on as before. */
-export async function searchAsync(state: BoardState, options: SearchOptions): Promise<SearchResult> {
+ *  inside a working worker is passed on as before. `wanted`: whether the
+ *  asker still wants the answer (its bot turn not aborted, its hint's
+ *  board still on the table). A search that was waiting when the worker
+ *  failed, and is no longer wanted, is refused instead of run here, where
+ *  each one would hold up the page for its whole budget. */
+export async function searchAsync(
+  state: BoardState,
+  options: SearchOptions,
+  wanted?: () => boolean,
+): Promise<SearchResult> {
   if (!mainThreadOnly) {
     try {
       return (await post({ kind: 'search', state, options }))!;
     } catch (err) {
-      if (err !== workerFailed) throw err;
+      if (err !== workerFailed || (wanted && !wanted())) throw err;
     }
   }
   return searchPosition(state, options);
@@ -93,8 +101,9 @@ export async function chooseBotMove(
   state: BoardState,
   legalMoves: readonly Move[],
   context?: AgentContext,
+  wanted?: () => boolean,
 ): Promise<Move | null> {
   const plan = planBotMove(state, legalMoves, context);
   if ('slip' in plan) return plan.slip;
-  return (await searchAsync(state, plan.search)).bestMove;
+  return (await searchAsync(state, plan.search, wanted)).bestMove;
 }
