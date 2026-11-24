@@ -27,4 +27,6 @@ export interface GameBackup {
   searchMateInPlies: number | null;
   formationLocked: boolean;
   lockedFormationKey: string | null;
+  /** The time each side had used (a timed game's clock goes on from it). */
+  clock: { white: number; black: number };
 }

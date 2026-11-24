@@ -131,6 +131,9 @@ export interface LoadedGame {
   readonly lastMove?: LastMove | null;
   /** Defaults to every legal move of `board` under the current mode. */
   readonly legal?: readonly Move[];
+  /** The time the game had used, for a game put back (Stop after Watch);
+   *  without it, a different game's clocks start from zero. */
+  readonly clock?: SessionState['clock'];
 }
 
 export type Action =

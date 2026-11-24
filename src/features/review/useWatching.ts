@@ -114,6 +114,8 @@ export function useWatching({
         searchMateInPlies,
         formationLocked,
         lockedFormationKey,
+        // Read now, not subscribed to: it changes every tick.
+        clock: session.getState().clock,
       };
 
       if (watchAutoplayRef.current) clearTimeout(watchAutoplayRef.current);
@@ -203,6 +205,7 @@ export function useWatching({
         log: backup.log,
         status: backup.gameStatus,
         lastMove: backup.lastMove,
+        clock: backup.clock,
       },
       // A game whose end was still being asked when Watch began (the bot's
       // mate, while its move was classified: the session drops that answer

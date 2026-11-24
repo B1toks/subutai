@@ -101,8 +101,13 @@ export function drawTableOf(s: SessionState): DrawTable<Color> {
 export function step(s: SessionState, a: Action): StepResult {
   const out = reduce(s, a);
   if (out.state === s) return out;
-  // The clocks belong to a game: a different log starts them from zero.
-  if (out.state.log.id !== s.log.id && (out.state.clock.white !== 0 || out.state.clock.black !== 0)) {
+  // The clocks belong to a game: a different log starts them from zero,
+  // unless it is a game put back with the time it had used.
+  if (
+    out.state.log.id !== s.log.id &&
+    !(a.type === 'load' && a.game.clock) &&
+    (out.state.clock.white !== 0 || out.state.clock.black !== 0)
+  ) {
     return { state: { ...out.state, clock: ZERO_CLOCK }, events: out.events };
   }
   return out;
@@ -199,6 +204,7 @@ function reduce(s: SessionState, a: Action): StepResult {
         lastMove: g.lastMove ?? null,
         phase,
         roulette,
+        clock: g.clock ?? s.clock,
       };
       // A watched replay one move on plays that move out, for the board's
       // sound and effects. A game put back on the board (a Memory resume,

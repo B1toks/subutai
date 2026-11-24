@@ -72,3 +72,20 @@ describe('settle (the bot asks whether its move ended the game)', () => {
     expect(statusOf(step(s, { ...asked, plies: 2 }).state)).toBe('active');
   });
 });
+
+describe('the clocks of a game put aside (P4: Watch, then Stop)', () => {
+  it('a game put back with its clocks keeps them; any other game starts from zero', () => {
+    const s0 = fresh();
+    const move = s0.legal.find((m) => m.kind === 'normal')!;
+    let s = step(s0, { type: 'move', move, actor: 'human', now: NOW }).state;
+    s = step(s, { type: 'clockTick', dt: 290_000 }).state;
+    const own = { board: s.board, initial: s.initial, log: s.log, clock: s.clock };
+    expect(s.clock.black).toBe(290_000);
+    // Watch: a leaderboard game, from its first position.
+    const watched = step(s, { type: 'load', game: { board: s0.board, log: { ...s0.log, id: 'watched', moves: [] } } }).state;
+    expect(watched.clock).toEqual({ white: 0, black: 0 });
+    // Stop: the own game, with the time it had used.
+    const back = step(watched, { type: 'load', game: own }).state;
+    expect(back.clock).toEqual({ white: 0, black: 290_000 });
+  });
+});
