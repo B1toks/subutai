@@ -9,8 +9,9 @@ import type { SearchRequest, SearchResponse } from './search.worker';
 // worker for the page, built on first use, answers matched by id.
 
 /** What the requests of a worker that failed as a whole (its file did not
- *  load, as on a page left open across a deploy, or it crashed) are
- *  refused with, as against one search failing inside it. */
+ *  load, as on a page left open across a deploy, or it crashed), and a
+ *  request that could not be sent, are refused with: searchAsync answers
+ *  them on the main thread. As against one search failing inside it. */
 const workerFailed = new Error();
 
 let worker: Worker | null = null;
@@ -64,7 +65,8 @@ function post(req: Unsent): Promise<SearchResult | undefined> {
     waiting.set(id, { resolve, reject });
     // A Worker that cannot be built (a worker-src policy, no module
     // workers) fails as a crash does. One request that cannot be sent
-    // (it cannot be cloned) is refused alone: the worker is fine.
+    // (it cannot be cloned) is searched on the main thread alone, as a
+    // refused one is: the worker is fine and keeps the page's searches.
     let w: Worker;
     try {
       w = getWorker();
@@ -75,8 +77,9 @@ function post(req: Unsent): Promise<SearchResult | undefined> {
     try {
       w.postMessage({ ...req, id });
     } catch (err) {
+      console.error('[search] request not sent', err);
       waiting.delete(id);
-      reject(err);
+      reject(workerFailed);
     }
   });
 }

@@ -182,12 +182,12 @@ describe('search worker that fails', () => {
     expect(fake.mainThreadClears).toBe(1);
   });
 
-  it('one request that cannot be sent is refused alone; the worker goes on', async () => {
+  it('one request that cannot be sent is searched here alone; the worker goes on', async () => {
     const { searchAsync } = await import('./searchClient');
     const first = searchAsync(board, options);
     const w = fake.FakeWorker.made[0];
     fake.FakeWorker.throwOnPost = 1;
-    await expect(searchAsync(board, options)).rejects.toThrow('DataCloneError');
+    expect((await searchAsync(board, options)).bestMove).not.toBeNull();
     expect(w.terminated).toBe(false);
     w.answer(w.sent[0].id, { bestMove: null, score: 1, pv: [] });
     await expect(first).resolves.toMatchObject({ score: 1 });
