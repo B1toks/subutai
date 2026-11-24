@@ -4,7 +4,8 @@
  * 288.5 KB, 295 424 B, from v1.2.1; it was 287.6 KB (294 553 B), and v1.2.0
  * shipped 3 B under it.
  *
- * Run after a build: npx vite build && npx tsx scripts/test-first-load.ts
+ * Run after a build. Git Bash: npx vite build && npx tsx scripts/test-first-load.ts
+ * PowerShell: npx.cmd vite build; npx.cmd tsx scripts/test-first-load.ts
  */
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';

@@ -1,7 +1,7 @@
 import type { BoardState, Move } from '../engine';
 import { findKing, isInCheck } from '../engine/moves';
 import { promoteStrandedPawns } from '../engine/auxetic';
-import { samePieces } from '../features/game/position';
+import { samePieces, takenBy } from '../features/game/position';
 import type { Actor, SessionEvent } from './types';
 
 /**
@@ -28,10 +28,7 @@ export function eventsOfEntry(
     const real = before.topologyState !== after.topologyState && samePieces(pieces, after.pieces);
     events.push({ type: 'rotation', by, promoted: real ? promoted : [] });
   } else {
-    // A Chess960 castle can take the king onto its own rook's square: what
-    // stands there is not taken (P7). Nor is any piece of the mover's own.
-    const target = move.to && move.kind !== 'castle' ? before.pieces[move.to] : undefined;
-    const victim = target && target.color !== by ? target : undefined;
+    const victim = takenBy(before, move);
     if (victim && move.to) {
       events.push({ type: 'capture', square: move.to, piece: victim.type, enPassant: false });
     } else if (move.kind === 'enPassant' && move.to) {
