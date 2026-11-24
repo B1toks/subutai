@@ -166,8 +166,8 @@ export type Action =
   /** Roulette: the bot found nothing to do with its bag. */
   | { readonly type: 'pass' }
   /** Is `board` (the one a move produced) over? Only ends an active game,
-   *  and only the game the move was played in (`logId`) while that move is
-   *  still its last (`plies`, the log's length after it): a verdict that
+   *  and only the game the move was played in (`logId`) while its log still
+   *  has that move (`plies`, the log's length after it): a verdict that
    *  comes after a new game, a Load replay or Watch changes nothing. */
   | {
       readonly type: 'settle';

@@ -64,12 +64,20 @@ describe('settle (the bot asks whether its move ended the game)', () => {
     expect(statusOf(out.state)).toBe('checkmate');
   });
 
-  it('is dropped once another game is on the board, or that game has moved on', () => {
+  it('is dropped once another game is on the board, or its log no longer has that move', () => {
     const s = mated();
     const other = { ...s, log: { ...s.log, id: 'another-game' } };
     const asked = { type: 'settle', board: s.board, lastWasRotation: false, logId: s.log.id, plies: 1 } as const;
     expect(statusOf(step(other, asked).state)).toBe('active');
     expect(statusOf(step(s, { ...asked, plies: 2 }).state)).toBe('active');
+  });
+
+  it('still applies after a later move of the same game (a draw made by the bot move is not lost)', () => {
+    const s = mated();
+    // The log has grown past the bot's move (the human moved meanwhile).
+    const later = { ...s, log: { ...s.log, moves: [...s.log.moves, s.log.moves[0]] } };
+    const asked = { type: 'settle', board: s.board, lastWasRotation: false, logId: s.log.id, plies: 1 } as const;
+    expect(statusOf(step(later, asked).state)).toBe('checkmate');
   });
 });
 

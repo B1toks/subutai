@@ -302,8 +302,10 @@ function reduce(s: SessionState, a: Action): StepResult {
 
     case 'settle':
       // The bot's checkGameOver, after its move has been classified: on
-      // the game it moved in, its move still the last one.
-      if (a.logId !== s.log.id || a.plies !== s.log.moves.length) return SAME(s);
+      // the game it moved in, while its log still has that move. A later
+      // move of the same game does not drop it: a draw the bot's move made
+      // (repetition, fifty moves) is still declared, as it always was.
+      if (a.logId !== s.log.id || a.plies > s.log.moves.length) return SAME(s);
       return settle(s, [], a.board, a.lastWasRotation);
 
     case 'requestPromotion': {
