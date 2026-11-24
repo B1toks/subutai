@@ -162,8 +162,17 @@ export type Action =
   | { readonly type: 'rotate'; readonly actor: Actor; readonly now: number }
   /** Roulette: the bot found nothing to do with its bag. */
   | { readonly type: 'pass' }
-  /** Is `board` (the one a move produced) over? Only ends an active game. */
-  | { readonly type: 'settle'; readonly board: BoardState; readonly lastWasRotation: boolean }
+  /** Is `board` (the one a move produced) over? Only ends an active game,
+   *  and only the game the move was played in (`logId`) while that move is
+   *  still its last (`plies`, the log's length after it): a verdict that
+   *  comes after a new game, a Load replay or Watch changes nothing. */
+  | {
+      readonly type: 'settle';
+      readonly board: BoardState;
+      readonly lastWasRotation: boolean;
+      readonly logId: string;
+      readonly plies: number;
+    }
   | { readonly type: 'requestPromotion'; readonly from: SquareId; readonly to: SquareId }
   | { readonly type: 'cancelPromotion' }
   /** The promotion piece, picked at this device. */

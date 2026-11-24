@@ -61,3 +61,56 @@ describe('bot whose move the classifier cannot judge', () => {
     expect(statusOf(store.getState())).toBe('checkmate');
   });
 });
+
+describe('bot whose mate is classified after the game has changed (P1)', () => {
+  it('a new game started while its move is classified is not ended by that mate', async () => {
+    vi.useFakeTimers();
+    const store = createStore<SessionState, Action, SessionEvent>(blackToMate(), step);
+    const s = store.getState();
+    chosen.move = s.legal.find((m) => m.from === 'd4' && m.to === 'f3');
+    let verdict: () => void = () => {};
+    const bot = createBotPlayer({
+      color: 'black',
+      dispatch: store.dispatch,
+      strength: () => 'strong',
+      vote: (_b, _l, m) => Promise.resolve(m),
+      analyse: () => new Promise<void>((resolve) => (verdict = resolve)),
+      moved: () => {},
+    });
+    const answer = bot.onTurn(s, new AbortController().signal);
+    await vi.advanceTimersByTimeAsync(1000);
+    const action = await answer;
+    store.dispatch(action);
+    bot.onPlayed?.(action, []);
+    // New game, while the classifier is still on the mating move.
+    store.dispatch({ type: 'newGame', initial: blackToMate().initial, now: 1, seed: 8 });
+    expect(statusOf(store.getState())).toBe('active');
+    verdict();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(statusOf(store.getState())).toBe('active');
+  });
+
+  it('the game it mated still ends when the verdict comes', async () => {
+    vi.useFakeTimers();
+    const store = createStore<SessionState, Action, SessionEvent>(blackToMate(), step);
+    const s = store.getState();
+    chosen.move = s.legal.find((m) => m.from === 'd4' && m.to === 'f3');
+    let verdict: () => void = () => {};
+    const bot = createBotPlayer({
+      color: 'black',
+      dispatch: store.dispatch,
+      strength: () => 'strong',
+      vote: (_b, _l, m) => Promise.resolve(m),
+      analyse: () => new Promise<void>((resolve) => (verdict = resolve)),
+      moved: () => {},
+    });
+    const answer = bot.onTurn(s, new AbortController().signal);
+    await vi.advanceTimersByTimeAsync(1000);
+    const action = await answer;
+    store.dispatch(action);
+    bot.onPlayed?.(action, []);
+    verdict();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(statusOf(store.getState())).toBe('checkmate');
+  });
+});

@@ -204,6 +204,10 @@ export function useWatching({
         status: backup.gameStatus,
         lastMove: backup.lastMove,
       },
+      // A game whose end was still being asked when Watch began (the bot's
+      // mate, while its move was classified: the session drops that answer
+      // once another game is on the board) ends now, as it would have.
+      settle: { lastWasRotation: backup.log.moves[backup.log.moves.length - 1]?.move.kind === 'topologyToggle' },
     });
     setFormationLocked(backup.formationLocked);
     setLockedFormationKey(backup.lockedFormationKey);

@@ -316,10 +316,12 @@ function selfPlay(g: number) {
     }
     // The bot: the board changes now, the end check after classification.
     const held: { after?: ReturnType<LegacyApp['botMove']> } = {};
+    const logId = p.s.log.id;
+    const plies = p.s.log.moves.length + 1;
     p.dispatch({ type: 'move', actor: 'human', move: m, now: t, settle: false }, () => (held.after = p.app.botMove(m, t)), `bot ${m.from}-${m.to}`);
     const settled = held.after!;
     p.dispatch(
-      { type: 'settle', board: settled.next, lastWasRotation: false },
+      { type: 'settle', board: settled.next, lastWasRotation: false, logId, plies },
       () => p.app.botSettle(settled.next, false),
       'bot settle',
     );

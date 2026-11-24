@@ -89,7 +89,7 @@ export interface BotPlayerOptions {
  * a spin, then one action per turn of the bag, each after its pause.
  */
 export function createBotPlayer(opts: BotPlayerOptions): Player {
-  let pendingSettle: { before: BoardState; move: Move; index: number } | null = null;
+  let pendingSettle: { before: BoardState; move: Move; index: number; logId: string } | null = null;
   return {
     color: opts.color,
     kind: 'bot',
@@ -124,7 +124,7 @@ export function createBotPlayer(opts: BotPlayerOptions): Player {
       // rules don't fit the candidate model.
       const move = await opts.vote(s.board, legal, chosen);
       signal.throwIfAborted();
-      pendingSettle = { before: s.board, move, index: s.log.moves.length };
+      pendingSettle = { before: s.board, move, index: s.log.moves.length, logId: s.log.id };
       // The board changes now; whether the game is over is asked after the
       // classification (onPlayed), as it always was.
       return { type: 'move', move, actor: 'bot', now: Date.now(), settle: false };
@@ -136,7 +136,8 @@ export function createBotPlayer(opts: BotPlayerOptions): Player {
       opts.moved();
       const rotation = p.move.kind === 'topologyToggle';
       const next = rotation ? applyRotationMove(p.before) : applyMove(p.before, p.move);
-      const settle = () => opts.dispatch({ type: 'settle', board: next, lastWasRotation: rotation });
+      const settle = () =>
+        opts.dispatch({ type: 'settle', board: next, lastWasRotation: rotation, logId: p.logId, plies: p.index + 1 });
       if (rotation) settle();
       // A classifier that failed leaves the move without a verdict; the
       // end of the game is asked all the same.

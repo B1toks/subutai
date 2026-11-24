@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { createStartingPosition } from '../engine';
 import { applyMove } from '../engine/moves';
 import { appendMove, computeSAN } from '../recording/log';
-import { createSession, step } from './step';
+import { replayFromNotation } from '../memory/replayImport';
+import { legalMovesFor } from './rules';
+import { createSession, statusOf, step } from './step';
 import type { SessionState } from './types';
 
 const NOW = 1_760_000_000_000;
@@ -40,5 +42,33 @@ describe('load', () => {
     const s = fresh();
     const out = step(s, { type: 'load', game: { board: s.board, log: s.log } });
     expect(out.events).toEqual([]);
+  });
+});
+
+describe('settle (the bot asks whether its move ended the game)', () => {
+  // White to move; after Ng1-e2 Black mates with Nd4-f3.
+  const LINE = '[Chess960 "RNBQKBNR"]\n[Seed "7"]\n\n1. Nb1→a3  f7→f5\n2. g2→g4  Nb8→c6\n3. Na3→b1  a7→a6\n4. e2→e3  Nc6→d4';
+  /** Black has just mated, with the end of the game left to a settle. */
+  function mated() {
+    const { final } = replayFromNotation(LINE);
+    const human = legalMovesFor('classic', final).find((m) => m.from === 'g1' && m.to === 'e2')!;
+    const s0 = { ...createSession({ initial: applyMove(final, human), seed: 7, now: NOW }), phase: { tag: 'playing' } } as SessionState;
+    const mate = s0.legal.find((m) => m.from === 'd4' && m.to === 'f3')!;
+    return step(s0, { type: 'move', move: mate, actor: 'bot', now: NOW, settle: false }).state;
+  }
+
+  it('ends the game the move was played in', () => {
+    const s = mated();
+    expect(statusOf(s)).toBe('active');
+    const out = step(s, { type: 'settle', board: s.board, lastWasRotation: false, logId: s.log.id, plies: 1 });
+    expect(statusOf(out.state)).toBe('checkmate');
+  });
+
+  it('is dropped once another game is on the board, or that game has moved on', () => {
+    const s = mated();
+    const other = { ...s, log: { ...s.log, id: 'another-game' } };
+    const asked = { type: 'settle', board: s.board, lastWasRotation: false, logId: s.log.id, plies: 1 } as const;
+    expect(statusOf(step(other, asked).state)).toBe('active');
+    expect(statusOf(step(s, { ...asked, plies: 2 }).state)).toBe('active');
   });
 });
