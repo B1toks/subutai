@@ -688,6 +688,10 @@ export function GameReview({ log: liveLog, onBack, meta, gameId }: Props) {
       },
       (err) => {
         finished = true;
+        // One move refused (a worker-side error) leaves the rest of this
+        // review's queue on the worker, ahead of the live game's verdicts:
+        // drop it, as leaving the review does (F7).
+        cancelPendingClassifications();
         if (cancelled) return;
         console.warn('[review] analysis failed', err);
         setLoading(false);
