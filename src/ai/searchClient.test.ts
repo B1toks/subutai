@@ -28,10 +28,20 @@ const fake = vi.hoisted(() => {
       this.onerror?.(message === undefined ? { type: 'error' } : { type: 'error', message });
     }
   }
-  return { FakeWorker };
+  return { FakeWorker, mainThreadClears: 0 };
 });
 
 vi.mock('./search.worker.ts?worker', () => ({ default: fake.FakeWorker }));
+vi.mock('./search', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./search')>();
+  return {
+    ...real,
+    ttClear: () => {
+      fake.mainThreadClears++;
+      real.ttClear();
+    },
+  };
+});
 
 const board = createPositionFromBackRankKey('RNBQKBNR');
 const options = { budgetMs: 40, maxDepth: 2 };
@@ -42,6 +52,7 @@ let reload: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   vi.resetModules();
   fake.FakeWorker.made = [];
+  fake.mainThreadClears = 0;
   reload = vi.fn();
   vi.stubGlobal('window', { location: { reload } });
   vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -87,12 +98,21 @@ describe('search worker that fails', () => {
     expect((await b).bestMove).not.toBeNull();
     expect(reload).not.toHaveBeenCalled();
 
-    // A new game, then its first search: the file is not fetched again.
+    // A new game clears the main thread's table, as v1.1.7's did; its first
+    // search: the file is not fetched again.
     clearSearchTable();
+    expect(fake.mainThreadClears).toBe(1);
     expect((await searchAsync(board, options)).bestMove).not.toBeNull();
     expect(fake.FakeWorker.made).toHaveLength(1);
     expect(fake.FakeWorker.made[0].sent).toHaveLength(2);
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('with a working worker, a new game clears the table there, not here', async () => {
+    const { clearSearchTable } = await import('./searchClient');
+    clearSearchTable();
+    expect(fake.FakeWorker.made[0].sent.map((m) => m.kind)).toEqual(['clear']);
+    expect(fake.mainThreadClears).toBe(0);
   });
 
   it('one search failing inside a working worker is passed on, as before', async () => {

@@ -1,7 +1,7 @@
 import SearchWorker from './search.worker.ts?worker';
 import type { BoardState, Move } from '../engine';
 import { planBotMove, type AgentContext } from './agents';
-import { searchPosition, type SearchOptions, type SearchResult } from './search';
+import { searchPosition, ttClear, type SearchOptions, type SearchResult } from './search';
 import type { SearchRequest, SearchResponse } from './search.worker';
 
 // Main-thread side of search.worker.ts, after classifyClient.ts: one
@@ -10,7 +10,7 @@ import type { SearchRequest, SearchResponse } from './search.worker';
 /** What the requests of a worker that failed as a whole (its file did not
  *  load, as on a page left open across a deploy, or it crashed) are
  *  refused with, as against one search failing inside it. */
-const workerFailed = new Error('search worker failed');
+const workerFailed = new Error();
 
 let worker: Worker | null = null;
 let nextId = 1;
@@ -40,8 +40,9 @@ function getWorker(): Worker {
     // Every request still waiting is refused (none is left hanging) and
     // searched on the main thread, as is every later one.
     if (worker !== w) return;
-    // A file that did not load raises a bare Event, with no message.
-    console.error('[search] worker crashed', (e as Partial<ErrorEvent>).message ?? e);
+    // A crash raises an ErrorEvent (its message shows in the console); a
+    // file that did not load, a bare Event.
+    console.error('[search] worker crashed', e);
     w.terminate();
     worker = null;
     mainThreadOnly = true;
@@ -73,17 +74,17 @@ export async function searchAsync(state: BoardState, options: SearchOptions): Pr
       if (err !== workerFailed) throw err;
     }
   }
-  // Its table is the main thread's own and a new game does not clear it
-  // (no room in the first load): an old game's entries are positions like
-  // any other, they only shape the search as a warm table does.
   return searchPosition(state, options);
 }
 
 /** ttClear (search.ts) on the search worker, in turn with the searches
- *  sent before it: a new game's searches start from an empty table. */
+ *  sent before it, or on the main thread once the worker has failed (as
+ *  v1.1.7's new game did): a new game's searches start from an empty table
+ *  (its key leaves out the variant's rules). */
 export function clearSearchTable(): void {
+  if (mainThreadOnly) ttClear();
   // A worker that fails here leaves the next search to the main thread.
-  if (!mainThreadOnly) post({ kind: 'clear' }).catch(() => {});
+  else post({ kind: 'clear' }).catch(() => {});
 }
 
 /** SubutaiAgent.chooseMove (agents.ts), its search on the search worker:
