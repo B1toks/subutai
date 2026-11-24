@@ -2,11 +2,11 @@ import ClassifyWorker from './classify.worker.ts?worker';
 import type { BoardState, Move } from '../engine';
 import type { ClassifyOptions, MoveAnalysis } from './classify';
 import type { ClassifyResponse } from './classify.worker';
+import { settleAll, type Waiting } from '../utils/workerRequests';
 
 let worker: Worker | null = null;
 let nextId = 1;
-const pending = new Map<number, (a: MoveAnalysis) => void>();
-const failed = new Map<number, (err: unknown) => void>();
+const waiting = new Map<number, Waiting<MoveAnalysis>>();
 
 /** V1 (DEF-6) — neutral result handed to callers whose request was
  *  superseded. Resolving rather than rejecting keeps every call site on its
@@ -29,18 +29,12 @@ function getWorker(): Worker {
   worker = w;
   w.onmessage = (e: MessageEvent<ClassifyResponse>) => {
     const { id, ok, analysis, error } = e.data;
-    if (ok && analysis) {
-      const cb = pending.get(id);
-      pending.delete(id);
-      failed.delete(id);
-      cb?.(analysis);
-    } else {
-      const errCb = failed.get(id);
-      pending.delete(id);
-      failed.delete(id);
-       
+    const p = waiting.get(id);
+    waiting.delete(id);
+    if (ok && analysis) p?.resolve(analysis);
+    else {
       console.warn('[classifier] worker error', error);
-      errCb?.(error ?? 'classify failed');
+      p?.reject(error ?? 'classify failed');
     }
   };
   w.onerror = (e) => {
@@ -53,11 +47,8 @@ function getWorker(): Worker {
     console.error('[classifier] worker crashed', message ?? e);
     w.terminate();
     worker = null;
-    const refused = [...failed.values()];
-    pending.clear();
-    failed.clear();
     const err = new Error(message);
-    for (const reject of refused) reject(err);
+    settleAll(waiting, (p) => p.reject(err));
   };
   return w;
 }
@@ -75,8 +66,7 @@ export function classifyAsync(
 ): Promise<MoveAnalysis> {
   return new Promise((resolve, reject) => {
     const id = nextId++;
-    pending.set(id, resolve);
-    failed.set(id, reject);
+    waiting.set(id, { resolve, reject });
     getWorker().postMessage({ id, stateBefore, move, stateAfter, opts });
   });
 }
@@ -96,10 +86,7 @@ export function cancelPendingClassifications(): void {
   if (!worker) return;
   worker.terminate();
   worker = null;
-  const waiting = [...pending.values()];
-  pending.clear();
-  failed.clear();
-  for (const resolve of waiting) resolve(NEUTRAL);
+  settleAll(waiting, (p) => p.resolve(NEUTRAL));
 }
 
 /** Tear the worker down (e.g. before navigation). */

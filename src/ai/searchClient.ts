@@ -2,6 +2,7 @@ import SearchWorker from './search.worker.ts?worker';
 import type { BoardState, Move } from '../engine';
 import { planBotMove, type AgentContext } from './agents';
 import { searchPosition, ttClear, type SearchOptions, type SearchResult } from './search';
+import { settleAll, type Waiting } from '../utils/workerRequests';
 import type { SearchRequest, SearchResponse } from './search.worker';
 
 // Main-thread side of search.worker.ts, after classifyClient.ts: one
@@ -14,7 +15,7 @@ const workerFailed = new Error();
 
 let worker: Worker | null = null;
 let nextId = 1;
-const waiting = new Map<number, { resolve: (r: SearchResult | undefined) => void; reject: (e: Error) => void }>();
+const waiting = new Map<number, Waiting<SearchResult | undefined>>();
 /** The worker failed: this page searches on the main thread from now on,
  *  as the bot did in v1.1.7, rather than building a worker that fails
  *  again (or fetching a file that is not there) before every move. No
@@ -30,9 +31,7 @@ function fail(why: unknown): void {
   worker?.terminate();
   worker = null;
   mainThreadOnly = true;
-  const refused = [...waiting.values()];
-  waiting.clear();
-  for (const p of refused) p.reject(workerFailed);
+  settleAll(waiting, (p) => p.reject(workerFailed));
 }
 
 function getWorker(): Worker {
