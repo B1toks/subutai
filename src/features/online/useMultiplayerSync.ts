@@ -369,10 +369,15 @@ export function useMultiplayerSync(
   }, [matchState, myUid]);
 
   // Always compute (even when null) so hook order stays stable across the
-  // null → active transition. Cheap enough — the log is tiny in practice.
+  // null → active transition. The session has already replayed the
+  // snapshot's log for the game it made of it (session/online.ts,
+  // gameOfMatch): its board is taken as it is. Only a document with no
+  // game made of it (no one signed in yet, the one the hook was mounted
+  // with) is rebuilt here.
+  const builtBase = online?.doc === matchState ? online?.game?.base : undefined;
   const boardState = useMemo(
-    () => (matchState ? rebuildBoardFromMatch(matchState) : null),
-    [matchState],
+    () => builtBase ?? (matchState ? rebuildBoardFromMatch(matchState) : null),
+    [builtBase, matchState],
   );
 
   if (!matchState || !myUid || !boardState || (online !== null && online.myUid !== myUid)) return null;
